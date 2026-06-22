@@ -45,8 +45,9 @@ export const useHrisStore = defineStore('hris', {
       this.error = ''
       try {
         const { data } = await api.get('/hris/karyawan', { params })
-        this.list = data.data?.data ?? []
-        this.meta = data.data?.meta ?? this.meta
+        // ResponseInterceptor: { success, data: [...], meta: {...}, message }
+        this.list = data.data ?? []
+        this.meta = data.meta ?? this.meta
       } catch (e: any) {
         this.error = e.response?.data?.message || 'Gagal memuat data'
       } finally {
@@ -58,7 +59,7 @@ export const useHrisStore = defineStore('hris', {
       this.loading = true
       try {
         const { data } = await api.get(`/hris/karyawan/${id}`)
-        this.current = data.data
+        this.current = data.data   // single object tetap di data.data
         return data.data
       } catch (e: any) {
         this.error = e.response?.data?.message || 'Gagal memuat karyawan'
