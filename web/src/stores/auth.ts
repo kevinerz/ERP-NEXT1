@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
 import api from '@/services/api'
 
 interface User {
@@ -11,48 +10,51 @@ interface User {
   roles: string[]
 }
 
-export const useAuthStore = defineStore('auth', () => {
-  const user = ref<User | null>(null)
-  const loading = ref(false)
-  const error = ref('')
+export const useAuthStore = defineStore('auth', {
+  state: () => ({
+    user: null as User | null,
+    loading: false,
+    error: '',
+  }),
 
-  const isLoggedIn = computed(() => !!user.value)
-  const hasRole = (role: string) => user.value?.roles.includes(role) ?? false
+  getters: {
+    isLoggedIn: (state) => state.user !== null,
+    hasRole: (state) => (role: string) => state.user?.roles.includes(role) ?? false,
+  },
 
-  // Init dari localStorage saat app load
-  function init() {
-    const saved = localStorage.getItem('user')
-    if (saved) {
-      try { user.value = JSON.parse(saved) } catch { /* ignore */ }
-    }
-  }
+  actions: {
+    init() {
+      const saved = localStorage.getItem('user')
+      if (saved) {
+        try { this.user = JSON.parse(saved) } catch { /* ignore */ }
+      }
+    },
 
-  async function login(username: string, password: string) {
-    loading.value = true
-    error.value = ''
-    try {
-      const { data } = await api.post('/auth/login', { username, password })
-      const result = data.data
-      user.value = result.user
-      localStorage.setItem('access_token', result.access_token)
-      localStorage.setItem('refresh_token', result.refresh_token)
-      localStorage.setItem('user', JSON.stringify(result.user))
-      return true
-    } catch (e: any) {
-      error.value = e.response?.data?.message || 'Login gagal, cek username/password'
-      return false
-    } finally {
-      loading.value = false
-    }
-  }
+    async login(username: string, password: string) {
+      this.loading = true
+      this.error = ''
+      try {
+        const { data } = await api.post('/auth/login', { username, password })
+        const result = data.data
+        this.user = result.user
+        localStorage.setItem('access_token', result.access_token)
+        localStorage.setItem('refresh_token', result.refresh_token)
+        localStorage.setItem('user', JSON.stringify(result.user))
+        return true
+      } catch (e: any) {
+        this.error = e.response?.data?.message || 'Login gagal, cek username/password'
+        return false
+      } finally {
+        this.loading = false
+      }
+    },
 
-  function logout() {
-    user.value = null
-    error.value = ''
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    localStorage.removeItem('user')
-  }
-
-  return { user, loading, error, isLoggedIn, hasRole, init, login, logout }
+    logout() {
+      this.user = null
+      this.error = ''
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      localStorage.removeItem('user')
+    },
+  },
 })

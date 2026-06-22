@@ -87,7 +87,7 @@ onMounted(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!hris.list.length">
+          <tr v-if="!hris.list?.length">
             <td colspan="8" class="empty">Tidak ada data karyawan</td>
           </tr>
           <tr v-for="k in hris.list" :key="k.id_karyawan">
@@ -116,13 +116,13 @@ onMounted(() => {
     </div>
 
     <!-- Pagination -->
-    <div class="pagination" v-if="hris.meta.total_pages > 1">
+    <div class="pagination" v-if="(hris.meta?.total_pages ?? 0) > 1">
       <button :disabled="page <= 1" @click="page--; load()">‹ Prev</button>
-      <span>Halaman {{ page }} dari {{ hris.meta.total_pages }} ({{ hris.meta.total }} total)</span>
-      <button :disabled="page >= hris.meta.total_pages" @click="page++; load()">Next ›</button>
+      <span>Halaman {{ page }} dari {{ hris.meta?.total_pages }} ({{ hris.meta?.total }} total)</span>
+      <button :disabled="page >= (hris.meta?.total_pages ?? 1)" @click="page++; load()">Next ›</button>
     </div>
     <div class="meta-info" v-else-if="!hris.loading">
-      {{ hris.meta.total }} karyawan ditemukan
+      {{ hris.meta?.total ?? 0 }} karyawan ditemukan
     </div>
   </div>
 </template>

@@ -9,14 +9,10 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
-      meta: { public: true },
     },
-
-    // ─── Protected routes (dengan AppLayout) ───────────────────
     {
       path: '/',
       component: () => import('@/layouts/AppLayout.vue'),
-      meta: { requiresAuth: true },
       children: [
         {
           path: 'dashboard',
@@ -46,16 +42,21 @@ const router = createRouter({
         },
       ],
     },
-
     { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
   ],
 })
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
+
+  // Init dari localStorage kalau belum ada
   if (!auth.user) auth.init()
-  if (to.meta.requiresAuth && !auth.isLoggedIn) return { name: 'login' }
-  if (to.name === 'login' && auth.isLoggedIn) return { name: 'dashboard' }
+
+  const loggedIn = auth.user !== null
+  const isPublic = to.name === 'login'
+
+  if (!loggedIn && !isPublic) return '/login'
+  if (loggedIn && isPublic) return '/dashboard'
 })
 
 export default router
