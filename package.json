@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build:web": "cd web && npm install && npm run build && cp -r dist/* ../public/",
+    "build:web": "cd web && npm install && npm run build",
     "build:api": "nest build",
     "build": "npm run build:web && npm run build:api",
     "start": "node dist/main.js",
