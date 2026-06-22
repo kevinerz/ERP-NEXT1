@@ -1,0 +1,31 @@
+# Environment
+.env
+.env.local
+.env.production
+
+# Build output
+dist/
+public/
+
+# Dependencies
+node_modules/
+web/node_modules/
+web/dist/
+
+# Prisma
+prisma/migrations/*.sql.bak
+
+# Upload temp
+uploads/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

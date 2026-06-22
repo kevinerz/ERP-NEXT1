@@ -1,0 +1,771 @@
+// ERP NEXT1 — Prisma Schema
+// Generated dari erp_NEXT1_FINAL_v4.sql (36 tabel)
+// Database: MariaDB 11.8
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// LAYER 1 — MASTER REFERENCE
+// ============================================================
+
+model CoreRole {
+  id_role    Int      @id @default(autoincrement())
+  nama_role  String   @unique @db.VarChar(100)
+  deskripsi  String?  @db.VarChar(255)
+  created_at DateTime @default(now())
+
+  user_roles CoreUserRole[]
+
+  @@map("core_roles")
+}
+
+model HrisKaryawan {
+  id_karyawan   Int       @id @default(autoincrement())
+  nip           String    @unique @db.VarChar(20)
+  nama_lengkap  String    @db.VarChar(150)
+  jabatan       String    @db.VarChar(100)
+  departemen    String    @db.VarChar(50)
+  no_hp         String?   @db.VarChar(20)
+  email         String?   @db.VarChar(150)
+  tgl_bergabung DateTime? @db.Date
+  status_aktif  Boolean   @default(true)
+  created_at    DateTime  @default(now())
+
+  user             CoreUser?
+  leads_pic        SalesLead[]         @relation("SalesPic")
+  opportunities    SalesOpportunity[]  @relation("OppSalesPic")
+  activities       SalesActivity[]     @relation("ActivitySalesPic")
+  surveys          PresalesSurvey[]    @relation("SurveyPic")
+  quotations       SalesQuotation[]    @relation("QuoSalesPic")
+  quotations_approved SalesQuotation[] @relation("QuoApprover")
+  projects_pm      ProjectDelivery[]
+  tickets_teknisi  OperationTicket[]
+  wo_teknisi       WorkOrder[]         @relation("WoTeknisiInternal")
+
+  @@map("hris_karyawan")
+}
+
+model Pelanggan {
+  id_pelanggan    Int      @id @default(autoincrement())
+  kode_pelanggan  String   @unique @db.VarChar(20)
+  nama_pelanggan  String   @db.VarChar(200)
+  npwp            String?  @db.VarChar(30)
+  alamat_kantor   String?  @db.Text
+  email_billing   String?  @db.VarChar(150)
+  no_telp         String?  @db.VarChar(20)
+  nama_pic_utama  String?  @db.VarChar(100)
+  no_hp_pic_utama String?  @db.VarChar(20)
+  has_grup        Boolean  @default(false)
+  nama_grup       String?  @db.VarChar(150)
+  created_at      DateTime @default(now())
+
+  sites SitePelanggan[]
+
+  @@map("pelanggan")
+}
+
+model MasterLayanan {
+  id_layanan   Int      @id @default(autoincrement())
+  kode_layanan String   @unique @db.VarChar(20)
+  nama_layanan String   @db.VarChar(100)
+  deskripsi    String?  @db.Text
+  is_managed   Boolean  @default(true)
+  is_aktif     Boolean  @default(true)
+
+  sites        SitePelanggan[]
+  opportunities SalesOpportunity[]
+  kontrak      KontrakLayanan[]
+
+  @@map("master_layanan")
+}
+
+model MasterVendorIsp {
+  id_vendor   Int      @id @default(autoincrement())
+  nama_vendor String   @unique @db.VarChar(150)
+  tipe_vendor String   @db.VarChar(30)
+  kontak_pic  String?  @db.VarChar(100)
+  email_pic   String?  @db.VarChar(150)
+  no_telp     String?  @db.VarChar(20)
+  catatan     String?  @db.Text
+  is_aktif    Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  sumber_internet SumberInternetSite[]
+  surveys_isp     PresalesSurvey[]
+  work_orders_vendor WorkOrder[]       @relation("WoVendorKetiga")
+  jurnal_ap       IntegrationJurnalAp[]
+
+  @@map("master_vendor_isp")
+}
+
+// ============================================================
+// LAYER 2 — USER & ACCESS
+// ============================================================
+
+model CoreUser {
+  id_user       Int       @id @default(autoincrement())
+  id_karyawan   Int       @unique
+  username      String    @unique @db.VarChar(80)
+  password_hash String    @db.VarChar(255)
+  is_aktif      Boolean   @default(true)
+  last_login    DateTime?
+  created_at    DateTime  @default(now())
+
+  karyawan   HrisKaryawan   @relation(fields: [id_karyawan], references: [id_karyawan])
+  user_roles CoreUserRole[]
+  mutasi     GudangMutasiAset[]
+  topup      SimTopup[]
+  ticket_logs OperationTicketLog[]
+  rca         OperationRca[]
+
+  @@map("core_users")
+}
+
+model CoreUserRole {
+  id         Int      @id @default(autoincrement())
+  id_user    Int
+  id_role    Int
+  created_at DateTime @default(now())
+
+  user CoreUser @relation(fields: [id_user], references: [id_user], onDelete: Cascade)
+  role CoreRole @relation(fields: [id_role], references: [id_role], onDelete: Cascade)
+
+  @@unique([id_user, id_role])
+  @@map("core_user_roles")
+}
+
+// ============================================================
+// LAYER 3 — SITE, ASET & PERANGKAT
+// ============================================================
+
+model SitePelanggan {
+  id_site        Int       @id @default(autoincrement())
+  id_pelanggan   Int
+  id_layanan     Int
+  kode_site      String    @unique @db.VarChar(50)
+  nama_site      String    @db.VarChar(150)
+  alamat_lengkap String    @db.Text
+  kota           String?   @db.VarChar(100)
+  provinsi       String?   @db.VarChar(100)
+  koordinat_gps  String?   @db.VarChar(50)
+  status_site    String    @default("Prospek") @db.VarChar(30)
+  tgl_aktif      DateTime? @db.Date
+  tgl_terminasi  DateTime? @db.Date
+  catatan        String?   @db.Text
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  pelanggan       Pelanggan          @relation(fields: [id_pelanggan], references: [id_pelanggan])
+  layanan         MasterLayanan      @relation(fields: [id_layanan], references: [id_layanan])
+  aset            GudangAset[]
+  perangkat       PerangkatSite[]
+  pic             PicSite[]
+  sumber_internet SumberInternetSite[]
+  projects        ProjectDelivery[]
+  tickets         OperationTicket[]
+  work_orders     WorkOrder[]
+  kontrak         KontrakLayanan[]
+  topup           SimTopup[]
+  jurnal_ar       IntegrationJurnalAr[]
+
+  @@map("site_pelanggan")
+}
+
+model GudangAset {
+  id_aset         Int       @id @default(autoincrement())
+  kode_aset       String    @unique @db.VarChar(50)
+  nama_perangkat  String    @db.VarChar(150)
+  merk            String?   @db.VarChar(100)
+  tipe_model      String?   @db.VarChar(100)
+  serial_number   String?   @unique @db.VarChar(100)
+  is_serialized   Boolean   @default(true)
+  stok_jumlah     Int       @default(1)
+  kategori        String    @db.VarChar(30)
+  kondisi         String    @default("Baru") @db.VarChar(20)
+  status_aset     String    @default("Di_Gudang") @db.VarChar(30)
+  id_site         Int?
+  tgl_perolehan   DateTime? @db.Date
+  harga_perolehan Decimal   @default(0) @db.Decimal(15, 2)
+  catatan         String?   @db.Text
+  created_at      DateTime  @default(now())
+
+  site               SitePelanggan?      @relation(fields: [id_site], references: [id_site])
+  perangkat          PerangkatSite[]
+  sumber_internet    SumberInternetSite?
+  mutasi             GudangMutasiAset[]
+  topup              SimTopup[]
+  ba_material        WoBaMaterial[]
+  pengiriman_items   PengirimanItem[]
+
+  @@map("gudang_aset")
+}
+
+model PerangkatSite {
+  id_perangkat     Int       @id @default(autoincrement())
+  id_site          Int
+  id_aset          Int?
+  jenis_perangkat  String    @db.VarChar(30)
+  merk             String?   @db.VarChar(100)
+  tipe_model       String?   @db.VarChar(100)
+  serial_number    String?   @db.VarChar(100)
+  ip_address       String?   @db.VarChar(45)
+  mac_address      String?   @db.VarChar(20)
+  ruijie_device_id String?   @db.VarChar(100)
+  rcms_device_id   String?   @db.VarChar(100)
+  tgl_pasang       DateTime? @db.Date
+  status_perangkat String    @default("Aktif") @db.VarChar(20)
+  catatan          String?   @db.Text
+  created_at       DateTime  @default(now())
+
+  site    SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+  aset    GudangAset?   @relation(fields: [id_aset], references: [id_aset])
+  tickets OperationTicket[]
+
+  @@map("perangkat_site")
+}
+
+model PicSite {
+  id_pic     Int      @id @default(autoincrement())
+  id_site    Int
+  nama_pic   String   @db.VarChar(150)
+  jabatan    String?  @db.VarChar(100)
+  no_kontak  String?  @db.VarChar(20)
+  email      String?  @db.VarChar(150)
+  is_utama   Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  site SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+
+  @@map("pic_site")
+}
+
+model SumberInternetSite {
+  id_sumber           Int       @id @default(autoincrement())
+  id_site             Int
+  id_vendor_isp       Int
+  nomor_pelanggan_isp String?   @db.VarChar(100)
+  peruntukan_link     String    @default("Main") @db.VarChar(20)
+  bandwidth_mbps      String?   @db.VarChar(30)
+  biaya_mrc_vendor    Decimal   @default(0) @db.Decimal(15, 2)
+  id_aset_sim         Int?      @unique
+  tgl_mulai           DateTime? @db.Date
+  tgl_berakhir        DateTime? @db.Date
+  status_link         String    @default("Aktif") @db.VarChar(20)
+  catatan             String?   @db.Text
+  created_at          DateTime  @default(now())
+
+  site      SitePelanggan  @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+  vendor    MasterVendorIsp @relation(fields: [id_vendor_isp], references: [id_vendor])
+  aset_sim  GudangAset?    @relation(fields: [id_aset_sim], references: [id_aset])
+
+  @@map("sumber_internet_site")
+}
+
+// ============================================================
+// LAYER 4 — SALES PIPELINE
+// ============================================================
+
+model SalesLead {
+  id_lead        Int      @id @default(autoincrement())
+  nama_prospek   String   @db.VarChar(200)
+  nama_perusahaan String? @db.VarChar(200)
+  no_kontak      String?  @db.VarChar(20)
+  email          String?  @db.VarChar(150)
+  sumber_lead    String   @default("Lainnya") @db.VarChar(30)
+  id_sales_pic   Int
+  status_lead    String   @default("Baru") @db.VarChar(20)
+  catatan_awal   String?  @db.Text
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  sales_pic     HrisKaryawan       @relation("SalesPic", fields: [id_sales_pic], references: [id_karyawan])
+  opportunities SalesOpportunity[]
+  activities    SalesActivity[]
+
+  @@map("sales_leads")
+}
+
+model SalesOpportunity {
+  id_opportunity    Int       @id @default(autoincrement())
+  id_lead           Int
+  id_layanan        Int?
+  nama_opportunity  String    @db.VarChar(200)
+  id_sales_pic      Int
+  estimasi_nilai    Decimal   @default(0) @db.Decimal(15, 2)
+  tahapan           String    @default("Prospecting") @db.VarChar(30)
+  alasan_lost       String?   @db.Text
+  tgl_target_close  DateTime? @db.Date
+  catatan           String?   @db.Text
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  lead       SalesLead      @relation(fields: [id_lead], references: [id_lead])
+  layanan    MasterLayanan? @relation(fields: [id_layanan], references: [id_layanan])
+  sales_pic  HrisKaryawan   @relation("OppSalesPic", fields: [id_sales_pic], references: [id_karyawan])
+  activities SalesActivity[]
+  surveys    PresalesSurvey[]
+  quotations SalesQuotation[]
+  projects   ProjectDelivery[]
+
+  @@map("sales_opportunities")
+}
+
+model SalesActivity {
+  id_activity       Int      @id @default(autoincrement())
+  id_lead           Int?
+  id_opportunity    Int?
+  id_sales_pic      Int
+  jenis_aktivitas   String   @db.VarChar(30)
+  tanggal_aktivitas DateTime
+  ringkasan         String   @db.Text
+  hasil             String   @default("Netral") @db.VarChar(20)
+  created_at        DateTime @default(now())
+
+  lead        SalesLead?       @relation(fields: [id_lead], references: [id_lead])
+  opportunity SalesOpportunity? @relation(fields: [id_opportunity], references: [id_opportunity])
+  sales_pic   HrisKaryawan     @relation("ActivitySalesPic", fields: [id_sales_pic], references: [id_karyawan])
+
+  @@map("sales_activities")
+}
+
+model PresalesSurvey {
+  id_survey           Int      @id @default(autoincrement())
+  id_opportunity      Int
+  id_presales_pic     Int
+  tanggal_survey      DateTime @db.Date
+  alamat_survey       String   @db.Text
+  koordinat_gps       String?  @db.VarChar(50)
+  id_rekomendasi_isp  Int?
+  rekomendasi_layanan String?  @db.VarChar(255)
+  catatan_teknis      String?  @db.Text
+  hasil_survey        String   @default("Feasible") @db.VarChar(30)
+  file_foto_survey    String?  @db.VarChar(255)
+  created_at          DateTime @default(now())
+
+  opportunity    SalesOpportunity @relation(fields: [id_opportunity], references: [id_opportunity])
+  presales_pic   HrisKaryawan     @relation("SurveyPic", fields: [id_presales_pic], references: [id_karyawan])
+  rekomendasi_isp MasterVendorIsp? @relation(fields: [id_rekomendasi_isp], references: [id_vendor])
+
+  @@map("presales_surveys")
+}
+
+model SalesQuotation {
+  id_quotation        Int       @id @default(autoincrement())
+  id_opportunity      Int
+  nomor_quotation     String    @unique @db.VarChar(100)
+  id_sales_pic        Int
+  tgl_quotation       DateTime  @db.Date
+  tgl_berlaku_sampai  DateTime? @db.Date
+  harga_mrc           Decimal   @default(0) @db.Decimal(15, 2)
+  harga_otc           Decimal   @default(0) @db.Decimal(15, 2)
+  status_approval     String    @default("Draft") @db.VarChar(20)
+  id_approver         Int?
+  tgl_approval        DateTime?
+  catatan_approval    String?   @db.Text
+  catatan             String?   @db.Text
+  file_pdf            String?   @db.VarChar(255)
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  opportunity SalesOpportunity @relation(fields: [id_opportunity], references: [id_opportunity])
+  sales_pic   HrisKaryawan     @relation("QuoSalesPic", fields: [id_sales_pic], references: [id_karyawan])
+  approver    HrisKaryawan?    @relation("QuoApprover", fields: [id_approver], references: [id_karyawan])
+  kontrak     KontrakLayanan[]
+
+  @@map("sales_quotations")
+}
+
+// ============================================================
+// LAYER 5 — PROJECT & WORK ORDERS
+// ============================================================
+
+model ProjectDelivery {
+  id_project          Int       @id @default(autoincrement())
+  nomor_project       String    @unique @db.VarChar(100)
+  id_opportunity      Int
+  id_site             Int
+  id_pm               Int
+  tgl_mulai           DateTime? @db.Date
+  tgl_target_selesai  DateTime? @db.Date
+  tgl_actual_selesai  DateTime? @db.Date
+  status_project      String    @default("Perencanaan") @db.VarChar(30)
+  catatan             String?   @db.Text
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  opportunity  SalesOpportunity    @relation(fields: [id_opportunity], references: [id_opportunity])
+  site         SitePelanggan       @relation(fields: [id_site], references: [id_site])
+  pm           HrisKaryawan        @relation(fields: [id_pm], references: [id_karyawan])
+  work_orders  WorkOrder[]
+  mutasi       GudangMutasiAset[]
+  bast         ProjectDokumenLegal[]
+
+  @@map("project_delivery")
+}
+
+model OperationTicket {
+  id_ticket                  Int       @id @default(autoincrement())
+  nomor_tiket                String    @unique @db.VarChar(100)
+  id_site                    Int
+  id_perangkat               Int?
+  id_teknisi_pic             Int?
+  sumber_tiket               String    @default("Internal") @db.VarChar(30)
+  socialchat_conversation_id String?   @db.VarChar(100)
+  judul_tiket                String    @db.VarChar(255)
+  deskripsi_masalah          String?   @db.Text
+  prioritas                  String    @default("Medium") @db.VarChar(20)
+  status_tiket               String    @default("Open") @db.VarChar(30)
+  tgl_open                   DateTime  @default(now())
+  tgl_resolved               DateTime?
+  tgl_closed                 DateTime?
+  created_at                 DateTime  @default(now())
+  updated_at                 DateTime  @updatedAt
+
+  site       SitePelanggan    @relation(fields: [id_site], references: [id_site])
+  perangkat  PerangkatSite?   @relation(fields: [id_perangkat], references: [id_perangkat])
+  teknisi    HrisKaryawan?    @relation(fields: [id_teknisi_pic], references: [id_karyawan])
+  work_orders WorkOrder[]
+  logs       OperationTicketLog[]
+  rca        OperationRca?
+  prtg_webhooks   IntegrationPrtgWebhook[]
+  rcms_webhooks   IntegrationRcmsWebhook[]
+  ruijie_webhooks IntegrationRuijieWebhook[]
+
+  @@map("operation_tickets")
+}
+
+model WorkOrder {
+  id_wo                 Int       @id @default(autoincrement())
+  nomor_wo              String    @unique @db.VarChar(100)
+  jenis_wo              String    @db.VarChar(30)
+  id_project            Int?
+  id_ticket             Int?
+  id_site               Int
+  tipe_eksekutor        String    @default("Internal_NEXT1") @db.VarChar(30)
+  id_teknisi_internal   Int?
+  id_vendor_ketiga      Int?
+  fee_vendor            Decimal   @default(0) @db.Decimal(15, 2)
+  status_pembayaran_fee String    @default("Belum_Dibayar") @db.VarChar(20)
+  tgl_jadwal            DateTime
+  deskripsi_tugas       String    @db.Text
+  status_wo             String    @default("Open") @db.VarChar(30)
+  koordinat_checkin     String?   @db.VarChar(100)
+  catatan_teknisi       String?   @db.Text
+  created_at            DateTime  @default(now())
+  completed_at          DateTime?
+
+  project          ProjectDelivery?  @relation(fields: [id_project], references: [id_project])
+  ticket           OperationTicket?  @relation(fields: [id_ticket], references: [id_ticket])
+  site             SitePelanggan     @relation(fields: [id_site], references: [id_site])
+  teknisi          HrisKaryawan?     @relation("WoTeknisiInternal", fields: [id_teknisi_internal], references: [id_karyawan])
+  vendor           MasterVendorIsp?  @relation("WoVendorKetiga", fields: [id_vendor_ketiga], references: [id_vendor])
+  foto             WoFoto[]
+  berita_acara     WoBeritaAcara[]
+  pengiriman       PengirimanPerangkat[]
+  mutasi           GudangMutasiAset[]
+
+  @@map("work_orders")
+}
+
+model WoFoto {
+  id_foto    Int      @id @default(autoincrement())
+  id_wo      Int
+  jenis_foto String   @default("Lainnya") @db.VarChar(30)
+  file_path  String   @db.VarChar(255)
+  catatan    String?  @db.VarChar(255)
+  created_at DateTime @default(now())
+
+  wo WorkOrder @relation(fields: [id_wo], references: [id_wo], onDelete: Cascade)
+
+  @@map("wo_foto")
+}
+
+model WoBeritaAcara {
+  id_ba                           Int       @id @default(autoincrement())
+  id_wo                           Int
+  nomor_ba                        String    @unique @db.VarChar(100)
+  jenis_ba                        String    @db.VarChar(30)
+  nama_penandatangan_next1        String?   @db.VarChar(150)
+  nama_penandatangan_pelanggan    String?   @db.VarChar(150)
+  jabatan_penandatangan_pelanggan String?   @db.VarChar(100)
+  status_ba                       String    @default("Draft") @db.VarChar(20)
+  tgl_ditandatangani              DateTime?
+  file_ba_pdf                     String?   @db.VarChar(255)
+  catatan                         String?   @db.Text
+  created_at                      DateTime  @default(now())
+
+  wo       WorkOrder      @relation(fields: [id_wo], references: [id_wo], onDelete: Cascade)
+  material WoBaMaterial[]
+
+  @@map("wo_berita_acara")
+}
+
+model WoBaMaterial {
+  id_material   Int    @id @default(autoincrement())
+  id_ba         Int
+  id_aset       Int?
+  nama_item     String @db.VarChar(150)
+  merk          String? @db.VarChar(100)
+  tipe_model    String? @db.VarChar(100)
+  serial_number String? @db.VarChar(100)
+  jumlah        Int    @default(1)
+  keterangan    String @default("Penyerahan") @db.VarChar(30)
+
+  ba   WoBeritaAcara @relation(fields: [id_ba], references: [id_ba], onDelete: Cascade)
+  aset GudangAset?   @relation(fields: [id_aset], references: [id_aset])
+
+  @@map("wo_ba_material")
+}
+
+model PengirimanPerangkat {
+  id_pengiriman           Int       @id @default(autoincrement())
+  id_wo                   Int
+  jenis_pengiriman        String    @default("Dibawa_Teknisi") @db.VarChar(30)
+  nama_ekspedisi          String?   @db.VarChar(100)
+  nomor_resi              String?   @db.VarChar(100)
+  status_pengiriman       String    @default("Packing") @db.VarChar(30)
+  tgl_kirim               DateTime?
+  tgl_terima              DateTime?
+  nama_penerima_di_lokasi String?   @db.VarChar(150)
+  catatan                 String?   @db.Text
+  created_at              DateTime  @default(now())
+
+  wo    WorkOrder        @relation(fields: [id_wo], references: [id_wo])
+  items PengirimanItem[]
+
+  @@map("pengiriman_perangkat")
+}
+
+model PengirimanItem {
+  id_item       Int     @id @default(autoincrement())
+  id_pengiriman Int
+  id_aset       Int?
+  nama_item     String  @db.VarChar(150)
+  jumlah        Int     @default(1)
+  keterangan    String? @db.VarChar(255)
+
+  pengiriman PengirimanPerangkat @relation(fields: [id_pengiriman], references: [id_pengiriman], onDelete: Cascade)
+  aset       GudangAset?         @relation(fields: [id_aset], references: [id_aset])
+
+  @@map("pengiriman_items")
+}
+
+model ProjectDokumenLegal {
+  id_dokumen                       Int       @id @default(autoincrement())
+  id_project                       Int
+  nomor_bast                       String    @unique @db.VarChar(100)
+  nama_penandatangan_pelanggan     String?   @db.VarChar(150)
+  jabatan_penandatangan_pelanggan  String?   @db.VarChar(100)
+  tgl_ditandatangani               DateTime? @db.Date
+  file_bast_pdf                    String?   @db.VarChar(255)
+  mekari_invoice_uid               String?   @db.VarChar(100)
+  status_sinkronisasi_finance      String    @default("Belum") @db.VarChar(10)
+  catatan                          String?   @db.Text
+  created_at                       DateTime  @default(now())
+
+  project ProjectDelivery  @relation(fields: [id_project], references: [id_project])
+  kontrak KontrakLayanan[]
+
+  @@map("project_dokumen_legal")
+}
+
+model KontrakLayanan {
+  id_kontrak        Int       @id @default(autoincrement())
+  id_site           Int
+  id_layanan        Int
+  id_quotation      Int?
+  id_dokumen_legal  Int?
+  nomor_kontrak     String    @unique @db.VarChar(100)
+  tgl_mulai         DateTime  @db.Date
+  tgl_berakhir      DateTime? @db.Date
+  durasi_bulan      Int       @default(12)
+  harga_mrc         Decimal   @db.Decimal(15, 2)
+  harga_otc         Decimal   @default(0) @db.Decimal(15, 2)
+  status_kontrak    String    @default("Aktif") @db.VarChar(20)
+  tanggal_terminasi DateTime? @db.Date
+  alasan_terminasi  String?   @db.Text
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  site         SitePelanggan        @relation(fields: [id_site], references: [id_site])
+  layanan      MasterLayanan        @relation(fields: [id_layanan], references: [id_layanan])
+  quotation    SalesQuotation?      @relation(fields: [id_quotation], references: [id_quotation])
+  dokumen      ProjectDokumenLegal? @relation(fields: [id_dokumen_legal], references: [id_dokumen])
+  jurnal_ar    IntegrationJurnalAr[]
+
+  @@map("kontrak_layanan")
+}
+
+// ============================================================
+// LAYER 6 — GUDANG OPERATIONS
+// ============================================================
+
+model GudangMutasiAset {
+  id_mutasi      Int      @id @default(autoincrement())
+  id_aset        Int
+  jenis_mutasi   String   @db.VarChar(30)
+  jumlah         Int      @default(1)
+  id_project     Int?
+  id_wo          Int?
+  id_site_asal   Int?
+  id_site_tujuan Int?
+  keterangan     String?  @db.Text
+  id_user        Int?
+  created_at     DateTime @default(now())
+
+  aset    GudangAset       @relation(fields: [id_aset], references: [id_aset], onDelete: Cascade)
+  project ProjectDelivery? @relation(fields: [id_project], references: [id_project])
+  wo      WorkOrder?       @relation(fields: [id_wo], references: [id_wo])
+  user    CoreUser?        @relation(fields: [id_user], references: [id_user])
+
+  @@map("gudang_mutasi_aset")
+}
+
+model SimTopup {
+  id_topup    Int      @id @default(autoincrement())
+  id_aset_sim Int
+  id_site     Int
+  jenis_topup String   @db.VarChar(30)
+  nominal     Decimal  @db.Decimal(12, 2)
+  tgl_topup   DateTime
+  id_user     Int?
+  keterangan  String?  @db.VarChar(255)
+  created_at  DateTime @default(now())
+
+  aset_sim GudangAset    @relation(fields: [id_aset_sim], references: [id_aset])
+  site     SitePelanggan @relation(fields: [id_site], references: [id_site])
+  user     CoreUser?     @relation(fields: [id_user], references: [id_user])
+
+  @@map("sim_topup")
+}
+
+// ============================================================
+// LAYER 7 — OPERATION HELPDESK (lanjutan)
+// ============================================================
+
+model OperationTicketLog {
+  id_log      Int      @id @default(autoincrement())
+  id_ticket   Int
+  id_user     Int?
+  status_dari String?  @db.VarChar(50)
+  status_ke   String?  @db.VarChar(50)
+  catatan     String?  @db.Text
+  created_at  DateTime @default(now())
+
+  ticket OperationTicket @relation(fields: [id_ticket], references: [id_ticket], onDelete: Cascade)
+  user   CoreUser?       @relation(fields: [id_user], references: [id_user])
+
+  @@map("operation_ticket_logs")
+}
+
+model OperationRca {
+  id_rca           Int       @id @default(autoincrement())
+  id_ticket        Int       @unique
+  id_user_pembuat  Int?
+  penyebab_utama   String?   @db.Text
+  dampak           String?   @db.Text
+  solusi_sementara String?   @db.Text
+  solusi_permanen  String?   @db.Text
+  tgl_rca          DateTime? @db.Date
+  created_at       DateTime  @default(now())
+
+  ticket OperationTicket @relation(fields: [id_ticket], references: [id_ticket], onDelete: Cascade)
+  user   CoreUser?       @relation(fields: [id_user_pembuat], references: [id_user])
+
+  @@map("operation_rca")
+}
+
+// ============================================================
+// LAYER 8 — INTEGRASI EKSTERNAL
+// ============================================================
+
+model IntegrationJurnalAp {
+  id_ap                    Int       @id @default(autoincrement())
+  id_vendor                Int
+  periode_tagihan          String    @db.VarChar(7)
+  jumlah_tagihan           Decimal   @db.Decimal(15, 2)
+  status_approval_internal String    @default("Pending") @db.VarChar(20)
+  mekari_jurnal_uid        String?   @db.VarChar(100)
+  status_sinkronisasi      String    @default("Belum") @db.VarChar(10)
+  tanggal_sinkronisasi     DateTime?
+  catatan                  String?   @db.Text
+  created_at               DateTime  @default(now())
+
+  vendor MasterVendorIsp @relation(fields: [id_vendor], references: [id_vendor])
+
+  @@map("integration_jurnal_ap")
+}
+
+model IntegrationJurnalAr {
+  id_ar                Int       @id @default(autoincrement())
+  id_site              Int
+  id_kontrak           Int?
+  periode_tagihan      String    @db.VarChar(7)
+  jumlah_tagihan       Decimal   @db.Decimal(15, 2)
+  mekari_jurnal_uid    String?   @db.VarChar(100)
+  status_sinkronisasi  String    @default("Belum") @db.VarChar(10)
+  tanggal_sinkronisasi DateTime?
+  catatan              String?   @db.Text
+  created_at           DateTime  @default(now())
+
+  site    SitePelanggan  @relation(fields: [id_site], references: [id_site])
+  kontrak KontrakLayanan? @relation(fields: [id_kontrak], references: [id_kontrak])
+
+  @@map("integration_jurnal_ar")
+}
+
+model IntegrationPrtgWebhook {
+  id_webhook          Int      @id @default(autoincrement())
+  prtg_sensor_id      String?  @db.VarChar(50)
+  prtg_device_name    String?  @db.VarChar(150)
+  prtg_sensor_name    String?  @db.VarChar(150)
+  status_sensor       String?  @db.VarChar(50)
+  pesan_alert         String?  @db.Text
+  id_ticket_terbentuk Int?
+  diterima_pada       DateTime @default(now())
+
+  ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
+
+  @@map("integration_prtg_webhooks")
+}
+
+model IntegrationRcmsWebhook {
+  id_webhook          Int      @id @default(autoincrement())
+  rcms_device_id      String?  @db.VarChar(100)
+  imei_device         String?  @db.VarChar(20)
+  status_device       String?  @db.VarChar(20)
+  network_type        String?  @db.VarChar(10)
+  signal_strength     String?  @db.VarChar(20)
+  sim1_status         String?  @db.VarChar(50)
+  sim2_status         String?  @db.VarChar(50)
+  pesan_raw           String?  @db.Text
+  id_ticket_terbentuk Int?
+  diterima_pada       DateTime @default(now())
+
+  ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
+
+  @@map("integration_rcms_webhooks")
+}
+
+model IntegrationRuijieWebhook {
+  id_webhook          Int      @id @default(autoincrement())
+  ruijie_device_id    String?  @db.VarChar(100)
+  device_mac          String?  @db.VarChar(20)
+  device_type         String?  @db.VarChar(20)
+  status_device       String?  @db.VarChar(20)
+  jenis_alert         String?  @db.VarChar(100)
+  pesan_raw           String?  @db.Text
+  id_ticket_terbentuk Int?
+  diterima_pada       DateTime @default(now())
+
+  ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
+
+  @@map("integration_ruijie_webhooks")
+}
