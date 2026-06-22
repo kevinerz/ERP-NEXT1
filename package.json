@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build:web": "cd web && npm install --legacy-peer-deps && npm run build",
+    "build:web": "cd web && npm install --legacy-peer-deps --include=dev && npm run build",
     "build:api": "nest build",
     "build": "npm run build:web && npm run build:api",
     "start": "node dist/main.js",
