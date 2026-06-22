@@ -45,8 +45,8 @@ export const useHrisStore = defineStore('hris', {
       this.error = ''
       try {
         const { data } = await api.get('/hris/karyawan', { params })
-        this.list = data.data.data
-        this.meta = data.data.meta
+        this.list = data.data?.data ?? []
+        this.meta = data.data?.meta ?? this.meta
       } catch (e: any) {
         this.error = e.response?.data?.message || 'Gagal memuat data'
       } finally {

@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { useAuthStore } from '@/stores/auth'
 
 const api = axios.create({
   baseURL: '/api',
@@ -13,7 +12,8 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Handle 401 — coba refresh, kalau gagal logout
+// Handle 401 — hanya coba refresh token, tidak redirect
+// Redirect ke login ditangani oleh router guard
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
@@ -22,7 +22,7 @@ api.interceptors.response.use(
       original._retry = true
       try {
         const refresh_token = localStorage.getItem('refresh_token')
-        if (!refresh_token) throw new Error('no refresh token')
+        if (!refresh_token) return Promise.reject(err)
 
         const { data } = await axios.post('/api/auth/refresh', { refresh_token })
         const newToken = data.data.access_token
@@ -30,11 +30,10 @@ api.interceptors.response.use(
         original.headers.Authorization = `Bearer ${newToken}`
         return api(original)
       } catch {
-        const auth = useAuthStore()
-        auth.logout()
-        // Lazy import router untuk hindari circular dependency
-        const { default: router } = await import('@/router')
-        router.push('/login')
+        // Refresh gagal — hapus token, biarkan komponen/guard handle
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        localStorage.removeItem('user')
       }
     }
     return Promise.reject(err)

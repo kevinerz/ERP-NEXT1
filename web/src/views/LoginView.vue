@@ -13,7 +13,7 @@ const showPassword = ref(false)
 async function handleLogin() {
   if (!username.value || !password.value) return
   const ok = await auth.login(username.value, password.value)
-  if (ok) router.push('/dashboard')
+  if (ok) window.location.href = '/dashboard'
 }
 </script>
 
