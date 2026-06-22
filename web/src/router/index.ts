@@ -4,16 +4,22 @@ import { useAuthStore } from '@/stores/auth'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', redirect: '/dashboard' },
+    // Public
     {
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
     },
+
+    // Protected — semua di bawah AppLayout
     {
       path: '/',
       component: () => import('@/layouts/AppLayout.vue'),
       children: [
+        {
+          path: '',
+          redirect: '/dashboard',
+        },
         {
           path: 'dashboard',
           name: 'dashboard',
@@ -40,23 +46,25 @@ const router = createRouter({
           name: 'hris-edit',
           component: () => import('@/views/hris/KaryawanFormView.vue'),
         },
+        // Catch-all dalam layout
+        {
+          path: ':pathMatch(.*)*',
+          redirect: '/dashboard',
+        },
       ],
     },
-    { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
   ],
 })
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
-
-  // Init dari localStorage kalau belum ada
   if (!auth.user) auth.init()
 
   const loggedIn = auth.user !== null
-  const isPublic = to.name === 'login'
+  const isLogin = to.name === 'login'
 
-  if (!loggedIn && !isPublic) return '/login'
-  if (loggedIn && isPublic) return '/dashboard'
+  if (!loggedIn && !isLogin) return '/login'
+  if (loggedIn && isLogin) return '/dashboard'
 })
 
 export default router
