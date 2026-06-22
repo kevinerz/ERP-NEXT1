@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { RouterView, useRouter } from 'vue-router'
+import { RouterView } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
-const router = useRouter()
 const auth = useAuthStore()
 const sidebarOpen = ref(true)
 
 function logout() {
   auth.logout()
-  router.push('/login')
+  window.location.href = '/login'
+}
+
+function isActive(path: string) {
+  return window.location.pathname.startsWith(path)
 }
 
 const menu = [
@@ -40,19 +43,18 @@ const menu = [
       </div>
 
       <nav class="sidebar-nav">
-        <router-link
+        <a
           v-for="item in menu"
           :key="item.to"
-          :to="item.soon ? '#' : item.to"
-          :class="['nav-item', { disabled: item.soon }]"
-          active-class="active"
+          :href="item.soon ? undefined : item.to"
+          :class="['nav-item', { disabled: item.soon, active: isActive(item.to) }]"
         >
           <span class="nav-icon">{{ item.icon }}</span>
           <span v-if="sidebarOpen" class="nav-label">
             {{ item.label }}
             <span v-if="item.soon" class="soon-tag">soon</span>
           </span>
-        </router-link>
+        </a>
       </nav>
 
       <div class="sidebar-bottom" v-if="sidebarOpen">

@@ -95,9 +95,9 @@ async function handleToggleUserStatus() {
   <div class="page" v-if="hris.current">
     <!-- Header -->
     <div class="page-header">
-      <button class="btn-back" @click="router.push('/hris/karyawan')">← Daftar Karyawan</button>
+      <button class="btn-back" @click="window.location.href='/hris/karyawan'">← Daftar Karyawan</button>
       <div class="header-right">
-        <button class="btn-secondary" @click="router.push(`/hris/karyawan/${id}/edit`)">Edit</button>
+        <button class="btn-secondary" @click="window.location.href=`/hris/karyawan/${id}/edit`">Edit</button>
         <button
           :class="hris.current.status_aktif ? 'btn-danger' : 'btn-success'"
           @click="handleToggleStatus"

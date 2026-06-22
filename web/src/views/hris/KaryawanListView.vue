@@ -44,7 +44,7 @@ onMounted(() => {
         <h2>Karyawan</h2>
         <p>Data karyawan PT. Perdana Global Internet</p>
       </div>
-      <button class="btn-primary" @click="router.push('/hris/karyawan/tambah')">
+      <button class="btn-primary" @click="window.location.href='/hris/karyawan/tambah'">
         + Tambah Karyawan
       </button>
     </div>
@@ -106,7 +106,7 @@ onMounted(() => {
               </span>
             </td>
             <td class="actions">
-              <button class="btn-icon" @click="router.push(`/hris/karyawan/${k.id_karyawan}`)">
+              <button class="btn-icon" @click="window.location.href=`/hris/karyawan/${k.id_karyawan}`">
                 Detail
               </button>
             </td>

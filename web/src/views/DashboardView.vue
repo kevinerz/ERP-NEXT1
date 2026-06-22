@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/auth'
-import { useRouter } from 'vue-router'
 
 const auth = useAuthStore()
-const router = useRouter()
 
 const modules = [
   { icon: '👤', name: 'HRIS',         to: '/hris/karyawan',  ready: true },
@@ -32,7 +30,7 @@ const modules = [
         v-for="m in modules"
         :key="m.name"
         :class="['module-card', { clickable: m.ready }]"
-        @click="m.ready && router.push(m.to)"
+        @click="m.ready && (window.location.href = m.to)"
       >
         <div class="module-icon">{{ m.icon }}</div>
         <div class="module-label">{{ m.name }}</div>

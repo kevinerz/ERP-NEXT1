@@ -61,10 +61,10 @@ async function submit() {
 
     if (isEdit.value && id.value) {
       await hris.updateKaryawan(id.value, payload)
-      router.push(`/hris/karyawan/${id.value}`)
+      window.location.href = `/hris/karyawan/${id.value}`
     } else {
       const result = await hris.createKaryawan(payload)
-      router.push(`/hris/karyawan/${result.id_karyawan}`)
+      window.location.href = `/hris/karyawan/${result.id_karyawan}`
     }
   } catch (e: any) {
     errorMsg.value = e.response?.data?.message || 'Terjadi kesalahan'
@@ -77,7 +77,7 @@ async function submit() {
 <template>
   <div class="page">
     <div class="page-header">
-      <button class="btn-back" @click="router.back()">← Kembali</button>
+      <button class="btn-back" @click="window.location.href='/hris/karyawan'">← Kembali</button>
       <h2>{{ isEdit ? 'Edit Karyawan' : 'Tambah Karyawan' }}</h2>
     </div>
 
