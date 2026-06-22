@@ -1,6 +1,5 @@
 import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
-import router from '@/router'
 
 const api = axios.create({
   baseURL: '/api',
@@ -33,6 +32,8 @@ api.interceptors.response.use(
       } catch {
         const auth = useAuthStore()
         auth.logout()
+        // Lazy import router untuk hindari circular dependency
+        const { default: router } = await import('@/router')
         router.push('/login')
       }
     }
