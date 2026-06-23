@@ -20,6 +20,6 @@ export class UpdateTicketDto {
 
 export class AddLogDto {
   @IsInt() id_ticket: number;
-  @IsOptional() @IsString() status_baru?: string;
+  @IsOptional() @IsString() status_ke?: string;
   @IsOptional() @IsString() catatan?: string;
 }

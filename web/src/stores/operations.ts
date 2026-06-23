@@ -20,7 +20,7 @@ export interface Ticket {
   }
   teknisi?: { id_karyawan: number; nama_lengkap: string; jabatan: string }
   work_orders?: any[]
-  logs?: { id_log: number; status_baru?: string; catatan?: string; created_at: string; user?: { nama_lengkap: string } }[]
+  logs?: { id_log: number; status_dari?: string; status_ke?: string; catatan?: string; created_at: string; user?: { karyawan?: { nama_lengkap: string } } }[]
   _count?: { work_orders: number; logs: number }
 }
 

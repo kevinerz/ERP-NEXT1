@@ -16,7 +16,7 @@ const editSubmitting = ref(false)
 const editError = ref('')
 
 const showLogModal = ref(false)
-const logForm = ref({ status_baru: '', catatan: '' })
+const logForm = ref({ status_ke: '', catatan: '' })
 const logSubmitting = ref(false)
 
 const showWoModal = ref(false)
@@ -81,12 +81,12 @@ async function handleAddLog() {
   try {
     await ops.addLog({
       id_ticket: id,
-      status_baru: logForm.value.status_baru || undefined,
+      status_ke: logForm.value.status_ke || undefined,
       catatan: logForm.value.catatan || undefined,
     })
     await ops.fetchOne(id)
     showLogModal.value = false
-    logForm.value = { status_baru: '', catatan: '' }
+    logForm.value = { status_ke: '', catatan: '' }
     flash('Log ditambahkan')
   } catch { flash('Gagal tambah log') }
   finally { logSubmitting.value = false }
@@ -214,15 +214,15 @@ function ageHours(d: string) {
           </div>
           <div v-if="!ops.current.logs?.length" class="empty-section">Belum ada log</div>
           <div v-for="log in ops.current.logs" :key="log.id_log" class="log-item">
-            <div class="log-dot" :style="{ background: log.status_baru ? STATUS_COLOR[log.status_baru]?.color || '#64748b' : '#cbd5e1' }"></div>
+            <div class="log-dot" :style="{ background: log.status_ke ? STATUS_COLOR[log.status_ke]?.color || '#64748b' : '#cbd5e1' }"></div>
             <div class="log-body">
-              <div class="log-status" v-if="log.status_baru">
-                <span class="log-badge" :style="{ background: STATUS_COLOR[log.status_baru]?.bg, color: STATUS_COLOR[log.status_baru]?.color }">
-                  {{ statusLabel(log.status_baru) }}
+              <div class="log-status" v-if="log.status_ke">
+                <span class="log-badge" :style="{ background: STATUS_COLOR[log.status_ke]?.bg, color: STATUS_COLOR[log.status_ke]?.color }">
+                  {{ statusLabel(log.status_ke) }}
                 </span>
               </div>
               <div class="log-catatan" v-if="log.catatan">{{ log.catatan }}</div>
-              <div class="log-meta">{{ log.user?.nama_lengkap || 'System' }} · {{ fmtDt(log.created_at) }}</div>
+              <div class="log-meta">{{ log.user?.karyawan?.nama_lengkap || 'System' }} · {{ fmtDt(log.created_at) }}</div>
             </div>
           </div>
         </div>
@@ -278,7 +278,7 @@ function ageHours(d: string) {
           <div class="form-grid">
             <div class="field full">
               <label>Update Status (opsional)</label>
-              <select v-model="logForm.status_baru">
+              <select v-model="logForm.status_ke">
                 <option value="">— Tidak ubah status —</option>
                 <option v-for="s in STATUS_LIST" :key="s" :value="s">{{ statusLabel(s) }}</option>
               </select>

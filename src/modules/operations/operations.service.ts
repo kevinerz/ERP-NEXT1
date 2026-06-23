@@ -30,7 +30,7 @@ const TICKET_DETAIL_INCLUDE = {
     orderBy: { tgl_jadwal: 'desc' as const },
   },
   logs: {
-    include: { user: { select: { nama_lengkap: true } } },
+    include: { user: { include: { karyawan: { select: { nama_lengkap: true } } } } },
     orderBy: { created_at: 'desc' as const },
   },
 };
@@ -112,7 +112,7 @@ export class OperationsService {
       data: {
         id_ticket: data.id_ticket,
         id_user: userId || null,
-        status_baru: 'Open',
+        status_ke: 'Open',
         catatan: 'Tiket dibuat',
       },
     });
@@ -145,7 +145,8 @@ export class OperationsService {
         data: {
           id_ticket: id,
           id_user: userId || null,
-          status_baru: dto.status_tiket,
+          status_dari: ticket.status_tiket,
+          status_ke: dto.status_tiket,
           catatan: `Status diubah ke ${dto.status_tiket}`,
         },
       });
@@ -158,21 +159,24 @@ export class OperationsService {
     const ticket = await this.prisma.operationTicket.findUnique({ where: { id_ticket: dto.id_ticket } });
     if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
 
+    const currentTicket = await this.prisma.operationTicket.findUnique({ where: { id_ticket: dto.id_ticket }, select: { status_tiket: true } });
+
     const log = await this.prisma.operationTicketLog.create({
       data: {
         id_ticket: dto.id_ticket,
         id_user: userId || null,
-        status_baru: dto.status_baru || null,
+        status_dari: dto.status_ke ? (currentTicket?.status_tiket || null) : null,
+        status_ke: dto.status_ke || null,
         catatan: dto.catatan || null,
       },
-      include: { user: { select: { nama_lengkap: true } } },
+      include: { user: { include: { karyawan: { select: { nama_lengkap: true } } } } },
     });
 
-    // Update status if status_baru provided
-    if (dto.status_baru) {
-      const updateData: any = { status_tiket: dto.status_baru, updated_at: new Date() };
-      if (dto.status_baru === 'Resolved') updateData.tgl_resolved = new Date();
-      if (dto.status_baru === 'Closed') updateData.tgl_closed = new Date();
+    // Update status if status_ke provided
+    if (dto.status_ke) {
+      const updateData: any = { status_tiket: dto.status_ke, updated_at: new Date() };
+      if (dto.status_ke === 'Resolved') updateData.tgl_resolved = new Date();
+      if (dto.status_ke === 'Closed') updateData.tgl_closed = new Date();
       await this.prisma.operationTicket.update({ where: { id_ticket: dto.id_ticket }, data: updateData });
     }
 
