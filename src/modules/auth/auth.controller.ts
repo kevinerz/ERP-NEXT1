@@ -37,14 +37,14 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   getMe(@CurrentUser() user: any) {
-    return this.authService.getMe(user.sub);
+    return this.authService.getMe(user.id_user);
   }
 
   // PATCH /api/auth/me — update no_hp & email
   @UseGuards(JwtAuthGuard)
   @Patch('me')
   updateMe(@CurrentUser() user: any, @Body() dto: { no_hp?: string; email?: string }) {
-    return this.authService.updateMe(user.sub, dto);
+    return this.authService.updateMe(user.id_user, dto);
   }
 
   // POST /api/auth/change-password
@@ -54,6 +54,6 @@ export class AuthController {
     @CurrentUser() user: any,
     @Body() dto: { password_lama: string; password_baru: string; konfirmasi: string },
   ) {
-    return this.authService.changePassword(user.sub, dto);
+    return this.authService.changePassword(user.id_user, dto);
   }
 }

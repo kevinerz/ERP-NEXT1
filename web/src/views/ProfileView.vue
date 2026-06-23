@@ -232,9 +232,11 @@ async function fetchProfile() {
   try {
     const r = await api.get('/auth/me')
     profile.value = r.data.data
-    form.value.email = profile.value.email || ''
-    form.value.no_hp = profile.value.no_hp || ''
-  } catch {}
+    form.value.email = profile.value?.email || ''
+    form.value.no_hp = profile.value?.no_hp || ''
+  } catch (e) {
+    console.error('[Profile] fetchProfile error:', e)
+  }
 }
 
 async function saveProfile() {

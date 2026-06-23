@@ -146,7 +146,11 @@ export class AuthService {
     if (!user) throw new NotFoundException('User tidak ditemukan');
 
     const roles = user.user_roles.map((ur) => ur.role.nama_role);
-    const modul_akses: string[] = user.modul_akses ? JSON.parse(user.modul_akses) : [];
+    let modul_akses: string[] = [];
+    if (user.modul_akses) {
+      try { modul_akses = JSON.parse(user.modul_akses); }
+      catch { modul_akses = user.modul_akses.split(',').map(s => s.trim()).filter(Boolean); }
+    }
 
     return {
       data: {
