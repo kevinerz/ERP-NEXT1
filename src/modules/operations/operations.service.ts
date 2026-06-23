@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTicketDto, UpdateTicketDto, AddLogDto } from './dto/ticket.dto';
 
 const TICKET_INCLUDE = {
@@ -37,7 +38,10 @@ const TICKET_DETAIL_INCLUDE = {
 
 @Injectable()
 export class OperationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifService: NotificationsService,
+  ) {}
 
   // ─── TIKET ────────────────────────────────────────────────────
 
@@ -117,6 +121,14 @@ export class OperationsService {
       },
     });
 
+    // Notifikasi ke semua user operations
+    this.notifService.notifyForModul('operations', {
+      tipe: 'tiket_baru',
+      judul: `Tiket Baru: ${dto.judul_tiket}`,
+      deskripsi: `${nomor_tiket}`,
+      url: `/operations/${data.id_ticket}`,
+    }).catch(() => {});
+
     return { data, message: `Tiket ${nomor_tiket} dibuat` };
   }
 
@@ -150,6 +162,14 @@ export class OperationsService {
           catatan: `Status diubah ke ${dto.status_tiket}`,
         },
       });
+
+      // Notifikasi status berubah
+      this.notifService.notifyForModul('operations', {
+        tipe: 'tiket_update',
+        judul: `Status Tiket: ${ticket.status_tiket} → ${dto.status_tiket}`,
+        deskripsi: ticket.nomor_tiket,
+        url: `/operations/${id}`,
+      }).catch(() => {});
     }
 
     return { data, message: 'Tiket diperbarui' };

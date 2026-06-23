@@ -792,3 +792,18 @@ model ActivityLog {
   @@index([created_at])
   @@map("activity_log")
 }
+
+model Notification {
+  id_notif    Int      @id @default(autoincrement())
+  id_user     Int
+  tipe        String   @db.VarChar(50)    // quotation_approval, tiket_baru, tiket_update
+  judul       String   @db.VarChar(200)
+  deskripsi   String?  @db.Text
+  url         String?  @db.VarChar(255)
+  is_read     Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  @@index([id_user, is_read])
+  @@index([created_at])
+  @@map("notifications")
+}

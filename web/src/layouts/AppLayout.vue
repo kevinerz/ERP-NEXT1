@@ -1,19 +1,63 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { useRouter } from 'vue-router'
+import { useNotificationStore } from '@/stores/notification'
 import api from '@/services/api'
 
 const router = useRouter()
-const route = useRoute()
-const auth = useAuthStore()
-const sidebarOpen = ref(true)
+const route  = useRoute()
+const auth   = useAuthStore()
+const notif  = useNotificationStore()
+
+const sidebarOpen    = ref(true)
+const showNotifPanel = ref(false)
+
+onMounted(() => {
+  notif.startPolling()
+  document.addEventListener('click', onDocClick)
+})
+onUnmounted(() => {
+  notif.stopPolling()
+  document.removeEventListener('click', onDocClick)
+})
+
+function onDocClick(e: MouseEvent) {
+  if (!(e.target as HTMLElement).closest('.notif-area')) showNotifPanel.value = false
+}
+
+async function toggleNotifPanel() {
+  showNotifPanel.value = !showNotifPanel.value
+  if (showNotifPanel.value) await notif.fetchNotifications()
+}
+
+function goNotif(n: any) {
+  notif.markRead(n.id_notif)
+  showNotifPanel.value = false
+  if (n.url) router.push(n.url)
+}
 
 async function logout() {
   try { await api.post('/auth/logout') } catch {}
+  notif.stopPolling()
   auth.logout()
   router.push('/login')
+}
+
+const TIPE_ICON: Record<string, string> = {
+  tiket_baru:         '🎫',
+  tiket_update:       '🔄',
+  quotation_approval: '📋',
+}
+
+function fmtTime(d: string) {
+  const dt = new Date(d)
+  const diffMin = Math.floor((Date.now() - dt.getTime()) / 60000)
+  if (diffMin < 1) return 'baru saja'
+  if (diffMin < 60) return `${diffMin} menit lalu`
+  const diffH = Math.floor(diffMin / 60)
+  if (diffH < 24) return `${diffH} jam lalu`
+  return dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
 }
 
 const allMenu = [
@@ -69,7 +113,40 @@ const menu = computed(() =>
         </RouterLink>
       </nav>
 
+      <!-- Sidebar bottom (expanded) -->
       <div class="sidebar-bottom" v-if="sidebarOpen">
+        <!-- Bell -->
+        <div class="notif-area">
+          <button class="btn-bell" @click.stop="toggleNotifPanel">
+            <span class="bell-icon">🔔</span>
+            <span class="bell-label">Notifikasi</span>
+            <span v-if="notif.count > 0" class="bell-badge">{{ notif.count > 99 ? '99+' : notif.count }}</span>
+          </button>
+          <div v-if="showNotifPanel" class="notif-panel" @click.stop>
+            <div class="notif-panel-header">
+              <span class="np-title">Notifikasi</span>
+              <button v-if="notif.count > 0" class="np-read-all" @click="notif.markAllRead()">Baca Semua</button>
+            </div>
+            <div v-if="notif.loading" class="np-empty">Memuat...</div>
+            <div v-else-if="!notif.notifications.length" class="np-empty">Belum ada notifikasi</div>
+            <div v-else class="np-list">
+              <div
+                v-for="n in notif.notifications" :key="n.id_notif"
+                :class="['np-item', { unread: !n.is_read }]"
+                @click="goNotif(n)"
+              >
+                <div class="np-icon">{{ TIPE_ICON[n.tipe] || '🔔' }}</div>
+                <div class="np-body">
+                  <div class="np-judul">{{ n.judul }}</div>
+                  <div class="np-desc" v-if="n.deskripsi">{{ n.deskripsi }}</div>
+                  <div class="np-time">{{ fmtTime(n.created_at) }}</div>
+                </div>
+                <div v-if="!n.is_read" class="np-dot"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="user-chip">
           <div class="user-avatar">{{ auth.user?.nama_lengkap?.charAt(0) }}</div>
           <div class="user-detail">
@@ -79,7 +156,38 @@ const menu = computed(() =>
         </div>
         <button class="btn-logout" @click="logout">Keluar</button>
       </div>
+
+      <!-- Sidebar bottom (collapsed) -->
       <div class="sidebar-bottom-collapsed" v-else>
+        <div class="notif-area">
+          <button class="btn-bell-icon" @click.stop="toggleNotifPanel" title="Notifikasi">
+            🔔
+            <span v-if="notif.count > 0" class="bell-badge-sm">{{ notif.count > 9 ? '9+' : notif.count }}</span>
+          </button>
+          <div v-if="showNotifPanel" class="notif-panel notif-panel-side" @click.stop>
+            <div class="notif-panel-header">
+              <span class="np-title">Notifikasi</span>
+              <button v-if="notif.count > 0" class="np-read-all" @click="notif.markAllRead()">Baca Semua</button>
+            </div>
+            <div v-if="notif.loading" class="np-empty">Memuat...</div>
+            <div v-else-if="!notif.notifications.length" class="np-empty">Belum ada notifikasi</div>
+            <div v-else class="np-list">
+              <div
+                v-for="n in notif.notifications" :key="n.id_notif"
+                :class="['np-item', { unread: !n.is_read }]"
+                @click="goNotif(n)"
+              >
+                <div class="np-icon">{{ TIPE_ICON[n.tipe] || '🔔' }}</div>
+                <div class="np-body">
+                  <div class="np-judul">{{ n.judul }}</div>
+                  <div class="np-desc" v-if="n.deskripsi">{{ n.deskripsi }}</div>
+                  <div class="np-time">{{ fmtTime(n.created_at) }}</div>
+                </div>
+                <div v-if="!n.is_read" class="np-dot"></div>
+              </div>
+            </div>
+          </div>
+        </div>
         <button class="btn-logout-icon" @click="logout" title="Keluar">🚪</button>
       </div>
     </aside>
@@ -87,6 +195,22 @@ const menu = computed(() =>
     <main class="main-content">
       <RouterView />
     </main>
+
+    <!-- Toast container -->
+    <div class="toast-container">
+      <div
+        v-for="toast in notif.toasts" :key="toast.id"
+        class="toast"
+        @click="notif.dismissToast(toast.id); toast.url && router.push(toast.url)"
+      >
+        <div class="toast-icon">🔔</div>
+        <div class="toast-body">
+          <div class="toast-title">{{ toast.judul }}</div>
+          <div class="toast-desc" v-if="toast.deskripsi">{{ toast.deskripsi }}</div>
+        </div>
+        <button class="toast-close" @click.stop="notif.dismissToast(toast.id)">×</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -125,10 +249,30 @@ const menu = computed(() =>
 .nav-icon { font-size: 16px; flex-shrink: 0; width: 22px; text-align: center; }
 .nav-label { display: flex; align-items: center; gap: 6px; }
 .soon-tag { background: rgba(255,255,255,0.15); color: #94a3b8; font-size: 10px; padding: 1px 6px; border-radius: 4px; }
-.sidebar-bottom { padding: 12px; border-top: 1px solid rgba(255,255,255,0.08); }
+
+/* Sidebar bottom */
+.sidebar-bottom { padding: 12px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 8px; }
+
+/* Bell */
+.notif-area { position: relative; }
+.btn-bell {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.06); border: none; border-radius: 8px;
+  padding: 8px 10px; color: #cbd5e1; cursor: pointer; font-size: 13px; font-weight: 500;
+  transition: background 0.15s;
+}
+.btn-bell:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.bell-icon { font-size: 16px; }
+.bell-label { flex: 1; text-align: left; }
+.bell-badge {
+  background: #ef4444; color: #fff; font-size: 10px; font-weight: 700;
+  border-radius: 10px; padding: 1px 6px; min-width: 20px; text-align: center;
+}
+
+/* User */
 .user-chip {
   display: flex; align-items: center; gap: 10px; padding: 8px;
-  border-radius: 8px; background: rgba(255,255,255,0.05); margin-bottom: 8px; overflow: hidden;
+  border-radius: 8px; background: rgba(255,255,255,0.05); overflow: hidden;
 }
 .user-avatar {
   width: 32px; height: 32px; flex-shrink: 0; background: #1e40af; border-radius: 50%;
@@ -139,7 +283,87 @@ const menu = computed(() =>
 .user-role { font-size: 11px; color: #64748b; }
 .btn-logout { width: 100%; padding: 7px; background: rgba(239,68,68,0.15); color: #ef4444; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-logout:hover { background: rgba(239,68,68,0.25); }
-.sidebar-bottom-collapsed { padding: 12px 8px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: center; }
+
+/* Collapsed */
+.sidebar-bottom-collapsed {
+  padding: 12px 8px; border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.btn-bell-icon {
+  position: relative; background: none; border: none; font-size: 18px; cursor: pointer;
+  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; transition: background 0.15s; color: #94a3b8;
+}
+.btn-bell-icon:hover { background: rgba(255,255,255,0.08); }
+.bell-badge-sm {
+  position: absolute; top: 2px; right: 2px;
+  background: #ef4444; color: #fff; font-size: 9px; font-weight: 700;
+  border-radius: 8px; padding: 1px 4px; min-width: 16px; text-align: center;
+}
 .btn-logout-icon { background: none; border: none; font-size: 18px; cursor: pointer; }
+
+/* Notification panel */
+.notif-panel {
+  position: absolute; bottom: calc(100% + 6px); left: 0; right: 0;
+  background: #fff; border-radius: 12px;
+  box-shadow: 0 -4px 30px rgba(0,0,0,0.2), 0 8px 20px rgba(0,0,0,0.1);
+  z-index: 200; overflow: hidden; min-width: 300px;
+}
+.notif-panel-side {
+  left: 64px; bottom: 0; right: auto; width: 300px;
+}
+.notif-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid #f1f5f9;
+}
+.np-title { font-size: 14px; font-weight: 700; color: #0f172a; }
+.np-read-all { background: none; border: none; font-size: 12px; color: #3b82f6; font-weight: 600; cursor: pointer; padding: 0; }
+.np-read-all:hover { text-decoration: underline; }
+.np-empty { padding: 24px 14px; text-align: center; font-size: 13px; color: #94a3b8; }
+.np-list { max-height: 360px; overflow-y: auto; }
+.np-item {
+  display: flex; align-items: flex-start; gap: 10px; padding: 11px 14px;
+  border-bottom: 1px solid #f8fafc; cursor: pointer; transition: background 0.1s; position: relative;
+}
+.np-item:last-child { border-bottom: none; }
+.np-item:hover { background: #f8fafc; }
+.np-item.unread { background: #eff6ff; }
+.np-item.unread:hover { background: #dbeafe; }
+.np-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.np-body { flex: 1; min-width: 0; }
+.np-judul { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.4; }
+.np-desc { font-size: 12px; color: #64748b; margin-top: 2px; }
+.np-time { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+.np-dot { width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; margin-top: 5px; }
+
+/* Main content */
 .main-content { flex: 1; min-width: 0; overflow-y: auto; }
+
+/* Toast */
+.toast-container {
+  position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+}
+.toast {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: #fff; border-radius: 12px; padding: 14px 16px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15); border-left: 4px solid #3b82f6;
+  min-width: 280px; max-width: 360px; pointer-events: all; cursor: pointer;
+  animation: slideIn 0.3s ease;
+}
+.toast:hover { box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+.toast-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.toast-body { flex: 1; min-width: 0; }
+.toast-title { font-size: 13px; font-weight: 700; color: #0f172a; }
+.toast-desc { font-size: 12px; color: #64748b; margin-top: 2px; }
+.toast-close {
+  background: none; border: none; color: #94a3b8; cursor: pointer;
+  font-size: 20px; padding: 0; flex-shrink: 0; line-height: 1;
+}
+.toast-close:hover { color: #374151; }
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
 </style>

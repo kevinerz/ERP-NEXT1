@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/lead.dto';
 import { CreateOpportunityDto, UpdateOpportunityDto } from './dto/opportunity.dto';
 import { CreateQuotationDto, UpdateQuotationDto, ApproveQuotationDto } from './dto/quotation.dto';
@@ -17,7 +18,10 @@ const OPP_INCLUDE = {
 
 @Injectable()
 export class SalesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifService: NotificationsService,
+  ) {}
 
   // ─── PIPELINE SUMMARY ───────────────────────────────────────
   async getPipeline() {
@@ -243,6 +247,14 @@ export class SalesService {
         updated_at: new Date(),
       },
     });
+    // Notifikasi sales — ada quotation baru menunggu approval
+    this.notifService.notifyForModul('sales', {
+      tipe: 'quotation_approval',
+      judul: `Quotation Menunggu Approval`,
+      deskripsi: `${nomor_quotation} perlu disetujui`,
+      url: `/sales/quotation/${data.id_quotation}`,
+    }).catch(() => {});
+
     return { data, message: `Quotation ${nomor_quotation} dibuat` };
   }
 
