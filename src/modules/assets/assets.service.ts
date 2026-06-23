@@ -181,22 +181,25 @@ export class AssetsService {
 
   // ─── SIM TOPUP ────────────────────────────────────────────────
 
+  /** Daftar SIM: dari SumberInternetSite (semua link internet per site) */
   async getSimCards(query: { search?: string; id_site?: string }) {
-    const where: any = { kategori: 'SIM_Card' };
+    const where: any = {};
+    if (query.id_site) where.id_site = Number(query.id_site);
     if (query.search) {
       where.OR = [
-        { nama_perangkat: { contains: query.search } },
-        { serial_number: { contains: query.search } },
-        { kode_aset: { contains: query.search } },
+        { nomor_pelanggan_isp: { contains: query.search } },
+        { site: { nama_site: { contains: query.search } } },
+        { vendor: { nama_vendor: { contains: query.search } } },
       ];
     }
-    if (query.id_site) where.id_site = Number(query.id_site);
 
-    const data = await this.prisma.gudangAset.findMany({
+    const data = await this.prisma.sumberInternetSite.findMany({
       where,
-      orderBy: { nama_perangkat: 'asc' },
+      orderBy: { created_at: 'desc' },
       include: {
         site: { select: { id_site: true, kode_site: true, nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
+        vendor: { select: { id_vendor: true, nama_vendor: true, tipe_vendor: true } },
+        aset_sim: { select: { kode_aset: true, serial_number: true } },
         _count: { select: { topup: true } },
       },
     });
@@ -204,7 +207,7 @@ export class AssetsService {
   }
 
   async findAllTopup(query: {
-    id_aset_sim?: string; id_site?: string;
+    id_sumber?: string; id_site?: string;
     tgl_dari?: string; tgl_sampai?: string;
     page?: number; limit?: number;
   }) {
@@ -213,7 +216,7 @@ export class AssetsService {
     const skip = (page - 1) * limit;
     const where: any = {};
 
-    if (query.id_aset_sim) where.id_aset_sim = Number(query.id_aset_sim);
+    if (query.id_sumber) where.id_sumber = Number(query.id_sumber);
     if (query.id_site) where.id_site = Number(query.id_site);
     if (query.tgl_dari || query.tgl_sampai) {
       where.tgl_topup = {};
@@ -221,50 +224,53 @@ export class AssetsService {
       if (query.tgl_sampai) where.tgl_topup.lte = new Date(query.tgl_sampai + 'T23:59:59');
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total, agg] = await Promise.all([
       this.prisma.simTopup.findMany({
         where, skip, take: limit,
         orderBy: { tgl_topup: 'desc' },
         include: {
-          aset_sim: { select: { kode_aset: true, nama_perangkat: true, serial_number: true } },
+          sumber: { include: { vendor: { select: { nama_vendor: true } } } },
           site: { select: { kode_site: true, nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
           user: { include: { karyawan: { select: { nama_lengkap: true } } } },
         },
       }),
       this.prisma.simTopup.count({ where }),
+      this.prisma.simTopup.aggregate({ _sum: { nominal: true }, where }),
     ]);
-
-    const totalNominal = await this.prisma.simTopup.aggregate({
-      _sum: { nominal: true },
-      where,
-    });
 
     return {
       data,
       meta: {
         total, page, limit,
         total_pages: Math.ceil(total / limit),
-        total_nominal: Number(totalNominal._sum.nominal) || 0,
+        total_nominal: Number(agg._sum.nominal) || 0,
       },
     };
   }
 
   async createTopup(dto: {
-    id_aset_sim: number; id_site: number; jenis_topup: string;
+    id_sumber: number; jenis_topup: string;
     nominal: number; tgl_topup: string; keterangan?: string;
   }, userId?: number) {
-    const sim = await this.prisma.gudangAset.findUnique({ where: { id_aset: dto.id_aset_sim } });
-    if (!sim) throw new NotFoundException('SIM card tidak ditemukan');
+    const sumber = await this.prisma.sumberInternetSite.findUnique({
+      where: { id_sumber: dto.id_sumber },
+      select: { id_site: true, id_aset_sim: true },
+    });
+    if (!sumber) throw new NotFoundException('Sumber internet tidak ditemukan');
 
     const data = await this.prisma.simTopup.create({
       data: {
-        ...dto,
+        id_sumber: dto.id_sumber,
+        id_aset_sim: sumber.id_aset_sim ?? undefined,
+        id_site: sumber.id_site,
+        jenis_topup: dto.jenis_topup,
         nominal: dto.nominal,
         tgl_topup: new Date(dto.tgl_topup),
+        keterangan: dto.keterangan,
         id_user: userId || null,
       },
       include: {
-        aset_sim: { select: { kode_aset: true, nama_perangkat: true } },
+        sumber: { include: { vendor: { select: { nama_vendor: true } } } },
         site: { select: { kode_site: true, nama_site: true } },
         user: { include: { karyawan: { select: { nama_lengkap: true } } } },
       },

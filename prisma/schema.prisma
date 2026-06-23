@@ -266,6 +266,7 @@ model SumberInternetSite {
   site      SitePelanggan  @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
   vendor    MasterVendorIsp @relation(fields: [id_vendor_isp], references: [id_vendor])
   aset_sim  GudangAset?    @relation(fields: [id_aset_sim], references: [id_aset])
+  topup     SimTopup[]
 
   @@map("sumber_internet_site")
 }
@@ -632,7 +633,8 @@ model GudangMutasiAset {
 
 model SimTopup {
   id_topup    Int      @id @default(autoincrement())
-  id_aset_sim Int
+  id_sumber   Int?
+  id_aset_sim Int?
   id_site     Int
   jenis_topup String   @db.VarChar(30)
   nominal     Decimal  @db.Decimal(12, 2)
@@ -641,9 +643,10 @@ model SimTopup {
   keterangan  String?  @db.VarChar(255)
   created_at  DateTime @default(now())
 
-  aset_sim GudangAset    @relation(fields: [id_aset_sim], references: [id_aset])
-  site     SitePelanggan @relation(fields: [id_site], references: [id_site])
-  user     CoreUser?     @relation(fields: [id_user], references: [id_user])
+  sumber   SumberInternetSite? @relation(fields: [id_sumber], references: [id_sumber])
+  aset_sim GudangAset?         @relation(fields: [id_aset_sim], references: [id_aset])
+  site     SitePelanggan       @relation(fields: [id_site], references: [id_site])
+  user     CoreUser?           @relation(fields: [id_user], references: [id_user])
 
   @@map("sim_topup")
 }
