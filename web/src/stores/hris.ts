@@ -96,6 +96,11 @@ export const useHrisStore = defineStore('hris', {
       return data.data
     },
 
+    async updateUserRoles(id: number, role_ids: number[]) {
+      const { data } = await api.patch(`/hris/karyawan/${id}/user/roles`, { role_ids })
+      return data.data
+    },
+
     async toggleUserStatus(id: number) {
       const { data } = await api.patch(`/hris/karyawan/${id}/user/toggle-status`)
       return data.data

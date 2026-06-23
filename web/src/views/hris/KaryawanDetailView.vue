@@ -10,6 +10,8 @@ const hris = useHrisStore()
 const id = Number(route.params.id)
 const showCreateUser = ref(false)
 const showResetPw = ref(false)
+const showEditRoles = ref(false)
+const editRoleIds = ref<number[]>([])
 
 const userForm = ref({ username: '', password: '', role_ids: [] as number[] })
 const newPassword = ref('')
@@ -73,6 +75,31 @@ async function handleResetPw() {
     setTimeout(() => actionSuccess.value = '', 3000)
   } catch (e: any) {
     actionError.value = e.response?.data?.message || 'Gagal reset password'
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+function openEditRoles() {
+  editRoleIds.value = hris.current?.user?.user_roles.map(ur => ur.role.id_role) ?? []
+  showEditRoles.value = true
+}
+
+async function handleEditRoles() {
+  if (!editRoleIds.value.length) {
+    actionError.value = 'Pilih minimal satu role'
+    return
+  }
+  actionLoading.value = true
+  actionError.value = ''
+  try {
+    await hris.updateUserRoles(id, editRoleIds.value)
+    await hris.fetchOne(id)
+    showEditRoles.value = false
+    actionSuccess.value = 'Role berhasil diperbarui'
+    setTimeout(() => actionSuccess.value = '', 3000)
+  } catch (e: any) {
+    actionError.value = e.response?.data?.message || 'Gagal update role'
   } finally {
     actionLoading.value = false
   }
@@ -187,6 +214,7 @@ async function handleToggleUserStatus() {
           </div>
         </div>
         <div class="user-actions">
+          <button class="btn-secondary" @click="openEditRoles">Edit Role</button>
           <button class="btn-secondary" @click="showResetPw = true">Reset Password</button>
           <button
             :class="hris.current.user.is_aktif ? 'btn-danger' : 'btn-success'"
@@ -245,6 +273,31 @@ async function handleToggleUserStatus() {
           <button class="btn-cancel" @click="showResetPw = false">Batal</button>
           <button class="btn-submit" @click="handleResetPw" :disabled="actionLoading">
             {{ actionLoading ? 'Menyimpan...' : 'Reset' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <!-- Modal: Edit Role -->
+    <div v-if="showEditRoles" class="modal-overlay" @click.self="showEditRoles = false">
+      <div class="modal">
+        <h3>Edit Role Akun</h3>
+        <p class="modal-sub">Username: <strong>{{ hris.current.user?.username }}</strong></p>
+        <div class="field">
+          <label>Role (pilih satu atau lebih)</label>
+          <div class="role-list">
+            <label v-for="r in hris.roles" :key="r.id_role" class="role-item">
+              <input type="checkbox" :value="r.id_role" v-model="editRoleIds" />
+              {{ r.nama_role }}
+              <span class="role-desc">{{ r.deskripsi }}</span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showEditRoles = false">Batal</button>
+          <button class="btn-submit" @click="handleEditRoles" :disabled="actionLoading">
+            {{ actionLoading ? 'Menyimpan...' : 'Simpan Role' }}
           </button>
         </div>
       </div>
@@ -337,7 +390,8 @@ async function handleToggleUserStatus() {
   padding: 32px; width: 100%; max-width: 440px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.3);
 }
-.modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
+.modal h3 { margin: 0 0 4px; font-size: 18px; color: #0f172a; }
+.modal-sub { margin: 0 0 20px; font-size: 13px; color: #64748b; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .field label { font-size: 13px; font-weight: 600; color: #374151; }
 .field input { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
