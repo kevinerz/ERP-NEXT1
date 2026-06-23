@@ -43,9 +43,9 @@ export class AdminService {
         is_aktif: u.is_aktif,
         last_login: u.last_login,
         created_at: u.created_at,
-        nama_lengkap: u.karyawan.nama_lengkap,
-        jabatan: u.karyawan.jabatan,
-        departemen: u.karyawan.departemen,
+        nama_lengkap: u.karyawan?.nama_lengkap ?? '',
+        jabatan: u.karyawan?.jabatan ?? '',
+        departemen: u.karyawan?.departemen ?? '',
         roles: u.user_roles.map((ur) => ur.role.nama_role),
         modul_akses: u.modul_akses ? JSON.parse(u.modul_akses) : [],
       })),
@@ -94,7 +94,8 @@ export class AdminService {
       },
       include: { karyawan: { select: { nama_lengkap: true, jabatan: true, departemen: true } } },
     });
-    return { data: { ...user, modul_akses: moduls }, message: `User ${user.username} dibuat` };
+    const { password_hash: _, ...safeUser } = user;
+    return { data: { ...safeUser, modul_akses: moduls }, message: `User ${user.username} dibuat` };
   }
 
   // ─── Activity Log ─────────────────────────────────────────────

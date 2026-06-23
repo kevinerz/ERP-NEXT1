@@ -271,6 +271,7 @@ export class MasterService {
     const data = await this.prisma.pelanggan.findMany({
       select: { id_pelanggan: true, kode_pelanggan: true, nama_pelanggan: true },
       orderBy: { nama_pelanggan: 'asc' },
+      take: 500,
     });
     return { data };
   }
@@ -280,6 +281,7 @@ export class MasterService {
       where: { is_aktif: true },
       select: { id_vendor: true, nama_vendor: true, tipe_vendor: true },
       orderBy: { nama_vendor: 'asc' },
+      take: 500,
     });
     return { data };
   }

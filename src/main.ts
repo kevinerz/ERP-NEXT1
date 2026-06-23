@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt.guard';
+import { RolesGuard } from './common/guards/roles.guard';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -26,18 +27,19 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new ResponseInterceptor());
 
-  // Global JWT guard — semua route butuh token kecuali yang @Public()
+  // Global JWT guard + RolesGuard — semua route butuh token kecuali yang @Public()
   const reflector = app.get(Reflector);
-  app.useGlobalGuards(new JwtAuthGuard(reflector));
+  app.useGlobalGuards(new JwtAuthGuard(reflector), new RolesGuard(reflector));
 
   // Serve Vue 3 SPA dari folder public/
   app.useStaticAssets(join(__dirname, '..', 'public'));
   app.setBaseViewsDir(join(__dirname, '..', 'public'));
 
-  // CORS (untuk development — di production dihandle Nginx/Hostinger)
-  if (process.env.NODE_ENV !== 'production') {
-    app.enableCors({ origin: 'http://localhost:5173' });
-  }
+  // CORS — selalu aktif dengan allowlist dari env (fallback ke localhost dev)
+  const corsOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : ['http://localhost:5173'];
+  app.enableCors({ origin: corsOrigins, credentials: true });
 
   const port = process.env.PORT || 3000;
   await app.listen(port);

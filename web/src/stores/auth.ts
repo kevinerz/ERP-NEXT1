@@ -37,9 +37,22 @@ export const useAuthStore = defineStore('auth', {
 
   actions: {
     init() {
+      // Gunakan localStorage hanya sebagai placeholder awal
       const saved = localStorage.getItem('user')
       if (saved) {
         try { this.user = JSON.parse(saved) } catch { /* ignore */ }
+      }
+      // Verifikasi ke server jika ada token
+      if (localStorage.getItem('access_token')) {
+        api.get('/auth/me').then(({ data }) => {
+          this.user = data.data
+          localStorage.setItem('user', JSON.stringify(data.data))
+        }).catch(() => {
+          this.user = null
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          localStorage.removeItem('user')
+        })
       }
     },
 

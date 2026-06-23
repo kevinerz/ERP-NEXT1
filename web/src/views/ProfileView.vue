@@ -235,7 +235,7 @@ async function fetchProfile() {
     form.value.email = profile.value?.email || ''
     form.value.no_hp = profile.value?.no_hp || ''
   } catch (e) {
-    console.error('[Profile] fetchProfile error:', e)
+    console.error('[Profile] fetchProfile error:', (e as any)?.message ?? 'unknown')
   }
 }
 

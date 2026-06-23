@@ -1,4 +1,5 @@
 import axios from 'axios'
+import router from '@/router'
 
 const api = axios.create({
   baseURL: '/api',
@@ -30,10 +31,11 @@ api.interceptors.response.use(
         original.headers.Authorization = `Bearer ${newToken}`
         return api(original)
       } catch {
-        // Refresh gagal — hapus token, biarkan komponen/guard handle
+        // Refresh gagal — hapus semua state dan paksa ke login
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
         localStorage.removeItem('user')
+        router.push('/login')
       }
     }
     return Promise.reject(err)

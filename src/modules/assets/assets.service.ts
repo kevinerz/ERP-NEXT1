@@ -18,7 +18,7 @@ export class AssetsService {
     status_aset?: string; page?: number; limit?: number;
   }) {
     const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
+    const limit = Math.min(Number(query.limit) || 20, 200);
     const skip = (page - 1) * limit;
     const where: any = {};
 
@@ -71,7 +71,7 @@ export class AssetsService {
       where: { kode_aset: { startsWith: prefix } },
       orderBy: { kode_aset: 'desc' },
     });
-    const seq = last ? parseInt(last.kode_aset.split('-')[2]) + 1 : 1;
+    const seq = last ? (parseInt(last.kode_aset.split('-')[2], 10) || 0) + 1 : 1;
     const kode_aset = `${prefix}-${String(seq).padStart(4, '0')}`;
 
     if (dto.serial_number) {
@@ -118,40 +118,41 @@ export class AssetsService {
   }
 
   async createMutasi(dto: CreateMutasiDto, userId?: number) {
-    const aset = await this.prisma.gudangAset.findUnique({ where: { id_aset: dto.id_aset } });
-    if (!aset) throw new NotFoundException('Aset tidak ditemukan');
+    const mutasi = await this.prisma.$transaction(async (tx) => {
+      const aset = await tx.gudangAset.findUnique({ where: { id_aset: dto.id_aset } });
+      if (!aset) throw new NotFoundException('Aset tidak ditemukan');
 
-    const jumlah = dto.jumlah ?? 1;
-    let newStatus = aset.status_aset;
-    let newStok = aset.stok_jumlah;
+      const jumlah = dto.jumlah ?? 1;
+      let newStatus = aset.status_aset;
+      let newStok = aset.stok_jumlah;
 
-    // Update status & stok berdasarkan jenis mutasi
-    if (dto.jenis_mutasi === 'Deploy' || dto.jenis_mutasi === 'Keluar') {
-      newStatus = dto.jenis_mutasi === 'Deploy' ? 'Terpasang' : aset.status_aset;
-      newStok = Math.max(0, aset.stok_jumlah - jumlah);
-    } else if (dto.jenis_mutasi === 'Return' || dto.jenis_mutasi === 'Masuk') {
-      newStatus = 'Di_Gudang';
-      newStok = aset.stok_jumlah + jumlah;
-    } else if (dto.jenis_mutasi === 'Pinjam') {
-      newStatus = 'Dipinjam';
-    } else if (dto.jenis_mutasi === 'Rusak') {
-      newStatus = 'Rusak';
-    } else if (dto.jenis_mutasi === 'Disposed') {
-      newStatus = 'Disposed';
-    }
+      if (dto.jenis_mutasi === 'Deploy' || dto.jenis_mutasi === 'Keluar') {
+        newStatus = dto.jenis_mutasi === 'Deploy' ? 'Terpasang' : aset.status_aset;
+        newStok = Math.max(0, aset.stok_jumlah - jumlah);
+      } else if (dto.jenis_mutasi === 'Return' || dto.jenis_mutasi === 'Masuk') {
+        newStatus = 'Di_Gudang';
+        newStok = aset.stok_jumlah + jumlah;
+      } else if (dto.jenis_mutasi === 'Pinjam') {
+        newStatus = 'Dipinjam';
+      } else if (dto.jenis_mutasi === 'Rusak') {
+        newStatus = 'Rusak';
+      } else if (dto.jenis_mutasi === 'Disposed') {
+        newStatus = 'Disposed';
+      }
 
-    await this.prisma.gudangAset.update({
-      where: { id_aset: dto.id_aset },
-      data: {
-        status_aset: newStatus,
-        stok_jumlah: newStok,
-        id_site: dto.id_site_tujuan ?? (dto.jenis_mutasi === 'Return' ? null : aset.id_site),
-      },
-    });
+      await tx.gudangAset.update({
+        where: { id_aset: dto.id_aset },
+        data: {
+          status_aset: newStatus,
+          stok_jumlah: newStok,
+          id_site: dto.id_site_tujuan ?? (dto.jenis_mutasi === 'Return' ? null : aset.id_site),
+        },
+      });
 
-    const mutasi = await this.prisma.gudangMutasiAset.create({
-      data: { ...dto, jumlah, id_user: userId || null },
-      include: { user: { include: { karyawan: { select: { nama_lengkap: true } } } } },
+      return tx.gudangMutasiAset.create({
+        data: { ...dto, jumlah, id_user: userId || null },
+        include: { user: { include: { karyawan: { select: { nama_lengkap: true } } } } },
+      });
     });
 
     return { data: mutasi, message: 'Mutasi aset dicatat' };
@@ -218,7 +219,7 @@ export class AssetsService {
     page?: number; limit?: number;
   }) {
     const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 25;
+    const limit = Math.min(Number(query.limit) || 25, 200);
     const skip = (page - 1) * limit;
     const where: any = {};
 

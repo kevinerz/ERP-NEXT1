@@ -1,4 +1,4 @@
-import { IsString, IsArray, MinLength, MaxLength, ArrayNotEmpty } from 'class-validator';
+import { IsString, IsArray, MinLength, MaxLength, ArrayNotEmpty, IsInt, ArrayMaxSize } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -11,5 +11,7 @@ export class CreateUserDto {
 
   @IsArray()
   @ArrayNotEmpty()
+  @ArrayMaxSize(20)
+  @IsInt({ each: true })
   role_ids: number[];
 }

@@ -138,10 +138,10 @@ export class OperationsService {
 
     const updateData: any = { ...dto, updated_at: new Date() };
 
-    if (dto.status_tiket === 'Resolved' && !ticket.tgl_resolved) {
+    if (dto.status_tiket === 'Resolved') {
       updateData.tgl_resolved = new Date();
     }
-    if (dto.status_tiket === 'Closed' && !ticket.tgl_closed) {
+    if (dto.status_tiket === 'Closed') {
       updateData.tgl_closed = new Date();
     }
 
@@ -179,13 +179,11 @@ export class OperationsService {
     const ticket = await this.prisma.operationTicket.findUnique({ where: { id_ticket: dto.id_ticket } });
     if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
 
-    const currentTicket = await this.prisma.operationTicket.findUnique({ where: { id_ticket: dto.id_ticket }, select: { status_tiket: true } });
-
     const log = await this.prisma.operationTicketLog.create({
       data: {
         id_ticket: dto.id_ticket,
         id_user: userId || null,
-        status_dari: dto.status_ke ? (currentTicket?.status_tiket || null) : null,
+        status_dari: dto.status_ke ? (ticket.status_tiket || null) : null,
         status_ke: dto.status_ke || null,
         catatan: dto.catatan || null,
       },

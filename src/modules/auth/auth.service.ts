@@ -33,6 +33,7 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('Username atau password salah');
     if (!user.is_aktif) throw new UnauthorizedException('Akun tidak aktif');
+    if (!user.karyawan) throw new UnauthorizedException('Akun tidak memiliki data karyawan');
 
     const passwordMatch = await bcrypt.compare(dto.password, user.password_hash);
     if (!passwordMatch) {
@@ -109,7 +110,7 @@ export class AuthService {
   async refresh(dto: RefreshTokenDto) {
     try {
       const payload = this.jwt.verify<JwtPayload>(dto.refresh_token, {
-        secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+        secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
       });
 
       const user = await this.prisma.coreUser.findUnique({
@@ -128,8 +129,13 @@ export class AuthService {
       };
 
       return { access_token: await this.generateAccessToken(newPayload) };
-    } catch {
-      throw new UnauthorizedException('Refresh token tidak valid atau expired');
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      const name = (err as any)?.name;
+      if (name === 'JsonWebTokenError' || name === 'TokenExpiredError' || name === 'NotBeforeError') {
+        throw new UnauthorizedException('Refresh token tidak valid atau expired');
+      }
+      throw err;
     }
   }
 
@@ -144,6 +150,7 @@ export class AuthService {
       },
     });
     if (!user) throw new NotFoundException('User tidak ditemukan');
+    if (!user.karyawan) throw new NotFoundException('Data karyawan tidak ditemukan');
 
     const roles = user.user_roles.map((ur) => ur.role.nama_role);
     let modul_akses: string[] = [];
@@ -217,14 +224,14 @@ export class AuthService {
 
   private async generateAccessToken(payload: JwtPayload): Promise<string> {
     return this.jwt.signAsync(payload, {
-      secret: this.config.get<string>('JWT_SECRET'),
+      secret: this.config.getOrThrow<string>('JWT_SECRET'),
       expiresIn: this.config.get<string>('JWT_EXPIRES_IN') || '8h',
     });
   }
 
   private async generateRefreshToken(payload: JwtPayload): Promise<string> {
     return this.jwt.signAsync(payload, {
-      secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+      secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
       expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d',
     });
   }

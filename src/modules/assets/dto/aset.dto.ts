@@ -1,4 +1,23 @@
-import { IsString, IsOptional, IsInt, IsBoolean, IsNumber, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsBoolean, IsNumber, IsDateString, Min } from 'class-validator';
+
+export class CreateSimTopupDto {
+  @IsInt()
+  id_sumber: number;
+
+  @IsString()
+  jenis_topup: string;
+
+  @IsNumber()
+  @Min(0)
+  nominal: number;
+
+  @IsDateString()
+  tgl_topup: string;
+
+  @IsOptional()
+  @IsString()
+  keterangan?: string;
+}
 
 export class CreateAsetDto {
   @IsString() nama_perangkat: string;

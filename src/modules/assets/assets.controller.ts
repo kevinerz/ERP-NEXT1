@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, Req, ParseIntPipe } from '@nestjs/common';
 import { AssetsService } from './assets.service';
-import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto } from './dto/aset.dto';
+import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto, CreateSimTopupDto } from './dto/aset.dto';
 
 @Controller('assets')
 export class AssetsController {
@@ -42,7 +42,7 @@ export class AssetsController {
   findAllTopup(@Query() q: any) { return this.svc.findAllTopup(q); }
 
   @Post('sim-topup')
-  createTopup(@Body() dto: any, @Req() req: any) {
+  createTopup(@Body() dto: CreateSimTopupDto, @Req() req: any) {
     return this.svc.createTopup(dto, req.user?.id_user);
   }
 }

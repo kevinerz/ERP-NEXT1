@@ -2,6 +2,8 @@ import { Controller, Post, Get, Patch, Body, Req, UseGuards } from '@nestjs/comm
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt.guard';
@@ -43,7 +45,7 @@ export class AuthController {
   // PATCH /api/auth/me — update no_hp & email
   @UseGuards(JwtAuthGuard)
   @Patch('me')
-  updateMe(@CurrentUser() user: any, @Body() dto: { no_hp?: string; email?: string }) {
+  updateMe(@CurrentUser() user: any, @Body() dto: UpdateMeDto) {
     return this.authService.updateMe(user.id_user, dto);
   }
 
@@ -52,7 +54,7 @@ export class AuthController {
   @Post('change-password')
   changePassword(
     @CurrentUser() user: any,
-    @Body() dto: { password_lama: string; password_baru: string; konfirmasi: string },
+    @Body() dto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(user.id_user, dto);
   }

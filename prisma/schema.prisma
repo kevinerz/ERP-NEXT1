@@ -198,7 +198,7 @@ model GudangAset {
   catatan         String?   @db.Text
   created_at      DateTime  @default(now())
 
-  site               SitePelanggan?      @relation(fields: [id_site], references: [id_site])
+  site               SitePelanggan?      @relation(fields: [id_site], references: [id_site], onDelete: SetNull)
   perangkat          PerangkatSite[]
   sumber_internet    SumberInternetSite?
   mutasi             GudangMutasiAset[]
@@ -227,7 +227,7 @@ model PerangkatSite {
   created_at       DateTime  @default(now())
 
   site    SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
-  aset    GudangAset?   @relation(fields: [id_aset], references: [id_aset])
+  aset    GudangAset?   @relation(fields: [id_aset], references: [id_aset], onDelete: SetNull)
   tickets OperationTicket[]
 
   @@map("perangkat_site")
@@ -441,6 +441,8 @@ model OperationTicket {
   rcms_webhooks   IntegrationRcmsWebhook[]
   ruijie_webhooks IntegrationRuijieWebhook[]
 
+  @@index([status_tiket])
+  @@index([status_tiket, tgl_open])
   @@map("operation_tickets")
 }
 
@@ -540,7 +542,7 @@ model PengirimanPerangkat {
   catatan                 String?   @db.Text
   created_at              DateTime  @default(now())
 
-  wo    WorkOrder        @relation(fields: [id_wo], references: [id_wo])
+  wo    WorkOrder        @relation(fields: [id_wo], references: [id_wo], onDelete: Cascade)
   items PengirimanItem[]
 
   @@map("pengiriman_perangkat")
@@ -648,6 +650,7 @@ model SimTopup {
   site     SitePelanggan       @relation(fields: [id_site], references: [id_site])
   user     CoreUser?           @relation(fields: [id_user], references: [id_user])
 
+  @@index([tgl_topup])
   @@map("sim_topup")
 }
 

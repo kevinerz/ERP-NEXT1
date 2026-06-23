@@ -181,10 +181,12 @@ export class HrisService {
 
     const id_user = karyawan.user.id_user;
 
-    // Replace semua roles
-    await this.prisma.coreUserRole.deleteMany({ where: { id_user } });
-    await this.prisma.coreUserRole.createMany({
-      data: role_ids.map((id_role) => ({ id_user, id_role })),
+    // Replace semua roles dalam satu transaction
+    await this.prisma.$transaction(async (tx) => {
+      await tx.coreUserRole.deleteMany({ where: { id_user } });
+      await tx.coreUserRole.createMany({
+        data: role_ids.map((id_role) => ({ id_user, id_role })),
+      });
     });
 
     return this.prisma.coreUser.findUnique({
