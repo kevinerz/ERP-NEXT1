@@ -1,18 +1,17 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Body,
-  Param,
-  Query,
-  ParseIntPipe,
+  Controller, Get, Post, Patch, Delete,
+  Body, Param, Query, ParseIntPipe,
 } from '@nestjs/common';
 import { MasterService } from './master.service';
 import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
 import { CreatePelangganDto, UpdatePelangganDto } from './dto/pelanggan.dto';
 import { CreateSiteDto, UpdateSiteDto } from './dto/site.dto';
+import {
+  CreateSumberInternetDto, UpdateSumberInternetDto,
+  CreatePerangkatDto, UpdatePerangkatDto,
+  CreatePicDto, UpdatePicDto,
+} from './dto/site-detail.dto';
 
 @Controller('master')
 export class MasterController {
@@ -114,20 +113,63 @@ export class MasterController {
     return this.masterService.updatePelanggan(id, dto);
   }
 
+  // ─── VENDOR DROPDOWN ─────────────────────────────────────────
+
+  @Get('vendor-dropdown')
+  getVendorDropdown() { return this.masterService.getVendorDropdown(); }
+
   // ─── SITE PELANGGAN ─────────────────────────────────────────
 
   @Get('site')
-  findAllSite(@Query() q: { search?: string; id_pelanggan?: string; page?: number; limit?: number }) {
-    return this.masterService.findAllSite(q);
-  }
+  findAllSite(@Query() q: any) { return this.masterService.findAllSite(q); }
+
+  @Get('site/:id')
+  findOneSite(@Param('id', ParseIntPipe) id: number) { return this.masterService.findOneSite(id); }
 
   @Post('site')
-  createSite(@Body() dto: CreateSiteDto) {
-    return this.masterService.createSite(dto);
-  }
+  createSite(@Body() dto: CreateSiteDto) { return this.masterService.createSite(dto); }
 
   @Patch('site/:id')
   updateSite(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateSiteDto) {
     return this.masterService.updateSite(id, dto);
   }
+
+  // ─── SUMBER INTERNET ─────────────────────────────────────────
+
+  @Post('sumber-internet')
+  createSumber(@Body() dto: CreateSumberInternetDto) { return this.masterService.createSumberInternet(dto); }
+
+  @Patch('sumber-internet/:id')
+  updateSumber(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateSumberInternetDto) {
+    return this.masterService.updateSumberInternet(id, dto);
+  }
+
+  @Delete('sumber-internet/:id')
+  deleteSumber(@Param('id', ParseIntPipe) id: number) { return this.masterService.deleteSumberInternet(id); }
+
+  // ─── PERANGKAT SITE ──────────────────────────────────────────
+
+  @Post('perangkat')
+  createPerangkat(@Body() dto: CreatePerangkatDto) { return this.masterService.createPerangkat(dto); }
+
+  @Patch('perangkat/:id')
+  updatePerangkat(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePerangkatDto) {
+    return this.masterService.updatePerangkat(id, dto);
+  }
+
+  @Delete('perangkat/:id')
+  deletePerangkat(@Param('id', ParseIntPipe) id: number) { return this.masterService.deletePerangkat(id); }
+
+  // ─── PIC SITE ────────────────────────────────────────────────
+
+  @Post('pic')
+  createPic(@Body() dto: CreatePicDto) { return this.masterService.createPic(dto); }
+
+  @Patch('pic/:id')
+  updatePic(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePicDto) {
+    return this.masterService.updatePic(id, dto);
+  }
+
+  @Delete('pic/:id')
+  deletePic(@Param('id', ParseIntPipe) id: number) { return this.masterService.deletePic(id); }
 }

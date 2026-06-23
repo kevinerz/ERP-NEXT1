@@ -8,6 +8,11 @@ import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
 import { CreatePelangganDto, UpdatePelangganDto } from './dto/pelanggan.dto';
 import { CreateSiteDto, UpdateSiteDto } from './dto/site.dto';
+import {
+  CreateSumberInternetDto, UpdateSumberInternetDto,
+  CreatePerangkatDto, UpdatePerangkatDto,
+  CreatePicDto, UpdatePicDto,
+} from './dto/site-detail.dto';
 
 @Injectable()
 export class MasterService {
@@ -268,5 +273,131 @@ export class MasterService {
       orderBy: { nama_pelanggan: 'asc' },
     });
     return { data };
+  }
+
+  async getVendorDropdown() {
+    const data = await this.prisma.masterVendorIsp.findMany({
+      where: { is_aktif: true },
+      select: { id_vendor: true, nama_vendor: true, tipe_vendor: true },
+      orderBy: { nama_vendor: 'asc' },
+    });
+    return { data };
+  }
+
+  // ─── SITE DETAIL ─────────────────────────────────────────────
+
+  async findOneSite(id: number) {
+    const data = await this.prisma.sitePelanggan.findUnique({
+      where: { id_site: id },
+      include: {
+        pelanggan: true,
+        layanan: true,
+        sumber_internet: {
+          orderBy: { created_at: 'asc' },
+          include: {
+            vendor: { select: { nama_vendor: true, tipe_vendor: true } },
+            aset_sim: { select: { kode_aset: true, nama_perangkat: true, serial_number: true } },
+          },
+        },
+        perangkat: {
+          orderBy: { jenis_perangkat: 'asc' },
+          include: { aset: { select: { kode_aset: true, nama_perangkat: true } } },
+        },
+        pic: { orderBy: { is_utama: 'desc' } },
+        kontrak: {
+          where: { status_kontrak: 'Aktif' },
+          include: { layanan: { select: { nama_layanan: true } } },
+          orderBy: { created_at: 'desc' },
+        },
+      },
+    });
+    if (!data) throw new NotFoundException('Site tidak ditemukan');
+    return { data };
+  }
+
+  // Sumber Internet
+  async createSumberInternet(dto: CreateSumberInternetDto) {
+    const data = await this.prisma.sumberInternetSite.create({
+      data: {
+        ...dto,
+        biaya_mrc_vendor: dto.biaya_mrc_vendor ?? 0,
+        peruntukan_link: dto.peruntukan_link || 'Main',
+        status_link: dto.status_link || 'Aktif',
+        tgl_mulai: dto.tgl_mulai ? new Date(dto.tgl_mulai) : undefined,
+        tgl_berakhir: dto.tgl_berakhir ? new Date(dto.tgl_berakhir) : undefined,
+      },
+      include: {
+        vendor: { select: { nama_vendor: true, tipe_vendor: true } },
+        aset_sim: { select: { kode_aset: true, nama_perangkat: true, serial_number: true } },
+      },
+    });
+    return { data, message: 'Sumber internet ditambahkan' };
+  }
+
+  async updateSumberInternet(id: number, dto: UpdateSumberInternetDto) {
+    const data = await this.prisma.sumberInternetSite.update({
+      where: { id_sumber: id },
+      data: {
+        ...dto,
+        tgl_mulai: dto.tgl_mulai ? new Date(dto.tgl_mulai) : undefined,
+        tgl_berakhir: dto.tgl_berakhir ? new Date(dto.tgl_berakhir) : undefined,
+      },
+      include: {
+        vendor: { select: { nama_vendor: true, tipe_vendor: true } },
+        aset_sim: { select: { kode_aset: true, nama_perangkat: true, serial_number: true } },
+      },
+    });
+    return { data, message: 'Sumber internet diperbarui' };
+  }
+
+  async deleteSumberInternet(id: number) {
+    await this.prisma.sumberInternetSite.delete({ where: { id_sumber: id } });
+    return { data: null, message: 'Sumber internet dihapus' };
+  }
+
+  // Perangkat
+  async createPerangkat(dto: CreatePerangkatDto) {
+    const data = await this.prisma.perangkatSite.create({
+      data: {
+        ...dto,
+        status_perangkat: dto.status_perangkat || 'Aktif',
+        tgl_pasang: dto.tgl_pasang ? new Date(dto.tgl_pasang) : undefined,
+      },
+      include: { aset: { select: { kode_aset: true, nama_perangkat: true } } },
+    });
+    return { data, message: 'Perangkat ditambahkan' };
+  }
+
+  async updatePerangkat(id: number, dto: UpdatePerangkatDto) {
+    const data = await this.prisma.perangkatSite.update({
+      where: { id_perangkat: id },
+      data: {
+        ...dto,
+        tgl_pasang: dto.tgl_pasang ? new Date(dto.tgl_pasang) : undefined,
+      },
+      include: { aset: { select: { kode_aset: true, nama_perangkat: true } } },
+    });
+    return { data, message: 'Perangkat diperbarui' };
+  }
+
+  async deletePerangkat(id: number) {
+    await this.prisma.perangkatSite.delete({ where: { id_perangkat: id } });
+    return { data: null, message: 'Perangkat dihapus' };
+  }
+
+  // PIC
+  async createPic(dto: CreatePicDto) {
+    const data = await this.prisma.picSite.create({ data: dto });
+    return { data, message: 'PIC ditambahkan' };
+  }
+
+  async updatePic(id: number, dto: UpdatePicDto) {
+    const data = await this.prisma.picSite.update({ where: { id_pic: id }, data: dto });
+    return { data, message: 'PIC diperbarui' };
+  }
+
+  async deletePic(id: number) {
+    await this.prisma.picSite.delete({ where: { id_pic: id } });
+    return { data: null, message: 'PIC dihapus' };
   }
 }
