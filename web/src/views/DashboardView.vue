@@ -11,7 +11,7 @@ const modules = [
   { icon: '💼', name: 'Sales',        to: '/sales',          ready: true },
   { icon: '📋', name: 'Proyek',       to: '/projects',       ready: true },
   { icon: '🔧', name: 'Operasional',  to: '/operations',     ready: true },
-  { icon: '🖥️',  name: 'Aset',        to: '/assets',         ready: false },
+  { icon: '🖥️',  name: 'Aset',        to: '/assets',         ready: true },
   { icon: '📄', name: 'Kontrak',      to: '/contracts',      ready: false },
   { icon: '🔔', name: 'Notifikasi',   to: '/notifications',  ready: false },
   { icon: '📈', name: 'Laporan',      to: '/reports',        ready: false },

@@ -125,6 +125,17 @@ const router = createRouter({
           name: 'proyek-detail',
           component: () => import('@/views/proyek/ProyekDetailView.vue'),
         },
+        // Aset
+        {
+          path: 'assets',
+          name: 'aset-list',
+          component: () => import('@/views/aset/AsetListView.vue'),
+        },
+        {
+          path: 'assets/:id',
+          name: 'aset-detail',
+          component: () => import('@/views/aset/AsetDetailView.vue'),
+        },
         // Catch-all dalam layout
         {
           path: ':pathMatch(.*)*',
