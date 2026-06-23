@@ -261,6 +261,26 @@ export class SalesService {
     return { data, message: 'Quotation diperbarui' };
   }
 
+  async findOneQuotation(id: number) {
+    const data = await this.prisma.salesQuotation.findUnique({
+      where: { id_quotation: id },
+      include: {
+        opportunity: {
+          select: {
+            nama_opportunity: true,
+            id_layanan: true,
+            layanan: { select: { nama_layanan: true } },
+            lead: { select: { nama_prospek: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, kode_pelanggan: true } } } },
+          },
+        },
+        sales_pic: { select: { nama_lengkap: true, jabatan: true } },
+        approver: { select: { nama_lengkap: true, jabatan: true } },
+      },
+    });
+    if (!data) throw new NotFoundException('Quotation tidak ditemukan');
+    return { data };
+  }
+
   async approveQuotation(id: number, dto: ApproveQuotationDto) {
     const qt = await this.prisma.salesQuotation.findUnique({ where: { id_quotation: id } });
     if (!qt) throw new NotFoundException('Quotation tidak ditemukan');

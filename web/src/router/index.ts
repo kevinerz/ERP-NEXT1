@@ -108,6 +108,11 @@ const router = createRouter({
           name: 'sales-quotation-list',
           component: () => import('@/views/sales/QuotationListView.vue'),
         },
+        {
+          path: 'sales/quotation/:id',
+          name: 'sales-quotation-detail',
+          component: () => import('@/views/sales/QuotationDetailView.vue'),
+        },
         // Operasional
         {
           path: 'operations',
@@ -185,7 +190,8 @@ const ROUTE_MODUL: Record<string, string> = {
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master',
   'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master',
   'sales-dashboard': 'sales', 'sales-lead-list': 'sales', 'sales-lead-detail': 'sales',
-  'sales-opp-list': 'sales', 'sales-opp-detail': 'sales', 'sales-quotation-list': 'sales',
+  'sales-opp-list': 'sales', 'sales-opp-detail': 'sales',
+  'sales-quotation-list': 'sales', 'sales-quotation-detail': 'sales',
   'proyek-list': 'projects', 'proyek-detail': 'projects',
   'tiket-list': 'operations', 'tiket-detail': 'operations',
   'aset-list': 'assets', 'aset-detail': 'assets',

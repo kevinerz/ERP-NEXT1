@@ -114,7 +114,7 @@ function fmtDate(d: string) {
             <td>
               <span
                 class="nomor-link"
-                @click="router.push(`/sales/opportunity/${q.id_opportunity}`)"
+                @click="router.push(`/sales/quotation/${q.id_quotation}`)"
               >{{ q.nomor_quotation }}</span>
             </td>
             <td class="fw600">{{ q.opportunity?.nama_opportunity }}</td>

@@ -38,6 +38,7 @@ export class SalesController {
 
   // Quotation
   @Get('quotation') findAllQuotation(@Query() q: any) { return this.salesService.findAllQuotation(q); }
+  @Get('quotation/:id') findOneQuotation(@Param('id', ParseIntPipe) id: number) { return this.salesService.findOneQuotation(id); }
   @Post('quotation') createQuotation(@Body() dto: CreateQuotationDto) {
     return this.salesService.createQuotation(dto);
   }
