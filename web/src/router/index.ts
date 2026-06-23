@@ -46,6 +46,22 @@ const router = createRouter({
           name: 'hris-edit',
           component: () => import('@/views/hris/KaryawanFormView.vue'),
         },
+        // Master Data
+        {
+          path: 'master',
+          name: 'master-index',
+          component: () => import('@/views/master/MasterIndexView.vue'),
+        },
+        {
+          path: 'master/layanan',
+          name: 'master-layanan',
+          component: () => import('@/views/master/LayananView.vue'),
+        },
+        {
+          path: 'master/vendor',
+          name: 'master-vendor',
+          component: () => import('@/views/master/VendorView.vue'),
+        },
         // Catch-all dalam layout
         {
           path: ':pathMatch(.*)*',

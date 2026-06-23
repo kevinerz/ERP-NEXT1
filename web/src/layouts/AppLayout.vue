@@ -17,7 +17,7 @@ function logout() {
 const menu = [
   { label: 'Dashboard',   icon: '📊', to: '/dashboard' },
   { label: 'HRIS',        icon: '👤', to: '/hris/karyawan' },
-  { label: 'Master Data', icon: '📦', to: '/master',       soon: true },
+  { label: 'Master Data', icon: '📦', to: '/master' },
   { label: 'Sales',       icon: '💼', to: '/sales',        soon: true },
   { label: 'Proyek',      icon: '📋', to: '/projects',     soon: true },
   { label: 'Operasional', icon: '🔧', to: '/operations',   soon: true },

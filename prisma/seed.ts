@@ -21,6 +21,7 @@ async function main() {
     { nama_role: 'Teknisi',           deskripsi: 'Teknisi Lapangan' },
     { nama_role: 'Finance',           deskripsi: 'Finance & Billing' },
     { nama_role: 'HRD',               deskripsi: 'Human Resource' },
+    { nama_role: 'Helpdesk',          deskripsi: 'Helpdesk & Support' },
     { nama_role: 'Admin',             deskripsi: 'Admin Sistem — akses penuh' },
   ];
 
