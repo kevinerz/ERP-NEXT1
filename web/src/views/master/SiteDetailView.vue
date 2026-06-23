@@ -625,10 +625,10 @@ const isGsm = computed(() => {
 
     <!-- Modal PIC -->
     <div v-if="showPicModal" class="modal-overlay" @click.self="showPicModal = false">
-      <div class="modal small">
+      <div class="modal-pic">
         <h3>{{ editPic ? 'Edit PIC' : 'Tambah PIC' }}</h3>
-        <div class="form-grid">
-          <div class="field full">
+        <div class="pic-form">
+          <div class="field">
             <label>Nama PIC <span class="req">*</span></label>
             <input v-model="picForm.nama_pic" placeholder="Nama kontak di site" />
           </div>
@@ -638,18 +638,16 @@ const isGsm = computed(() => {
           </div>
           <div class="field">
             <label>No. HP / WA</label>
-            <input v-model="picForm.no_kontak" placeholder="08xxxxxxxxxx" />
+            <input v-model="picForm.no_kontak" placeholder="08xxxxxxxxxx" type="tel" />
           </div>
-          <div class="field full">
+          <div class="field">
             <label>Email</label>
-            <input v-model="picForm.email" type="email" />
+            <input v-model="picForm.email" type="email" placeholder="nama@perusahaan.com" />
           </div>
-          <div class="field full">
-            <label class="row-label">
-              <input type="checkbox" v-model="picForm.is_utama" />
-              PIC Utama
-            </label>
-          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" v-model="picForm.is_utama" />
+            <span>Jadikan PIC Utama</span>
+          </label>
         </div>
         <p v-if="picError" class="form-error">{{ picError }}</p>
         <div class="modal-actions">
@@ -755,10 +753,15 @@ const isGsm = computed(() => {
 .pic-kontak { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #374151; }
 
 /* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-.modal.small { width: 440px; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
+.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 560px; max-width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
+/* Modal PIC khusus — single column, lebih compact */
+.modal-pic { background: #fff; border-radius: 14px; padding: 24px 28px; width: 380px; max-width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal-pic h3 { margin: 0 0 18px; font-size: 17px; color: #0f172a; font-weight: 700; }
+.pic-form { display: flex; flex-direction: column; gap: 12px; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #374151; cursor: pointer; margin-top: 4px; }
+.checkbox-label input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #1d4ed8; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field.full { grid-column: 1 / -1; }
