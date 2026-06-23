@@ -125,6 +125,17 @@ const router = createRouter({
           name: 'proyek-detail',
           component: () => import('@/views/proyek/ProyekDetailView.vue'),
         },
+        // Kontrak
+        {
+          path: 'contracts',
+          name: 'kontrak-list',
+          component: () => import('@/views/contracts/KontrakListView.vue'),
+        },
+        {
+          path: 'contracts/:id',
+          name: 'kontrak-detail',
+          component: () => import('@/views/contracts/KontrakDetailView.vue'),
+        },
         // Aset
         {
           path: 'assets',

@@ -22,7 +22,7 @@ const menu = [
   { label: 'Proyek',      icon: '📋', to: '/projects' },
   { label: 'Operasional', icon: '🔧', to: '/operations' },
   { label: 'Aset',        icon: '🖥️',  to: '/assets' },
-  { label: 'Kontrak',     icon: '📄', to: '/contracts',    soon: true },
+  { label: 'Kontrak',     icon: '📄', to: '/contracts' },
   { label: 'Laporan',     icon: '📈', to: '/reports',      soon: true },
 ]
 </script>

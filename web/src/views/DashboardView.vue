@@ -12,7 +12,7 @@ const modules = [
   { icon: '📋', name: 'Proyek',       to: '/projects',       ready: true },
   { icon: '🔧', name: 'Operasional',  to: '/operations',     ready: true },
   { icon: '🖥️',  name: 'Aset',        to: '/assets',         ready: true },
-  { icon: '📄', name: 'Kontrak',      to: '/contracts',      ready: false },
+  { icon: '📄', name: 'Kontrak',      to: '/contracts',      ready: true },
   { icon: '🔔', name: 'Notifikasi',   to: '/notifications',  ready: false },
   { icon: '📈', name: 'Laporan',      to: '/reports',        ready: false },
   { icon: '🔗', name: 'Integrasi',    to: '/integrations',   ready: false },
