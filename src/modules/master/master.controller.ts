@@ -11,6 +11,8 @@ import {
 import { MasterService } from './master.service';
 import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
+import { CreatePelangganDto, UpdatePelangganDto } from './dto/pelanggan.dto';
+import { CreateSiteDto, UpdateSiteDto } from './dto/site.dto';
 
 @Controller('master')
 export class MasterController {
@@ -88,5 +90,44 @@ export class MasterController {
   @Patch('vendor/:id/toggle')
   toggleVendor(@Param('id', ParseIntPipe) id: number) {
     return this.masterService.toggleVendor(id);
+  }
+
+  // ─── PELANGGAN ──────────────────────────────────────────────
+
+  @Get('pelanggan')
+  findAllPelanggan(@Query() q: { search?: string; page?: number; limit?: number }) {
+    return this.masterService.findAllPelanggan(q);
+  }
+
+  @Get('pelanggan/dropdown')
+  getPelangganDropdown() {
+    return this.masterService.getPelangganDropdown();
+  }
+
+  @Post('pelanggan')
+  createPelanggan(@Body() dto: CreatePelangganDto) {
+    return this.masterService.createPelanggan(dto);
+  }
+
+  @Patch('pelanggan/:id')
+  updatePelanggan(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePelangganDto) {
+    return this.masterService.updatePelanggan(id, dto);
+  }
+
+  // ─── SITE PELANGGAN ─────────────────────────────────────────
+
+  @Get('site')
+  findAllSite(@Query() q: { search?: string; id_pelanggan?: string; page?: number; limit?: number }) {
+    return this.masterService.findAllSite(q);
+  }
+
+  @Post('site')
+  createSite(@Body() dto: CreateSiteDto) {
+    return this.masterService.createSite(dto);
+  }
+
+  @Patch('site/:id')
+  updateSite(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateSiteDto) {
+    return this.masterService.updateSite(id, dto);
   }
 }

@@ -62,6 +62,16 @@ const router = createRouter({
           name: 'master-vendor',
           component: () => import('@/views/master/VendorView.vue'),
         },
+        {
+          path: 'master/pelanggan',
+          name: 'master-pelanggan',
+          component: () => import('@/views/master/PelangganView.vue'),
+        },
+        {
+          path: 'master/site',
+          name: 'master-site',
+          component: () => import('@/views/master/SiteView.vue'),
+        },
         // Sales
         {
           path: 'sales',

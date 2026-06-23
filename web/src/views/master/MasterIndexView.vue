@@ -5,6 +5,8 @@ const router = useRouter()
 const menus = [
   { icon: '🌐', label: 'Layanan', desc: 'FO, M2M, Starlink, dll', to: '/master/layanan' },
   { icon: '🏢', label: 'Vendor ISP', desc: 'ISP, vendor, mitra jaringan', to: '/master/vendor' },
+  { icon: '👥', label: 'Pelanggan', desc: 'Data customer & klien', to: '/master/pelanggan' },
+  { icon: '📍', label: 'Site Pelanggan', desc: 'Lokasi instalasi layanan', to: '/master/site' },
 ]
 </script>
 

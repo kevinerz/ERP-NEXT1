@@ -6,6 +6,8 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
+import { CreatePelangganDto, UpdatePelangganDto } from './dto/pelanggan.dto';
+import { CreateSiteDto, UpdateSiteDto } from './dto/site.dto';
 
 @Injectable()
 export class MasterService {
@@ -159,5 +161,112 @@ export class MasterService {
       orderBy: { tipe_vendor: 'asc' },
     });
     return { data: rows.map((r) => r.tipe_vendor) };
+  }
+
+  // ─── PELANGGAN ───────────────────────────────────────────────
+
+  async findAllPelanggan(query: { search?: string; page?: number; limit?: number }) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (query.search) {
+      where.OR = [
+        { nama_pelanggan: { contains: query.search } },
+        { kode_pelanggan: { contains: query.search } },
+      ];
+    }
+    const [data, total] = await Promise.all([
+      this.prisma.pelanggan.findMany({
+        where, skip, take: limit,
+        orderBy: { nama_pelanggan: 'asc' },
+        include: { _count: { select: { sites: true } } },
+      }),
+      this.prisma.pelanggan.count({ where }),
+    ]);
+    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
+  }
+
+  async createPelanggan(dto: CreatePelangganDto) {
+    const exists = await this.prisma.pelanggan.findUnique({ where: { kode_pelanggan: dto.kode_pelanggan } });
+    if (exists) throw new ConflictException('Kode pelanggan sudah digunakan');
+    const data = await this.prisma.pelanggan.create({ data: dto });
+    return { data, message: 'Pelanggan berhasil ditambahkan' };
+  }
+
+  async updatePelanggan(id: number, dto: UpdatePelangganDto) {
+    const row = await this.prisma.pelanggan.findUnique({ where: { id_pelanggan: id } });
+    if (!row) throw new NotFoundException('Pelanggan tidak ditemukan');
+    const data = await this.prisma.pelanggan.update({ where: { id_pelanggan: id }, data: dto });
+    return { data, message: 'Pelanggan diperbarui' };
+  }
+
+  // ─── SITE PELANGGAN ──────────────────────────────────────────
+
+  async findAllSite(query: { search?: string; id_pelanggan?: string; page?: number; limit?: number }) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (query.search) {
+      where.OR = [
+        { nama_site: { contains: query.search } },
+        { kode_site: { contains: query.search } },
+        { kota: { contains: query.search } },
+      ];
+    }
+    if (query.id_pelanggan) where.id_pelanggan = Number(query.id_pelanggan);
+    const [data, total] = await Promise.all([
+      this.prisma.sitePelanggan.findMany({
+        where, skip, take: limit,
+        orderBy: { nama_site: 'asc' },
+        include: {
+          pelanggan: { select: { nama_pelanggan: true, kode_pelanggan: true } },
+          layanan: { select: { kode_layanan: true, nama_layanan: true } },
+        },
+      }),
+      this.prisma.sitePelanggan.count({ where }),
+    ]);
+    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
+  }
+
+  async createSite(dto: CreateSiteDto) {
+    const exists = await this.prisma.sitePelanggan.findUnique({ where: { kode_site: dto.kode_site } });
+    if (exists) throw new ConflictException('Kode site sudah digunakan');
+    const data = await this.prisma.sitePelanggan.create({
+      data: {
+        ...dto,
+        tgl_aktif: dto.tgl_aktif ? new Date(dto.tgl_aktif) : undefined,
+        updated_at: new Date(),
+      },
+      include: {
+        pelanggan: { select: { nama_pelanggan: true } },
+        layanan: { select: { kode_layanan: true, nama_layanan: true } },
+      },
+    });
+    return { data, message: 'Site berhasil ditambahkan' };
+  }
+
+  async updateSite(id: number, dto: UpdateSiteDto) {
+    const row = await this.prisma.sitePelanggan.findUnique({ where: { id_site: id } });
+    if (!row) throw new NotFoundException('Site tidak ditemukan');
+    const data = await this.prisma.sitePelanggan.update({
+      where: { id_site: id },
+      data: {
+        ...dto,
+        tgl_aktif: dto.tgl_aktif ? new Date(dto.tgl_aktif) : undefined,
+        tgl_terminasi: dto.tgl_terminasi ? new Date(dto.tgl_terminasi) : undefined,
+        updated_at: new Date(),
+      },
+    });
+    return { data, message: 'Site diperbarui' };
+  }
+
+  async getPelangganDropdown() {
+    const data = await this.prisma.pelanggan.findMany({
+      select: { id_pelanggan: true, kode_pelanggan: true, nama_pelanggan: true },
+      orderBy: { nama_pelanggan: 'asc' },
+    });
+    return { data };
   }
 }
