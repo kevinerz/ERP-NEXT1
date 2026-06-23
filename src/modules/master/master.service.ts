@@ -365,6 +365,24 @@ export class MasterService {
       },
       include: { aset: { select: { kode_aset: true, nama_perangkat: true } } },
     });
+
+    // Update status aset → Terpasang dan catat mutasi Deploy
+    if (dto.id_aset) {
+      await this.prisma.gudangAset.update({
+        where: { id_aset: dto.id_aset },
+        data: { status_aset: 'Terpasang', id_site: dto.id_site },
+      });
+      await this.prisma.gudangMutasiAset.create({
+        data: {
+          id_aset: dto.id_aset,
+          jenis_mutasi: 'Deploy',
+          jumlah: 1,
+          id_site_tujuan: dto.id_site,
+          keterangan: `Deploy ke site via Site Detail`,
+        },
+      });
+    }
+
     return { data, message: 'Perangkat ditambahkan' };
   }
 
@@ -381,7 +399,29 @@ export class MasterService {
   }
 
   async deletePerangkat(id: number) {
+    const perangkat = await this.prisma.perangkatSite.findUnique({
+      where: { id_perangkat: id },
+    });
+
     await this.prisma.perangkatSite.delete({ where: { id_perangkat: id } });
+
+    // Kembalikan status aset → Di_Gudang dan catat mutasi Return
+    if (perangkat?.id_aset) {
+      await this.prisma.gudangAset.update({
+        where: { id_aset: perangkat.id_aset },
+        data: { status_aset: 'Di_Gudang', id_site: null },
+      });
+      await this.prisma.gudangMutasiAset.create({
+        data: {
+          id_aset: perangkat.id_aset,
+          jenis_mutasi: 'Return',
+          jumlah: 1,
+          id_site_asal: perangkat.id_site,
+          keterangan: `Return dari site — perangkat dilepas`,
+        },
+      });
+    }
+
     return { data: null, message: 'Perangkat dihapus' };
   }
 
