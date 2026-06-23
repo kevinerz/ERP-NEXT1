@@ -161,6 +161,92 @@ export class ReportsService {
     };
   }
 
+  // ─── DASHBOARD SUMMARY (semua data untuk halaman dashboard) ───
+
+  async getDashboardSummary() {
+    const now = new Date();
+    const in30 = new Date(); in30.setDate(in30.getDate() + 30);
+    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [
+      totalPelanggan,
+      kontrakAktif,
+      mrcRow,
+      tiketOpen,
+      tiketInProgress,
+      proyekBerjalan,
+      kontrakAkanBerakhir,
+      asetDiGudang,
+      tiketByStatus,
+      salesPipeline,
+      tiketTerbaru,
+      quotationTerbaru,
+    ] = await Promise.all([
+      this.prisma.pelanggan.count(),
+      this.prisma.kontrakLayanan.count({ where: { status_kontrak: 'Aktif' } }),
+      this.prisma.kontrakLayanan.aggregate({
+        _sum: { harga_mrc: true },
+        where: { status_kontrak: 'Aktif' },
+      }),
+      this.prisma.operationTicket.count({ where: { status_tiket: 'Open' } }),
+      this.prisma.operationTicket.count({ where: { status_tiket: 'In_Progress' } }),
+      this.prisma.projectDelivery.count({ where: { status_project: { in: ['Kickoff', 'Instalasi', 'Testing'] } } }),
+      this.prisma.kontrakLayanan.count({ where: { status_kontrak: 'Aktif', tgl_berakhir: { lte: in30, gte: now } } }),
+      this.prisma.gudangAset.count({ where: { status_aset: 'Di_Gudang' } }),
+      this.prisma.operationTicket.groupBy({
+        by: ['status_tiket'],
+        _count: { id_ticket: true },
+      }),
+      Promise.all([
+        this.prisma.salesLead.count({ where: { status_lead: { notIn: ['Disqualified'] } } }),
+        this.prisma.salesOpportunity.count({ where: { status_opportunity: { notIn: ['Lost', 'Closed_Won'] } } }),
+        this.prisma.salesQuotation.count({ where: { status_approval: 'Draft' } }),
+        this.prisma.salesQuotation.count({ where: { status_approval: 'Approved' } }),
+      ]),
+      this.prisma.operationTicket.findMany({
+        take: 6,
+        orderBy: { tgl_open: 'desc' },
+        include: {
+          site: { select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
+          teknisi: { select: { nama_lengkap: true } },
+        },
+      }),
+      this.prisma.salesQuotation.findMany({
+        take: 5,
+        orderBy: { created_at: 'desc' },
+        include: {
+          opportunity: { select: { nama_opportunity: true, lead: { select: { nama_prospek: true } } } },
+          sales_pic: { select: { nama_lengkap: true } },
+        },
+      }),
+    ]);
+
+    const [leads, opportunities, quotationDraft, quotationApproved] = salesPipeline;
+
+    return {
+      data: {
+        kpi: {
+          total_pelanggan: totalPelanggan,
+          kontrak_aktif: kontrakAktif,
+          total_mrc_aktif: Number(mrcRow._sum.harga_mrc) || 0,
+          tiket_aktif: tiketOpen + tiketInProgress,
+          tiket_open: tiketOpen,
+          tiket_in_progress: tiketInProgress,
+          proyek_berjalan: proyekBerjalan,
+          kontrak_akan_berakhir: kontrakAkanBerakhir,
+          aset_di_gudang: asetDiGudang,
+        },
+        tiket_by_status: tiketByStatus.map((r) => ({
+          status: r.status_tiket,
+          count: r._count.id_ticket,
+        })),
+        sales_pipeline: { leads, opportunities, quotation_draft: quotationDraft, quotation_approved: quotationApproved },
+        tiket_terbaru: tiketTerbaru,
+        quotation_terbaru: quotationTerbaru,
+      },
+    };
+  }
+
   // ─── LAPORAN PELANGGAN ────────────────────────────────────────
 
   async getPelangganReport() {

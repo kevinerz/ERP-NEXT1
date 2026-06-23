@@ -5,6 +5,9 @@ import { ReportsService } from './reports.service';
 export class ReportsController {
   constructor(private readonly svc: ReportsService) {}
 
+  @Get('dashboard')
+  getDashboard() { return this.svc.getDashboardSummary(); }
+
   @Get('kpi')
   getKpi() { return this.svc.getDashboardKpi(); }
 
