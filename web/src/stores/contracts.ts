@@ -18,7 +18,7 @@ export interface Kontrak {
   created_at: string
   site?: { kode_site: string; nama_site: string; pelanggan?: { nama_pelanggan: string } }
   layanan?: { nama_layanan: string; kode_layanan: string }
-  quotation?: { nomor_quotation: string; grand_total: number }
+  quotation?: { nomor_quotation: string; harga_mrc: number; harga_otc: number }
 }
 
 export interface KontrakSummary {
