@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { api } from '@/lib/api'
+import api from '@/services/api'
 
 export interface Aset {
   id_aset: number
