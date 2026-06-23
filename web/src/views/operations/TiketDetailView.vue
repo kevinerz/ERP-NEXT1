@@ -188,10 +188,10 @@ function ageHours(d: string) {
         <!-- Work Orders -->
         <div class="section-card">
           <div class="section-header">
-            <span class="card-title">Work Order ({{ ops.current.work_orders?.length ?? 0 }})</span>
-            <button class="btn-add-small" @click="showWoModal = true; woError = ''">+ Buat WO</button>
+            <span class="card-title">Surat Tugas ({{ ops.current.work_orders?.length ?? 0 }})</span>
+            <button class="btn-add-small" @click="showWoModal = true; woError = ''">+ Surat Tugas</button>
           </div>
-          <div v-if="!ops.current.work_orders?.length" class="empty-section">Belum ada WO</div>
+          <div v-if="!ops.current.work_orders?.length" class="empty-section">Belum ada surat tugas</div>
           <div v-for="wo in ops.current.work_orders" :key="wo.id_wo" class="wo-item">
             <div class="wo-left">
               <div class="wo-nomor">{{ wo.nomor_wo }}</div>
@@ -297,13 +297,13 @@ function ageHours(d: string) {
         </div>
       </div>
 
-      <!-- Modal Buat WO -->
+      <!-- Modal Buat Surat Tugas -->
       <div v-if="showWoModal" class="modal-overlay" @click.self="showWoModal = false">
         <div class="modal">
-          <h3>Buat Work Order</h3>
+          <h3>Buat Surat Tugas</h3>
           <div class="form-grid">
             <div class="field">
-              <label>Jenis WO</label>
+              <label>Jenis Tugas</label>
               <select v-model="woForm.jenis_wo">
                 <option v-for="j in JENIS_WO" :key="j" :value="j">{{ j }}</option>
               </select>
@@ -339,7 +339,7 @@ function ageHours(d: string) {
           <div class="modal-actions">
             <button class="btn-cancel" @click="showWoModal = false">Batal</button>
             <button class="btn-submit" @click="handleAddWo" :disabled="woSubmitting">
-              {{ woSubmitting ? 'Membuat...' : 'Buat WO' }}
+              {{ woSubmitting ? 'Membuat...' : 'Buat Surat Tugas' }}
             </button>
           </div>
         </div>

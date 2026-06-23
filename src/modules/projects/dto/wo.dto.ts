@@ -3,6 +3,7 @@ import { IsString, IsOptional, IsInt, IsNumber, IsDateString } from 'class-valid
 export class CreateWoDto {
   @IsString() jenis_wo: string;
   @IsOptional() @IsInt() id_project?: number;
+  @IsOptional() @IsInt() id_ticket?: number;
   @IsInt() id_site: number;
   @IsString() tipe_eksekutor: string;
   @IsOptional() @IsInt() id_teknisi_internal?: number;

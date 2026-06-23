@@ -117,7 +117,7 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
             <th>Status</th>
             <th>Teknisi</th>
             <th>Tgl Open</th>
-            <th>WO</th>
+            <th>ST</th>
           </tr>
         </thead>
         <tbody>
