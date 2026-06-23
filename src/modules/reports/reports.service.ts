@@ -199,7 +199,7 @@ export class ReportsService {
       }),
       Promise.all([
         this.prisma.salesLead.count({ where: { status_lead: { notIn: ['Disqualified'] } } }),
-        this.prisma.salesOpportunity.count({ where: { status_opportunity: { notIn: ['Lost', 'Closed_Won'] } } }),
+        this.prisma.salesOpportunity.count({ where: { tahapan: { notIn: ['Lost', 'Won'] } } }),
         this.prisma.salesQuotation.count({ where: { status_approval: 'Draft' } }),
         this.prisma.salesQuotation.count({ where: { status_approval: 'Approved' } }),
       ]),
