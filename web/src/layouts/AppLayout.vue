@@ -12,6 +12,7 @@ const notif  = useNotificationStore()
 
 const sidebarOpen    = ref(true)
 const showNotifPanel = ref(false)
+const showUserMenu   = ref(false)
 
 onMounted(() => {
   notif.startPolling()
@@ -23,12 +24,20 @@ onUnmounted(() => {
 })
 
 function onDocClick(e: MouseEvent) {
-  if (!(e.target as HTMLElement).closest('.notif-area')) showNotifPanel.value = false
+  const t = e.target as HTMLElement
+  if (!t.closest('.notif-area'))  showNotifPanel.value = false
+  if (!t.closest('.user-area'))   showUserMenu.value   = false
 }
 
 async function toggleNotifPanel() {
   showNotifPanel.value = !showNotifPanel.value
+  showUserMenu.value   = false
   if (showNotifPanel.value) await notif.fetchNotifications()
+}
+
+function toggleUserMenu() {
+  showUserMenu.value   = !showUserMenu.value
+  showNotifPanel.value = false
 }
 
 function goNotif(n: any) {
@@ -51,319 +60,590 @@ const TIPE_ICON: Record<string, string> = {
 }
 
 function fmtTime(d: string) {
-  const dt = new Date(d)
-  const diffMin = Math.floor((Date.now() - dt.getTime()) / 60000)
-  if (diffMin < 1) return 'baru saja'
-  if (diffMin < 60) return `${diffMin} menit lalu`
+  const diffMin = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
+  if (diffMin < 1)  return 'baru saja'
+  if (diffMin < 60) return `${diffMin}m lalu`
   const diffH = Math.floor(diffMin / 60)
-  if (diffH < 24) return `${diffH} jam lalu`
-  return dt.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+  if (diffH < 24)   return `${diffH}j lalu`
+  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
 }
 
 const allMenu = [
-  { label: 'Dashboard',     icon: '📊', to: '/dashboard',    modul: null },
-  { label: 'HRIS',          icon: '👤', to: '/hris/karyawan', modul: 'hris' },
-  { label: 'Master Data',   icon: '📦', to: '/master',        modul: 'master' },
-  { label: 'Sales',         icon: '💼', to: '/sales',         modul: 'sales' },
-  { label: 'Proyek',        icon: '📋', to: '/projects',      modul: 'projects' },
-  { label: 'Operasional',   icon: '🔧', to: '/operations',    modul: 'operations' },
-  { label: 'Aset',          icon: '🖥️',  to: '/assets',       modul: 'assets' },
-  { label: 'Kontrak',       icon: '📄', to: '/contracts',     modul: 'contracts' },
-  { label: 'Laporan',       icon: '📈', to: '/reports',       modul: 'reports' },
-  { label: 'Users',         icon: '⚙️',  to: '/admin/users',  modul: null, adminOnly: true },
-  { label: 'Activity Log',  icon: '📝', to: '/admin/logs',   modul: null, adminOnly: true },
+  { label: 'Dashboard',    icon: '▪', emoji: '📊', to: '/dashboard',     modul: null },
+  { label: 'HRIS',         icon: '▪', emoji: '👤', to: '/hris/karyawan', modul: 'hris' },
+  { label: 'Master Data',  icon: '▪', emoji: '📦', to: '/master',         modul: 'master' },
+  { label: 'Sales',        icon: '▪', emoji: '💼', to: '/sales',          modul: 'sales' },
+  { label: 'Proyek',       icon: '▪', emoji: '📋', to: '/projects',       modul: 'projects' },
+  { label: 'Operasional',  icon: '▪', emoji: '🔧', to: '/operations',     modul: 'operations' },
+  { label: 'Aset',         icon: '▪', emoji: '🖥️', to: '/assets',        modul: 'assets' },
+  { label: 'Kontrak',      icon: '▪', emoji: '📄', to: '/contracts',      modul: 'contracts' },
+  { label: 'Laporan',      icon: '▪', emoji: '📈', to: '/reports',        modul: 'reports' },
+]
+
+const adminMenu = [
+  { label: 'Users',        emoji: '⚙️', to: '/admin/users' },
+  { label: 'Activity Log', emoji: '📝', to: '/admin/logs'  },
 ]
 
 const menu = computed(() =>
-  allMenu.filter((m) => {
-    if (m.adminOnly) return auth.isSuperAdmin
+  allMenu.filter(m => {
     if (!m.modul) return true
     return auth.canAccess(m.modul)
   })
 )
+
+const PAGE_TITLES: Record<string, string> = {
+  dashboard:              "Dashboard",
+  "hris-list":            "HRIS — Karyawan",
+  "hris-tambah":          "HRIS — Tambah Karyawan",
+  "hris-detail":          "HRIS — Detail Karyawan",
+  "hris-edit":            "HRIS — Edit Karyawan",
+  "master-index":         "Master Data",
+  "master-layanan":       "Master — Layanan",
+  "master-vendor":        "Master — Vendor ISP",
+  "master-pelanggan":     "Master — Pelanggan",
+  "master-site":          "Master — Site",
+  "master-site-detail":   "Master — Detail Site",
+  "sales-dashboard":      "Sales",
+  "sales-lead-list":      "Sales — Lead",
+  "sales-lead-detail":    "Sales — Detail Lead",
+  "sales-opp-list":       "Sales — Opportunity",
+  "sales-opp-detail":     "Sales — Detail Opportunity",
+  "sales-quotation-list": "Sales — Quotation",
+  "sales-quotation-detail": "Sales — Detail Quotation",
+  "proyek-list":          "Proyek",
+  "proyek-detail":        "Proyek — Detail",
+  "tiket-list":           "Operasional — Tiket",
+  "tiket-detail":         "Operasional — Detail Tiket",
+  "aset-list":            "Aset",
+  "aset-detail":          "Aset — Detail",
+  "kontrak-list":         "Kontrak",
+  "kontrak-detail":       "Kontrak — Detail",
+  laporan:                "Laporan",
+  "admin-users":          "Admin — Manajemen User",
+  "admin-logs":           "Admin — Activity Log",
+}
+
+const pageTitle = computed(() => PAGE_TITLES[route.name as string] || "ERP NEXT1")
+
+const initials = computed(() => {
+  const name = auth.user?.nama_lengkap || ''
+  return name.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
+})
 </script>
 
 <template>
   <div class="app-shell">
+
+    <!-- ─── Sidebar ─────────────────────────────────────── -->
     <aside :class="['sidebar', { collapsed: !sidebarOpen }]">
-      <div class="sidebar-top">
-        <div class="brand">
-          <div class="logo-box">N1</div>
+
+      <!-- Brand -->
+      <div class="sidebar-brand">
+        <div class="brand-logo">N1</div>
+        <Transition name="fade-text">
           <span v-if="sidebarOpen" class="brand-name">ERP NEXT1</span>
-        </div>
-        <button class="toggle-btn" @click="sidebarOpen = !sidebarOpen">
-          {{ sidebarOpen ? '◀' : '▶' }}
-        </button>
+        </Transition>
       </div>
 
+      <!-- Navigation -->
       <nav class="sidebar-nav">
+        <div class="nav-section-label" v-if="sidebarOpen">MENU</div>
         <RouterLink
-          v-for="item in menu"
-          :key="item.to"
-          :to="item.to"
-          class="nav-item"
-          active-class="active"
-          exact-active-class="active"
+          v-for="item in menu" :key="item.to" :to="item.to"
+          class="nav-item" active-class="active"
         >
-          <span class="nav-icon">{{ item.icon }}</span>
-          <span v-if="sidebarOpen" class="nav-label">
-            {{ item.label }}
-            <span v-if="item.soon" class="soon-tag">soon</span>
-          </span>
+          <span class="nav-emoji">{{ item.emoji }}</span>
+          <Transition name="fade-text">
+            <span v-if="sidebarOpen" class="nav-label">{{ item.label }}</span>
+          </Transition>
         </RouterLink>
+
+        <template v-if="auth.isSuperAdmin">
+          <div class="nav-divider"></div>
+          <div class="nav-section-label" v-if="sidebarOpen">ADMIN</div>
+          <RouterLink
+            v-for="item in adminMenu" :key="item.to" :to="item.to"
+            class="nav-item" active-class="active"
+          >
+            <span class="nav-emoji">{{ item.emoji }}</span>
+            <Transition name="fade-text">
+              <span v-if="sidebarOpen" class="nav-label">{{ item.label }}</span>
+            </Transition>
+          </RouterLink>
+        </template>
       </nav>
 
-      <!-- Sidebar bottom (expanded) -->
-      <div class="sidebar-bottom" v-if="sidebarOpen">
-        <!-- Bell -->
-        <div class="notif-area">
-          <button class="btn-bell" @click.stop="toggleNotifPanel">
-            <span class="bell-icon">🔔</span>
-            <span class="bell-label">Notifikasi</span>
-            <span v-if="notif.count > 0" class="bell-badge">{{ notif.count > 99 ? '99+' : notif.count }}</span>
-          </button>
-          <div v-if="showNotifPanel" class="notif-panel" @click.stop>
-            <div class="notif-panel-header">
-              <span class="np-title">Notifikasi</span>
-              <button v-if="notif.count > 0" class="np-read-all" @click="notif.markAllRead()">Baca Semua</button>
-            </div>
-            <div v-if="notif.loading" class="np-empty">Memuat...</div>
-            <div v-else-if="!notif.notifications.length" class="np-empty">Belum ada notifikasi</div>
-            <div v-else class="np-list">
-              <div
-                v-for="n in notif.notifications" :key="n.id_notif"
-                :class="['np-item', { unread: !n.is_read }]"
-                @click="goNotif(n)"
-              >
-                <div class="np-icon">{{ TIPE_ICON[n.tipe] || '🔔' }}</div>
-                <div class="np-body">
-                  <div class="np-judul">{{ n.judul }}</div>
-                  <div class="np-desc" v-if="n.deskripsi">{{ n.deskripsi }}</div>
-                  <div class="np-time">{{ fmtTime(n.created_at) }}</div>
-                </div>
-                <div v-if="!n.is_read" class="np-dot"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="user-chip">
-          <div class="user-avatar">{{ auth.user?.nama_lengkap?.charAt(0) }}</div>
-          <div class="user-detail">
-            <div class="user-name">{{ auth.user?.nama_lengkap }}</div>
-            <div class="user-role">{{ auth.user?.roles?.[0] }}</div>
-          </div>
-        </div>
-        <button class="btn-logout" @click="logout">Keluar</button>
-      </div>
-
-      <!-- Sidebar bottom (collapsed) -->
-      <div class="sidebar-bottom-collapsed" v-else>
-        <div class="notif-area">
-          <button class="btn-bell-icon" @click.stop="toggleNotifPanel" title="Notifikasi">
-            🔔
-            <span v-if="notif.count > 0" class="bell-badge-sm">{{ notif.count > 9 ? '9+' : notif.count }}</span>
-          </button>
-          <div v-if="showNotifPanel" class="notif-panel notif-panel-side" @click.stop>
-            <div class="notif-panel-header">
-              <span class="np-title">Notifikasi</span>
-              <button v-if="notif.count > 0" class="np-read-all" @click="notif.markAllRead()">Baca Semua</button>
-            </div>
-            <div v-if="notif.loading" class="np-empty">Memuat...</div>
-            <div v-else-if="!notif.notifications.length" class="np-empty">Belum ada notifikasi</div>
-            <div v-else class="np-list">
-              <div
-                v-for="n in notif.notifications" :key="n.id_notif"
-                :class="['np-item', { unread: !n.is_read }]"
-                @click="goNotif(n)"
-              >
-                <div class="np-icon">{{ TIPE_ICON[n.tipe] || '🔔' }}</div>
-                <div class="np-body">
-                  <div class="np-judul">{{ n.judul }}</div>
-                  <div class="np-desc" v-if="n.deskripsi">{{ n.deskripsi }}</div>
-                  <div class="np-time">{{ fmtTime(n.created_at) }}</div>
-                </div>
-                <div v-if="!n.is_read" class="np-dot"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <button class="btn-logout-icon" @click="logout" title="Keluar">🚪</button>
-      </div>
+      <!-- Collapse toggle -->
+      <button class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">
+        <span class="toggle-icon">{{ sidebarOpen ? '«' : '»' }}</span>
+        <Transition name="fade-text">
+          <span v-if="sidebarOpen" class="toggle-label">Tutup Sidebar</span>
+        </Transition>
+      </button>
     </aside>
 
-    <main class="main-content">
-      <RouterView />
-    </main>
+    <!-- ─── Main wrapper ─────────────────────────────────── -->
+    <div class="main-wrapper">
 
-    <!-- Toast container -->
-    <div class="toast-container">
-      <div
-        v-for="toast in notif.toasts" :key="toast.id"
-        class="toast"
-        @click="notif.dismissToast(toast.id); toast.url && router.push(toast.url)"
-      >
-        <div class="toast-icon">🔔</div>
-        <div class="toast-body">
-          <div class="toast-title">{{ toast.judul }}</div>
-          <div class="toast-desc" v-if="toast.deskripsi">{{ toast.deskripsi }}</div>
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="page-title">{{ pageTitle }}</div>
         </div>
-        <button class="toast-close" @click.stop="notif.dismissToast(toast.id)">×</button>
-      </div>
+
+        <div class="topbar-right">
+          <!-- Notification bell -->
+          <div class="notif-area">
+            <button class="tb-btn" @click.stop="toggleNotifPanel" :class="{ active: showNotifPanel }">
+              <span class="tb-icon">🔔</span>
+              <span v-if="notif.count > 0" class="notif-badge">{{ notif.count > 99 ? '99+' : notif.count }}</span>
+            </button>
+
+            <!-- Dropdown -->
+            <div v-if="showNotifPanel" class="notif-panel" @click.stop>
+              <div class="np-header">
+                <span class="np-title">Notifikasi</span>
+                <span class="np-unread-chip" v-if="notif.count > 0">{{ notif.count }} baru</span>
+                <button v-if="notif.count > 0" class="np-read-all" @click="notif.markAllRead()">Baca semua</button>
+              </div>
+              <div v-if="notif.loading" class="np-state">Memuat...</div>
+              <div v-else-if="!notif.notifications.length" class="np-state">Belum ada notifikasi 🎉</div>
+              <div v-else class="np-list">
+                <div
+                  v-for="n in notif.notifications" :key="n.id_notif"
+                  :class="['np-item', { unread: !n.is_read }]"
+                  @click="goNotif(n)"
+                >
+                  <div class="np-ico">{{ TIPE_ICON[n.tipe] || '🔔' }}</div>
+                  <div class="np-body">
+                    <div class="np-judul">{{ n.judul }}</div>
+                    <div class="np-desc" v-if="n.deskripsi">{{ n.deskripsi }}</div>
+                    <div class="np-time">{{ fmtTime(n.created_at) }}</div>
+                  </div>
+                  <div v-if="!n.is_read" class="np-dot"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Divider -->
+          <div class="tb-divider"></div>
+
+          <!-- User menu -->
+          <div class="user-area">
+            <button class="user-btn" @click.stop="toggleUserMenu" :class="{ active: showUserMenu }">
+              <div class="user-avatar">{{ initials }}</div>
+              <div class="user-info">
+                <div class="user-name">{{ auth.user?.nama_lengkap }}</div>
+                <div class="user-role">{{ auth.user?.roles?.[0] || 'Staff' }}</div>
+              </div>
+              <span class="user-chevron">{{ showUserMenu ? '▲' : '▼' }}</span>
+            </button>
+
+            <div v-if="showUserMenu" class="user-menu" @click.stop>
+              <div class="um-header">
+                <div class="um-avatar">{{ initials }}</div>
+                <div>
+                  <div class="um-name">{{ auth.user?.nama_lengkap }}</div>
+                  <div class="um-email">{{ auth.user?.username }}</div>
+                </div>
+              </div>
+              <div class="um-divider"></div>
+              <button class="um-item danger" @click="logout">
+                <span>🚪</span> Keluar
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Page content -->
+      <main class="main-content">
+        <RouterView />
+      </main>
+    </div>
+
+    <!-- ─── Toast container ──────────────────────────────── -->
+    <div class="toast-stack">
+      <TransitionGroup name="toast">
+        <div
+          v-for="toast in notif.toasts" :key="toast.id"
+          class="toast"
+          @click="notif.dismissToast(toast.id); toast.url && router.push(toast.url)"
+        >
+          <div class="toast-ico">🔔</div>
+          <div class="toast-body">
+            <div class="toast-title">{{ toast.judul }}</div>
+            <div class="toast-desc" v-if="toast.deskripsi">{{ toast.deskripsi }}</div>
+          </div>
+          <button class="toast-x" @click.stop="notif.dismissToast(toast.id)">×</button>
+        </div>
+      </TransitionGroup>
     </div>
   </div>
 </template>
 
 <style scoped>
-* { box-sizing: border-box; }
-.app-shell { display: flex; min-height: 100vh; background: #f1f5f9; }
+/* ── Root ── */
+*, *::before, *::after { box-sizing: border-box; }
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  background: #f1f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ── Sidebar ── */
 .sidebar {
-  width: 240px; min-height: 100vh; background: #0f172a;
-  display: flex; flex-direction: column; transition: width 0.2s;
-  flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow: hidden;
+  width: 220px;
+  background: #0f172a;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  z-index: 50;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
 }
-.sidebar.collapsed { width: 64px; }
-.sidebar-top {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 12px; border-bottom: 1px solid rgba(255,255,255,0.08);
+.sidebar.collapsed { width: 60px; }
+
+/* Brand */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 14px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
 }
-.brand { display: flex; align-items: center; gap: 10px; overflow: hidden; }
-.logo-box {
-  width: 36px; height: 36px; flex-shrink: 0;
-  background: linear-gradient(135deg, #1e40af, #3b82f6);
-  border-radius: 8px; display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 14px; color: #fff;
+.brand-logo {
+  width: 34px; height: 34px; flex-shrink: 0;
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 13px; color: #fff;
+  box-shadow: 0 2px 8px rgba(59,130,246,0.4);
 }
-.brand-name { font-weight: 700; font-size: 15px; color: #fff; white-space: nowrap; }
-.toggle-btn { background: none; border: none; color: #64748b; cursor: pointer; font-size: 12px; padding: 4px; flex-shrink: 0; }
-.toggle-btn:hover { color: #fff; }
-.sidebar-nav { flex: 1; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.brand-name {
+  font-weight: 700; font-size: 14px; color: #f1f5f9;
+  white-space: nowrap; letter-spacing: 0.3px;
+}
+
+/* Nav */
+.sidebar-nav {
+  flex: 1;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.sidebar-nav::-webkit-scrollbar { width: 3px; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+.nav-section-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 1px;
+  color: #475569; padding: 8px 10px 4px;
+  white-space: nowrap;
+}
+.nav-divider {
+  height: 1px; background: rgba(255,255,255,0.06);
+  margin: 6px 4px;
+}
+
 .nav-item {
-  display: flex; align-items: center; gap: 10px; padding: 9px 10px;
-  border-radius: 8px; color: #94a3b8; text-decoration: none; font-size: 14px;
-  transition: background 0.15s, color 0.15s; white-space: nowrap; overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.nav-item:hover:not(.disabled) { background: rgba(255,255,255,0.08); color: #fff; }
-.nav-item.active { background: #1e40af; color: #fff; }
-.nav-item.disabled { cursor: default; opacity: 0.5; pointer-events: none; }
-.nav-icon { font-size: 16px; flex-shrink: 0; width: 22px; text-align: center; }
-.nav-label { display: flex; align-items: center; gap: 6px; }
-.soon-tag { background: rgba(255,255,255,0.15); color: #94a3b8; font-size: 10px; padding: 1px 6px; border-radius: 4px; }
+.nav-item:hover { background: rgba(255,255,255,0.07); color: #e2e8f0; }
+.nav-item.active { background: rgba(59,130,246,0.18); color: #60a5fa; }
+.nav-item.active .nav-emoji { filter: none; }
 
-/* Sidebar bottom */
-.sidebar-bottom { padding: 12px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 8px; }
+.nav-emoji {
+  font-size: 16px;
+  flex-shrink: 0;
+  width: 22px;
+  text-align: center;
+  line-height: 1;
+}
+.nav-label { white-space: nowrap; }
 
-/* Bell */
-.notif-area { position: relative; }
-.btn-bell {
-  width: 100%; display: flex; align-items: center; gap: 8px;
-  background: rgba(255,255,255,0.06); border: none; border-radius: 8px;
-  padding: 8px 10px; color: #cbd5e1; cursor: pointer; font-size: 13px; font-weight: 500;
+/* Sidebar toggle */
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  background: none;
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  color: #475569;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  flex-shrink: 0;
+  width: 100%;
+}
+.sidebar-toggle:hover { color: #94a3b8; }
+.toggle-icon { font-size: 12px; flex-shrink: 0; }
+.toggle-label { white-space: nowrap; }
+
+/* ── Main wrapper ── */
+.main-wrapper {
+  flex: 1;
+  min-width: 0;
+  margin-left: 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  transition: margin-left 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar.collapsed ~ .main-wrapper { margin-left: 60px; }
+
+/* ── Topbar ── */
+.topbar {
+  height: 56px;
+  background: #fff;
+  border-bottom: 1px solid #e9edf2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  flex-shrink: 0;
+}
+
+.topbar-left {}
+.page-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tb-divider {
+  width: 1px; height: 28px;
+  background: #e2e8f0;
+  margin: 0 8px;
+}
+
+/* Topbar button base */
+.tb-btn {
+  position: relative;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
   transition: background 0.15s;
+  color: #64748b;
 }
-.btn-bell:hover { background: rgba(255,255,255,0.12); color: #fff; }
-.bell-icon { font-size: 16px; }
-.bell-label { flex: 1; text-align: left; }
-.bell-badge {
-  background: #ef4444; color: #fff; font-size: 10px; font-weight: 700;
-  border-radius: 10px; padding: 1px 6px; min-width: 20px; text-align: center;
-}
+.tb-btn:hover, .tb-btn.active { background: #f1f5f9; color: #0f172a; }
+.tb-icon { font-size: 18px; }
 
-/* User */
-.user-chip {
-  display: flex; align-items: center; gap: 10px; padding: 8px;
-  border-radius: 8px; background: rgba(255,255,255,0.05); overflow: hidden;
+/* Notification badge */
+.notif-badge {
+  position: absolute;
+  top: 4px; right: 3px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  border-radius: 10px;
+  padding: 1px 4px;
+  min-width: 16px;
+  text-align: center;
+  border: 1.5px solid #fff;
 }
-.user-avatar {
-  width: 32px; height: 32px; flex-shrink: 0; background: #1e40af; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px;
-}
-.user-detail { overflow: hidden; }
-.user-name { font-size: 13px; color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.user-role { font-size: 11px; color: #64748b; }
-.btn-logout { width: 100%; padding: 7px; background: rgba(239,68,68,0.15); color: #ef4444; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
-.btn-logout:hover { background: rgba(239,68,68,0.25); }
-
-/* Collapsed */
-.sidebar-bottom-collapsed {
-  padding: 12px 8px; border-top: 1px solid rgba(255,255,255,0.08);
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-}
-.btn-bell-icon {
-  position: relative; background: none; border: none; font-size: 18px; cursor: pointer;
-  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
-  border-radius: 8px; transition: background 0.15s; color: #94a3b8;
-}
-.btn-bell-icon:hover { background: rgba(255,255,255,0.08); }
-.bell-badge-sm {
-  position: absolute; top: 2px; right: 2px;
-  background: #ef4444; color: #fff; font-size: 9px; font-weight: 700;
-  border-radius: 8px; padding: 1px 4px; min-width: 16px; text-align: center;
-}
-.btn-logout-icon { background: none; border: none; font-size: 18px; cursor: pointer; }
 
 /* Notification panel */
+.notif-area { position: relative; }
 .notif-panel {
-  position: absolute; bottom: calc(100% + 6px); left: 0; right: 0;
-  background: #fff; border-radius: 12px;
-  box-shadow: 0 -4px 30px rgba(0,0,0,0.2), 0 8px 20px rgba(0,0,0,0.1);
-  z-index: 200; overflow: hidden; min-width: 300px;
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 340px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 20px 40px rgba(0,0,0,0.12);
+  border: 1px solid #e9edf2;
+  overflow: hidden;
+  z-index: 100;
 }
-.notif-panel-side {
-  left: 64px; bottom: 0; right: auto; width: 300px;
+.np-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid #f1f5f9;
 }
-.notif-panel-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 14px; border-bottom: 1px solid #f1f5f9;
+.np-title { font-size: 14px; font-weight: 700; color: #0f172a; flex: 1; }
+.np-unread-chip {
+  background: #eff6ff; color: #1d4ed8;
+  font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 10px;
 }
-.np-title { font-size: 14px; font-weight: 700; color: #0f172a; }
-.np-read-all { background: none; border: none; font-size: 12px; color: #3b82f6; font-weight: 600; cursor: pointer; padding: 0; }
-.np-read-all:hover { text-decoration: underline; }
-.np-empty { padding: 24px 14px; text-align: center; font-size: 13px; color: #94a3b8; }
-.np-list { max-height: 360px; overflow-y: auto; }
+.np-read-all {
+  background: none; border: none;
+  font-size: 12px; color: #64748b; font-weight: 600;
+  cursor: pointer; padding: 0;
+  transition: color 0.1s;
+}
+.np-read-all:hover { color: #1d4ed8; }
+.np-state { padding: 32px 16px; text-align: center; font-size: 13px; color: #94a3b8; }
+.np-list { max-height: 380px; overflow-y: auto; }
 .np-item {
-  display: flex; align-items: flex-start; gap: 10px; padding: 11px 14px;
-  border-bottom: 1px solid #f8fafc; cursor: pointer; transition: background 0.1s; position: relative;
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f8fafc;
+  cursor: pointer;
+  transition: background 0.12s;
+  position: relative;
 }
 .np-item:last-child { border-bottom: none; }
 .np-item:hover { background: #f8fafc; }
-.np-item.unread { background: #eff6ff; }
-.np-item.unread:hover { background: #dbeafe; }
-.np-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.np-item.unread { background: #f0f7ff; }
+.np-item.unread:hover { background: #e0f0ff; }
+.np-ico { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
 .np-body { flex: 1; min-width: 0; }
 .np-judul { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.4; }
-.np-desc { font-size: 12px; color: #64748b; margin-top: 2px; }
+.np-desc { font-size: 12px; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .np-time { font-size: 11px; color: #94a3b8; margin-top: 4px; }
-.np-dot { width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; margin-top: 5px; }
+.np-dot { width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; margin-top: 6px; }
 
-/* Main content */
-.main-content { flex: 1; min-width: 0; overflow-y: auto; }
+/* User area */
+.user-area { position: relative; }
+.user-btn {
+  display: flex; align-items: center; gap: 9px;
+  background: none; border: none;
+  border-radius: 10px;
+  padding: 5px 10px 5px 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.user-btn:hover, .user-btn.active { background: #f1f5f9; }
+.user-avatar {
+  width: 32px; height: 32px;
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 12px;
+  flex-shrink: 0;
+}
+.user-info { text-align: left; }
+.user-name { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.3; white-space: nowrap; }
+.user-role { font-size: 11px; color: #94a3b8; }
+.user-chevron { font-size: 9px; color: #94a3b8; margin-left: 2px; }
 
-/* Toast */
-.toast-container {
-  position: fixed; bottom: 24px; right: 24px; z-index: 9999;
-  display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+.user-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 220px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 16px 32px rgba(0,0,0,0.1);
+  border: 1px solid #e9edf2;
+  overflow: hidden;
+  z-index: 100;
+}
+.um-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 14px 12px;
+}
+.um-avatar {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 13px;
+  flex-shrink: 0;
+}
+.um-name { font-size: 13px; font-weight: 700; color: #0f172a; }
+.um-email { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+.um-divider { height: 1px; background: #f1f5f9; }
+.um-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 11px 14px;
+  background: none; border: none;
+  font-size: 13px; font-weight: 500; color: #374151;
+  cursor: pointer; transition: background 0.12s;
+  text-align: left;
+}
+.um-item:hover { background: #f8fafc; }
+.um-item.danger { color: #dc2626; }
+.um-item.danger:hover { background: #fef2f2; }
+
+/* ── Main content ── */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ── Toasts ── */
+.toast-stack {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  z-index: 9999;
+  display: flex; flex-direction: column; gap: 10px;
+  pointer-events: none;
 }
 .toast {
   display: flex; align-items: flex-start; gap: 10px;
-  background: #fff; border-radius: 12px; padding: 14px 16px;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.15); border-left: 4px solid #3b82f6;
-  min-width: 280px; max-width: 360px; pointer-events: all; cursor: pointer;
-  animation: slideIn 0.3s ease;
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.08), 0 10px 30px rgba(0,0,0,0.12);
+  border-left: 4px solid #3b82f6;
+  min-width: 280px; max-width: 360px;
+  pointer-events: all;
+  cursor: pointer;
 }
-.toast:hover { box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-.toast-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.toast:hover { box-shadow: 0 8px 40px rgba(0,0,0,0.16); }
+.toast-ico { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
 .toast-body { flex: 1; min-width: 0; }
 .toast-title { font-size: 13px; font-weight: 700; color: #0f172a; }
 .toast-desc { font-size: 12px; color: #64748b; margin-top: 2px; }
-.toast-close {
-  background: none; border: none; color: #94a3b8; cursor: pointer;
-  font-size: 20px; padding: 0; flex-shrink: 0; line-height: 1;
+.toast-x {
+  background: none; border: none; color: #94a3b8;
+  cursor: pointer; font-size: 20px; padding: 0;
+  flex-shrink: 0; line-height: 1;
 }
-.toast-close:hover { color: #374151; }
+.toast-x:hover { color: #374151; }
 
-@keyframes slideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to   { transform: translateX(0);    opacity: 1; }
-}
+/* ── Transitions ── */
+.fade-text-enter-active, .fade-text-leave-active { transition: opacity 0.15s, transform 0.15s; }
+.fade-text-enter-from, .fade-text-leave-to { opacity: 0; transform: translateX(-4px); }
+
+.toast-enter-active { animation: toastIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.toast-leave-active { animation: toastOut 0.2s ease forwards; }
+@keyframes toastIn  { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes toastOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(110%); opacity: 0; } }
 </style>
