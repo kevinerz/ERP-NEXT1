@@ -334,9 +334,10 @@ export class MasterService {
     });
     const site = (data as any).site;
     const vendor = (data as any).vendor;
+    const nomorSuffix = dto.nomor_pelanggan_isp ? ` — ${dto.nomor_pelanggan_isp}` : '';
     return {
       data,
-      message: `Sumber internet ditambahkan: ${vendor?.nama_vendor} [${dto.peruntukan_link || 'Main'}] di ${site?.nama_site || 'site ID ' + dto.id_site}${dto.nomor_pelanggan_isp ? ' — ' + dto.nomor_pelanggan_isp : ''}`,
+      message: `Sumber internet ditambahkan: ${vendor?.nama_vendor} [${dto.peruntukan_link || 'Main'}] di ${site?.nama_site || 'site ID ' + dto.id_site}${nomorSuffix}`,
     };
   }
 

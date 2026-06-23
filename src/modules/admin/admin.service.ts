@@ -2,7 +2,27 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
-const ALL_MODULS = ['hris', 'master', 'sales', 'projects', 'operations', 'assets', 'contracts', 'reports'];
+// ALL_MODULS diupdate: tambah notifications, public-wo, dan integrations
+const ALL_MODULS = [
+  // Core modules
+  'hris',
+  'master',
+  'sales',
+  'projects',
+  'operations',
+  'assets',
+  'contracts',
+  'reports',
+  // Additional modules
+  'notifications',
+  'public-wo',
+  // Integrations
+  'prtg',
+  'rcms',
+  'ruijie',
+  'mekari',
+  'socialchat',
+];
 
 @Injectable()
 export class AdminService {
@@ -89,19 +109,19 @@ export class AdminService {
     page?: number;
     limit?: number;
   }) {
-    const page  = Number(query.page)  || 1;
+    const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 50;
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const where: any = {};
 
     if (query.id_user) where.id_user = Number(query.id_user);
-    if (query.aksi)    where.aksi    = query.aksi;
-    if (query.modul)   where.modul   = query.modul;
+    if (query.aksi) where.aksi = query.aksi;
+    if (query.modul) where.modul = query.modul;
 
     if (query.tgl_dari || query.tgl_sampai) {
       where.created_at = {};
-      if (query.tgl_dari)   where.created_at.gte = new Date(query.tgl_dari);
+      if (query.tgl_dari) where.created_at.gte = new Date(query.tgl_dari);
       if (query.tgl_sampai) {
         const end = new Date(query.tgl_sampai);
         end.setHours(23, 59, 59, 999);
@@ -111,10 +131,10 @@ export class AdminService {
 
     if (query.search) {
       where.OR = [
-        { username:   { contains: query.search } },
-        { nama:       { contains: query.search } },
-        { deskripsi:  { contains: query.search } },
-        { entitas:    { contains: query.search } },
+        { username: { contains: query.search } },
+        { nama: { contains: query.search } },
+        { deskripsi: { contains: query.search } },
+        { entitas: { contains: query.search } },
       ];
     }
 
