@@ -19,7 +19,7 @@ const menu = [
   { label: 'HRIS',        icon: '👤', to: '/hris/karyawan' },
   { label: 'Master Data', icon: '📦', to: '/master' },
   { label: 'Sales',       icon: '💼', to: '/sales' },
-  { label: 'Proyek',      icon: '📋', to: '/projects',     soon: true },
+  { label: 'Proyek',      icon: '📋', to: '/projects' },
   { label: 'Operasional', icon: '🔧', to: '/operations',   soon: true },
   { label: 'Aset',        icon: '🖥️',  to: '/assets',      soon: true },
   { label: 'Kontrak',     icon: '📄', to: '/contracts',    soon: true },

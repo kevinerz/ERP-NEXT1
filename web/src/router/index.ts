@@ -93,6 +93,17 @@ const router = createRouter({
           name: 'sales-quotation-list',
           component: () => import('@/views/sales/QuotationListView.vue'),
         },
+        // Proyek
+        {
+          path: 'projects',
+          name: 'proyek-list',
+          component: () => import('@/views/proyek/ProyekListView.vue'),
+        },
+        {
+          path: 'projects/:id',
+          name: 'proyek-detail',
+          component: () => import('@/views/proyek/ProyekDetailView.vue'),
+        },
         // Catch-all dalam layout
         {
           path: ':pathMatch(.*)*',

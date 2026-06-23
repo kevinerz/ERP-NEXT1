@@ -9,7 +9,7 @@ const modules = [
   { icon: '👤', name: 'HRIS',         to: '/hris/karyawan',  ready: true },
   { icon: '📦', name: 'Master Data',  to: '/master',         ready: true },
   { icon: '💼', name: 'Sales',        to: '/sales',          ready: true },
-  { icon: '📋', name: 'Proyek',       to: '/projects',       ready: false },
+  { icon: '📋', name: 'Proyek',       to: '/projects',       ready: true },
   { icon: '🔧', name: 'Operasional',  to: '/operations',     ready: false },
   { icon: '🖥️',  name: 'Aset',        to: '/assets',         ready: false },
   { icon: '📄', name: 'Kontrak',      to: '/contracts',      ready: false },
