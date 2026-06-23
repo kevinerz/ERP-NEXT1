@@ -174,6 +174,11 @@ const router = createRouter({
           name: 'aset-detail',
           component: () => import('@/views/aset/AsetDetailView.vue'),
         },
+        {
+          path: 'assets/sim-topup',
+          name: 'sim-topup',
+          component: () => import('@/views/aset/SimTopupView.vue'),
+        },
         // Profile
         {
           path: 'profile',
@@ -200,7 +205,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'sales-quotation-list': 'sales', 'sales-quotation-detail': 'sales',
   'proyek-list': 'projects', 'proyek-detail': 'projects',
   'tiket-list': 'operations', 'tiket-detail': 'operations',
-  'aset-list': 'assets', 'aset-detail': 'assets',
+  'aset-list': 'assets', 'aset-detail': 'assets', 'sim-topup': 'assets',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'laporan': 'reports',
 }

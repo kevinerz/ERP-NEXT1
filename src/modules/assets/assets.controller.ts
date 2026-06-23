@@ -32,4 +32,17 @@ export class AssetsController {
   createMutasi(@Body() dto: CreateMutasiDto, @Req() req: any) {
     return this.svc.createMutasi(dto, req.user?.userId);
   }
+
+  // ─── SIM TOPUP ────────────────────────────────────────────────
+
+  @Get('sim-cards')
+  getSimCards(@Query() q: any) { return this.svc.getSimCards(q); }
+
+  @Get('sim-topup')
+  findAllTopup(@Query() q: any) { return this.svc.findAllTopup(q); }
+
+  @Post('sim-topup')
+  createTopup(@Body() dto: any, @Req() req: any) {
+    return this.svc.createTopup(dto, req.user?.id_user);
+  }
 }

@@ -76,6 +76,7 @@ const allMenu = [
   { label: 'Proyek',       icon: '▪', emoji: '📋', to: '/projects',       modul: 'projects' },
   { label: 'Operasional',  icon: '▪', emoji: '🔧', to: '/operations',     modul: 'operations' },
   { label: 'Aset',         icon: '▪', emoji: '🖥️', to: '/assets',        modul: 'assets' },
+  { label: 'SIM Topup',   icon: '▪', emoji: '📱', to: '/assets/sim-topup', modul: 'assets' },
   { label: 'Kontrak',      icon: '▪', emoji: '📄', to: '/contracts',      modul: 'contracts' },
   { label: 'Laporan',      icon: '▪', emoji: '📈', to: '/reports',        modul: 'reports' },
 ]
@@ -117,6 +118,7 @@ const PAGE_TITLES: Record<string, string> = {
   "tiket-detail":         "Operasional — Detail Tiket",
   "aset-list":            "Aset",
   "aset-detail":          "Aset — Detail",
+  "sim-topup":            "SIM Card — Topup",
   "kontrak-list":         "Kontrak",
   "kontrak-detail":       "Kontrak — Detail",
   laporan:                "Laporan",

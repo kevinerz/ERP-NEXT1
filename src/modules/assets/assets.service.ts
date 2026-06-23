@@ -178,4 +178,98 @@ export class AssetsService {
     const data = statuses.map((s) => ({ status: s, count: map[s] ?? 0 }));
     return { data };
   }
+
+  // ─── SIM TOPUP ────────────────────────────────────────────────
+
+  async getSimCards(query: { search?: string; id_site?: string }) {
+    const where: any = { kategori: 'SIM_Card' };
+    if (query.search) {
+      where.OR = [
+        { nama_perangkat: { contains: query.search } },
+        { serial_number: { contains: query.search } },
+        { kode_aset: { contains: query.search } },
+      ];
+    }
+    if (query.id_site) where.id_site = Number(query.id_site);
+
+    const data = await this.prisma.gudangAset.findMany({
+      where,
+      orderBy: { nama_perangkat: 'asc' },
+      include: {
+        site: { select: { id_site: true, kode_site: true, nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
+        _count: { select: { topup: true } },
+      },
+    });
+    return { data };
+  }
+
+  async findAllTopup(query: {
+    id_aset_sim?: string; id_site?: string;
+    tgl_dari?: string; tgl_sampai?: string;
+    page?: number; limit?: number;
+  }) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 25;
+    const skip = (page - 1) * limit;
+    const where: any = {};
+
+    if (query.id_aset_sim) where.id_aset_sim = Number(query.id_aset_sim);
+    if (query.id_site) where.id_site = Number(query.id_site);
+    if (query.tgl_dari || query.tgl_sampai) {
+      where.tgl_topup = {};
+      if (query.tgl_dari) where.tgl_topup.gte = new Date(query.tgl_dari);
+      if (query.tgl_sampai) where.tgl_topup.lte = new Date(query.tgl_sampai + 'T23:59:59');
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.simTopup.findMany({
+        where, skip, take: limit,
+        orderBy: { tgl_topup: 'desc' },
+        include: {
+          aset_sim: { select: { kode_aset: true, nama_perangkat: true, serial_number: true } },
+          site: { select: { kode_site: true, nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
+          user: { include: { karyawan: { select: { nama_lengkap: true } } } },
+        },
+      }),
+      this.prisma.simTopup.count({ where }),
+    ]);
+
+    const totalNominal = await this.prisma.simTopup.aggregate({
+      _sum: { nominal: true },
+      where,
+    });
+
+    return {
+      data,
+      meta: {
+        total, page, limit,
+        total_pages: Math.ceil(total / limit),
+        total_nominal: Number(totalNominal._sum.nominal) || 0,
+      },
+    };
+  }
+
+  async createTopup(dto: {
+    id_aset_sim: number; id_site: number; jenis_topup: string;
+    nominal: number; tgl_topup: string; keterangan?: string;
+  }, userId?: number) {
+    const sim = await this.prisma.gudangAset.findUnique({ where: { id_aset: dto.id_aset_sim } });
+    if (!sim) throw new NotFoundException('SIM card tidak ditemukan');
+
+    const data = await this.prisma.simTopup.create({
+      data: {
+        ...dto,
+        nominal: dto.nominal,
+        tgl_topup: new Date(dto.tgl_topup),
+        id_user: userId || null,
+      },
+      include: {
+        aset_sim: { select: { kode_aset: true, nama_perangkat: true } },
+        site: { select: { kode_site: true, nama_site: true } },
+        user: { include: { karyawan: { select: { nama_lengkap: true } } } },
+      },
+    });
+
+    return { data, message: 'Topup berhasil dicatat' };
+  }
 }
