@@ -277,7 +277,6 @@ async function handleToggleUserStatus() {
         </div>
       </div>
     </div>
-  </div>
 
     <!-- Modal: Edit Role -->
     <div v-if="showEditRoles" class="modal-overlay" @click.self="showEditRoles = false">
