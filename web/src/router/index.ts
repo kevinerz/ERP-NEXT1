@@ -103,6 +103,17 @@ const router = createRouter({
           name: 'sales-quotation-list',
           component: () => import('@/views/sales/QuotationListView.vue'),
         },
+        // Operasional
+        {
+          path: 'operations',
+          name: 'tiket-list',
+          component: () => import('@/views/operations/TiketListView.vue'),
+        },
+        {
+          path: 'operations/:id',
+          name: 'tiket-detail',
+          component: () => import('@/views/operations/TiketDetailView.vue'),
+        },
         // Proyek
         {
           path: 'projects',
