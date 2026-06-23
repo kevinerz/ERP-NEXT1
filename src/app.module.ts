@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { join } from 'path';
 
 // Prisma
@@ -10,6 +11,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { UploadModule } from './common/upload/upload.module';
 import { DocumentNumberModule } from './common/document-number/document-number.module';
 import { AuditModule } from './common/audit/audit.module';
+import { LogModule } from './common/log/log.module';
+import { LogInterceptor } from './common/log/log.interceptor';
 
 // Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -38,7 +41,6 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     ConfigModule.forRoot({ isGlobal: true }),
 
     // Serve Vue SPA dari public/
-    // Semua route yang tidak cocok dengan /api akan serve index.html
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
       exclude: ['/api*', '/webhook*'],
@@ -51,6 +53,7 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     UploadModule,
     DocumentNumberModule,
     AuditModule,
+    LogModule,
 
     // Business modules
     AuthModule,
@@ -72,6 +75,13 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     RuijieModule,
     MekariModule,
     SocialchatModule,
+  ],
+  providers: [
+    // Global interceptor — log semua POST/PATCH/DELETE
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LogInterceptor,
+    },
   ],
 })
 export class AppModule {}

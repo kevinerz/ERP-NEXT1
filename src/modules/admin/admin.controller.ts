@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
 import { AdminService } from './admin.service';
 
 @Controller('admin')
@@ -23,4 +23,9 @@ export class AdminController {
   resetPassword(@Param('id', ParseIntPipe) id: number, @Body() body: { password: string }) {
     return this.svc.resetPassword(id, body.password);
   }
+
+  // ─── Activity Log ─────────────────────────────────────────────
+
+  @Get('logs')
+  getLogs(@Query() query: any) { return this.svc.getLogs(query); }
 }

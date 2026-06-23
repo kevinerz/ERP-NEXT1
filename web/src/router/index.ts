@@ -136,6 +136,11 @@ const router = createRouter({
           name: 'admin-users',
           component: () => import('@/views/admin/UserManagementView.vue'),
         },
+        {
+          path: 'admin/logs',
+          name: 'admin-logs',
+          component: () => import('@/views/admin/ActivityLogView.vue'),
+        },
         // Laporan
         {
           path: 'reports',
@@ -203,7 +208,7 @@ router.beforeEach((to) => {
     const modul = ROUTE_MODUL[to.name as string]
     if (modul && !auth.canAccess(modul)) return '/dashboard'
     // halaman admin hanya superadmin
-    if (to.name === 'admin-users' && !auth.isSuperAdmin) return '/dashboard'
+    if ((to.name === 'admin-users' || to.name === 'admin-logs') && !auth.isSuperAdmin) return '/dashboard'
   }
 })
 

@@ -6,6 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { LogService } from '../../common/log/log.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -16,9 +17,10 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
+    private logService: LogService,
   ) {}
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ip?: string) {
     const user = await this.prisma.coreUser.findUnique({
       where: { username: dto.username },
       include: {
@@ -31,7 +33,18 @@ export class AuthService {
     if (!user.is_aktif) throw new UnauthorizedException('Akun tidak aktif');
 
     const passwordMatch = await bcrypt.compare(dto.password, user.password_hash);
-    if (!passwordMatch) throw new UnauthorizedException('Username atau password salah');
+    if (!passwordMatch) {
+      // Log gagal login
+      await this.logService.log({
+        username: dto.username,
+        aksi: 'LOGIN',
+        modul: 'auth',
+        entitas: 'User',
+        deskripsi: `Login GAGAL — username: ${dto.username}`,
+        ip_address: ip,
+      });
+      throw new UnauthorizedException('Username atau password salah');
+    }
 
     await this.prisma.coreUser.update({
       where: { id_user: user.id_user },
@@ -50,6 +63,18 @@ export class AuthService {
       roles,
     };
 
+    // Log login berhasil
+    await this.logService.log({
+      id_user: user.id_user,
+      username: user.username,
+      nama: user.karyawan.nama_lengkap,
+      aksi: 'LOGIN',
+      modul: 'auth',
+      entitas: 'User',
+      deskripsi: `Login berhasil`,
+      ip_address: ip,
+    });
+
     return {
       access_token: await this.generateAccessToken(payload),
       refresh_token: await this.generateRefreshToken(payload),
@@ -63,6 +88,20 @@ export class AuthService {
         modul_akses,
       },
     };
+  }
+
+  async logout(user: { id_user: number; username: string; nama_lengkap?: string }, ip?: string) {
+    await this.logService.log({
+      id_user: user.id_user,
+      username: user.username,
+      nama: user.nama_lengkap || '',
+      aksi: 'LOGOUT',
+      modul: 'auth',
+      entitas: 'User',
+      deskripsi: `Logout`,
+      ip_address: ip,
+    });
+    return { message: 'Logout berhasil' };
   }
 
   async refresh(dto: RefreshTokenDto) {

@@ -76,4 +76,61 @@ export class AdminService {
     });
     return { data: { ...user, modul_akses: moduls }, message: `User ${user.username} dibuat` };
   }
+
+  // ─── Activity Log ─────────────────────────────────────────────
+
+  async getLogs(query: {
+    id_user?: string;
+    aksi?: string;
+    modul?: string;
+    tgl_dari?: string;
+    tgl_sampai?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page  = Number(query.page)  || 1;
+    const limit = Number(query.limit) || 50;
+    const skip  = (page - 1) * limit;
+
+    const where: any = {};
+
+    if (query.id_user) where.id_user = Number(query.id_user);
+    if (query.aksi)    where.aksi    = query.aksi;
+    if (query.modul)   where.modul   = query.modul;
+
+    if (query.tgl_dari || query.tgl_sampai) {
+      where.created_at = {};
+      if (query.tgl_dari)   where.created_at.gte = new Date(query.tgl_dari);
+      if (query.tgl_sampai) {
+        const end = new Date(query.tgl_sampai);
+        end.setHours(23, 59, 59, 999);
+        where.created_at.lte = end;
+      }
+    }
+
+    if (query.search) {
+      where.OR = [
+        { username:   { contains: query.search } },
+        { nama:       { contains: query.search } },
+        { deskripsi:  { contains: query.search } },
+        { entitas:    { contains: query.search } },
+      ];
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.activityLog.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.activityLog.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: { total, page, limit, total_pages: Math.ceil(total / limit) },
+    };
+  }
 }

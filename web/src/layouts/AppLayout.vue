@@ -3,28 +3,31 @@ import { ref, computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
+import api from '@/services/api'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const sidebarOpen = ref(true)
 
-function logout() {
+async function logout() {
+  try { await api.post('/auth/logout') } catch {}
   auth.logout()
   router.push('/login')
 }
 
 const allMenu = [
-  { label: 'Dashboard',   icon: '📊', to: '/dashboard',    modul: null },
-  { label: 'HRIS',        icon: '👤', to: '/hris/karyawan', modul: 'hris' },
-  { label: 'Master Data', icon: '📦', to: '/master',        modul: 'master' },
-  { label: 'Sales',       icon: '💼', to: '/sales',         modul: 'sales' },
-  { label: 'Proyek',      icon: '📋', to: '/projects',      modul: 'projects' },
-  { label: 'Operasional', icon: '🔧', to: '/operations',    modul: 'operations' },
-  { label: 'Aset',        icon: '🖥️',  to: '/assets',       modul: 'assets' },
-  { label: 'Kontrak',     icon: '📄', to: '/contracts',     modul: 'contracts' },
-  { label: 'Laporan',     icon: '📈', to: '/reports',       modul: 'reports' },
-  { label: 'Users',       icon: '⚙️',  to: '/admin/users',  modul: null, adminOnly: true },
+  { label: 'Dashboard',     icon: '📊', to: '/dashboard',    modul: null },
+  { label: 'HRIS',          icon: '👤', to: '/hris/karyawan', modul: 'hris' },
+  { label: 'Master Data',   icon: '📦', to: '/master',        modul: 'master' },
+  { label: 'Sales',         icon: '💼', to: '/sales',         modul: 'sales' },
+  { label: 'Proyek',        icon: '📋', to: '/projects',      modul: 'projects' },
+  { label: 'Operasional',   icon: '🔧', to: '/operations',    modul: 'operations' },
+  { label: 'Aset',          icon: '🖥️',  to: '/assets',       modul: 'assets' },
+  { label: 'Kontrak',       icon: '📄', to: '/contracts',     modul: 'contracts' },
+  { label: 'Laporan',       icon: '📈', to: '/reports',       modul: 'reports' },
+  { label: 'Users',         icon: '⚙️',  to: '/admin/users',  modul: null, adminOnly: true },
+  { label: 'Activity Log',  icon: '📝', to: '/admin/logs',   modul: null, adminOnly: true },
 ]
 
 const menu = computed(() =>

@@ -120,12 +120,12 @@ model CoreUser {
   last_login    DateTime?
   created_at    DateTime  @default(now())
 
-  karyawan   HrisKaryawan   @relation(fields: [id_karyawan], references: [id_karyawan])
-  user_roles CoreUserRole[]
-  mutasi     GudangMutasiAset[]
-  topup      SimTopup[]
-  ticket_logs OperationTicketLog[]
-  rca         OperationRca[]
+  karyawan     HrisKaryawan     @relation(fields: [id_karyawan], references: [id_karyawan])
+  user_roles   CoreUserRole[]
+  mutasi       GudangMutasiAset[]
+  topup        SimTopup[]
+  ticket_logs  OperationTicketLog[]
+  rca          OperationRca[]
 
   @@map("core_users")
 }
@@ -770,4 +770,25 @@ model IntegrationRuijieWebhook {
   ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
 
   @@map("integration_ruijie_webhooks")
+}
+
+// ============================================================
+// LAYER 9 — ACTIVITY LOG
+// ============================================================
+
+model ActivityLog {
+  id_log      Int      @id @default(autoincrement())
+  id_user     Int?
+  username    String   @db.VarChar(80)
+  nama        String?  @db.VarChar(150)
+  aksi        String   @db.VarChar(20)   // LOGIN, LOGOUT, CREATE, UPDATE, DELETE
+  modul       String?  @db.VarChar(30)
+  entitas     String?  @db.VarChar(60)
+  deskripsi   String?  @db.Text
+  ip_address  String?  @db.VarChar(45)
+  created_at  DateTime @default(now())
+
+  @@index([id_user])
+  @@index([created_at])
+  @@map("activity_log")
 }
