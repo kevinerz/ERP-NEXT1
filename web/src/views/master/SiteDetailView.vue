@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 
@@ -12,6 +12,7 @@ const loading = ref(true)
 const error = ref('')
 const vendorList = ref<any[]>([])
 const asetSimList = ref<any[]>([])
+const asetList = ref<any[]>([])  // untuk perangkat picker
 
 const activeTab = ref<'sumber' | 'perangkat' | 'pic'>('sumber')
 
@@ -28,6 +29,7 @@ const editPerangkat = ref<any>(null)
 const perangkatForm = ref<any>({})
 const perangkatSubmitting = ref(false)
 const perangkatError = ref('')
+const selectedAset = ref<any>(null)  // aset yang dipilih, untuk auto-fill info
 
 // PIC
 const showPicModal = ref(false)
@@ -38,7 +40,6 @@ const picError = ref('')
 
 const PERUNTUKAN = ['Main', 'Backup', 'Redundant']
 const STATUS_LINK = ['Aktif', 'Nonaktif', 'Gangguan']
-const JENIS_PERANGKAT = ['Router', 'Switch', 'ONT', 'ONU', 'Modem', 'Radio', 'Antena', 'Server', 'UPS', 'Lainnya']
 const STATUS_PERANGKAT = ['Aktif', 'Nonaktif', 'Rusak']
 
 const LINK_COLOR: Record<string, { bg: string; color: string }> = {
@@ -47,13 +48,13 @@ const LINK_COLOR: Record<string, { bg: string; color: string }> = {
   Gangguan: { bg: '#fef2f2', color: '#dc2626' },
 }
 const SITE_STATUS_COLOR: Record<string, { bg: string; color: string }> = {
-  Aktif:   { bg: '#f0fdf4', color: '#15803d' },
-  Prospek: { bg: '#eff6ff', color: '#1d4ed8' },
+  Aktif:     { bg: '#f0fdf4', color: '#15803d' },
+  Prospek:   { bg: '#eff6ff', color: '#1d4ed8' },
   Terminasi: { bg: '#fef2f2', color: '#dc2626' },
 }
 
 onMounted(async () => {
-  await Promise.all([loadSite(), loadVendors(), loadAsetSim()])
+  await Promise.all([loadSite(), loadVendors(), loadAsetSim(), loadAset()])
 })
 
 async function loadSite() {
@@ -74,11 +75,31 @@ async function loadVendors() {
 
 async function loadAsetSim() {
   try {
-    // Ambil aset kategori Modem/SIM dari gudang
-    const r = await api.get('/assets', { params: { kategori: 'Modem GSM', limit: 200 } })
-    asetSimList.value = r.data.data
+    const r = await api.get('/assets', { params: { limit: 500 } })
+    // filter modem/GSM dari semua aset
+    asetSimList.value = (r.data.data || []).filter((a: any) =>
+      ['Modem GSM', 'SIM Card', 'Modem', 'Modem FO'].includes(a.kategori)
+    )
   } catch {}
 }
+
+async function loadAset() {
+  try {
+    // Semua aset yang tersedia (Di_Gudang) atau sudah Terpasang (bisa pindah)
+    const r = await api.get('/assets', { params: { limit: 500 } })
+    asetList.value = r.data.data || []
+  } catch {}
+}
+
+// Aset yang tersedia untuk dipilih: Di_Gudang atau yang sudah terpasang di site ini
+const asetTersedia = computed(() => {
+  const terpasangDiSiteIni = (site.value?.perangkat || [])
+    .map((p: any) => p.id_aset)
+    .filter(Boolean)
+  return asetList.value.filter((a: any) =>
+    a.status_aset === 'Di_Gudang' || terpasangDiSiteIni.includes(a.id_aset)
+  )
+})
 
 // ─── Sumber Internet ──────────────────────────────────────────
 
@@ -136,17 +157,16 @@ async function deleteSumber(s: any) {
 
 function openAddPerangkat() {
   editPerangkat.value = null
-  perangkatForm.value = { id_site: id, jenis_perangkat: 'Router', merk: '', tipe_model: '', serial_number: '', ip_address: '', mac_address: '', tgl_pasang: '', status_perangkat: 'Aktif', catatan: '' }
+  selectedAset.value = null
+  perangkatForm.value = { id_site: id, id_aset: 0, ip_address: '', mac_address: '', tgl_pasang: '', status_perangkat: 'Aktif', catatan: '' }
   showPerangkatModal.value = true; perangkatError.value = ''
 }
 
 function openEditPerangkat(p: any) {
   editPerangkat.value = p
+  selectedAset.value = p.aset || null
   perangkatForm.value = {
-    jenis_perangkat: p.jenis_perangkat,
-    merk: p.merk || '',
-    tipe_model: p.tipe_model || '',
-    serial_number: p.serial_number || '',
+    id_aset: p.id_aset || 0,
     ip_address: p.ip_address || '',
     mac_address: p.mac_address || '',
     tgl_pasang: p.tgl_pasang ? p.tgl_pasang.split('T')[0] : '',
@@ -156,10 +176,25 @@ function openEditPerangkat(p: any) {
   showPerangkatModal.value = true; perangkatError.value = ''
 }
 
+// Saat user pilih aset, update selectedAset untuk tampilkan info
+watch(() => perangkatForm.value.id_aset, (val) => {
+  if (!val) { selectedAset.value = null; return }
+  selectedAset.value = asetList.value.find((a: any) => a.id_aset === Number(val)) || null
+})
+
 async function savePerangkat() {
+  if (!perangkatForm.value.id_aset) { perangkatError.value = 'Aset wajib dipilih'; return }
   perangkatSubmitting.value = true; perangkatError.value = ''
   try {
-    const payload = { ...perangkatForm.value }
+    const aset = selectedAset.value
+    const payload: any = {
+      ...perangkatForm.value,
+      // Salin info dari aset
+      jenis_perangkat: aset?.kategori || 'Perangkat',
+      merk: aset?.merk || '',
+      tipe_model: aset?.tipe_model || '',
+      serial_number: aset?.serial_number || '',
+    }
     if (!payload.tgl_pasang) delete payload.tgl_pasang
     if (editPerangkat.value) {
       await api.patch(`/master/perangkat/${editPerangkat.value.id_perangkat}`, payload)
@@ -173,7 +208,7 @@ async function savePerangkat() {
 }
 
 async function deletePerangkat(p: any) {
-  if (!confirm(`Hapus perangkat ${p.jenis_perangkat} ${p.merk || ''}?`)) return
+  if (!confirm(`Hapus perangkat ${p.aset?.nama_perangkat || p.jenis_perangkat}?`)) return
   try {
     await api.delete(`/master/perangkat/${p.id_perangkat}`)
     await loadSite()
@@ -224,8 +259,11 @@ function fmtDate(d: string) {
 }
 function fmtRupiah(n: number) { return 'Rp ' + (n || 0).toLocaleString('id-ID') }
 
-const selectedVendor = computed(() => vendorList.value.find((v) => v.id_vendor === sumberForm.value.id_vendor_isp))
-const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().includes('gsm') || selectedVendor.value?.tipe_vendor?.toLowerCase().includes('seluler'))
+const selectedVendor = computed(() => vendorList.value.find((v: any) => v.id_vendor === sumberForm.value.id_vendor_isp))
+const isGsm = computed(() => {
+  const tipe = selectedVendor.value?.tipe_vendor?.toLowerCase() || ''
+  return tipe.includes('gsm') || tipe.includes('seluler') || tipe.includes('cellular')
+})
 </script>
 
 <template>
@@ -324,7 +362,7 @@ const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().in
             </div>
             <div class="sumber-details">
               <div class="sumber-detail-item" v-if="s.nomor_pelanggan_isp">
-                <span class="dl">{{ s.vendor?.tipe_vendor?.toLowerCase().includes('gsm') ? 'Nomor SIM' : 'Nomor Circuit / ID Pelanggan ISP' }}</span>
+                <span class="dl">{{ s.vendor?.tipe_vendor?.toLowerCase().includes('gsm') ? 'Nomor SIM' : 'Circuit ID / Nomor Pelanggan ISP' }}</span>
                 <span class="dv mono">{{ s.nomor_pelanggan_isp }}</span>
               </div>
               <div class="sumber-detail-item" v-if="s.bandwidth_mbps">
@@ -341,7 +379,7 @@ const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().in
               </div>
               <div class="sumber-detail-item" v-if="s.aset_sim">
                 <span class="dl">Modem / SIM</span>
-                <span class="dv">{{ s.aset_sim.nama_perangkat }} ({{ s.aset_sim.serial_number || s.aset_sim.kode_aset }})</span>
+                <span class="dv">{{ s.aset_sim.nama_perangkat }} · <span class="mono">{{ s.aset_sim.serial_number || s.aset_sim.kode_aset }}</span></span>
               </div>
               <div class="sumber-detail-item" v-if="s.catatan">
                 <span class="dl">Catatan</span>
@@ -362,8 +400,8 @@ const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().in
         <table v-else class="perangkat-table">
           <thead>
             <tr>
-              <th>Jenis</th>
-              <th>Merk / Model</th>
+              <th>Aset</th>
+              <th>Kode Aset</th>
               <th>Serial / IP</th>
               <th>Tgl Pasang</th>
               <th>Status</th>
@@ -372,10 +410,13 @@ const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().in
           </thead>
           <tbody>
             <tr v-for="p in site.perangkat" :key="p.id_perangkat">
-              <td class="fw600">{{ p.jenis_perangkat }}</td>
               <td>
-                <div>{{ p.merk }} {{ p.tipe_model }}</div>
-                <div class="text-gray text-sm" v-if="p.aset">{{ p.aset.kode_aset }}</div>
+                <div class="fw600">{{ p.aset?.nama_perangkat || p.jenis_perangkat }}</div>
+                <div class="text-gray text-sm">{{ p.merk }} {{ p.tipe_model }}</div>
+              </td>
+              <td>
+                <span class="kode-aset" v-if="p.aset">{{ p.aset.kode_aset }}</span>
+                <span class="text-gray text-sm" v-else>—</span>
               </td>
               <td>
                 <div class="mono text-sm" v-if="p.serial_number">SN: {{ p.serial_number }}</div>
@@ -443,7 +484,7 @@ const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().in
             </select>
           </div>
           <div class="field full">
-            <label>{{ isGsm ? 'Nomor SIM / GSM' : 'Nomor Circuit / ID Pelanggan ISP' }}</label>
+            <label>{{ isGsm ? 'Nomor SIM / GSM' : 'Circuit ID / Nomor Pelanggan ISP' }}</label>
             <input v-model="sumberForm.nomor_pelanggan_isp"
               :placeholder="isGsm ? '08xxxxxxxxxx' : 'Circuit ID / nomor layanan ISP'" />
           </div>
@@ -499,35 +540,55 @@ const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().in
       </div>
     </div>
 
-    <!-- Modal Perangkat -->
+    <!-- Modal Perangkat — picker dari Aset -->
     <div v-if="showPerangkatModal" class="modal-overlay" @click.self="showPerangkatModal = false">
       <div class="modal">
-        <h3>{{ editPerangkat ? 'Edit Perangkat' : 'Tambah Perangkat' }}</h3>
-        <div class="form-grid">
-          <div class="field">
-            <label>Jenis Perangkat <span class="req">*</span></label>
-            <select v-model="perangkatForm.jenis_perangkat">
-              <option v-for="j in JENIS_PERANGKAT" :key="j" :value="j">{{ j }}</option>
-            </select>
+        <h3>{{ editPerangkat ? 'Edit Perangkat' : 'Tambah Perangkat dari Aset' }}</h3>
+
+        <!-- Pilih Aset -->
+        <div class="field" style="margin-bottom: 16px;">
+          <label>Pilih Aset <span class="req">*</span></label>
+          <select v-model.number="perangkatForm.id_aset">
+            <option :value="0">— Pilih dari inventaris aset —</option>
+            <option v-for="a in asetTersedia" :key="a.id_aset" :value="a.id_aset">
+              [{{ a.kode_aset }}] {{ a.nama_perangkat }}
+              {{ a.merk ? '· ' + a.merk : '' }}
+              {{ a.tipe_model ? a.tipe_model : '' }}
+              {{ a.serial_number ? '· SN:' + a.serial_number : '' }}
+            </option>
+          </select>
+          <div v-if="asetTersedia.length === 0" class="hint-text">
+            Tidak ada aset tersedia di gudang. Tambah aset di modul Aset terlebih dahulu.
           </div>
-          <div class="field">
-            <label>Status</label>
-            <select v-model="perangkatForm.status_perangkat">
-              <option v-for="s in STATUS_PERANGKAT" :key="s" :value="s">{{ s }}</option>
-            </select>
+        </div>
+
+        <!-- Info aset yang dipilih -->
+        <div v-if="selectedAset" class="aset-preview">
+          <div class="aset-preview-row">
+            <span class="apl">Kode</span><span class="apv mono">{{ selectedAset.kode_aset }}</span>
           </div>
-          <div class="field">
-            <label>Merk</label>
-            <input v-model="perangkatForm.merk" placeholder="Mikrotik, Huawei, TP-Link..." />
+          <div class="aset-preview-row">
+            <span class="apl">Perangkat</span><span class="apv">{{ selectedAset.nama_perangkat }}</span>
           </div>
-          <div class="field">
-            <label>Tipe / Model</label>
-            <input v-model="perangkatForm.tipe_model" placeholder="hEX, EG8145V5..." />
+          <div class="aset-preview-row" v-if="selectedAset.merk || selectedAset.tipe_model">
+            <span class="apl">Merk / Model</span><span class="apv">{{ selectedAset.merk }} {{ selectedAset.tipe_model }}</span>
           </div>
-          <div class="field">
-            <label>Serial Number</label>
-            <input v-model="perangkatForm.serial_number" />
+          <div class="aset-preview-row" v-if="selectedAset.serial_number">
+            <span class="apl">Serial Number</span><span class="apv mono">{{ selectedAset.serial_number }}</span>
           </div>
+          <div class="aset-preview-row">
+            <span class="apl">Kategori</span><span class="apv">{{ selectedAset.kategori }}</span>
+          </div>
+          <div class="aset-preview-row">
+            <span class="apl">Status Aset</span>
+            <span class="apv" :class="selectedAset.status_aset === 'Di_Gudang' ? 'green' : 'orange'">
+              {{ selectedAset.status_aset }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Info tambahan site-specific -->
+        <div class="form-grid" style="margin-top: 16px;">
           <div class="field">
             <label>IP Address</label>
             <input v-model="perangkatForm.ip_address" placeholder="192.168.x.x" />
@@ -540,11 +601,18 @@ const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().in
             <label>Tanggal Pasang</label>
             <input v-model="perangkatForm.tgl_pasang" type="date" />
           </div>
+          <div class="field">
+            <label>Status di Site</label>
+            <select v-model="perangkatForm.status_perangkat">
+              <option v-for="s in STATUS_PERANGKAT" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
           <div class="field full">
             <label>Catatan</label>
-            <textarea v-model="perangkatForm.catatan" rows="2"></textarea>
+            <textarea v-model="perangkatForm.catatan" rows="2" placeholder="Info tambahan (posisi, konfigurasi, dll)"></textarea>
           </div>
         </div>
+
         <p v-if="perangkatError" class="form-error">{{ perangkatError }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showPerangkatModal = false">Batal</button>
@@ -655,6 +723,7 @@ const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().in
 .perangkat-table th { padding: 11px 14px; font-size: 12px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; background: #f8fafc; }
 .perangkat-table td { padding: 12px 14px; font-size: 14px; border-top: 1px solid #f1f5f9; }
 .fw600 { font-weight: 600; }
+.kode-aset { font-family: monospace; font-size: 12px; background: #f1f5f9; padding: 2px 7px; border-radius: 4px; color: #1d4ed8; font-weight: 600; }
 .text-gray { color: #64748b; }
 .text-sm { font-size: 12px; }
 .perangkat-status { padding: 3px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
@@ -665,6 +734,16 @@ const isGsm = computed(() => selectedVendor.value?.tipe_vendor?.toLowerCase().in
 .btn-icon { background: none; border: none; cursor: pointer; font-size: 15px; padding: 4px; border-radius: 4px; }
 .btn-icon:hover { background: #f1f5f9; }
 .btn-icon.red:hover { background: #fef2f2; }
+
+/* Aset preview card */
+.aset-preview { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
+.aset-preview-row { display: flex; gap: 12px; align-items: baseline; }
+.apl { font-size: 11px; color: #94a3b8; font-weight: 700; width: 100px; flex-shrink: 0; }
+.apv { font-size: 13px; color: #0f172a; font-weight: 600; }
+.apv.green { color: #15803d; }
+.apv.orange { color: #d97706; }
+
+.hint-text { font-size: 12px; color: #f59e0b; margin-top: 4px; }
 
 /* PIC */
 .pic-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
