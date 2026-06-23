@@ -1,22 +1,29 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 
 const auth = useAuthStore()
 const router = useRouter()
 
-const modules = [
-  { icon: '👤', name: 'HRIS',         to: '/hris/karyawan',  ready: true },
-  { icon: '📦', name: 'Master Data',  to: '/master',         ready: true },
-  { icon: '💼', name: 'Sales',        to: '/sales',          ready: true },
-  { icon: '📋', name: 'Proyek',       to: '/projects',       ready: true },
-  { icon: '🔧', name: 'Operasional',  to: '/operations',     ready: true },
-  { icon: '🖥️',  name: 'Aset',        to: '/assets',         ready: true },
-  { icon: '📄', name: 'Kontrak',      to: '/contracts',      ready: true },
-  { icon: '🔔', name: 'Notifikasi',   to: '/notifications',  ready: false },
-  { icon: '📈', name: 'Laporan',      to: '/reports',        ready: true },
-  { icon: '🔗', name: 'Integrasi',    to: '/integrations',   ready: false },
+const allModules = [
+  { icon: '👤', name: 'HRIS',        to: '/hris/karyawan', modul: 'hris' },
+  { icon: '📦', name: 'Master Data', to: '/master',        modul: 'master' },
+  { icon: '💼', name: 'Sales',       to: '/sales',         modul: 'sales' },
+  { icon: '📋', name: 'Proyek',      to: '/projects',      modul: 'projects' },
+  { icon: '🔧', name: 'Operasional', to: '/operations',    modul: 'operations' },
+  { icon: '🖥️',  name: 'Aset',       to: '/assets',        modul: 'assets' },
+  { icon: '📄', name: 'Kontrak',     to: '/contracts',     modul: 'contracts' },
+  { icon: '📈', name: 'Laporan',     to: '/reports',       modul: 'reports' },
+  { icon: '⚙️',  name: 'Users',      to: '/admin/users',   modul: null, adminOnly: true },
 ]
+
+const modules = computed(() =>
+  allModules.filter((m) => {
+    if (m.adminOnly) return auth.isSuperAdmin
+    return auth.canAccess(m.modul!)
+  })
+)
 </script>
 
 <template>
@@ -31,14 +38,11 @@ const modules = [
       <div
         v-for="m in modules"
         :key="m.name"
-        :class="['module-card', { clickable: m.ready }]"
-        @click="m.ready && router.push(m.to)"
+        class="module-card clickable"
+        @click="router.push(m.to)"
       >
         <div class="module-icon">{{ m.icon }}</div>
         <div class="module-label">{{ m.name }}</div>
-        <div :class="m.ready ? 'badge-ready' : 'badge-soon'">
-          {{ m.ready ? 'Tersedia' : 'Soon' }}
-        </div>
       </div>
     </div>
   </div>
@@ -71,22 +75,12 @@ const modules = [
   text-align: center;
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   transition: box-shadow 0.2s, transform 0.2s;
+  cursor: pointer;
 }
-.module-card.clickable { cursor: pointer; }
-.module-card.clickable:hover {
+.module-card:hover {
   box-shadow: 0 6px 20px rgba(30,64,175,0.15);
   transform: translateY(-2px);
 }
 .module-icon { font-size: 30px; margin-bottom: 10px; }
-.module-label { font-size: 14px; font-weight: 600; color: #0f172a; margin-bottom: 6px; }
-.badge-ready {
-  background: #dcfce7; color: #15803d;
-  padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
-  display: inline-block;
-}
-.badge-soon {
-  background: #f1f5f9; color: #94a3b8;
-  padding: 2px 10px; border-radius: 20px; font-size: 11px;
-  display: inline-block;
-}
+.module-label { font-size: 14px; font-weight: 600; color: #0f172a; }
 </style>

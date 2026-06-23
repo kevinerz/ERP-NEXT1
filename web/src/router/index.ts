@@ -169,6 +169,20 @@ const router = createRouter({
   ],
 })
 
+// Map route name → modul key
+const ROUTE_MODUL: Record<string, string> = {
+  'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris',
+  'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master',
+  'master-pelanggan': 'master', 'master-site': 'master',
+  'sales-dashboard': 'sales', 'sales-lead-list': 'sales', 'sales-lead-detail': 'sales',
+  'sales-opp-list': 'sales', 'sales-opp-detail': 'sales', 'sales-quotation-list': 'sales',
+  'proyek-list': 'projects', 'proyek-detail': 'projects',
+  'tiket-list': 'operations', 'tiket-detail': 'operations',
+  'aset-list': 'assets', 'aset-detail': 'assets',
+  'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
+  'laporan': 'reports',
+}
+
 router.beforeEach((to) => {
   const auth = useAuthStore()
   if (!auth.user) auth.init()
@@ -178,6 +192,14 @@ router.beforeEach((to) => {
 
   if (!loggedIn && !isLogin) return '/login'
   if (loggedIn && isLogin) return '/dashboard'
+
+  // Cek akses modul
+  if (loggedIn && to.name) {
+    const modul = ROUTE_MODUL[to.name as string]
+    if (modul && !auth.canAccess(modul)) return '/dashboard'
+    // halaman admin hanya superadmin
+    if (to.name === 'admin-users' && !auth.isSuperAdmin) return '/dashboard'
+  }
 })
 
 export default router
