@@ -181,15 +181,21 @@ export class AssetsService {
 
   // ─── SIM TOPUP ────────────────────────────────────────────────
 
-  /** Daftar SIM: dari SumberInternetSite (semua link internet per site) */
+  /** Daftar SIM: dari SumberInternetSite khusus mobile operator */
   async getSimCards(query: { search?: string; id_site?: string }) {
-    const where: any = {};
+    const where: any = {
+      vendor: { tipe_vendor: 'Mobile_Operator' },
+    };
     if (query.id_site) where.id_site = Number(query.id_site);
     if (query.search) {
-      where.OR = [
-        { nomor_pelanggan_isp: { contains: query.search } },
-        { site: { nama_site: { contains: query.search } } },
-        { vendor: { nama_vendor: { contains: query.search } } },
+      where.AND = [
+        {
+          OR: [
+            { nomor_pelanggan_isp: { contains: query.search } },
+            { site: { nama_site: { contains: query.search } } },
+            { vendor: { nama_vendor: { contains: query.search } } },
+          ],
+        },
       ];
     }
 
