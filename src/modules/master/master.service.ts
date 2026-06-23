@@ -249,7 +249,7 @@ export class MasterService {
         layanan: { select: { kode_layanan: true, nama_layanan: true } },
       },
     });
-    return { data, message: 'Site berhasil ditambahkan' };
+    return { data, message: `Site ditambahkan: ${dto.kode_site} — ${dto.nama_site}` };
   }
 
   async updateSite(id: number, dto: UpdateSiteDto) {
@@ -264,7 +264,7 @@ export class MasterService {
         updated_at: new Date(),
       },
     });
-    return { data, message: 'Site diperbarui' };
+    return { data, message: `Site diperbarui: ${data.kode_site} — ${data.nama_site}` };
   }
 
   async getPelangganDropdown() {
@@ -329,9 +329,15 @@ export class MasterService {
       include: {
         vendor: { select: { nama_vendor: true, tipe_vendor: true } },
         aset_sim: { select: { kode_aset: true, nama_perangkat: true, serial_number: true } },
+        site: { select: { kode_site: true, nama_site: true } },
       },
     });
-    return { data, message: 'Sumber internet ditambahkan' };
+    const site = (data as any).site;
+    const vendor = (data as any).vendor;
+    return {
+      data,
+      message: `Sumber internet ditambahkan: ${vendor?.nama_vendor} [${dto.peruntukan_link || 'Main'}] di ${site?.nama_site || 'site ID ' + dto.id_site}${dto.nomor_pelanggan_isp ? ' — ' + dto.nomor_pelanggan_isp : ''}`,
+    };
   }
 
   async updateSumberInternet(id: number, dto: UpdateSumberInternetDto) {
@@ -345,14 +351,26 @@ export class MasterService {
       include: {
         vendor: { select: { nama_vendor: true, tipe_vendor: true } },
         aset_sim: { select: { kode_aset: true, nama_perangkat: true, serial_number: true } },
+        site: { select: { kode_site: true, nama_site: true } },
       },
     });
-    return { data, message: 'Sumber internet diperbarui' };
+    const site = (data as any).site;
+    const vendor = (data as any).vendor;
+    return { data, message: `Sumber internet diperbarui: ${vendor?.nama_vendor} di ${site?.nama_site || 'site ID ' + data.id_site}` };
   }
 
   async deleteSumberInternet(id: number) {
+    const existing = await this.prisma.sumberInternetSite.findUnique({
+      where: { id_sumber: id },
+      include: {
+        vendor: { select: { nama_vendor: true } },
+        site: { select: { nama_site: true } },
+      },
+    });
     await this.prisma.sumberInternetSite.delete({ where: { id_sumber: id } });
-    return { data: null, message: 'Sumber internet dihapus' };
+    const vendor = (existing as any)?.vendor;
+    const site = (existing as any)?.site;
+    return { data: null, message: `Sumber internet dihapus: ${vendor?.nama_vendor || 'ID ' + id} dari ${site?.nama_site || 'site'}` };
   }
 
   // Perangkat
@@ -363,7 +381,10 @@ export class MasterService {
         status_perangkat: dto.status_perangkat || 'Aktif',
         tgl_pasang: dto.tgl_pasang ? new Date(dto.tgl_pasang) : undefined,
       },
-      include: { aset: { select: { kode_aset: true, nama_perangkat: true } } },
+      include: {
+        aset: { select: { kode_aset: true, nama_perangkat: true } },
+        site: { select: { kode_site: true, nama_site: true } },
+      },
     });
 
     // Update status aset → Terpasang dan catat mutasi Deploy
@@ -383,7 +404,12 @@ export class MasterService {
       });
     }
 
-    return { data, message: 'Perangkat ditambahkan' };
+    const aset = (data as any).aset;
+    const site = (data as any).site;
+    return {
+      data,
+      message: `Perangkat dipasang: ${aset?.nama_perangkat || data.jenis_perangkat} [${aset?.kode_aset || ''}] di ${site?.nama_site || 'site ID ' + dto.id_site}`,
+    };
   }
 
   async updatePerangkat(id: number, dto: UpdatePerangkatDto) {
@@ -393,14 +419,23 @@ export class MasterService {
         ...dto,
         tgl_pasang: dto.tgl_pasang ? new Date(dto.tgl_pasang) : undefined,
       },
-      include: { aset: { select: { kode_aset: true, nama_perangkat: true } } },
+      include: {
+        aset: { select: { kode_aset: true, nama_perangkat: true } },
+        site: { select: { kode_site: true, nama_site: true } },
+      },
     });
-    return { data, message: 'Perangkat diperbarui' };
+    const aset = (data as any).aset;
+    const site = (data as any).site;
+    return { data, message: `Perangkat diperbarui: ${aset?.nama_perangkat || data.jenis_perangkat} di ${site?.nama_site || 'site ID ' + data.id_site}` };
   }
 
   async deletePerangkat(id: number) {
     const perangkat = await this.prisma.perangkatSite.findUnique({
       where: { id_perangkat: id },
+      include: {
+        aset: { select: { kode_aset: true, nama_perangkat: true } },
+        site: { select: { nama_site: true } },
+      },
     });
 
     await this.prisma.perangkatSite.delete({ where: { id_perangkat: id } });
@@ -422,22 +457,41 @@ export class MasterService {
       });
     }
 
-    return { data: null, message: 'Perangkat dihapus' };
+    const aset = (perangkat as any)?.aset;
+    const site = (perangkat as any)?.site;
+    return { data: null, message: `Perangkat dilepas: ${aset?.nama_perangkat || perangkat?.jenis_perangkat || 'ID ' + id} [${aset?.kode_aset || ''}] dari ${site?.nama_site || 'site'}` };
   }
 
   // PIC
   async createPic(dto: CreatePicDto) {
-    const data = await this.prisma.picSite.create({ data: dto });
-    return { data, message: 'PIC ditambahkan' };
+    const data = await this.prisma.picSite.create({
+      data: dto,
+      include: { site: { select: { kode_site: true, nama_site: true } } },
+    });
+    const site = (data as any).site;
+    return {
+      data,
+      message: `PIC ditambahkan: ${dto.nama_pic}${dto.jabatan ? ' (' + dto.jabatan + ')' : ''} di ${site?.nama_site || 'site ID ' + dto.id_site}${dto.no_kontak ? ' — ' + dto.no_kontak : ''}`,
+    };
   }
 
   async updatePic(id: number, dto: UpdatePicDto) {
-    const data = await this.prisma.picSite.update({ where: { id_pic: id }, data: dto });
-    return { data, message: 'PIC diperbarui' };
+    const data = await this.prisma.picSite.update({
+      where: { id_pic: id },
+      data: dto,
+      include: { site: { select: { kode_site: true, nama_site: true } } },
+    });
+    const site = (data as any).site;
+    return { data, message: `PIC diperbarui: ${data.nama_pic} di ${site?.nama_site || 'site ID ' + data.id_site}` };
   }
 
   async deletePic(id: number) {
+    const existing = await this.prisma.picSite.findUnique({
+      where: { id_pic: id },
+      include: { site: { select: { nama_site: true } } },
+    });
     await this.prisma.picSite.delete({ where: { id_pic: id } });
-    return { data: null, message: 'PIC dihapus' };
+    const site = (existing as any)?.site;
+    return { data: null, message: `PIC dihapus: ${existing?.nama_pic || 'ID ' + id} dari ${site?.nama_site || 'site'}` };
   }
 }

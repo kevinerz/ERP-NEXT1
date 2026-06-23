@@ -5,7 +5,6 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { LogService } from './log.service';
 
-// Map URL prefix → modul name
 const URL_MODUL: Record<string, string> = {
   '/hris':        'hris',
   '/master':      'master',
@@ -18,7 +17,6 @@ const URL_MODUL: Record<string, string> = {
   '/admin':       'admin',
 };
 
-// Petakan URL segment ke nama entitas yang lebih ramah
 const ENTITAS_MAP: Record<string, string> = {
   karyawan:          'Karyawan',
   layanan:           'Layanan',
@@ -26,7 +24,7 @@ const ENTITAS_MAP: Record<string, string> = {
   pelanggan:         'Pelanggan',
   site:              'Site',
   'sumber-internet': 'Sumber Internet',
-  perangkat:         'Perangkat Site',
+  perangkat:         'Perangkat',
   pic:               'PIC',
   lead:              'Lead',
   opportunity:       'Opportunity',
@@ -38,12 +36,23 @@ const ENTITAS_MAP: Record<string, string> = {
   assets:            'Aset',
   mutasi:            'Mutasi Aset',
   contracts:         'Kontrak',
-  terminasi:         'Terminasi Kontrak',
+  terminasi:         'Terminasi',
   users:             'User',
   'modul-akses':     'Akses Modul',
   'toggle-aktif':    'Status User',
   'reset-password':  'Reset Password',
 };
+
+// Field yang bisa dijadikan identifier entitas (dicek di response.data dan req.body)
+const IDENTIFIER_FIELDS = [
+  'nama_pic', 'nama_site', 'nama_pelanggan', 'nama_perangkat', 'nama_vendor',
+  'nama_layanan', 'nama_lengkap', 'nama_karyawan', 'nama_prospek',
+  'nomor_kontrak', 'nomor_quotation', 'kode_aset', 'kode_site', 'kode_pelanggan',
+  'username', 'subject', 'judul_proyek', 'nomor_tiket',
+];
+
+// Field sensitif yang tidak boleh masuk log
+const SENSITIVE_FIELDS = ['password', 'password_hash', 'token', 'refresh_token'];
 
 function resolveModul(url: string): string {
   for (const prefix of Object.keys(URL_MODUL)) {
@@ -53,9 +62,7 @@ function resolveModul(url: string): string {
 }
 
 function resolveEntitas(url: string): string {
-  // Ambil segment path yang bermakna (bukan ID angka)
   const parts = url.split('?')[0].split('/').filter((s) => s && !/^\d+$/.test(s));
-  // Cari dari belakang: cek 2 segment terakhir
   for (let i = parts.length - 1; i >= 0; i--) {
     const seg = parts[i].toLowerCase();
     if (ENTITAS_MAP[seg]) return ENTITAS_MAP[seg];
@@ -69,12 +76,59 @@ function resolveAksi(method: string): 'CREATE' | 'UPDATE' | 'DELETE' {
   return 'UPDATE';
 }
 
+/** Cari identifier dari data (response.data atau req.body) */
+function findIdentifier(obj: any): string | null {
+  if (!obj || typeof obj !== 'object') return null;
+  for (const field of IDENTIFIER_FIELDS) {
+    if (obj[field] && typeof obj[field] === 'string') return obj[field];
+  }
+  return null;
+}
+
+/** Bersihkan body dari field sensitif */
+function sanitizeBody(body: any): any {
+  if (!body || typeof body !== 'object') return body;
+  const clean: any = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (!SENSITIVE_FIELDS.includes(k.toLowerCase())) clean[k] = v;
+  }
+  return clean;
+}
+
+/** Bangun deskripsi log yang informatif */
+function buildDescription(
+  method: string,
+  entitas: string,
+  body: any,
+  response: any,
+): string {
+  const baseMsg = response?.message || `${resolveAksi(method)} ${entitas}`;
+
+  // Cari nama entitas dari response.data dulu, lalu req.body
+  const identifier =
+    findIdentifier(response?.data) ||
+    findIdentifier(body);
+
+  if (identifier) return `${baseMsg} — ${identifier}`;
+
+  // Fallback: sertakan beberapa field body yang informatif (bukan sensitif)
+  if (body && method !== 'DELETE') {
+    const clean = sanitizeBody(body);
+    const extras: string[] = [];
+    const usefulFields = ['id_site', 'id_vendor_isp', 'id_aset', 'id_pelanggan', 'status_link', 'peruntukan_link'];
+    for (const f of usefulFields) {
+      if (clean[f] !== undefined && clean[f] !== 0 && clean[f] !== '') {
+        extras.push(`${f}:${clean[f]}`);
+      }
+    }
+    if (extras.length) return `${baseMsg} (${extras.join(', ')})`;
+  }
+
+  return baseMsg;
+}
+
 function getIp(req: any): string {
-  return (
-    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-    req.ip ||
-    ''
-  );
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '';
 }
 
 @Injectable()
@@ -85,13 +139,15 @@ export class LogInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest();
     const method: string = req.method;
 
-    // Hanya log mutating requests; skip auth (login/logout punya log sendiri)
     if (
       !['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) ||
       req.url.startsWith('/auth')
     ) {
       return next.handle();
     }
+
+    const body    = req.body;
+    const entitas = resolveEntitas(req.url);
 
     return next.handle().pipe(
       tap(async (response) => {
@@ -104,8 +160,8 @@ export class LogInterceptor implements NestInterceptor {
           nama:       user.nama_lengkap || '',
           aksi:       resolveAksi(method),
           modul:      resolveModul(req.url),
-          entitas:    resolveEntitas(req.url),
-          deskripsi:  response?.message || `${resolveAksi(method)} ${resolveEntitas(req.url)}`,
+          entitas,
+          deskripsi:  buildDescription(method, entitas, body, response),
           ip_address: getIp(req),
         });
       }),
