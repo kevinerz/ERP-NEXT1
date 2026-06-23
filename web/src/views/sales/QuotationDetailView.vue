@@ -80,12 +80,12 @@ function fmtDateTime(d: string) {
 
 const prospekName = computed(() => {
   const lead = qt.value?.opportunity?.lead
-  return lead?.pelanggan?.nama_pelanggan || lead?.nama_prospek || '—'
+  if (!lead) return '—'
+  return lead.nama_perusahaan
+    ? `${lead.nama_prospek} (${lead.nama_perusahaan})`
+    : lead.nama_prospek || '—'
 })
-const kodeProspek = computed(() => {
-  const lead = qt.value?.opportunity?.lead
-  return lead?.pelanggan?.kode_pelanggan || null
-})
+const kodeProspek = computed(() => null)
 </script>
 
 <template>
@@ -123,10 +123,7 @@ const kodeProspek = computed(() => {
         </div>
         <div class="info-card">
           <div class="info-label">Prospek / Pelanggan</div>
-          <div class="info-value">
-            {{ prospekName }}
-            <span v-if="kodeProspek" class="kode-chip">{{ kodeProspek }}</span>
-          </div>
+          <div class="info-value">{{ prospekName }}</div>
         </div>
         <div class="info-card">
           <div class="info-label">Layanan</div>

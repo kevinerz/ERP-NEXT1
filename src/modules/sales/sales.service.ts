@@ -270,7 +270,7 @@ export class SalesService {
             nama_opportunity: true,
             id_layanan: true,
             layanan: { select: { nama_layanan: true } },
-            lead: { select: { nama_prospek: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, kode_pelanggan: true } } } },
+            lead: { select: { nama_prospek: true, nama_perusahaan: true } },
           },
         },
         sales_pic: { select: { nama_lengkap: true, jabatan: true } },
