@@ -125,6 +125,12 @@ const router = createRouter({
           name: 'proyek-detail',
           component: () => import('@/views/proyek/ProyekDetailView.vue'),
         },
+        // Admin
+        {
+          path: 'admin/users',
+          name: 'admin-users',
+          component: () => import('@/views/admin/UserManagementView.vue'),
+        },
         // Laporan
         {
           path: 'reports',

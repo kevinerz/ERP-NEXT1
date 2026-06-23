@@ -39,6 +39,10 @@ export class AuthService {
     });
 
     const roles = user.user_roles.map((ur) => ur.role.nama_role);
+    const modul_akses: string[] = user.modul_akses
+      ? JSON.parse(user.modul_akses)
+      : [];
+
     const payload: JwtPayload = {
       sub: user.id_user,
       username: user.username,
@@ -56,6 +60,7 @@ export class AuthService {
         jabatan: user.karyawan.jabatan,
         departemen: user.karyawan.departemen,
         roles,
+        modul_akses,
       },
     };
   }

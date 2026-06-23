@@ -116,6 +116,7 @@ model CoreUser {
   username      String    @unique @db.VarChar(80)
   password_hash String    @db.VarChar(255)
   is_aktif      Boolean   @default(true)
+  modul_akses   String?   @db.Text
   last_login    DateTime?
   created_at    DateTime  @default(now())
 

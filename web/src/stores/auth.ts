@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import api from '@/services/api'
 
+export const ALL_MODULS = ['hris', 'master', 'sales', 'projects', 'operations', 'assets', 'contracts', 'reports']
+
 interface User {
   id_user: number
   username: string
@@ -8,6 +10,7 @@ interface User {
   jabatan: string
   departemen: string
   roles: string[]
+  modul_akses: string[]  // kosong = akses semua (superadmin)
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -20,6 +23,16 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isLoggedIn: (state) => state.user !== null,
     hasRole: (state) => (role: string) => state.user?.roles.includes(role) ?? false,
+    // kosong = akses semua modul (superadmin / user lama)
+    canAccess: (state) => (modul: string) => {
+      if (!state.user) return false
+      if (!state.user.modul_akses || state.user.modul_akses.length === 0) return true
+      return state.user.modul_akses.includes(modul)
+    },
+    isSuperAdmin: (state) => {
+      if (!state.user) return false
+      return !state.user.modul_akses || state.user.modul_akses.length === 0
+    },
   },
 
   actions: {

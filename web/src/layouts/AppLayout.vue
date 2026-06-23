@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
@@ -14,17 +14,26 @@ function logout() {
   router.push('/login')
 }
 
-const menu = [
-  { label: 'Dashboard',   icon: '📊', to: '/dashboard' },
-  { label: 'HRIS',        icon: '👤', to: '/hris/karyawan' },
-  { label: 'Master Data', icon: '📦', to: '/master' },
-  { label: 'Sales',       icon: '💼', to: '/sales' },
-  { label: 'Proyek',      icon: '📋', to: '/projects' },
-  { label: 'Operasional', icon: '🔧', to: '/operations' },
-  { label: 'Aset',        icon: '🖥️',  to: '/assets' },
-  { label: 'Kontrak',     icon: '📄', to: '/contracts' },
-  { label: 'Laporan',     icon: '📈', to: '/reports' },
+const allMenu = [
+  { label: 'Dashboard',   icon: '📊', to: '/dashboard',    modul: null },
+  { label: 'HRIS',        icon: '👤', to: '/hris/karyawan', modul: 'hris' },
+  { label: 'Master Data', icon: '📦', to: '/master',        modul: 'master' },
+  { label: 'Sales',       icon: '💼', to: '/sales',         modul: 'sales' },
+  { label: 'Proyek',      icon: '📋', to: '/projects',      modul: 'projects' },
+  { label: 'Operasional', icon: '🔧', to: '/operations',    modul: 'operations' },
+  { label: 'Aset',        icon: '🖥️',  to: '/assets',       modul: 'assets' },
+  { label: 'Kontrak',     icon: '📄', to: '/contracts',     modul: 'contracts' },
+  { label: 'Laporan',     icon: '📈', to: '/reports',       modul: 'reports' },
+  { label: 'Users',       icon: '⚙️',  to: '/admin/users',  modul: null, adminOnly: true },
 ]
+
+const menu = computed(() =>
+  allMenu.filter((m) => {
+    if (m.adminOnly) return auth.isSuperAdmin
+    if (!m.modul) return true
+    return auth.canAccess(m.modul)
+  })
+)
 </script>
 
 <template>
@@ -44,8 +53,8 @@ const menu = [
         <RouterLink
           v-for="item in menu"
           :key="item.to"
-          :to="item.soon ? route.fullPath : item.to"
-          :class="['nav-item', { disabled: item.soon }]"
+          :to="item.to"
+          class="nav-item"
           active-class="active"
           exact-active-class="active"
         >

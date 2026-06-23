@@ -23,6 +23,7 @@ import { ContractsModule } from './modules/contracts/contracts.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PublicWoModule } from './modules/public-wo/public-wo.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 // Integrations
 import { PrtgModule } from './modules/integrations/prtg/prtg.module';
@@ -63,6 +64,7 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     NotificationsModule,
     PublicWoModule,
     ReportsModule,
+    AdminModule,
 
     // Integrations
     PrtgModule,
