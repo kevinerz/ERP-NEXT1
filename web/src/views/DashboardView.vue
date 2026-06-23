@@ -8,7 +8,7 @@ const router = useRouter()
 const modules = [
   { icon: '👤', name: 'HRIS',         to: '/hris/karyawan',  ready: true },
   { icon: '📦', name: 'Master Data',  to: '/master',         ready: true },
-  { icon: '💼', name: 'Sales',        to: '/sales',          ready: false },
+  { icon: '💼', name: 'Sales',        to: '/sales',          ready: true },
   { icon: '📋', name: 'Proyek',       to: '/projects',       ready: false },
   { icon: '🔧', name: 'Operasional',  to: '/operations',     ready: false },
   { icon: '🖥️',  name: 'Aset',        to: '/assets',         ready: false },

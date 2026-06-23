@@ -62,6 +62,32 @@ const router = createRouter({
           name: 'master-vendor',
           component: () => import('@/views/master/VendorView.vue'),
         },
+        // Sales
+        {
+          path: 'sales',
+          name: 'sales-dashboard',
+          component: () => import('@/views/sales/SalesDashboardView.vue'),
+        },
+        {
+          path: 'sales/lead',
+          name: 'sales-lead-list',
+          component: () => import('@/views/sales/LeadListView.vue'),
+        },
+        {
+          path: 'sales/lead/:id',
+          name: 'sales-lead-detail',
+          component: () => import('@/views/sales/LeadDetailView.vue'),
+        },
+        {
+          path: 'sales/opportunity',
+          name: 'sales-opp-list',
+          component: () => import('@/views/sales/OpportunityListView.vue'),
+        },
+        {
+          path: 'sales/opportunity/:id',
+          name: 'sales-opp-detail',
+          component: () => import('@/views/sales/OpportunityDetailView.vue'),
+        },
         // Catch-all dalam layout
         {
           path: ':pathMatch(.*)*',
