@@ -125,6 +125,12 @@ const router = createRouter({
           name: 'proyek-detail',
           component: () => import('@/views/proyek/ProyekDetailView.vue'),
         },
+        // Laporan
+        {
+          path: 'reports',
+          name: 'laporan',
+          component: () => import('@/views/reports/LaporanView.vue'),
+        },
         // Kontrak
         {
           path: 'contracts',

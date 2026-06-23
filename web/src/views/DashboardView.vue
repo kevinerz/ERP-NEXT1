@@ -14,7 +14,7 @@ const modules = [
   { icon: '🖥️',  name: 'Aset',        to: '/assets',         ready: true },
   { icon: '📄', name: 'Kontrak',      to: '/contracts',      ready: true },
   { icon: '🔔', name: 'Notifikasi',   to: '/notifications',  ready: false },
-  { icon: '📈', name: 'Laporan',      to: '/reports',        ready: false },
+  { icon: '📈', name: 'Laporan',      to: '/reports',        ready: true },
   { icon: '🔗', name: 'Integrasi',    to: '/integrations',   ready: false },
 ]
 </script>
