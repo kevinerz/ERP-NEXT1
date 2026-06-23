@@ -1,9 +1,283 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
+import { CreateWoDto, UpdateWoDto } from './dto/wo.dto';
+import { CreateBastDto, UpdateBastDto } from './dto/bast.dto';
+
+const PROJECT_INCLUDE = {
+  opportunity: {
+    select: {
+      nama_opportunity: true,
+      lead: { select: { nama_prospek: true, nama_perusahaan: true } },
+    },
+  },
+  site: { select: { id_site: true, kode_site: true, nama_site: true, alamat_lengkap: true, kota: true } },
+  pm: { select: { id_karyawan: true, nama_lengkap: true, jabatan: true } },
+};
+
+const WO_INCLUDE = {
+  teknisi: { select: { id_karyawan: true, nama_lengkap: true } },
+  vendor: { select: { id_vendor: true, nama_vendor: true } },
+  site: { select: { kode_site: true, nama_site: true } },
+};
 
 @Injectable()
 export class ProjectsService {
   constructor(private prisma: PrismaService) {}
 
-  // TODO: implementasi
+  // ─── PROJECT ─────────────────────────────────────────────────
+
+  async findAll(query: {
+    search?: string; status_project?: string;
+    id_pm?: string; page?: number; limit?: number;
+  }) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (query.search) {
+      where.OR = [
+        { nomor_project: { contains: query.search } },
+        { site: { nama_site: { contains: query.search } } },
+      ];
+    }
+    if (query.status_project) where.status_project = query.status_project;
+    if (query.id_pm) where.id_pm = Number(query.id_pm);
+
+    const [data, total] = await Promise.all([
+      this.prisma.projectDelivery.findMany({
+        where, skip, take: limit,
+        orderBy: { created_at: 'desc' },
+        include: {
+          ...PROJECT_INCLUDE,
+          _count: { select: { work_orders: true } },
+        },
+      }),
+      this.prisma.projectDelivery.count({ where }),
+    ]);
+    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
+  }
+
+  async findOne(id: number) {
+    const data = await this.prisma.projectDelivery.findUnique({
+      where: { id_project: id },
+      include: {
+        ...PROJECT_INCLUDE,
+        work_orders: {
+          include: WO_INCLUDE,
+          orderBy: { tgl_jadwal: 'asc' },
+        },
+        bast: { orderBy: { created_at: 'desc' } },
+      },
+    });
+    if (!data) throw new NotFoundException('Project tidak ditemukan');
+    return { data };
+  }
+
+  async create(dto: CreateProjectDto) {
+    // Auto nomor: PRJ-YYYYMM-XXXX
+    const now = new Date();
+    const prefix = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const last = await this.prisma.projectDelivery.findFirst({
+      where: { nomor_project: { startsWith: prefix } },
+      orderBy: { nomor_project: 'desc' },
+    });
+    const seq = last ? parseInt(last.nomor_project.split('-')[2]) + 1 : 1;
+    const nomor_project = `${prefix}-${String(seq).padStart(4, '0')}`;
+
+    const data = await this.prisma.projectDelivery.create({
+      data: {
+        ...dto,
+        nomor_project,
+        tgl_mulai: dto.tgl_mulai ? new Date(dto.tgl_mulai) : undefined,
+        tgl_target_selesai: dto.tgl_target_selesai ? new Date(dto.tgl_target_selesai) : undefined,
+        updated_at: new Date(),
+      },
+      include: PROJECT_INCLUDE,
+    });
+    return { data, message: `Project ${nomor_project} dibuat` };
+  }
+
+  async update(id: number, dto: UpdateProjectDto) {
+    await this._check(id);
+    const data = await this.prisma.projectDelivery.update({
+      where: { id_project: id },
+      data: {
+        ...dto,
+        tgl_mulai: dto.tgl_mulai ? new Date(dto.tgl_mulai) : undefined,
+        tgl_target_selesai: dto.tgl_target_selesai ? new Date(dto.tgl_target_selesai) : undefined,
+        tgl_actual_selesai: dto.tgl_actual_selesai ? new Date(dto.tgl_actual_selesai) : undefined,
+        updated_at: new Date(),
+      },
+      include: PROJECT_INCLUDE,
+    });
+    return { data, message: 'Project diperbarui' };
+  }
+
+  private async _check(id: number) {
+    const row = await this.prisma.projectDelivery.findUnique({ where: { id_project: id } });
+    if (!row) throw new NotFoundException('Project tidak ditemukan');
+    return row;
+  }
+
+  // ─── WORK ORDER ───────────────────────────────────────────────
+
+  async findAllWo(query: { status_wo?: string; id_project?: string; page?: number; limit?: number }) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (query.status_wo) where.status_wo = query.status_wo;
+    if (query.id_project) where.id_project = Number(query.id_project);
+
+    const [data, total] = await Promise.all([
+      this.prisma.workOrder.findMany({
+        where, skip, take: limit,
+        orderBy: { tgl_jadwal: 'asc' },
+        include: {
+          ...WO_INCLUDE,
+          project: { select: { nomor_project: true } },
+        },
+      }),
+      this.prisma.workOrder.count({ where }),
+    ]);
+    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
+  }
+
+  async createWo(dto: CreateWoDto) {
+    const now = new Date();
+    const prefix = `WO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const last = await this.prisma.workOrder.findFirst({
+      where: { nomor_wo: { startsWith: prefix } },
+      orderBy: { nomor_wo: 'desc' },
+    });
+    const seq = last ? parseInt(last.nomor_wo.split('-')[2]) + 1 : 1;
+    const nomor_wo = `${prefix}-${String(seq).padStart(4, '0')}`;
+
+    const data = await this.prisma.workOrder.create({
+      data: {
+        ...dto,
+        nomor_wo,
+        fee_vendor: dto.fee_vendor ?? 0,
+        tgl_jadwal: new Date(dto.tgl_jadwal),
+      },
+      include: WO_INCLUDE,
+    });
+    return { data, message: `Work Order ${nomor_wo} dibuat` };
+  }
+
+  async updateWo(id: number, dto: UpdateWoDto) {
+    const wo = await this.prisma.workOrder.findUnique({ where: { id_wo: id } });
+    if (!wo) throw new NotFoundException('Work Order tidak ditemukan');
+    const data = await this.prisma.workOrder.update({
+      where: { id_wo: id },
+      data: {
+        ...dto,
+        tgl_jadwal: dto.tgl_jadwal ? new Date(dto.tgl_jadwal) : undefined,
+        completed_at: dto.status_wo === 'Selesai' ? new Date() : undefined,
+      },
+      include: WO_INCLUDE,
+    });
+    return { data, message: 'Work Order diperbarui' };
+  }
+
+  // ─── BAST ─────────────────────────────────────────────────────
+
+  async createBast(dto: CreateBastDto) {
+    await this._check(dto.id_project);
+    const now = new Date();
+    const prefix = `BAST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const last = await this.prisma.projectDokumenLegal.findFirst({
+      where: { nomor_bast: { startsWith: prefix } },
+      orderBy: { nomor_bast: 'desc' },
+    });
+    const seq = last ? parseInt(last.nomor_bast.split('-')[2]) + 1 : 1;
+    const nomor_bast = `${prefix}-${String(seq).padStart(4, '0')}`;
+
+    const data = await this.prisma.projectDokumenLegal.create({
+      data: {
+        ...dto,
+        nomor_bast,
+        tgl_ditandatangani: dto.tgl_ditandatangani ? new Date(dto.tgl_ditandatangani) : undefined,
+      },
+    });
+    return { data, message: `BAST ${nomor_bast} dibuat` };
+  }
+
+  async updateBast(id: number, dto: UpdateBastDto) {
+    const bast = await this.prisma.projectDokumenLegal.findUnique({ where: { id_dokumen: id } });
+    if (!bast) throw new NotFoundException('BAST tidak ditemukan');
+    const data = await this.prisma.projectDokumenLegal.update({
+      where: { id_dokumen: id },
+      data: {
+        ...dto,
+        tgl_ditandatangani: dto.tgl_ditandatangani ? new Date(dto.tgl_ditandatangani) : undefined,
+      },
+    });
+    return { data, message: 'BAST diperbarui' };
+  }
+
+  // ─── HELPERS ─────────────────────────────────────────────────
+
+  async getPmList() {
+    const data = await this.prisma.hrisKaryawan.findMany({
+      where: {
+        status_aktif: true,
+        user: {
+          is_aktif: true,
+          user_roles: { some: { role: { nama_role: { in: ['Manager_Ops', 'Director', 'Admin', 'Teknisi'] } } } },
+        },
+      },
+      select: { id_karyawan: true, nama_lengkap: true, jabatan: true },
+      orderBy: { nama_lengkap: 'asc' },
+    });
+    return { data };
+  }
+
+  async getTeknisiList() {
+    const data = await this.prisma.hrisKaryawan.findMany({
+      where: {
+        status_aktif: true,
+        user: {
+          is_aktif: true,
+          user_roles: { some: { role: { nama_role: { in: ['Teknisi', 'Manager_Ops', 'Admin'] } } } },
+        },
+      },
+      select: { id_karyawan: true, nama_lengkap: true, jabatan: true },
+      orderBy: { nama_lengkap: 'asc' },
+    });
+    return { data };
+  }
+
+  async getSiteList(search?: string) {
+    const where: any = {};
+    if (search) {
+      where.OR = [
+        { nama_site: { contains: search } },
+        { kode_site: { contains: search } },
+      ];
+    }
+    const data = await this.prisma.sitePelanggan.findMany({
+      where,
+      select: {
+        id_site: true, kode_site: true, nama_site: true, kota: true,
+        pelanggan: { select: { nama_pelanggan: true } },
+        layanan: { select: { kode_layanan: true } },
+      },
+      orderBy: { nama_site: 'asc' },
+      take: 50,
+    });
+    return { data };
+  }
+
+  async getStatusSummary() {
+    const statuses = ['Perencanaan', 'Instalasi', 'Testing', 'Selesai', 'Ditahan'];
+    const rows = await this.prisma.projectDelivery.groupBy({
+      by: ['status_project'],
+      _count: { id_project: true },
+    });
+    const map = Object.fromEntries(rows.map((r) => [r.status_project, r._count.id_project]));
+    const data = statuses.map((s) => ({ status: s, count: map[s] ?? 0 }));
+    return { data };
+  }
 }
