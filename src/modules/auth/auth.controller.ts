@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -25,7 +25,7 @@ export class AuthController {
     return this.authService.refresh(dto);
   }
 
-  // POST /api/auth/logout — log aktivitas logout
+  // POST /api/auth/logout
   @UseGuards(JwtAuthGuard)
   @Post('logout')
   logout(@CurrentUser() user: any, @Req() req: any) {
@@ -36,7 +36,24 @@ export class AuthController {
   // GET /api/auth/me
   @UseGuards(JwtAuthGuard)
   @Get('me')
-  me(@CurrentUser() user: any) {
-    return user;
+  getMe(@CurrentUser() user: any) {
+    return this.authService.getMe(user.sub);
+  }
+
+  // PATCH /api/auth/me — update no_hp & email
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  updateMe(@CurrentUser() user: any, @Body() dto: { no_hp?: string; email?: string }) {
+    return this.authService.updateMe(user.sub, dto);
+  }
+
+  // POST /api/auth/change-password
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  changePassword(
+    @CurrentUser() user: any,
+    @Body() dto: { password_lama: string; password_baru: string; konfirmasi: string },
+  ) {
+    return this.authService.changePassword(user.sub, dto);
   }
 }

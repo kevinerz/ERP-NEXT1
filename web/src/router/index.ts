@@ -174,6 +174,12 @@ const router = createRouter({
           name: 'aset-detail',
           component: () => import('@/views/aset/AsetDetailView.vue'),
         },
+        // Profile
+        {
+          path: 'profile',
+          name: 'profile',
+          component: () => import('@/views/ProfileView.vue'),
+        },
         // Catch-all dalam layout
         {
           path: ':pathMatch(.*)*',

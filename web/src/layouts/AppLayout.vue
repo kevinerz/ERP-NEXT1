@@ -122,6 +122,7 @@ const PAGE_TITLES: Record<string, string> = {
   laporan:                "Laporan",
   "admin-users":          "Admin — Manajemen User",
   "admin-logs":           "Admin — Activity Log",
+  "profile":              "Profil Saya",
 }
 
 const pageTitle = computed(() => PAGE_TITLES[route.name as string] || "ERP NEXT1")
@@ -249,6 +250,10 @@ const initials = computed(() => {
                   <div class="um-email">{{ auth.user?.username }}</div>
                 </div>
               </div>
+              <div class="um-divider"></div>
+              <router-link class="um-item" to="/profile" @click="showUserMenu = false">
+                <span>👤</span> Profil Saya
+              </router-link>
               <div class="um-divider"></div>
               <button class="um-item danger" @click="logout">
                 <span>🚪</span> Keluar
@@ -595,7 +600,7 @@ const initials = computed(() => {
   background: none; border: none;
   font-size: 13px; font-weight: 500; color: #374151;
   cursor: pointer; transition: background 0.12s;
-  text-align: left;
+  text-align: left; text-decoration: none; box-sizing: border-box;
 }
 .um-item:hover { background: #f8fafc; }
 .um-item.danger { color: #dc2626; }
