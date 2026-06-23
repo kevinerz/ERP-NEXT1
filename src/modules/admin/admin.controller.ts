@@ -5,7 +5,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CreateAdminUserDto, ResetPasswordDto } from './dto/admin.dto';
 
 @UseGuards(RolesGuard)
-@Roles('superadmin')
+@Roles('Admin', 'Director')
 @Controller('admin')
 export class AdminController {
   constructor(private readonly svc: AdminService) {}

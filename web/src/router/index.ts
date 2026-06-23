@@ -224,8 +224,8 @@ router.beforeEach((to) => {
   if (loggedIn && to.name) {
     const modul = ROUTE_MODUL[to.name as string]
     if (modul && !auth.canAccess(modul)) return '/dashboard'
-    // halaman admin hanya superadmin
-    if ((to.name === 'admin-users' || to.name === 'admin-logs') && !auth.isSuperAdmin) return '/dashboard'
+    // halaman admin hanya Admin / Director
+    if ((to.name === 'admin-users' || to.name === 'admin-logs') && !auth.hasRole('Admin') && !auth.hasRole('Director')) return '/dashboard'
   }
 })
 
