@@ -155,6 +155,17 @@ export const useSalesStore = defineStore('sales', {
     },
 
     // ─── QUOTATION ────────────────────────────────────────────
+    async fetchQuotations(params: Record<string, any> = {}) {
+      this.loading = true; this.error = ''
+      try {
+        const { data } = await api.get('/sales/quotation', { params })
+        this.quotationList = data.data ?? []
+        this.quotationMeta = data.meta ?? this.quotationMeta
+      } catch (e: any) {
+        this.error = e.response?.data?.message || 'Gagal memuat quotation'
+      } finally { this.loading = false }
+    },
+
     async createQuotation(payload: any) {
       const { data } = await api.post('/sales/quotation', payload)
       return data.data

@@ -88,6 +88,11 @@ const router = createRouter({
           name: 'sales-opp-detail',
           component: () => import('@/views/sales/OpportunityDetailView.vue'),
         },
+        {
+          path: 'sales/quotation',
+          name: 'sales-quotation-list',
+          component: () => import('@/views/sales/QuotationListView.vue'),
+        },
         // Catch-all dalam layout
         {
           path: ':pathMatch(.*)*',
