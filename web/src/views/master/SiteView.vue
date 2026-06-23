@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
 
+const router = useRouter()
 const master = useMasterStore()
 const page = ref(1)
 const search = ref('')
@@ -150,7 +152,12 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
               </span>
             </td>
             <td class="text-gray text-sm">{{ fmtDate(s.tgl_aktif) }}</td>
-            <td><button class="btn-edit-sm" @click="openEdit(s)">Edit</button></td>
+            <td>
+              <div class="row-actions">
+                <button class="btn-detail-sm" @click="router.push('/master/site/' + s.id_site)">Detail</button>
+                <button class="btn-edit-sm" @click="openEdit(s)">Edit</button>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -258,7 +265,9 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .text-gray { color: #64748b; }
 .text-sm { font-size: 12px; }
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.row-actions { display: flex; gap: 4px; }
 .btn-edit-sm { padding: 4px 12px; background: #f1f5f9; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-detail-sm { padding: 4px 12px; background: #eff6ff; color: #1d4ed8; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .pagination { display: flex; gap: 6px; padding: 14px; justify-content: center; border-top: 1px solid #f1f5f9; }
 .page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
 .page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }

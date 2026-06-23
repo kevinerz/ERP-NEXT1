@@ -72,6 +72,11 @@ const router = createRouter({
           name: 'master-site',
           component: () => import('@/views/master/SiteView.vue'),
         },
+        {
+          path: 'master/site/:id',
+          name: 'master-site-detail',
+          component: () => import('@/views/master/SiteDetailView.vue'),
+        },
         // Sales
         {
           path: 'sales',
@@ -173,7 +178,7 @@ const router = createRouter({
 const ROUTE_MODUL: Record<string, string> = {
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master',
-  'master-pelanggan': 'master', 'master-site': 'master',
+  'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master',
   'sales-dashboard': 'sales', 'sales-lead-list': 'sales', 'sales-lead-detail': 'sales',
   'sales-opp-list': 'sales', 'sales-opp-detail': 'sales', 'sales-quotation-list': 'sales',
   'proyek-list': 'projects', 'proyek-detail': 'projects',
