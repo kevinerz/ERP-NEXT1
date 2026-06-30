@@ -179,6 +179,17 @@ const router = createRouter({
           name: 'sim-topup',
           component: () => import('@/views/aset/SimTopupView.vue'),
         },
+        // Work Order
+        {
+          path: 'public-wo',
+          name: 'wo-list',
+          component: () => import('@/views/public-wo/WoListView.vue'),
+        },
+        {
+          path: 'public-wo/:id',
+          name: 'wo-detail',
+          component: () => import('@/views/public-wo/WoDetailView.vue'),
+        },
         // Notifikasi
         {
           path: 'notifications',
@@ -214,6 +225,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'aset-list': 'assets', 'aset-detail': 'assets', 'sim-topup': 'assets',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'laporan': 'reports',
+  'wo-list': 'public-wo', 'wo-detail': 'public-wo',
 }
 
 router.beforeEach((to) => {
