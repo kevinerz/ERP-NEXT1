@@ -41,8 +41,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function fetch() {
     try {
-      const data = await api.get('/settings')
-      Object.assign(settings.value, data)
+      const r = await api.get('/settings')
+      Object.assign(settings.value, r.data.data)
       loaded.value = true
     } catch {
       // use defaults
