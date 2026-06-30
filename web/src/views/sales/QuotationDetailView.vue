@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
+import { printQuotation } from '@/composables/usePrint'
 
 const route  = useRoute()
 const router = useRouter()
@@ -149,11 +150,14 @@ const kodeProspek = computed(() => null)
             {{ qt.status_approval }}
           </span>
         </div>
-        <div class="header-actions" v-if="qt.status_approval === 'Draft'">
-          <button class="btn-approve" @click="openApprove">✓ Approve / Reject</button>
-        </div>
-        <div class="header-actions" v-else-if="qt.status_approval === 'Approved'">
-          <button class="btn-kontrak" @click="openKontrak">+ Buat Kontrak</button>
+        <div class="header-actions">
+          <button class="btn-print" @click="printQuotation(qt)">🖨 Cetak Penawaran</button>
+          <template v-if="qt.status_approval === 'Draft'">
+            <button class="btn-approve" @click="openApprove">✓ Approve / Reject</button>
+          </template>
+          <template v-else-if="qt.status_approval === 'Approved'">
+            <button class="btn-kontrak" @click="openKontrak">+ Buat Kontrak</button>
+          </template>
         </div>
       </div>
 
@@ -349,6 +353,8 @@ const kodeProspek = computed(() => null)
 .btn-approve:hover { opacity: 0.9; }
 .btn-kontrak { padding: 9px 20px; background: linear-gradient(135deg, #065f46, #10b981); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .btn-kontrak:hover { opacity: 0.9; }
+.btn-print { padding: 9px 16px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-print:hover { background: #dcfce7; }
 
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 16px; }
 

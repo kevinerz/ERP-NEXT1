@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useProyekStore } from '@/stores/proyek'
+import { printBAST } from '@/composables/usePrint'
 
 const router = useRouter()
 const route = useRoute()
@@ -177,6 +178,7 @@ function fmtDt(d: string) {
             :style="{ background: STATUS_COLOR[proyek.current.status_project]?.bg, color: STATUS_COLOR[proyek.current.status_project]?.color }">
             {{ proyek.current.status_project }}
           </span>
+          <button class="btn-print" @click="printBAST(proyek.current)">🖨 BAST</button>
           <button class="btn-edit" @click="openEdit">Edit</button>
         </div>
       </div>
@@ -435,6 +437,8 @@ function fmtDt(d: string) {
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 .header-right { display: flex; align-items: center; gap: 10px; }
 .status-big { padding: 5px 14px; border-radius: 20px; font-size: 14px; font-weight: 700; }
+.btn-print { padding: 9px 16px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-print:hover { background: #dcfce7; }
 .btn-edit { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 14px; }

@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useContractsStore } from '@/stores/contracts'
-import { printKontrak } from '@/composables/usePrint'
+import { printKontrak, printInvoice } from '@/composables/usePrint'
 
 const route = useRoute()
 const router = useRouter()
@@ -102,7 +102,8 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
           </div>
         </div>
         <div class="header-actions">
-          <button class="btn-print" @click="printKontrak(k)">🖨 Cetak Kontrak</button>
+          <button class="btn-print" @click="printKontrak(k)">🖨 Kontrak</button>
+          <button class="btn-print" @click="printInvoice(k)">🖨 Invoice</button>
           <button v-if="k.status_kontrak === 'Aktif'" class="btn-danger" @click="showTerminasiModal = true; formError = ''">
             Terminasi
           </button>

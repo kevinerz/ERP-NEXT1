@@ -248,3 +248,346 @@ export function printKontrak(kt: any) {
   </div></body></html>`
   printDocument(html)
 }
+
+// ─────────────────────────────────────────────
+// SURAT PENAWARAN (QUOTATION)
+// ─────────────────────────────────────────────
+export function printQuotation(qt: any) {
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '-'
+  const fmtRp = (n: any) => new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR', minimumFractionDigits:0 }).format(Number(n) || 0)
+  const totalKontrak = (Number(qt.harga_mrc) * 12 + Number(qt.harga_otc))
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Penawaran ${qt.nomor_quotation}</title>${baseStyle()}</head>
+  <body><div class="doc">
+    <div class="header">
+      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="doc-title-block"><div class="doc-title">SURAT PENAWARAN HARGA</div><div class="doc-nomor">${qt.nomor_quotation}</div><div class="doc-date">${fmtDate(qt.tgl_quotation)}</div></div>
+    </div>
+
+    <p style="font-size:10pt;color:#475569;margin-bottom:20px;line-height:1.7">
+      Dengan hormat,<br>
+      Bersama ini kami sampaikan penawaran harga layanan telekomunikasi dan internet kepada:
+    </p>
+
+    <div class="section">
+      <div class="section-title">Kepada Yth.</div>
+      <table class="info">
+        <tr><td>Perusahaan</td><td>:</td><td><strong>${qt.opportunity?.lead?.nama_perusahaan || qt.opportunity?.lead?.nama_prospek || '-'}</strong></td></tr>
+        <tr><td>Perihal</td><td>:</td><td>${qt.opportunity?.nama_opportunity || '-'}</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Detail Penawaran</div>
+      <table class="info">
+        <tr><td>Nomor Penawaran</td><td>:</td><td>${qt.nomor_quotation}</td></tr>
+        <tr><td>Tanggal Penawaran</td><td>:</td><td>${fmtDate(qt.tgl_quotation)}</td></tr>
+        <tr><td>Berlaku Sampai</td><td>:</td><td>${fmtDate(qt.tgl_berlaku_sampai)}</td></tr>
+        <tr><td>Layanan</td><td>:</td><td>${qt.opportunity?.layanan?.nama_layanan || '-'}</td></tr>
+        <tr><td>Sales PIC</td><td>:</td><td>${qt.sales_pic?.nama_lengkap || '-'}${qt.sales_pic?.jabatan ? ' — ' + qt.sales_pic.jabatan : ''}</td></tr>
+        <tr><td>Status</td><td>:</td><td>${qt.status_approval}</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Harga Layanan</div>
+      <table class="grid">
+        <thead><tr><th>Komponen</th><th>Keterangan</th><th style="text-align:right">Harga</th></tr></thead>
+        <tbody>
+          <tr><td>MRC (Monthly Recurring Charge)</td><td>Biaya langganan per bulan</td><td style="text-align:right"><strong>${fmtRp(qt.harga_mrc)}</strong></td></tr>
+          <tr><td>OTC (One Time Charge)</td><td>Biaya instalasi / setup</td><td style="text-align:right"><strong>${fmtRp(qt.harga_otc)}</strong></td></tr>
+          <tr style="background:#f0fdf4"><td colspan="2" style="font-weight:700;color:#15803d">Estimasi Total Nilai (12 bulan)</td><td style="text-align:right;font-weight:700;color:#15803d">${fmtRp(totalKontrak)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    ${qt.catatan_approval ? `<div class="section"><div class="section-title">Catatan</div><div class="desc-box">${qt.catatan_approval}</div></div>` : ''}
+
+    <div class="section">
+      <div class="section-title">Ketentuan</div>
+      <ol style="padding-left:18px;font-size:10pt;color:#475569;line-height:1.8">
+        <li>Penawaran ini berlaku sampai dengan tanggal ${fmtDate(qt.tgl_berlaku_sampai)}.</li>
+        <li>Harga belum termasuk PPN 11% kecuali disebutkan lain.</li>
+        <li>Layanan akan aktif setelah penandatanganan kontrak dan pembayaran OTC.</li>
+        <li>Spesifikasi teknis mengikuti dokumen teknis terpisah.</li>
+      </ol>
+    </div>
+
+    <div class="signature-row">
+      <div class="sign-box"><div class="sign-label">Hormat kami,<br>PT Next One Technology</div><div class="sign-line"><div class="sign-name">${qt.sales_pic ? '( ' + qt.sales_pic.nama_lengkap + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">${qt.sales_pic?.jabatan || 'Sales'}</div></div></div>
+      <div class="sign-box"><div class="sign-label">Menyetujui,</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">${qt.opportunity?.lead?.nama_perusahaan || 'Pelanggan'}</div></div></div>
+    </div>
+    ${docFooter(qt.nomor_quotation)}
+  </div></body></html>`
+  printDocument(html)
+}
+
+// ─────────────────────────────────────────────
+// BAST — BERITA ACARA SERAH TERIMA PROJECT
+// ─────────────────────────────────────────────
+export function printBAST(project: any) {
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '-'
+  const tglSelesai = project.tgl_actual_selesai || project.tgl_target_selesai
+  const woRows = project.work_orders?.length
+    ? project.work_orders.map((wo: any, i: number) => `<tr><td>${i+1}</td><td>${wo.nomor_wo}</td><td>${wo.jenis_wo}</td><td>${wo.teknisi?.nama_lengkap || wo.vendor?.nama_vendor || '-'}</td><td>${fmtDate(wo.tgl_jadwal)}</td></tr>`).join('')
+    : `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:12px">Tidak ada Work Order terkait</td></tr>`
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>BAST ${project.nomor_project}</title>${baseStyle()}</head>
+  <body><div class="doc">
+    <div class="header">
+      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="doc-title-block"><div class="doc-title">BERITA ACARA SERAH TERIMA</div><div class="doc-nomor">${project.nomor_project}</div><div class="doc-date">${fmtDate(tglSelesai)}</div></div>
+    </div>
+
+    <p style="font-size:10pt;color:#475569;margin-bottom:20px;line-height:1.7">
+      Pada hari ini telah dilaksanakan serah terima pekerjaan instalasi / layanan antara
+      <strong>PT Next One Technology</strong> dengan pelanggan sebagaimana tercantum di bawah ini.
+    </p>
+
+    <div class="section">
+      <div class="section-title">Informasi Project</div>
+      <table class="info">
+        <tr><td>Nomor Project</td><td>:</td><td>${project.nomor_project}</td></tr>
+        <tr><td>Status</td><td>:</td><td>${project.status_project}</td></tr>
+        <tr><td>Tanggal Mulai</td><td>:</td><td>${fmtDate(project.tgl_mulai)}</td></tr>
+        <tr><td>Tanggal Selesai</td><td>:</td><td>${fmtDate(tglSelesai)}</td></tr>
+        <tr><td>Project Manager</td><td>:</td><td>${project.pm?.nama_lengkap || '-'}${project.pm?.jabatan ? ' — ' + project.pm.jabatan : ''}</td></tr>
+        ${project.kontrak ? `<tr><td>Nomor Kontrak</td><td>:</td><td>${project.kontrak.nomor_kontrak}</td></tr>` : ''}
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Lokasi</div>
+      <table class="info">
+        <tr><td>Site</td><td>:</td><td>${project.site?.kode_site} — ${project.site?.nama_site}</td></tr>
+        <tr><td>Kota</td><td>:</td><td>${project.site?.kota || '-'}</td></tr>
+        <tr><td>Alamat</td><td>:</td><td>${project.site?.alamat_lengkap || '-'}</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Daftar Pekerjaan yang Diserahterimakan</div>
+      <table class="grid">
+        <thead><tr><th>No</th><th>Nomor WO</th><th>Jenis</th><th>Pelaksana</th><th>Tanggal</th></tr></thead>
+        <tbody>${woRows}</tbody>
+      </table>
+    </div>
+
+    ${project.catatan ? `<div class="section"><div class="section-title">Catatan</div><div class="desc-box">${project.catatan}</div></div>` : ''}
+
+    <p style="font-size:10pt;color:#475569;margin-top:16px;line-height:1.7">
+      Demikian Berita Acara Serah Terima ini dibuat dengan sebenarnya dan para pihak menyatakan
+      bahwa seluruh pekerjaan telah diselesaikan sesuai spesifikasi yang disepakati.
+    </p>
+
+    <div class="signature-row">
+      <div class="sign-box"><div class="sign-label">Diserahkan oleh,<br>PT Next One Technology</div><div class="sign-line"><div class="sign-name">${project.pm ? '( ' + project.pm.nama_lengkap + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">Project Manager</div></div></div>
+      <div class="sign-box"><div class="sign-label">Diterima oleh,<br>Pelanggan</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Pimpinan / PIC</div></div></div>
+    </div>
+    ${docFooter(project.nomor_project)}
+  </div></body></html>`
+  printDocument(html)
+}
+
+// ─────────────────────────────────────────────
+// LAPORAN TIKET / SURAT LAPORAN GANGGUAN
+// ─────────────────────────────────────────────
+export function printLaporanTiket(tiket: any) {
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '-'
+  const fmtDt = (d: string | null) => d ? new Date(d).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-'
+
+  const PRIO_COLOR: Record<string,string> = { Critical:'#dc2626', High:'#ea580c', Medium:'#ca8a04', Low:'#16a34a' }
+  const logRows = tiket.logs?.length
+    ? tiket.logs.slice().reverse().map((l: any) => `<tr>
+        <td>${fmtDt(l.created_at)}</td>
+        <td>${l.user?.karyawan?.nama_lengkap || '-'}</td>
+        <td>${l.status_dari || '-'} → ${l.status_ke || '-'}</td>
+        <td>${l.catatan || '-'}</td>
+      </tr>`).join('')
+    : `<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:12px">Tidak ada log</td></tr>`
+
+  const woRows = tiket.work_orders?.length
+    ? tiket.work_orders.map((wo: any, i: number) => `<tr><td>${i+1}</td><td>${wo.nomor_wo}</td><td>${wo.jenis_wo}</td><td>${wo.teknisi?.nama_lengkap || wo.vendor?.nama_vendor || '-'}</td><td>${wo.status_wo}</td></tr>`).join('')
+    : `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:12px">Tidak ada WO</td></tr>`
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Laporan Tiket ${tiket.nomor_tiket}</title>${baseStyle()}</head>
+  <body><div class="doc">
+    <div class="header">
+      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="doc-title-block"><div class="doc-title">LAPORAN GANGGUAN</div><div class="doc-nomor">${tiket.nomor_tiket}</div><div class="doc-date">${fmtDate(tiket.tgl_open)}</div></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Informasi Tiket</div>
+      <table class="info">
+        <tr><td>Nomor Tiket</td><td>:</td><td>${tiket.nomor_tiket}</td></tr>
+        <tr><td>Judul</td><td>:</td><td><strong>${tiket.judul_tiket}</strong></td></tr>
+        <tr><td>Prioritas</td><td>:</td><td><span style="color:${PRIO_COLOR[tiket.prioritas]||'#475569'};font-weight:700">${tiket.prioritas}</span></td></tr>
+        <tr><td>Status</td><td>:</td><td>${tiket.status_tiket}</td></tr>
+        <tr><td>Sumber</td><td>:</td><td>${tiket.sumber_tiket}</td></tr>
+        <tr><td>Tanggal Buka</td><td>:</td><td>${fmtDt(tiket.tgl_open)}</td></tr>
+        ${tiket.tgl_resolved ? `<tr><td>Tanggal Resolved</td><td>:</td><td>${fmtDt(tiket.tgl_resolved)}</td></tr>` : ''}
+        ${tiket.tgl_closed ? `<tr><td>Tanggal Closed</td><td>:</td><td>${fmtDt(tiket.tgl_closed)}</td></tr>` : ''}
+        <tr><td>Teknisi PIC</td><td>:</td><td>${tiket.teknisi?.nama_lengkap || '-'}</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Lokasi</div>
+      <table class="info">
+        <tr><td>Site</td><td>:</td><td>${tiket.site?.kode_site} — ${tiket.site?.nama_site}</td></tr>
+        <tr><td>Pelanggan</td><td>:</td><td>${tiket.site?.pelanggan?.nama_pelanggan}</td></tr>
+        <tr><td>Layanan</td><td>:</td><td>${tiket.site?.layanan?.nama_layanan || '-'}</td></tr>
+        <tr><td>Alamat</td><td>:</td><td>${tiket.site?.alamat_lengkap || tiket.site?.kota || '-'}</td></tr>
+        <tr><td>PIC Pelanggan</td><td>:</td><td>${tiket.site?.pelanggan?.nama_pic_utama || '-'} | ${tiket.site?.pelanggan?.no_telp || '-'}</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Deskripsi Masalah</div>
+      <div class="desc-box">${tiket.deskripsi_masalah || '-'}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Work Order Terkait</div>
+      <table class="grid">
+        <thead><tr><th>No</th><th>Nomor WO</th><th>Jenis</th><th>Pelaksana</th><th>Status</th></tr></thead>
+        <tbody>${woRows}</tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Log Penanganan</div>
+      <table class="grid">
+        <thead><tr><th>Waktu</th><th>Oleh</th><th>Status</th><th>Catatan</th></tr></thead>
+        <tbody>${logRows}</tbody>
+      </table>
+    </div>
+
+    <div class="signature-row">
+      <div class="sign-box"><div class="sign-label">Ditangani oleh,</div><div class="sign-line"><div class="sign-name">${tiket.teknisi ? '( ' + tiket.teknisi.nama_lengkap + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">Teknisi / Helpdesk</div></div></div>
+      <div class="sign-box"><div class="sign-label">Diketahui oleh,<br>${tiket.site?.pelanggan?.nama_pelanggan || 'Pelanggan'}</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">PIC Pelanggan</div></div></div>
+    </div>
+    ${docFooter(tiket.nomor_tiket)}
+  </div></body></html>`
+  printDocument(html)
+}
+
+// ─────────────────────────────────────────────
+// SURAT JALAN PENGIRIMAN PERANGKAT
+// ─────────────────────────────────────────────
+export function printSuratJalan(wo: any, pengiriman: any) {
+  const fmtDt = (d: string | null) => d ? new Date(d).toLocaleString('id-ID', { day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-'
+  const itemRows = pengiriman.items?.length
+    ? pengiriman.items.map((item: any, i: number) => `<tr><td>${i+1}</td><td>${item.nama_perangkat || item.keterangan || '-'}</td><td>${item.serial_number || '-'}</td><td style="text-align:center">${item.jumlah || 1}</td><td>${item.kondisi || '-'}</td></tr>`).join('')
+    : `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:12px">Tidak ada item perangkat</td></tr>`
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Surat Jalan ${wo.nomor_wo}</title>${baseStyle()}</head>
+  <body><div class="doc">
+    <div class="header">
+      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="doc-title-block"><div class="doc-title">SURAT JALAN</div><div class="doc-nomor">${wo.nomor_wo}</div><div class="doc-date">${fmtDt(pengiriman.created_at)}</div></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Informasi Pengiriman</div>
+      <table class="info">
+        <tr><td>Referensi WO</td><td>:</td><td>${wo.nomor_wo}</td></tr>
+        <tr><td>Jenis Pengiriman</td><td>:</td><td>${pengiriman.jenis_pengiriman?.replace('_', ' ')}</td></tr>
+        <tr><td>Status</td><td>:</td><td>${pengiriman.status_pengiriman}</td></tr>
+        ${pengiriman.nomor_resi ? `<tr><td>Nomor Resi</td><td>:</td><td>${pengiriman.nomor_resi}</td></tr>` : ''}
+        <tr><td>Tanggal</td><td>:</td><td>${fmtDt(pengiriman.created_at)}</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Tujuan Pengiriman</div>
+      <table class="info">
+        <tr><td>Site</td><td>:</td><td>${wo.site?.kode_site} — ${wo.site?.nama_site}</td></tr>
+        <tr><td>Pelanggan</td><td>:</td><td>${wo.site?.pelanggan?.nama_pelanggan}</td></tr>
+        <tr><td>Alamat</td><td>:</td><td>${wo.site?.alamat_lengkap || wo.site?.kota || '-'}</td></tr>
+        <tr><td>PIC Penerima</td><td>:</td><td>${wo.site?.pelanggan?.nama_pic_utama || '-'}</td></tr>
+        <tr><td>Telp</td><td>:</td><td>${wo.site?.pelanggan?.no_telp || '-'}</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Daftar Perangkat</div>
+      <table class="grid">
+        <thead><tr><th>No</th><th>Nama Perangkat</th><th>Serial Number</th><th style="text-align:center">Qty</th><th>Kondisi</th></tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+    </div>
+
+    <div class="signature-row">
+      <div class="sign-box"><div class="sign-label">Dikirim oleh,<br>PT Next One Technology</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Pengirim</div></div></div>
+      <div class="sign-box"><div class="sign-label">Diterima oleh,</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Penerima / ${wo.site?.pelanggan?.nama_pelanggan || 'Pelanggan'}</div></div></div>
+    </div>
+    ${docFooter(wo.nomor_wo)}
+  </div></body></html>`
+  printDocument(html)
+}
+
+// ─────────────────────────────────────────────
+// INVOICE / TAGIHAN BULANAN
+// ─────────────────────────────────────────────
+export function printInvoice(kt: any, bulan?: string) {
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '-'
+  const fmtRp = (n: any) => new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR', minimumFractionDigits:0 }).format(Number(n) || 0)
+  const now = new Date()
+  const bulanLabel = bulan || now.toLocaleDateString('id-ID', { month:'long', year:'numeric' })
+  const tglJatuhTempo = new Date(now.getFullYear(), now.getMonth(), 10)
+  const nomorInv = `INV-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}-${String(kt.id_kontrak).padStart(4,'0')}`
+  const ppn = Math.round(Number(kt.harga_mrc) * 0.11)
+  const total = Number(kt.harga_mrc) + ppn
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Invoice ${nomorInv}</title>${baseStyle()}</head>
+  <body><div class="doc">
+    <div class="header">
+      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="doc-title-block"><div class="doc-title">INVOICE</div><div class="doc-nomor">${nomorInv}</div><div class="doc-date">Periode: ${bulanLabel}</div></div>
+    </div>
+
+    <div style="display:flex;gap:40px;margin-bottom:20px">
+      <div style="flex:1">
+        <div class="section-title" style="margin-bottom:8px">Ditagihkan kepada</div>
+        <div style="font-size:13pt;font-weight:700;color:#0f172a">${kt.site?.pelanggan?.nama_pelanggan || '-'}</div>
+        <div style="font-size:10pt;color:#64748b;margin-top:4px">${kt.site?.kode_site} — ${kt.site?.nama_site}</div>
+      </div>
+      <div style="flex:1;text-align:right">
+        <table class="info" style="text-align:right">
+          <tr><td style="color:#64748b">No. Invoice</td><td>:</td><td><strong>${nomorInv}</strong></td></tr>
+          <tr><td style="color:#64748b">Tanggal</td><td>:</td><td>${fmtDate(now.toISOString())}</td></tr>
+          <tr><td style="color:#64748b">Jatuh Tempo</td><td>:</td><td style="color:#dc2626;font-weight:700">${fmtDate(tglJatuhTempo.toISOString())}</td></tr>
+          <tr><td style="color:#64748b">Ref. Kontrak</td><td>:</td><td>${kt.nomor_kontrak}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Detail Tagihan — Periode ${bulanLabel}</div>
+      <table class="grid">
+        <thead><tr><th>Deskripsi Layanan</th><th>Layanan</th><th style="text-align:right">Jumlah</th></tr></thead>
+        <tbody>
+          <tr><td>MRC (Monthly Recurring Charge) — Periode ${bulanLabel}</td><td>${kt.layanan?.nama_layanan || '-'}</td><td style="text-align:right">${fmtRp(kt.harga_mrc)}</td></tr>
+          <tr><td colspan="2" style="text-align:right;color:#64748b">Sub Total</td><td style="text-align:right">${fmtRp(kt.harga_mrc)}</td></tr>
+          <tr><td colspan="2" style="text-align:right;color:#64748b">PPN 11%</td><td style="text-align:right">${fmtRp(ppn)}</td></tr>
+          <tr style="background:#eff6ff"><td colspan="2" style="text-align:right;font-weight:700;color:#1e40af;font-size:12pt">TOTAL</td><td style="text-align:right;font-weight:700;color:#1e40af;font-size:12pt">${fmtRp(total)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px">
+      <div class="section-title" style="border:none;padding:0;margin-bottom:8px">Informasi Pembayaran</div>
+      <table class="info">
+        <tr><td>Bank</td><td>:</td><td>BCA / Mandiri / BNI (sesuai konfirmasi tim Finance)</td></tr>
+        <tr><td>Atas Nama</td><td>:</td><td>PT Next One Technology</td></tr>
+        <tr><td>Jatuh Tempo</td><td>:</td><td style="color:#dc2626;font-weight:700">${fmtDate(tglJatuhTempo.toISOString())}</td></tr>
+      </table>
+      <p style="font-size:9pt;color:#94a3b8;margin-top:8px">Harap cantumkan nomor invoice pada bukti transfer. Keterlambatan pembayaran dikenakan denda 2% per bulan.</p>
+    </div>
+
+    ${docFooter(nomorInv)}
+  </div></body></html>`
+  printDocument(html)
+}

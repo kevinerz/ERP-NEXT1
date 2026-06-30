@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
-import { printSuratTugas, printBeritaAcara } from '@/composables/usePrint'
+import { printSuratTugas, printBeritaAcara, printSuratJalan } from '@/composables/usePrint'
 
 const route  = useRoute()
 const router = useRouter()
@@ -270,6 +270,10 @@ onMounted(fetchWo)
             <div v-if="!wo.pengiriman?.length" class="empty-section">Belum ada pengiriman</div>
             <div v-else class="ba-list">
               <div v-for="p in wo.pengiriman" :key="p.id_pengiriman" class="ba-item">
+                <div class="ba-item-header">
+                  <div class="ba-nomor">{{ p.jenis_pengiriman.replace('_', ' ') }}</div>
+                  <button class="btn-print-sm" @click="printSuratJalan(wo, p)" title="Cetak Surat Jalan">🖨</button>
+                </div>
                 <div class="ba-meta">
                   <span class="badge badge-outline">{{ p.jenis_pengiriman.replace('_', ' ') }}</span>
                   <span :class="['badge', p.status_pengiriman === 'Diterima' ? 'badge-green' : 'badge-yellow']">
