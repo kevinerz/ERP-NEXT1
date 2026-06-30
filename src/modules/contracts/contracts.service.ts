@@ -54,7 +54,7 @@ export class ContractsService {
       where: { id_kontrak: id },
       include: {
         ...KONTRAK_INCLUDE,
-        quotation: { select: { nomor_quotation: true, harga_mrc: true, harga_otc: true } },
+        quotation: { select: { id_quotation: true, nomor_quotation: true, harga_mrc: true, harga_otc: true } },
         projects: { select: { id_project: true, nomor_project: true, status_project: true } },
       },
     });

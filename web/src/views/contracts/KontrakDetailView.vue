@@ -140,7 +140,12 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
         </div>
         <div class="info-item" v-if="k.quotation">
           <div class="info-label">Quotation</div>
-          <div class="info-value">{{ k.quotation.nomor_quotation }}</div>
+          <div class="info-value">
+            <span class="qt-link"
+              @click="router.push(`/sales/quotation/${k.quotation.id_quotation}`)">
+              {{ k.quotation.nomor_quotation }}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -262,6 +267,8 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
 .info-value.mrc { color: #1d4ed8; font-size: 16px; }
 .sisa { font-size: 11px; color: #94a3b8; margin-top: 2px; }
 .sisa.warn { color: #ea580c; font-weight: 700; }
+.qt-link { color: #1d4ed8; cursor: pointer; font-weight: 700; }
+.qt-link:hover { text-decoration: underline; }
 
 .section-title { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
 .project-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
