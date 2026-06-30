@@ -311,6 +311,22 @@ export class MasterService {
           include: { layanan: { select: { nama_layanan: true } } },
           orderBy: { created_at: 'desc' },
         },
+        projects: {
+          orderBy: { created_at: 'desc' },
+          select: {
+            id_project: true, nomor_project: true, status_project: true,
+            tgl_mulai: true, tgl_target_selesai: true,
+            pm: { select: { nama_lengkap: true } },
+          },
+        },
+        tickets: {
+          orderBy: { tgl_open: 'desc' },
+          take: 20,
+          select: {
+            id_ticket: true, nomor_tiket: true, judul_tiket: true,
+            status_tiket: true, prioritas: true, tgl_open: true,
+          },
+        },
       },
     });
     if (!data) throw new NotFoundException('Site tidak ditemukan');

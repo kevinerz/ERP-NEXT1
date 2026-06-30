@@ -14,7 +14,7 @@ const vendorList = ref<any[]>([])
 const asetSimList = ref<any[]>([])
 const asetList = ref<any[]>([])  // untuk perangkat picker
 
-const activeTab = ref<'sumber' | 'perangkat' | 'pic'>('sumber')
+const activeTab = ref<'sumber' | 'perangkat' | 'pic' | 'proyek' | 'tiket'>('sumber')
 
 // Sumber Internet
 const showSumberModal = ref(false)
@@ -332,6 +332,12 @@ const isGsm = computed(() => {
         <button :class="['tab', { active: activeTab === 'pic' }]" @click="activeTab = 'pic'">
           👤 PIC Kontak ({{ site.pic?.length || 0 }})
         </button>
+        <button :class="['tab', { active: activeTab === 'proyek' }]" @click="activeTab = 'proyek'">
+          📦 Project ({{ site.projects?.length || 0 }})
+        </button>
+        <button :class="['tab', { active: activeTab === 'tiket' }]" @click="activeTab = 'tiket'">
+          🎫 Tiket ({{ site.tickets?.length || 0 }})
+        </button>
       </div>
 
       <!-- Tab: Sumber Internet -->
@@ -463,6 +469,62 @@ const isGsm = computed(() => {
             <div class="pic-kontak">
               <span v-if="p.no_kontak">📱 {{ p.no_kontak }}</span>
               <span v-if="p.email">✉️ {{ p.email }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Tab: Project -->
+      <div v-if="activeTab === 'proyek'" class="tab-content">
+        <div class="tab-header">
+          <h3>Project</h3>
+          <button class="btn-add" @click="router.push('/projects?new=1')">+ Buat Project</button>
+        </div>
+        <div v-if="!site.projects?.length" class="empty-state">Belum ada project untuk site ini</div>
+        <div v-else class="list-rows">
+          <div v-for="p in site.projects" :key="p.id_project"
+            class="list-row clickable" @click="router.push(`/projects/${p.id_project}`)">
+            <div class="lr-left">
+              <div class="lr-nomor">{{ p.nomor_project }}</div>
+              <div class="lr-sub">PM: {{ p.pm?.nama_lengkap || '—' }}</div>
+            </div>
+            <div class="lr-mid">
+              <span class="lr-date" v-if="p.tgl_mulai">
+                {{ fmtDate(p.tgl_mulai) }}
+                <template v-if="p.tgl_target_selesai"> — {{ fmtDate(p.tgl_target_selesai) }}</template>
+              </span>
+            </div>
+            <div class="lr-right">
+              <span class="status-chip" :class="`pstatus-${p.status_project.toLowerCase()}`">
+                {{ p.status_project }}
+              </span>
+              <span class="lr-arrow">›</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Tiket -->
+      <div v-if="activeTab === 'tiket'" class="tab-content">
+        <div class="tab-header">
+          <h3>Tiket Operasional</h3>
+          <button class="btn-add" @click="router.push('/operations')">Lihat Semua</button>
+        </div>
+        <div v-if="!site.tickets?.length" class="empty-state">Belum ada tiket untuk site ini</div>
+        <div v-else class="list-rows">
+          <div v-for="t in site.tickets" :key="t.id_ticket"
+            class="list-row clickable" @click="router.push(`/operations/${t.id_ticket}`)">
+            <div class="lr-left">
+              <div class="lr-nomor">{{ t.nomor_tiket }}</div>
+              <div class="lr-sub">{{ t.judul_tiket }}</div>
+            </div>
+            <div class="lr-mid">
+              <span class="prioritas-chip" :class="`prio-${t.prioritas?.toLowerCase()}`">{{ t.prioritas }}</span>
+            </div>
+            <div class="lr-right">
+              <span class="status-chip" :class="`tstatus-${t.status_tiket?.toLowerCase().replace('_', '-')}`">
+                {{ t.status_tiket }}
+              </span>
+              <span class="lr-arrow">›</span>
             </div>
           </div>
         </div>
@@ -751,6 +813,35 @@ const isGsm = computed(() => {
 .utama-badge { font-size: 10px; background: #eff6ff; color: #1d4ed8; padding: 2px 7px; border-radius: 8px; font-weight: 700; }
 .pic-jabatan { font-size: 12px; }
 .pic-kontak { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #374151; }
+
+/* Project & Tiket list rows */
+.list-rows { display: flex; flex-direction: column; gap: 8px; }
+.list-row { display: flex; align-items: center; gap: 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; }
+.list-row.clickable { cursor: pointer; transition: border-color 0.15s; }
+.list-row.clickable:hover { border-color: #3b82f6; }
+.lr-left { flex: 1; min-width: 0; }
+.lr-nomor { font-size: 14px; font-weight: 700; color: #0f172a; }
+.lr-sub { font-size: 12px; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lr-mid { min-width: 120px; }
+.lr-date { font-size: 12px; color: #94a3b8; }
+.lr-right { display: flex; align-items: center; gap: 8px; }
+.lr-arrow { color: #94a3b8; font-size: 18px; }
+.status-chip { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 12px; white-space: nowrap; }
+.pstatus-perencanaan { background: #eff6ff; color: #1d4ed8; }
+.pstatus-instalasi    { background: #fef9c3; color: #a16207; }
+.pstatus-testing      { background: #fff7ed; color: #c2410c; }
+.pstatus-selesai      { background: #f0fdf4; color: #15803d; }
+.pstatus-ditahan      { background: #fef2f2; color: #dc2626; }
+.tstatus-open              { background: #f1f5f9; color: #64748b; }
+.tstatus-in_progress       { background: #eff6ff; color: #1d4ed8; }
+.tstatus-pending-customer  { background: #fef9c3; color: #a16207; }
+.tstatus-resolved          { background: #f0fdf4; color: #15803d; }
+.tstatus-closed            { background: #e2e8f0; color: #475569; }
+.prioritas-chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
+.prio-high     { background: #fef2f2; color: #dc2626; }
+.prio-medium   { background: #fff7ed; color: #c2410c; }
+.prio-low      { background: #f0fdf4; color: #15803d; }
+.prio-critical { background: #fdf2f8; color: #9d174d; }
 
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
