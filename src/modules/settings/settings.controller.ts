@@ -21,7 +21,7 @@ export class SettingsController {
 
   @Post('logo')
   @UseInterceptors(FileInterceptor('file'))
-  uploadLogo(@UploadedFile() file: Express.Multer.File) {
+  uploadLogo(@UploadedFile() file: { buffer: Buffer; originalname: string }) {
     return this.settingsService.uploadLogo(file.buffer, file.originalname);
   }
 }
