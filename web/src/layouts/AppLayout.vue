@@ -14,6 +14,9 @@ const sidebarOpen    = ref(true)
 const showNotifPanel = ref(false)
 const showUserMenu   = ref(false)
 
+const appVersion = __APP_VERSION__
+const appHash    = __APP_GIT_HASH__
+
 onMounted(() => {
   notif.startPolling()
   document.addEventListener('click', onDocClick)
@@ -180,6 +183,12 @@ const initials = computed(() => {
           </RouterLink>
         </template>
       </nav>
+
+      <!-- Version -->
+      <div class="sidebar-version" v-if="sidebarOpen">
+        <span class="ver-text">v{{ appVersion }}</span>
+        <span class="ver-hash">{{ appHash }}</span>
+      </div>
 
       <!-- Collapse toggle -->
       <button class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">
@@ -398,6 +407,17 @@ const initials = computed(() => {
   line-height: 1;
 }
 .nav-label { white-space: nowrap; }
+
+/* Version */
+.sidebar-version {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  opacity: 0.4;
+}
+.ver-text { font-size: 11px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
+.ver-hash { font-size: 10px; color: #94a3b8; font-family: monospace; }
 
 /* Sidebar toggle */
 .sidebar-toggle {
