@@ -141,8 +141,10 @@ async function handleSave() {
   saved.value = false
   saveError.value = ''
   try {
-    await api.patch('/settings', { ...form })
-    Object.assign(store.settings, form)
+    // Jangan kirim company_logo_url — sudah tersimpan via endpoint upload tersendiri
+    const { company_logo_url: _logo, ...payload } = form
+    await api.patch('/settings', payload)
+    Object.assign(store.settings, payload)
     saved.value = true
     setTimeout(() => { saved.value = false }, 3000)
   } catch (e: any) {

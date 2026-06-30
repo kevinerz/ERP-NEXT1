@@ -1,6 +1,7 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { json } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -10,6 +11,9 @@ import { RolesGuard } from './common/guards/roles.guard';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Naikkan limit JSON body ke 10mb (untuk base64 logo dll)
+  app.use(json({ limit: '10mb' }));
 
   // Prefix semua API route dengan /api
   app.setGlobalPrefix('api');

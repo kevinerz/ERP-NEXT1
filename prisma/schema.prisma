@@ -823,7 +823,7 @@ model Notification {
 
 model AppSetting {
   key         String   @id @db.VarChar(80)
-  value       String?  @db.Text
+  value       String?  @db.LongText
   updated_at  DateTime @default(now()) @updatedAt
 
   @@map("app_settings")
