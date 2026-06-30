@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateKontrakDto, UpdateKontrakDto, TerminasiDto } from './dto/kontrak.dto';
 
@@ -62,6 +62,12 @@ export class ContractsService {
   }
 
   async create(dto: CreateKontrakDto) {
+    if (dto.id_quotation) {
+      const qt = await this.prisma.salesQuotation.findUnique({ where: { id_quotation: dto.id_quotation } });
+      if (!qt) throw new NotFoundException('Quotation tidak ditemukan');
+      if (qt.status_approval !== 'Approved') throw new BadRequestException('Kontrak hanya bisa dibuat dari Quotation yang sudah Approved');
+    }
+
     const durasi_bulan = dto.durasi_bulan ?? 12;
     let tgl_berakhir = dto.tgl_berakhir ? new Date(dto.tgl_berakhir) : null;
     if (!tgl_berakhir) {

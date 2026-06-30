@@ -19,11 +19,24 @@ const approveForm    = ref({ status_approval: 'Approved', id_approver: 0, catata
 const approveSubmit  = ref(false)
 const successMsg     = ref('')
 
+// Buat Kontrak modal
+const showKontrakModal = ref(false)
+const savingKontrak    = ref(false)
+const sites            = ref<any[]>([])
+const kontrakForm      = ref({ id_site: 0, tgl_mulai: '', durasi_bulan: 12 })
+
 onMounted(async () => {
   await sales.fetchSalesList()
   if (sales.salesList.length) approveForm.value.id_approver = sales.salesList[0].id_karyawan
-  await fetchQuotation()
+  await Promise.all([fetchQuotation(), fetchSites()])
 })
+
+async function fetchSites() {
+  try {
+    const r = await api.get('/master/site', { params: { limit: 500 } })
+    sites.value = r.data.data || []
+  } catch { sites.value = [] }
+}
 
 async function fetchQuotation() {
   loading.value = true
@@ -43,6 +56,34 @@ function openApprove() {
     catatan_approval: '',
   }
   showApprove.value = true
+}
+
+function openKontrak() {
+  const today = new Date().toISOString().split('T')[0]
+  kontrakForm.value = { id_site: 0, tgl_mulai: today, durasi_bulan: 12 }
+  showKontrakModal.value = true
+}
+
+async function submitKontrak() {
+  if (!kontrakForm.value.id_site) return
+  savingKontrak.value = true
+  try {
+    const payload = {
+      id_site: kontrakForm.value.id_site,
+      id_layanan: qt.value.opportunity?.id_layanan,
+      id_quotation: qt.value.id_quotation,
+      tgl_mulai: kontrakForm.value.tgl_mulai,
+      durasi_bulan: kontrakForm.value.durasi_bulan,
+      harga_mrc: qt.value.harga_mrc,
+      harga_otc: qt.value.harga_otc,
+    }
+    const r = await api.post('/contracts', payload)
+    showKontrakModal.value = false
+    router.push(`/contracts/${r.data.data.id_kontrak}`)
+  } catch (e: any) {
+    successMsg.value = e?.response?.data?.message || 'Gagal membuat kontrak'
+    setTimeout(() => successMsg.value = '', 4000)
+  } finally { savingKontrak.value = false }
 }
 
 async function handleApprove() {
@@ -110,6 +151,9 @@ const kodeProspek = computed(() => null)
         </div>
         <div class="header-actions" v-if="qt.status_approval === 'Draft'">
           <button class="btn-approve" @click="openApprove">✓ Approve / Reject</button>
+        </div>
+        <div class="header-actions" v-else-if="qt.status_approval === 'Approved'">
+          <button class="btn-kontrak" @click="openKontrak">+ Buat Kontrak</button>
         </div>
       </div>
 
@@ -198,6 +242,55 @@ const kodeProspek = computed(() => null)
       </div>
     </template>
 
+    <!-- Modal Buat Kontrak -->
+    <div v-if="showKontrakModal" class="modal-overlay" @click.self="showKontrakModal = false">
+      <div class="modal">
+        <h3>Buat Kontrak — {{ qt?.nomor_quotation }}</h3>
+
+        <!-- Pre-filled info -->
+        <div class="kontrak-info-row">
+          <div class="kontrak-info-item">
+            <span class="kinfo-label">Layanan</span>
+            <span class="kinfo-val">{{ qt?.opportunity?.layanan?.nama_layanan || '—' }}</span>
+          </div>
+          <div class="kontrak-info-item">
+            <span class="kinfo-label">MRC</span>
+            <span class="kinfo-val">{{ fmt(qt?.harga_mrc) }}</span>
+          </div>
+          <div class="kontrak-info-item">
+            <span class="kinfo-label">OTC</span>
+            <span class="kinfo-val">{{ fmt(qt?.harga_otc) }}</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Site <span class="req">*</span></label>
+          <select v-model="kontrakForm.id_site">
+            <option value="0" disabled>-- Pilih Site --</option>
+            <option v-for="s in sites" :key="s.id_site" :value="s.id_site">
+              {{ s.kode_site }} — {{ s.nama_site }}
+              <template v-if="s.pelanggan"> ({{ s.pelanggan.nama_pelanggan }})</template>
+            </option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Tanggal Mulai <span class="req">*</span></label>
+          <input type="date" v-model="kontrakForm.tgl_mulai" />
+        </div>
+        <div class="field">
+          <label>Durasi (bulan)</label>
+          <input type="number" v-model.number="kontrakForm.durasi_bulan" min="1" max="120" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showKontrakModal = false">Batal</button>
+          <button class="btn-submit" @click="submitKontrak"
+            :disabled="savingKontrak || !kontrakForm.id_site || !kontrakForm.tgl_mulai">
+            {{ savingKontrak ? 'Menyimpan...' : 'Buat Kontrak' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal Approve -->
     <div v-if="showApprove" class="modal-overlay" @click.self="showApprove = false">
       <div class="modal">
@@ -254,6 +347,8 @@ const kodeProspek = computed(() => null)
 .status-badge { padding: 5px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; }
 .btn-approve { padding: 9px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .btn-approve:hover { opacity: 0.9; }
+.btn-kontrak { padding: 9px 20px; background: linear-gradient(135deg, #065f46, #10b981); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-kontrak:hover { opacity: 0.9; }
 
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 16px; }
 
@@ -307,8 +402,13 @@ const kodeProspek = computed(() => null)
 .modal h3 { margin: 0 0 22px; font-size: 18px; color: #0f172a; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .field label { font-size: 13px; font-weight: 600; color: #374151; }
-.field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
-.field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
+.field select, .field textarea, .field input { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; width: 100%; box-sizing: border-box; }
+.field select:focus, .field textarea:focus, .field input:focus { border-color: #3b82f6; background: #fff; }
+.req { color: #dc2626; }
+.kontrak-info-row { display: flex; gap: 12px; margin-bottom: 18px; background: #f8fafc; border-radius: 8px; padding: 12px 14px; }
+.kontrak-info-item { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.kinfo-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.4px; }
+.kinfo-val { font-size: 13px; font-weight: 600; color: #0f172a; }
 .radio-row { display: flex; gap: 10px; }
 .radio-opt { display: flex; align-items: center; gap: 6px; padding: 9px 16px; border: 1.5px solid #e2e8f0; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; color: #64748b; background: #f8fafc; flex: 1; justify-content: center; }
 .radio-opt.active { background: #f0fdf4; border-color: #86efac; color: #15803d; }
