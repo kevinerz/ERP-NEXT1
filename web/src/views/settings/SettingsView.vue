@@ -159,11 +159,13 @@ async function handleLogoUpload(e: Event) {
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await api.post('/settings/logo', fd)
+    const res = await api.post('/settings/logo', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
     form.company_logo_url = res.url
     store.settings.company_logo_url = res.url
-  } catch {
-    alert('Gagal upload logo')
+  } catch (err: any) {
+    alert('Gagal upload logo: ' + (err?.response?.data?.message ?? err?.message ?? 'Unknown error'))
   } finally {
     uploading.value = false
   }
