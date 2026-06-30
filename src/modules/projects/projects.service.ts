@@ -104,7 +104,7 @@ export class ProjectsService {
   }
 
   async update(id: number, dto: UpdateProjectDto) {
-    await this._check(id);
+    const existing = await this._check(id);
     const data = await this.prisma.projectDelivery.update({
       where: { id_project: id },
       data: {
@@ -116,6 +116,15 @@ export class ProjectsService {
       },
       include: PROJECT_INCLUDE,
     });
+
+    // Saat project baru saja berubah ke Selesai, aktifkan site terkait
+    if (dto.status_project === 'Selesai' && existing.status_project !== 'Selesai') {
+      await this.prisma.sitePelanggan.update({
+        where: { id_site: existing.id_site },
+        data: { status_site: 'Aktif' },
+      });
+    }
+
     return { data, message: 'Project diperbarui' };
   }
 
