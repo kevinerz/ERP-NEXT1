@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useMasterStore, type Layanan } from '@/stores/master'
+import api from '@/services/api'
 
 const master = useMasterStore()
 
@@ -81,6 +82,18 @@ async function handleToggle(l: Layanan) {
     master.error = e.response?.data?.message || 'Gagal ubah status'
   }
 }
+
+async function hapusLayanan(layanan: Layanan) {
+  if (!confirm('Hapus layanan ' + layanan.nama_layanan + '?')) return
+  try {
+    await api.delete('/master/layanan/' + layanan.id_layanan)
+    master.layananList = master.layananList.filter((l: Layanan) => l.id_layanan !== layanan.id_layanan)
+    successMsg.value = 'Layanan dihapus'
+    setTimeout(() => successMsg.value = '', 3000)
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus layanan')
+  }
+}
 </script>
 
 <template>
@@ -114,25 +127,31 @@ async function handleToggle(l: Layanan) {
       <table v-else>
         <thead>
           <tr>
-            <th>Kode</th>
+            <th style="width:100px">Kode</th>
             <th>Nama Layanan</th>
             <th>Deskripsi</th>
-            <th>Managed</th>
-            <th>Status</th>
-            <th>Aksi</th>
+            <th style="width:120px">Tipe</th>
+            <th style="width:110px">Status</th>
+            <th style="width:180px">Aksi</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!master.layananList.length">
-            <td colspan="6" class="empty">Tidak ada data</td>
+            <td colspan="6">
+              <div class="empty-state">
+                <div class="empty-icon">🌐</div>
+                <div class="empty-title">Belum ada layanan</div>
+                <div class="empty-desc">Tambahkan layanan internet pertama Anda</div>
+              </div>
+            </td>
           </tr>
-          <tr v-for="l in master.layananList" :key="l.id_layanan">
+          <tr v-for="l in master.layananList" :key="l.id_layanan" class="table-row">
             <td><span class="kode-badge">{{ l.kode_layanan }}</span></td>
             <td class="fw600">{{ l.nama_layanan }}</td>
             <td class="text-gray">{{ l.deskripsi || '—' }}</td>
             <td>
-              <span :class="l.is_managed ? 'badge-yes' : 'badge-no'">
-                {{ l.is_managed ? 'Ya' : 'Tidak' }}
+              <span :class="l.is_managed ? 'badge-managed' : 'badge-unmanaged'">
+                {{ l.is_managed ? 'Managed' : 'Unmanaged' }}
               </span>
             </td>
             <td>
@@ -146,6 +165,11 @@ async function handleToggle(l: Layanan) {
                 :class="l.is_aktif ? 'btn-nonaktif' : 'btn-aktif'"
                 @click="handleToggle(l)"
               >{{ l.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
+              <button
+                v-if="!l.is_aktif"
+                class="btn-hapus"
+                @click="hapusLayanan(l)"
+              >Hapus</button>
             </td>
           </tr>
         </tbody>
@@ -172,8 +196,8 @@ async function handleToggle(l: Layanan) {
           <div class="field">
             <label>Managed Service?</label>
             <select v-model="form.is_managed">
-              <option :value="true">Ya</option>
-              <option :value="false">Tidak</option>
+              <option :value="true">Ya (Managed)</option>
+              <option :value="false">Tidak (Unmanaged)</option>
             </select>
           </div>
           <div class="field" v-if="isEdit">
@@ -231,21 +255,27 @@ table { width: 100%; border-collapse: collapse; }
 thead tr { background: #f8fafc; }
 th { padding: 12px 16px; font-size: 12px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; letter-spacing: 0.5px; }
 td { padding: 13px 16px; font-size: 14px; color: #0f172a; border-top: 1px solid #f1f5f9; }
-.empty { text-align: center; color: #94a3b8; padding: 40px; }
+.table-row { transition: background 0.15s; }
+.table-row:hover { background: #f8fafc; }
+.empty-state { text-align: center; padding: 52px 20px; }
+.empty-icon { font-size: 36px; margin-bottom: 12px; }
+.empty-title { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+.empty-desc { font-size: 13px; color: #94a3b8; }
 .loading { padding: 40px; text-align: center; color: #94a3b8; }
 .fw600 { font-weight: 600; }
 .text-gray { color: #64748b; }
 
 .kode-badge { background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
-.badge-yes { background: #dcfce7; color: #15803d; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-.badge-no { background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+.badge-managed { background: #f0f9ff; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; border: 1px solid #bae6fd; }
+.badge-unmanaged { background: #f8fafc; color: #64748b; padding: 3px 10px; border-radius: 12px; font-size: 12px; border: 1px solid #e2e8f0; }
 .badge-aktif { background: #dcfce7; color: #15803d; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 .badge-nonaktif { background: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
 
-.actions { display: flex; gap: 6px; }
+.actions { display: flex; gap: 6px; align-items: center; }
 .btn-edit { padding: 5px 12px; background: #eff6ff; color: #1d4ed8; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-nonaktif { padding: 5px 12px; background: #fff7ed; color: #c2410c; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-aktif { padding: 5px 12px; background: #f0fdf4; color: #15803d; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-hapus { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.8rem; }
 
 .btn-primary {
   padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6);

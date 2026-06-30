@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useMasterStore, type Vendor } from '@/stores/master'
+import api from '@/services/api'
 
 const master = useMasterStore()
 
@@ -22,6 +23,15 @@ const formError = ref('')
 const successMsg = ref('')
 
 const TIPE_OPTIONS = ['ISP', 'VENDOR', 'PARTNER', 'CLOUD', 'HARDWARE', 'LAINNYA']
+
+const TIPE_COLOR: Record<string, { bg: string; color: string }> = {
+  ISP:      { bg: '#eff6ff', color: '#1d4ed8' },
+  VENDOR:   { bg: '#f0fdf4', color: '#15803d' },
+  PARTNER:  { bg: '#faf5ff', color: '#7c3aed' },
+  CLOUD:    { bg: '#f0f9ff', color: '#0369a1' },
+  HARDWARE: { bg: '#fff7ed', color: '#c2410c' },
+  LAINNYA:  { bg: '#f8fafc', color: '#475569' },
+}
 
 onMounted(async () => {
   await master.fetchTipeVendor()
@@ -105,6 +115,18 @@ async function handleToggle(v: Vendor) {
     master.error = e.response?.data?.message || 'Gagal ubah status'
   }
 }
+
+async function hapusVendor(vendor: Vendor) {
+  if (!confirm('Hapus vendor ' + vendor.nama_vendor + '?')) return
+  try {
+    await api.delete('/master/vendor/' + vendor.id_vendor)
+    master.vendorList = master.vendorList.filter((v: Vendor) => v.id_vendor !== vendor.id_vendor)
+    successMsg.value = 'Vendor dihapus'
+    setTimeout(() => successMsg.value = '', 3000)
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus vendor')
+  }
+}
 </script>
 
 <template>
@@ -120,15 +142,21 @@ async function handleToggle(v: Vendor) {
     <!-- Filter -->
     <div class="filter-bar">
       <input v-model="search" @keyup.enter="doSearch" placeholder="Cari nama vendor..." class="input-search" />
-      <select v-model="filterTipe" @change="doSearch" class="select-filter">
-        <option value="">Semua Tipe</option>
-        <option v-for="t in TIPE_OPTIONS" :key="t" :value="t">{{ t }}</option>
-      </select>
-      <select v-model="filterAktif" @change="doSearch" class="select-filter">
-        <option value="">Semua Status</option>
-        <option value="true">Aktif</option>
-        <option value="false">Nonaktif</option>
-      </select>
+      <div class="filter-group">
+        <label class="filter-label">Tipe:</label>
+        <select v-model="filterTipe" @change="doSearch" class="select-filter">
+          <option value="">Semua Tipe</option>
+          <option v-for="t in TIPE_OPTIONS" :key="t" :value="t">{{ t }}</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label class="filter-label">Status:</label>
+        <select v-model="filterAktif" @change="doSearch" class="select-filter">
+          <option value="">Semua</option>
+          <option value="true">Aktif</option>
+          <option value="false">Nonaktif</option>
+        </select>
+      </div>
       <button class="btn-search" @click="doSearch">Cari</button>
     </div>
 
@@ -142,21 +170,32 @@ async function handleToggle(v: Vendor) {
         <thead>
           <tr>
             <th>Nama Vendor</th>
-            <th>Tipe</th>
+            <th style="width:110px">Tipe</th>
             <th>PIC</th>
             <th>Email</th>
-            <th>No. Telp</th>
-            <th>Status</th>
-            <th>Aksi</th>
+            <th style="width:130px">No. Telp</th>
+            <th style="width:100px">Status</th>
+            <th style="width:180px">Aksi</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!master.vendorList.length">
-            <td colspan="7" class="empty">Tidak ada data</td>
+            <td colspan="7">
+              <div class="empty-state">
+                <div class="empty-icon">🏢</div>
+                <div class="empty-title">Belum ada vendor</div>
+                <div class="empty-desc">Tambahkan vendor atau ISP pertama Anda</div>
+              </div>
+            </td>
           </tr>
-          <tr v-for="v in master.vendorList" :key="v.id_vendor">
+          <tr v-for="v in master.vendorList" :key="v.id_vendor" class="table-row">
             <td class="fw600">{{ v.nama_vendor }}</td>
-            <td><span class="tipe-badge">{{ v.tipe_vendor }}</span></td>
+            <td>
+              <span
+                class="tipe-badge"
+                :style="{ background: TIPE_COLOR[v.tipe_vendor]?.bg, color: TIPE_COLOR[v.tipe_vendor]?.color }"
+              >{{ v.tipe_vendor }}</span>
+            </td>
             <td>{{ v.kontak_pic || '—' }}</td>
             <td class="text-gray">{{ v.email_pic || '—' }}</td>
             <td>{{ v.no_telp || '—' }}</td>
@@ -171,6 +210,11 @@ async function handleToggle(v: Vendor) {
                 :class="v.is_aktif ? 'btn-nonaktif' : 'btn-aktif'"
                 @click="handleToggle(v)"
               >{{ v.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
+              <button
+                v-if="!v.is_aktif"
+                class="btn-hapus"
+                @click="hapusVendor(v)"
+              >Hapus</button>
             </td>
           </tr>
         </tbody>
@@ -248,7 +292,9 @@ async function handleToggle(v: Vendor) {
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 
-.filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.filter-group { display: flex; align-items: center; gap: 6px; }
+.filter-label { font-size: 13px; color: #64748b; font-weight: 500; white-space: nowrap; }
 .input-search {
   flex: 1; min-width: 180px; padding: 9px 12px; border: 1.5px solid #e2e8f0;
   border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc;
@@ -265,19 +311,25 @@ table { width: 100%; border-collapse: collapse; }
 thead tr { background: #f8fafc; }
 th { padding: 12px 16px; font-size: 12px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; letter-spacing: 0.5px; }
 td { padding: 13px 16px; font-size: 14px; color: #0f172a; border-top: 1px solid #f1f5f9; }
-.empty { text-align: center; color: #94a3b8; padding: 40px; }
+.table-row { transition: background 0.15s; }
+.table-row:hover { background: #f8fafc; }
+.empty-state { text-align: center; padding: 52px 20px; }
+.empty-icon { font-size: 36px; margin-bottom: 12px; }
+.empty-title { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+.empty-desc { font-size: 13px; color: #94a3b8; }
 .loading { padding: 40px; text-align: center; color: #94a3b8; }
 .fw600 { font-weight: 600; }
 .text-gray { color: #64748b; }
 
-.tipe-badge { background: #f0f9ff; color: #0369a1; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+.tipe-badge { padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; }
 .badge-aktif { background: #dcfce7; color: #15803d; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 .badge-nonaktif { background: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
 
-.actions { display: flex; gap: 6px; }
+.actions { display: flex; gap: 6px; align-items: center; }
 .btn-edit { padding: 5px 12px; background: #eff6ff; color: #1d4ed8; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-nonaktif { padding: 5px 12px; background: #fff7ed; color: #c2410c; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-aktif { padding: 5px 12px; background: #f0fdf4; color: #15803d; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-hapus { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.8rem; }
 
 .btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 

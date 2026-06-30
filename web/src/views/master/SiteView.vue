@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
+import api from '@/services/api'
 
 const router = useRouter()
 const master = useMasterStore()
@@ -60,6 +61,17 @@ function openEdit(s: any) {
   formError.value = ''; showModal.value = true
 }
 
+async function hapusSite(site: any) {
+  if (!confirm('Hapus site ' + site.nama_site + '?')) return
+  try {
+    await api.delete('/master/site/' + site.id_site)
+    master.siteList = master.siteList.filter((s: any) => s.id_site !== site.id_site)
+    flash('Site dihapus')
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus site')
+  }
+}
+
 async function handleSubmit() {
   if (!form.value.id_pelanggan || !form.value.id_layanan || !form.value.kode_site || !form.value.nama_site || !form.value.alamat_lengkap) {
     formError.value = 'Pelanggan, Layanan, Kode, Nama, dan Alamat wajib diisi'; return
@@ -94,6 +106,15 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Terminasi: { bg: '#fef2f2', color: '#dc2626' },
   Suspend: { bg: '#fef9c3', color: '#a16207' },
 }
+
+const statusSummary = computed(() => {
+  const counts: Record<string, number> = {}
+  STATUS_SITE.forEach(s => counts[s] = 0)
+  master.siteList.forEach((s: any) => {
+    if (counts[s.status_site] !== undefined) counts[s.status_site]++
+  })
+  return counts
+})
 </script>
 
 <template>
@@ -104,6 +125,18 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
         <p class="sub">Lokasi instalasi layanan</p>
       </div>
       <button class="btn-primary" @click="openAdd">+ Tambah Site</button>
+    </div>
+
+    <!-- Status Summary Bar -->
+    <div class="status-summary" v-if="master.siteList.length">
+      <span
+        v-for="st in STATUS_SITE"
+        :key="st"
+        class="summary-chip"
+        :style="{ background: STATUS_COLOR[st]?.bg, color: STATUS_COLOR[st]?.color, borderColor: STATUS_COLOR[st]?.color + '40' }"
+      >
+        {{ st }}: <strong>{{ statusSummary[st] }}</strong>
+      </span>
     </div>
 
     <div v-if="successMsg" class="alert-success">{{ successMsg }}</div>
@@ -125,21 +158,27 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
       <table v-else>
         <thead>
           <tr>
-            <th>Kode Site</th>
+            <th style="width:110px">Kode Site</th>
             <th>Nama Site</th>
             <th>Pelanggan</th>
             <th>Layanan</th>
-            <th>Kota</th>
-            <th>Status</th>
-            <th>Tgl Aktif</th>
-            <th></th>
+            <th style="width:110px">Kota</th>
+            <th style="width:100px">Status</th>
+            <th style="width:110px">Tgl Aktif</th>
+            <th style="width:140px"></th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!master.siteList.length">
-            <td colspan="8" class="empty">Belum ada site</td>
+            <td colspan="8">
+              <div class="empty-state">
+                <div class="empty-icon">📍</div>
+                <div class="empty-title">Belum ada site</div>
+                <div class="empty-desc">Tambahkan site pelanggan pertama Anda</div>
+              </div>
+            </td>
           </tr>
-          <tr v-for="s in master.siteList" :key="s.id_site">
+          <tr v-for="s in master.siteList" :key="s.id_site" class="table-row">
             <td class="fw700">{{ s.kode_site }}</td>
             <td>{{ s.nama_site }}</td>
             <td class="text-gray">{{ s.pelanggan?.nama_pelanggan }}</td>
@@ -156,6 +195,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
               <div class="row-actions">
                 <button class="btn-detail-sm" @click="router.push('/master/site/' + s.id_site)">Detail</button>
                 <button class="btn-edit-sm" @click="openEdit(s)">Edit</button>
+                <button class="btn-hapus-sm" @click="hapusSite(s)">Hapus</button>
               </div>
             </td>
           </tr>
@@ -243,10 +283,15 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 
 <style scoped>
 .page { padding: 28px 32px; max-width: 1100px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 .btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+/* Status summary bar */
+.status-summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.summary-chip { padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 500; border: 1px solid transparent; }
+
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 14px; }
 .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 14px; }
 .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -259,7 +304,12 @@ table { width: 100%; border-collapse: collapse; }
 thead tr { background: #f8fafc; }
 th { padding: 12px 14px; font-size: 12px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; }
 td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid #f1f5f9; }
-.empty { text-align: center; color: #94a3b8; padding: 40px; }
+.table-row { transition: background 0.15s; }
+.table-row:hover { background: #f8fafc; }
+.empty-state { text-align: center; padding: 52px 20px; }
+.empty-icon { font-size: 36px; margin-bottom: 12px; }
+.empty-title { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+.empty-desc { font-size: 13px; color: #94a3b8; }
 .loading { padding: 40px; text-align: center; color: #94a3b8; }
 .fw700 { font-weight: 700; color: #1d4ed8; font-size: 13px; }
 .text-gray { color: #64748b; }
@@ -268,6 +318,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .row-actions { display: flex; gap: 4px; }
 .btn-edit-sm { padding: 4px 12px; background: #f1f5f9; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-detail-sm { padding: 4px 12px; background: #eff6ff; color: #1d4ed8; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-hapus-sm { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.8rem; }
 .pagination { display: flex; gap: 6px; padding: 14px; justify-content: center; border-top: 1px solid #f1f5f9; }
 .page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
 .page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }

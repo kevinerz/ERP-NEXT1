@@ -47,6 +47,9 @@ export class MasterController {
     return this.masterService.toggleLayanan(id);
   }
 
+  @Delete('layanan/:id')
+  removeLayanan(@Param('id', ParseIntPipe) id: number) { return this.masterService.removeLayanan(id); }
+
   // ─── VENDOR ISP ─────────────────────────────────────────────
 
   @Get('vendor')
@@ -90,6 +93,9 @@ export class MasterController {
   toggleVendor(@Param('id', ParseIntPipe) id: number) {
     return this.masterService.toggleVendor(id);
   }
+
+  @Delete('vendor/:id')
+  removeVendor(@Param('id', ParseIntPipe) id: number) { return this.masterService.removeVendor(id); }
 
   // ─── PELANGGAN ──────────────────────────────────────────────
 

@@ -77,6 +77,18 @@ export class MasterService {
     return { data, message: `Layanan ${data.is_aktif ? 'diaktifkan' : 'dinonaktifkan'}` };
   }
 
+  async removeLayanan(id: number) {
+    const row = await this.prisma.masterLayanan.findUnique({
+      where: { id_layanan: id },
+      include: { _count: { select: { sites: true } } },
+    });
+    if (!row) throw new NotFoundException('Layanan tidak ditemukan');
+    if ((row as any)._count.sites > 0)
+      throw new BadRequestException('Layanan tidak bisa dihapus karena sudah dipakai oleh Site');
+    await this.prisma.masterLayanan.delete({ where: { id_layanan: id } });
+    return { message: `Layanan ${row.nama_layanan} dihapus` };
+  }
+
   // ─── VENDOR ISP ─────────────────────────────────────────────
 
   async findAllVendor(query: {
@@ -158,6 +170,18 @@ export class MasterService {
       data: { is_aktif: !vendor.is_aktif },
     });
     return { data, message: `Vendor ${data.is_aktif ? 'diaktifkan' : 'dinonaktifkan'}` };
+  }
+
+  async removeVendor(id: number) {
+    const row = await this.prisma.masterVendorIsp.findUnique({
+      where: { id_vendor: id },
+      include: { _count: { select: { sumber_internet: true } } },
+    });
+    if (!row) throw new NotFoundException('Vendor tidak ditemukan');
+    if ((row as any)._count.sumber_internet > 0)
+      throw new BadRequestException('Vendor tidak bisa dihapus karena masih dipakai di Sumber Internet Site');
+    await this.prisma.masterVendorIsp.delete({ where: { id_vendor: id } });
+    return { message: `Vendor ${row.nama_vendor} dihapus` };
   }
 
   async getTipeVendorList() {
