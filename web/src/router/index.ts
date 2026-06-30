@@ -179,6 +179,12 @@ const router = createRouter({
           name: 'sim-topup',
           component: () => import('@/views/aset/SimTopupView.vue'),
         },
+        // Notifikasi
+        {
+          path: 'notifications',
+          name: 'notifications',
+          component: () => import('@/views/NotificationsView.vue'),
+        },
         // Profile
         {
           path: 'profile',

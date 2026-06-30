@@ -124,6 +124,7 @@ const PAGE_TITLES: Record<string, string> = {
   laporan:                "Laporan",
   "admin-users":          "Admin — Manajemen User",
   "admin-logs":           "Admin — Activity Log",
+  "notifications":        "Notifikasi",
   "profile":              "Profil Saya",
 }
 
@@ -162,7 +163,7 @@ const initials = computed(() => {
           </Transition>
         </RouterLink>
 
-        <template v-if="auth.isSuperAdmin">
+        <template v-if="auth.hasRole('Admin') || auth.hasRole('Director')">
           <div class="nav-divider"></div>
           <div class="nav-section-label" v-if="sidebarOpen">ADMIN</div>
           <RouterLink
@@ -226,6 +227,11 @@ const initials = computed(() => {
                   </div>
                   <div v-if="!n.is_read" class="np-dot"></div>
                 </div>
+              </div>
+              <div class="np-footer">
+                <router-link to="/notifications" class="np-see-all" @click="showNotifPanel = false">
+                  Lihat semua notifikasi →
+                </router-link>
               </div>
             </div>
           </div>
@@ -544,6 +550,9 @@ const initials = computed(() => {
 .np-desc { font-size: 12px; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .np-time { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 .np-dot { width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; margin-top: 6px; }
+.np-footer { border-top: 1px solid #f1f5f9; padding: 10px 16px; text-align: center; }
+.np-see-all { font-size: 12px; color: #1d4ed8; font-weight: 600; text-decoration: none; }
+.np-see-all:hover { text-decoration: underline; }
 
 /* User area */
 .user-area { position: relative; }
