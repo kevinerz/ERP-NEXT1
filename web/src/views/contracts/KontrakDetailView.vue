@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useContractsStore } from '@/stores/contracts'
+import { printKontrak } from '@/composables/usePrint'
 
 const route = useRoute()
 const router = useRouter()
@@ -101,6 +102,7 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
           </div>
         </div>
         <div class="header-actions">
+          <button class="btn-print" @click="printKontrak(k)">🖨 Cetak Kontrak</button>
           <button v-if="k.status_kontrak === 'Aktif'" class="btn-danger" @click="showTerminasiModal = true; formError = ''">
             Terminasi
           </button>
@@ -256,6 +258,8 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
 .sub { font-size: 14px; color: #64748b; }
 .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; }
 .header-actions { display: flex; gap: 10px; }
+.btn-print { padding: 9px 18px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-print:hover { background: #dcfce7; }
 .btn-edit { padding: 9px 18px; background: #f1f5f9; color: #374151; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-danger { padding: 9px 18px; background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 

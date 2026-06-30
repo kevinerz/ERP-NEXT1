@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { printSuratTugas, printBeritaAcara } from '@/composables/usePrint'
 
 const route  = useRoute()
 const router = useRouter()
@@ -149,6 +150,7 @@ onMounted(fetchWo)
           </div>
         </div>
         <div class="action-group">
+          <button class="btn-print" @click="printSuratTugas(wo)" title="Cetak Surat Tugas">🖨 Surat Tugas</button>
           <button
             v-if="STATUS_NEXT[wo.status_wo]"
             class="btn-primary"
@@ -242,7 +244,10 @@ onMounted(fetchWo)
             <div v-if="!wo.berita_acara?.length" class="empty-section">Belum ada Berita Acara</div>
             <div v-else class="ba-list">
               <div v-for="ba in wo.berita_acara" :key="ba.id_ba" class="ba-item">
-                <div class="ba-nomor">{{ ba.nomor_ba }}</div>
+                <div class="ba-item-header">
+                  <div class="ba-nomor">{{ ba.nomor_ba }}</div>
+                  <button class="btn-print-sm" @click="printBeritaAcara(wo, ba)" title="Cetak BA">🖨</button>
+                </div>
                 <div class="ba-meta">
                   <span class="badge badge-outline">{{ ba.jenis_ba }}</span>
                   <span :class="['badge', ba.status_ba === 'Signed' ? 'badge-green' : 'badge-gray']">{{ ba.status_ba }}</span>
@@ -404,6 +409,11 @@ onMounted(fetchWo)
 .btn-danger { padding: 8px 16px; background: #fff; color: #dc2626; border: 1.5px solid #fca5a5; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-danger:hover:not(:disabled) { background: #fef2f2; }
 .btn-sm { padding: 5px 12px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-print { padding: 7px 14px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-print:hover { background: #dcfce7; }
+.btn-print-sm { padding: 3px 8px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.btn-print-sm:hover { background: #dcfce7; }
+.ba-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .btn-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; padding: 4px 8px; border-radius: 6px; }
 
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
