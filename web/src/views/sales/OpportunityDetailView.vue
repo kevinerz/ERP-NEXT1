@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useMasterStore } from '@/stores/master'
 
@@ -28,6 +29,12 @@ const approveId = ref(0)
 const approveForm = ref({ status_approval: 'Approved', id_approver: 0, catatan_approval: '' })
 const approveSubmitting = ref(false)
 
+// Buat Site dari Opportunity
+const showBuatSite = ref(false)
+const siteForm = ref({ id_pelanggan: 0, kode_site: '', nama_site: '', alamat_lengkap: '', kota: '', status_site: 'Prospek' })
+const siteSubmitting = ref(false)
+const siteError = ref('')
+
 // Add Activity
 const showAddActivity = ref(false)
 const actForm = ref({ jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' })
@@ -52,6 +59,7 @@ onMounted(async () => {
     sales.fetchOneOpportunity(id),
     sales.fetchSalesList(),
     master.fetchLayanan(),
+    master.fetchPelangganDropdown(),
   ])
   if (sales.salesList.length) approveForm.value.id_approver = sales.salesList[0].id_karyawan
 })
@@ -144,6 +152,41 @@ async function handleAddActivity() {
   finally { actSubmitting.value = false }
 }
 
+function openBuatSite() {
+  const opp = sales.currentOpp
+  siteForm.value = {
+    id_pelanggan: 0,
+    kode_site: '',
+    nama_site: opp.lead?.nama_perusahaan || opp.lead?.nama_prospek || '',
+    alamat_lengkap: '',
+    kota: '',
+    status_site: 'Prospek',
+  }
+  siteError.value = ''
+  showBuatSite.value = true
+}
+
+async function handleBuatSite() {
+  if (!siteForm.value.id_pelanggan || !siteForm.value.kode_site || !siteForm.value.nama_site || !siteForm.value.alamat_lengkap) {
+    siteError.value = 'Pelanggan, Kode, Nama, dan Alamat wajib diisi'; return
+  }
+  siteSubmitting.value = true; siteError.value = ''
+  try {
+    const r = await api.post('/master/site', {
+      id_pelanggan: siteForm.value.id_pelanggan,
+      id_layanan: sales.currentOpp.id_layanan,
+      kode_site: siteForm.value.kode_site,
+      nama_site: siteForm.value.nama_site,
+      alamat_lengkap: siteForm.value.alamat_lengkap,
+      kota: siteForm.value.kota || undefined,
+      status_site: siteForm.value.status_site,
+    })
+    showBuatSite.value = false
+    router.push(`/master/site/${r.data.data.id_site}`)
+  } catch (e: any) { siteError.value = e.response?.data?.message || 'Gagal membuat site' }
+  finally { siteSubmitting.value = false }
+}
+
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
 function fmt(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
@@ -177,6 +220,7 @@ function fmtDatetime(d: string) {
             :style="{ background: (TAHAPAN_COLOR[sales.currentOpp.tahapan] || '#94a3b8') + '20', color: TAHAPAN_COLOR[sales.currentOpp.tahapan] || '#94a3b8' }">
             {{ sales.currentOpp.tahapan }}
           </span>
+          <button class="btn-site" @click="openBuatSite">+ Buat Site</button>
           <button class="btn-edit" @click="openEditOpp">Edit</button>
         </div>
       </div>
@@ -380,6 +424,58 @@ function fmtDatetime(d: string) {
         </div>
       </div>
 
+      <!-- Modal Buat Site -->
+      <div v-if="showBuatSite" class="modal-overlay" @click.self="showBuatSite = false">
+        <div class="modal">
+          <h3>Buat Site dari Opportunity</h3>
+          <div class="site-pre-info">
+            <span class="spi-label">Layanan</span>
+            <span class="spi-val">{{ sales.currentOpp.layanan?.nama_layanan || '—' }}</span>
+          </div>
+          <div class="form-grid">
+            <div class="field full">
+              <label>Pelanggan <span class="req">*</span></label>
+              <select v-model.number="siteForm.id_pelanggan">
+                <option :value="0">— Pilih Pelanggan —</option>
+                <option v-for="p in master.pelangganDropdown" :key="p.id_pelanggan" :value="p.id_pelanggan">
+                  {{ p.kode_pelanggan }} — {{ p.nama_pelanggan }}
+                </option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Kode Site <span class="req">*</span></label>
+              <input v-model="siteForm.kode_site" placeholder="Mis: SITE-JKT-001" />
+            </div>
+            <div class="field">
+              <label>Nama Site <span class="req">*</span></label>
+              <input v-model="siteForm.nama_site" />
+            </div>
+            <div class="field full">
+              <label>Alamat Lengkap <span class="req">*</span></label>
+              <textarea v-model="siteForm.alamat_lengkap" rows="2" placeholder="Jl. ..."></textarea>
+            </div>
+            <div class="field">
+              <label>Kota</label>
+              <input v-model="siteForm.kota" placeholder="Opsional" />
+            </div>
+            <div class="field">
+              <label>Status Site</label>
+              <select v-model="siteForm.status_site">
+                <option value="Prospek">Prospek</option>
+                <option value="Survey">Survey</option>
+              </select>
+            </div>
+          </div>
+          <p v-if="siteError" class="form-error">{{ siteError }}</p>
+          <div class="modal-actions">
+            <button class="btn-cancel" @click="showBuatSite = false">Batal</button>
+            <button class="btn-submit" @click="handleBuatSite" :disabled="siteSubmitting">
+              {{ siteSubmitting ? 'Menyimpan...' : 'Buat Site' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Modal Activity -->
       <div v-if="showAddActivity" class="modal-overlay" @click.self="showAddActivity = false">
         <div class="modal">
@@ -430,6 +526,11 @@ function fmtDatetime(d: string) {
 .header-actions { display: flex; align-items: center; gap: 10px; }
 .tahapan-big { padding: 5px 14px; border-radius: 20px; font-size: 14px; font-weight: 700; }
 .btn-edit { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-site { padding: 9px 18px; background: linear-gradient(135deg, #065f46, #10b981); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-site:hover { opacity: 0.9; }
+.site-pre-info { display: flex; align-items: center; gap: 8px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; }
+.spi-label { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.spi-val { font-size: 14px; font-weight: 600; color: #15803d; }
 
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 16px; }
 
