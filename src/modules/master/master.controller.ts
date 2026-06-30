@@ -136,6 +136,11 @@ export class MasterController {
 
   // ─── SUMBER INTERNET ─────────────────────────────────────────
 
+  @Get('sumber-internet')
+  findAllSumber(@Query() query: { id_site?: string; unlinked_only?: string }) {
+    return this.masterService.findAllSumberInternet(query);
+  }
+
   @Post('sumber-internet')
   createSumber(@Body() dto: CreateSumberInternetDto) { return this.masterService.createSumberInternet(dto); }
 

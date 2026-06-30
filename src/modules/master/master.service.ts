@@ -334,6 +334,25 @@ export class MasterService {
   }
 
   // Sumber Internet
+  async findAllSumberInternet(query: { id_site?: string; unlinked_only?: string }) {
+    const where: any = {};
+    if (query.id_site) where.id_site = Number(query.id_site);
+    if (query.unlinked_only === 'true') where.id_aset_sim = null;
+    const data = await this.prisma.sumberInternetSite.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+      select: {
+        id_sumber: true,
+        nomor_pelanggan_isp: true,
+        status_link: true,
+        id_aset_sim: true,
+        site: { select: { id_site: true, kode_site: true, nama_site: true } },
+        vendor: { select: { nama_vendor: true } },
+      },
+    });
+    return { data };
+  }
+
   async createSumberInternet(dto: CreateSumberInternetDto) {
     const data = await this.prisma.sumberInternetSite.create({
       data: {

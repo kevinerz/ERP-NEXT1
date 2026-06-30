@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto } from './dto/aset.dto';
 
@@ -55,6 +55,14 @@ export class AssetsService {
           take: 20,
           include: {
             user: { include: { karyawan: { select: { nama_lengkap: true } } } },
+          },
+        },
+        sumber_internet: {
+          select: {
+            id_sumber: true,
+            nomor_pelanggan_isp: true,
+            site: { select: { kode_site: true, nama_site: true } },
+            vendor: { select: { nama_vendor: true } },
           },
         },
       },
@@ -118,6 +126,11 @@ export class AssetsService {
   }
 
   async createMutasi(dto: CreateMutasiDto, userId?: number) {
+    // Fix 2: id_site_tujuan wajib untuk Deploy
+    if (dto.jenis_mutasi === 'Deploy' && !dto.id_site_tujuan) {
+      throw new BadRequestException('id_site_tujuan wajib diisi untuk mutasi Deploy');
+    }
+
     const mutasi = await this.prisma.$transaction(async (tx) => {
       const aset = await tx.gudangAset.findUnique({ where: { id_aset: dto.id_aset } });
       if (!aset) throw new NotFoundException('Aset tidak ditemukan');
@@ -148,6 +161,27 @@ export class AssetsService {
           id_site: dto.id_site_tujuan ?? (dto.jenis_mutasi === 'Return' ? null : aset.id_site),
         },
       });
+
+      // Fix 1: Sync Deploy/Return dengan PerangkatSite
+      if (dto.jenis_mutasi === 'Deploy') {
+        await tx.perangkatSite.create({
+          data: {
+            id_site: dto.id_site_tujuan!,
+            id_aset: dto.id_aset,
+            jenis_perangkat: aset.kategori || 'Perangkat',
+            merk: aset.merk || '',
+            tipe_model: aset.tipe_model || '',
+            serial_number: aset.serial_number || '',
+            status_perangkat: 'Aktif',
+            tgl_pasang: new Date(),
+          },
+        });
+      } else if (dto.jenis_mutasi === 'Return' && aset.id_site) {
+        await tx.perangkatSite.updateMany({
+          where: { id_aset: dto.id_aset, id_site: aset.id_site, status_perangkat: 'Aktif' },
+          data: { status_perangkat: 'Nonaktif' },
+        });
+      }
 
       return tx.gudangMutasiAset.create({
         data: { ...dto, jumlah, id_user: userId || null },

@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
+import api from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,8 +14,13 @@ const id = Number(route.params.id)
 
 const showEditModal = ref(false)
 const showMutasiModal = ref(false)
+const showLinkSimModal = ref(false)
 const submitting = ref(false)
 const formError = ref('')
+const sumberList = ref<any[]>([])
+const linkSimId = ref<number | null>(null)
+const linkSimSubmitting = ref(false)
+const linkSimError = ref('')
 
 const editForm = ref({ nama_perangkat: '', merk: '', tipe_model: '', kondisi: '', status_aset: '', id_site: 0, catatan: '' })
 const mutasiForm = ref({ id_aset: id, jenis_mutasi: 'Deploy', jumlah: 1, id_site_asal: 0, id_site_tujuan: 0, keterangan: '' })
@@ -36,6 +42,32 @@ const a = computed(() => aset.current)
 onMounted(async () => {
   await Promise.all([aset.fetchOne(id), proyek.fetchSiteList()])
 })
+
+async function openLinkSim() {
+  linkSimId.value = null; linkSimError.value = ''
+  const r = await api.get('/master/sumber-internet?unlinked_only=true')
+  sumberList.value = r.data.data
+  showLinkSimModal.value = true
+}
+
+async function handleLinkSim() {
+  if (!linkSimId.value) { linkSimError.value = 'Pilih sumber internet terlebih dahulu'; return }
+  linkSimSubmitting.value = true; linkSimError.value = ''
+  try {
+    await api.patch(`/master/sumber-internet/${linkSimId.value}`, { id_aset_sim: id })
+    await aset.fetchOne(id)
+    showLinkSimModal.value = false
+  } catch (e: any) { linkSimError.value = e.response?.data?.message || 'Gagal menghubungkan' }
+  finally { linkSimSubmitting.value = false }
+}
+
+async function handleUnlinkSim() {
+  const sumber = (a.value as any)?.sumber_internet
+  if (!sumber) return
+  if (!confirm(`Putuskan SIM dari ${sumber.nomor_pelanggan_isp}?`)) return
+  await api.patch(`/master/sumber-internet/${sumber.id_sumber}`, { id_aset_sim: null })
+  await aset.fetchOne(id)
+}
 
 function openEdit() {
   if (!a.value) return
@@ -170,6 +202,32 @@ const mutasiColor: Record<string, string> = {
         </div>
       </div>
 
+      <!-- SIM / Sumber Internet Link -->
+      <div class="section sim-section" v-if="(a as any).sumber_internet || a.kategori?.toLowerCase().includes('sim')">
+        <div class="sim-header">
+          <h3>SIM Card — Sumber Internet</h3>
+          <button v-if="!(a as any).sumber_internet" class="btn-link-sim" @click="openLinkSim">+ Link ke Sumber Internet</button>
+          <button v-else class="btn-unlink-sim" @click="handleUnlinkSim">Putuskan Link</button>
+        </div>
+        <div v-if="(a as any).sumber_internet" class="sim-info">
+          <div class="sim-row">
+            <span class="sim-label">Nomor / ISP ID</span>
+            <span class="sim-val mono">{{ (a as any).sumber_internet.nomor_pelanggan_isp || '—' }}</span>
+          </div>
+          <div class="sim-row" v-if="(a as any).sumber_internet.vendor">
+            <span class="sim-label">Operator</span>
+            <span class="sim-val">{{ (a as any).sumber_internet.vendor.nama_vendor }}</span>
+          </div>
+          <div class="sim-row" v-if="(a as any).sumber_internet.site">
+            <span class="sim-label">Site</span>
+            <span class="sim-val link" @click="router.push(`/master/site/${(a as any).sumber_internet.site.id_site || 0}`)">
+              {{ (a as any).sumber_internet.site.kode_site }} — {{ (a as any).sumber_internet.site.nama_site }}
+            </span>
+          </div>
+        </div>
+        <div v-else class="empty-state">Belum dihubungkan ke Sumber Internet</div>
+      </div>
+
       <!-- Mutasi History -->
       <div class="section">
         <h3>Riwayat Mutasi</h3>
@@ -239,6 +297,31 @@ const mutasiColor: Record<string, string> = {
           <button class="btn-cancel" @click="showEditModal = false">Batal</button>
           <button class="btn-submit" @click="handleEdit" :disabled="submitting">
             {{ submitting ? 'Menyimpan...' : 'Simpan' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Link SIM -->
+    <div v-if="showLinkSimModal" class="modal-overlay" @click.self="showLinkSimModal = false">
+      <div class="modal">
+        <h3>Link SIM ke Sumber Internet</h3>
+        <div class="form-grid">
+          <div class="field full">
+            <label>Sumber Internet (belum ada SIM) <span class="req">*</span></label>
+            <select v-model="linkSimId">
+              <option :value="null">— Pilih sumber internet —</option>
+              <option v-for="s in sumberList" :key="s.id_sumber" :value="s.id_sumber">
+                [{{ s.site?.kode_site }}] {{ s.site?.nama_site }} — {{ s.nomor_pelanggan_isp || s.vendor?.nama_vendor }}
+              </option>
+            </select>
+          </div>
+        </div>
+        <p v-if="linkSimError" class="form-error">{{ linkSimError }}</p>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showLinkSimModal = false">Batal</button>
+          <button class="btn-submit" @click="handleLinkSim" :disabled="linkSimSubmitting">
+            {{ linkSimSubmitting ? 'Menghubungkan...' : 'Hubungkan' }}
           </button>
         </div>
       </div>
@@ -335,6 +418,18 @@ const mutasiColor: Record<string, string> = {
 .tl-ket { font-size: 13px; color: #374151; margin-top: 4px; }
 .tl-user { font-size: 12px; color: #94a3b8; margin-top: 2px; }
 .empty-state { text-align: center; color: #94a3b8; padding: 32px; font-size: 14px; }
+
+.sim-section { margin-bottom: 20px; }
+.sim-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.sim-header h3 { margin: 0; font-size: 16px; color: #0f172a; }
+.btn-link-sim { padding: 7px 14px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-unlink-sim { padding: 7px 14px; background: #fff1f2; color: #be123c; border: 1.5px solid #fecdd3; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.sim-info { display: flex; flex-direction: column; gap: 10px; }
+.sim-row { display: flex; align-items: center; gap: 12px; }
+.sim-label { font-size: 12px; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; min-width: 100px; }
+.sim-val { font-size: 14px; color: #0f172a; font-weight: 600; }
+.sim-val.link { color: #3b82f6; cursor: pointer; }
+.sim-val.link:hover { text-decoration: underline; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 500px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
