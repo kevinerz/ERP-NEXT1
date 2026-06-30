@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
 
 export const SETTING_KEYS = [
   'company_name',
@@ -64,15 +62,12 @@ export class SettingsService {
     return { message: 'Pengaturan disimpan' };
   }
 
-  async uploadLogo(buffer: Buffer, originalname: string): Promise<{ url: string }> {
-    const ext = (originalname.split('.').pop() ?? 'png').toLowerCase();
-    const allowed = ['png', 'jpg', 'jpeg', 'svg', 'webp'];
-    const safeExt = allowed.includes(ext) ? ext : 'png';
-    const uploadDir = join(process.cwd(), 'public', 'uploads');
-    mkdirSync(uploadDir, { recursive: true });
-    const filename = `company-logo.${safeExt}`;
-    writeFileSync(join(uploadDir, filename), buffer);
-    const url = `/uploads/${filename}`;
+  async uploadLogo(buffer: Buffer, mimetype: string): Promise<{ url: string }> {
+    // Simpan sebagai data URL langsung di DB — tidak perlu filesystem
+    const safe = ['image/png','image/jpeg','image/jpg','image/svg+xml','image/webp'].includes(mimetype)
+      ? mimetype : 'image/png';
+    const b64 = buffer.toString('base64');
+    const url = `data:${safe};base64,${b64}`;
     await this.prisma.appSetting.upsert({
       where: { key: 'company_logo_url' },
       create: { key: 'company_logo_url', value: url },
