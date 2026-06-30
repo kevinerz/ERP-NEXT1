@@ -75,27 +75,31 @@ export class ProjectsService {
   }
 
   async create(dto: CreateProjectDto) {
-    // Auto nomor: PRJ-YYYYMM-XXXX
-    const now = new Date();
-    const prefix = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.projectDelivery.findFirst({
-      where: { nomor_project: { startsWith: prefix } },
-      orderBy: { nomor_project: 'desc' },
-    });
-    const seq = last ? parseInt(last.nomor_project.split('-')[2]) + 1 : 1;
-    const nomor_project = `${prefix}-${String(seq).padStart(4, '0')}`;
-
-    const data = await this.prisma.projectDelivery.create({
-      data: {
-        ...dto,
-        nomor_project,
-        tgl_mulai: dto.tgl_mulai ? new Date(dto.tgl_mulai) : undefined,
-        tgl_target_selesai: dto.tgl_target_selesai ? new Date(dto.tgl_target_selesai) : undefined,
-        updated_at: new Date(),
-      },
-      include: PROJECT_INCLUDE,
-    });
-    return { data, message: `Project ${nomor_project} dibuat` };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.projectDelivery.findFirst({
+        where: { nomor_project: { startsWith: prefix } },
+        orderBy: { nomor_project: 'desc' },
+      });
+      const seq = (last ? (parseInt(last.nomor_project.split('-')[2], 10) || 0) : 0) + 1;
+      const nomor_project = `${prefix}-${String(seq).padStart(4, '0')}`;
+      try {
+        const data = await this.prisma.projectDelivery.create({
+          data: {
+            ...dto,
+            nomor_project,
+            tgl_mulai: dto.tgl_mulai ? new Date(dto.tgl_mulai) : undefined,
+            tgl_target_selesai: dto.tgl_target_selesai ? new Date(dto.tgl_target_selesai) : undefined,
+            updated_at: new Date(),
+          },
+          include: PROJECT_INCLUDE,
+        });
+        return { data, message: `Project ${nomor_project} dibuat` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
   }
 
   async update(id: number, dto: UpdateProjectDto) {
@@ -145,25 +149,25 @@ export class ProjectsService {
   }
 
   async createWo(dto: CreateWoDto) {
-    const now = new Date();
-    const prefix = `WO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.workOrder.findFirst({
-      where: { nomor_wo: { startsWith: prefix } },
-      orderBy: { nomor_wo: 'desc' },
-    });
-    const seq = last ? parseInt(last.nomor_wo.split('-')[2]) + 1 : 1;
-    const nomor_wo = `${prefix}-${String(seq).padStart(4, '0')}`;
-
-    const data = await this.prisma.workOrder.create({
-      data: {
-        ...dto,
-        nomor_wo,
-        fee_vendor: dto.fee_vendor ?? 0,
-        tgl_jadwal: new Date(dto.tgl_jadwal),
-      },
-      include: WO_INCLUDE,
-    });
-    return { data, message: `Work Order ${nomor_wo} dibuat` };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `WO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.workOrder.findFirst({
+        where: { nomor_wo: { startsWith: prefix } },
+        orderBy: { nomor_wo: 'desc' },
+      });
+      const seq = (last ? (parseInt(last.nomor_wo.split('-')[2], 10) || 0) : 0) + 1;
+      const nomor_wo = `${prefix}-${String(seq).padStart(4, '0')}`;
+      try {
+        const data = await this.prisma.workOrder.create({
+          data: { ...dto, nomor_wo, fee_vendor: dto.fee_vendor ?? 0, tgl_jadwal: new Date(dto.tgl_jadwal) },
+          include: WO_INCLUDE,
+        });
+        return { data, message: `Work Order ${nomor_wo} dibuat` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
   }
 
   async updateWo(id: number, dto: UpdateWoDto) {
@@ -185,23 +189,24 @@ export class ProjectsService {
 
   async createBast(dto: CreateBastDto) {
     await this._check(dto.id_project);
-    const now = new Date();
-    const prefix = `BAST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.projectDokumenLegal.findFirst({
-      where: { nomor_bast: { startsWith: prefix } },
-      orderBy: { nomor_bast: 'desc' },
-    });
-    const seq = last ? parseInt(last.nomor_bast.split('-')[2]) + 1 : 1;
-    const nomor_bast = `${prefix}-${String(seq).padStart(4, '0')}`;
-
-    const data = await this.prisma.projectDokumenLegal.create({
-      data: {
-        ...dto,
-        nomor_bast,
-        tgl_ditandatangani: dto.tgl_ditandatangani ? new Date(dto.tgl_ditandatangani) : undefined,
-      },
-    });
-    return { data, message: `BAST ${nomor_bast} dibuat` };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `BAST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.projectDokumenLegal.findFirst({
+        where: { nomor_bast: { startsWith: prefix } },
+        orderBy: { nomor_bast: 'desc' },
+      });
+      const seq = (last ? (parseInt(last.nomor_bast.split('-')[2], 10) || 0) : 0) + 1;
+      const nomor_bast = `${prefix}-${String(seq).padStart(4, '0')}`;
+      try {
+        const data = await this.prisma.projectDokumenLegal.create({
+          data: { ...dto, nomor_bast, tgl_ditandatangani: dto.tgl_ditandatangani ? new Date(dto.tgl_ditandatangani) : undefined },
+        });
+        return { data, message: `BAST ${nomor_bast} dibuat` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
   }
 
   async updateBast(id: number, dto: UpdateBastDto) {

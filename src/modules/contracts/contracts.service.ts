@@ -62,39 +62,40 @@ export class ContractsService {
   }
 
   async create(dto: CreateKontrakDto) {
-    // Auto-number: KTR-YYYYMM-XXXX
-    const now = new Date();
-    const prefix = `KTR-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.kontrakLayanan.findFirst({
-      where: { nomor_kontrak: { startsWith: prefix } },
-      orderBy: { nomor_kontrak: 'desc' },
-    });
-    const seq = last ? parseInt(last.nomor_kontrak.split('-')[2]) + 1 : 1;
-    const nomor_kontrak = `${prefix}-${String(seq).padStart(4, '0')}`;
-
-    // Hitung tgl_berakhir jika belum diisi
-    let tgl_berakhir = dto.tgl_berakhir ? new Date(dto.tgl_berakhir) : null;
     const durasi_bulan = dto.durasi_bulan ?? 12;
+    let tgl_berakhir = dto.tgl_berakhir ? new Date(dto.tgl_berakhir) : null;
     if (!tgl_berakhir) {
-      const mulai = new Date(dto.tgl_mulai);
-      tgl_berakhir = new Date(mulai);
+      tgl_berakhir = new Date(dto.tgl_mulai);
       tgl_berakhir.setMonth(tgl_berakhir.getMonth() + durasi_bulan);
     }
 
-    const data = await this.prisma.kontrakLayanan.create({
-      data: {
-        ...dto,
-        nomor_kontrak,
-        durasi_bulan,
-        tgl_mulai: new Date(dto.tgl_mulai),
-        tgl_berakhir,
-        harga_otc: dto.harga_otc ?? 0,
-        status_kontrak: 'Aktif',
-      },
-      include: KONTRAK_INCLUDE,
-    });
-
-    return { data, message: `Kontrak ${nomor_kontrak} berhasil dibuat` };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `KTR-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.kontrakLayanan.findFirst({
+        where: { nomor_kontrak: { startsWith: prefix } },
+        orderBy: { nomor_kontrak: 'desc' },
+      });
+      const seq = (last ? (parseInt(last.nomor_kontrak.split('-')[2], 10) || 0) : 0) + 1;
+      const nomor_kontrak = `${prefix}-${String(seq).padStart(4, '0')}`;
+      try {
+        const data = await this.prisma.kontrakLayanan.create({
+          data: {
+            ...dto,
+            nomor_kontrak,
+            durasi_bulan,
+            tgl_mulai: new Date(dto.tgl_mulai),
+            tgl_berakhir,
+            harga_otc: dto.harga_otc ?? 0,
+            status_kontrak: 'Aktif',
+          },
+          include: KONTRAK_INCLUDE,
+        });
+        return { data, message: `Kontrak ${nomor_kontrak} berhasil dibuat` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
   }
 
   async update(id: number, dto: UpdateKontrakDto) {

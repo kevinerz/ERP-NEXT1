@@ -91,45 +91,42 @@ export class OperationsService {
   }
 
   async create(dto: CreateTicketDto, userId?: number) {
-    // Auto nomor: TKT-YYYYMM-XXXX
-    const now = new Date();
-    const prefix = `TKT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.operationTicket.findFirst({
-      where: { nomor_tiket: { startsWith: prefix } },
-      orderBy: { nomor_tiket: 'desc' },
-    });
-    const seq = last ? parseInt(last.nomor_tiket.split('-')[2]) + 1 : 1;
-    const nomor_tiket = `${prefix}-${String(seq).padStart(4, '0')}`;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `TKT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.operationTicket.findFirst({
+        where: { nomor_tiket: { startsWith: prefix } },
+        orderBy: { nomor_tiket: 'desc' },
+      });
+      const seq = (last ? (parseInt(last.nomor_tiket.split('-')[2], 10) || 0) : 0) + 1;
+      const nomor_tiket = `${prefix}-${String(seq).padStart(4, '0')}`;
+      try {
+        const data = await this.prisma.operationTicket.create({
+          data: {
+            ...dto,
+            nomor_tiket,
+            prioritas: dto.prioritas || 'Medium',
+            sumber_tiket: dto.sumber_tiket || 'Internal',
+          },
+          include: TICKET_INCLUDE,
+        });
 
-    const data = await this.prisma.operationTicket.create({
-      data: {
-        ...dto,
-        nomor_tiket,
-        prioritas: dto.prioritas || 'Medium',
-        sumber_tiket: dto.sumber_tiket || 'Internal',
-      },
-      include: TICKET_INCLUDE,
-    });
+        await this.prisma.operationTicketLog.create({
+          data: { id_ticket: data.id_ticket, id_user: userId || null, status_ke: 'Open', catatan: 'Tiket dibuat' },
+        });
 
-    // Log awal
-    await this.prisma.operationTicketLog.create({
-      data: {
-        id_ticket: data.id_ticket,
-        id_user: userId || null,
-        status_ke: 'Open',
-        catatan: 'Tiket dibuat',
-      },
-    });
+        this.notifService.notifyForModul('operations', {
+          tipe: 'tiket_baru',
+          judul: `Tiket Baru: ${dto.judul_tiket}`,
+          deskripsi: `${nomor_tiket}`,
+          url: `/operations/${data.id_ticket}`,
+        }).catch(() => {});
 
-    // Notifikasi ke semua user operations
-    this.notifService.notifyForModul('operations', {
-      tipe: 'tiket_baru',
-      judul: `Tiket Baru: ${dto.judul_tiket}`,
-      deskripsi: `${nomor_tiket}`,
-      url: `/operations/${data.id_ticket}`,
-    }).catch(() => {});
-
-    return { data, message: `Tiket ${nomor_tiket} dibuat` };
+        return { data, message: `Tiket ${nomor_tiket} dibuat` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
   }
 
   async update(id: number, dto: UpdateTicketDto, userId?: number) {

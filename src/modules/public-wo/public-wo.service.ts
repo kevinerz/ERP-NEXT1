@@ -90,21 +90,25 @@ export class PublicWoService {
   }
 
   async create(dto: CreateWoDto) {
-    const now = new Date();
-    const prefix = `WO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.workOrder.findFirst({
-      where: { nomor_wo: { startsWith: prefix } },
-      orderBy: { nomor_wo: 'desc' },
-    });
-    const seq = last ? (parseInt(last.nomor_wo.split('-')[2], 10) || 0) + 1 : 1;
-    const nomor_wo = `${prefix}-${String(seq).padStart(4, '0')}`;
-
-    const data = await this.prisma.workOrder.create({
-      data: { ...dto, nomor_wo, fee_vendor: dto.fee_vendor ?? 0 },
-      include: WO_INCLUDE,
-    });
-
-    return { data, message: `Work Order ${nomor_wo} dibuat` };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `WO-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.workOrder.findFirst({
+        where: { nomor_wo: { startsWith: prefix } },
+        orderBy: { nomor_wo: 'desc' },
+      });
+      const seq = (last ? (parseInt(last.nomor_wo.split('-')[2], 10) || 0) : 0) + 1;
+      const nomor_wo = `${prefix}-${String(seq).padStart(4, '0')}`;
+      try {
+        const data = await this.prisma.workOrder.create({
+          data: { ...dto, nomor_wo, fee_vendor: dto.fee_vendor ?? 0 },
+          include: WO_INCLUDE,
+        });
+        return { data, message: `Work Order ${nomor_wo} dibuat` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
   }
 
   async update(id: number, dto: UpdateWoDto) {
@@ -127,20 +131,24 @@ export class PublicWoService {
     const wo = await this.prisma.workOrder.findUnique({ where: { id_wo } });
     if (!wo) throw new NotFoundException('Work Order tidak ditemukan');
 
-    const now = new Date();
-    const prefix = `BA-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.woBeritaAcara.findFirst({
-      where: { nomor_ba: { startsWith: prefix } },
-      orderBy: { nomor_ba: 'desc' },
-    });
-    const seq = last ? (parseInt(last.nomor_ba.split('-')[2], 10) || 0) + 1 : 1;
-    const nomor_ba = `${prefix}-${String(seq).padStart(4, '0')}`;
-
-    const data = await this.prisma.woBeritaAcara.create({
-      data: { id_wo, nomor_ba, ...dto },
-    });
-
-    return { data, message: `Berita Acara ${nomor_ba} dibuat` };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `BA-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.woBeritaAcara.findFirst({
+        where: { nomor_ba: { startsWith: prefix } },
+        orderBy: { nomor_ba: 'desc' },
+      });
+      const seq = (last ? (parseInt(last.nomor_ba.split('-')[2], 10) || 0) : 0) + 1;
+      const nomor_ba = `${prefix}-${String(seq).padStart(4, '0')}`;
+      try {
+        const data = await this.prisma.woBeritaAcara.create({
+          data: { id_wo, nomor_ba, ...dto },
+        });
+        return { data, message: `Berita Acara ${nomor_ba} dibuat` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
   }
 
   async getStatusSummary() {

@@ -226,36 +226,38 @@ export class SalesService {
     const opp = await this.prisma.salesOpportunity.findUnique({ where: { id_opportunity: dto.id_opportunity } });
     if (!opp) throw new NotFoundException('Opportunity tidak ditemukan');
 
-    // Generate nomor quotation: QT-YYYYMM-XXXX
-    const now = new Date();
-    const prefix = `QT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.salesQuotation.findFirst({
-      where: { nomor_quotation: { startsWith: prefix } },
-      orderBy: { nomor_quotation: 'desc' },
-    });
-    const seq = last ? parseInt(last.nomor_quotation.split('-')[2]) + 1 : 1;
-    const nomor_quotation = `${prefix}-${String(seq).padStart(4, '0')}`;
-
-    const data = await this.prisma.salesQuotation.create({
-      data: {
-        ...dto,
-        nomor_quotation,
-        harga_mrc: dto.harga_mrc ?? 0,
-        harga_otc: dto.harga_otc ?? 0,
-        tgl_quotation: new Date(dto.tgl_quotation),
-        tgl_berlaku_sampai: dto.tgl_berlaku_sampai ? new Date(dto.tgl_berlaku_sampai) : undefined,
-        updated_at: new Date(),
-      },
-    });
-    // Notifikasi sales — ada quotation baru menunggu approval
-    this.notifService.notifyForModul('sales', {
-      tipe: 'quotation_approval',
-      judul: `Quotation Menunggu Approval`,
-      deskripsi: `${nomor_quotation} perlu disetujui`,
-      url: `/sales/quotation/${data.id_quotation}`,
-    }).catch(() => {});
-
-    return { data, message: `Quotation ${nomor_quotation} dibuat` };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `QT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.salesQuotation.findFirst({
+        where: { nomor_quotation: { startsWith: prefix } },
+        orderBy: { nomor_quotation: 'desc' },
+      });
+      const seq = (last ? (parseInt(last.nomor_quotation.split('-')[2], 10) || 0) : 0) + 1;
+      const nomor_quotation = `${prefix}-${String(seq).padStart(4, '0')}`;
+      try {
+        const data = await this.prisma.salesQuotation.create({
+          data: {
+            ...dto,
+            nomor_quotation,
+            harga_mrc: dto.harga_mrc ?? 0,
+            harga_otc: dto.harga_otc ?? 0,
+            tgl_quotation: new Date(dto.tgl_quotation),
+            tgl_berlaku_sampai: dto.tgl_berlaku_sampai ? new Date(dto.tgl_berlaku_sampai) : undefined,
+            updated_at: new Date(),
+          },
+        });
+        this.notifService.notifyForModul('sales', {
+          tipe: 'quotation_approval',
+          judul: `Quotation Menunggu Approval`,
+          deskripsi: `${nomor_quotation} perlu disetujui`,
+          url: `/sales/quotation/${data.id_quotation}`,
+        }).catch(() => {});
+        return { data, message: `Quotation ${nomor_quotation} dibuat` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
   }
 
   async updateQuotation(id: number, dto: UpdateQuotationDto) {
