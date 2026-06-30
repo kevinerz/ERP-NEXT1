@@ -816,3 +816,15 @@ model Notification {
   @@index([created_at])
   @@map("notifications")
 }
+
+// ============================================================
+// LAYER 10 — APP SETTINGS
+// ============================================================
+
+model AppSetting {
+  key         String   @id @db.VarChar(80)
+  value       String?  @db.Text
+  updated_at  DateTime @default(now()) @updatedAt
+
+  @@map("app_settings")
+}

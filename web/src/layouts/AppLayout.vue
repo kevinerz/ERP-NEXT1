@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
+import { useSettingsStore } from '@/stores/settings'
 import api from '@/services/api'
 
 const router = useRouter()
@@ -16,6 +17,7 @@ const showUserMenu   = ref(false)
 
 const appVersion = __APP_VERSION__
 const appHash    = __APP_GIT_HASH__
+const cfg        = useSettingsStore()
 
 onMounted(() => {
   notif.startPolling()
@@ -86,8 +88,9 @@ const allMenu = [
 ]
 
 const adminMenu = [
-  { label: 'Users',        emoji: '⚙️', to: '/admin/users' },
-  { label: 'Activity Log', emoji: '📝', to: '/admin/logs'  },
+  { label: 'Users',        emoji: '⚙️', to: '/admin/users'  },
+  { label: 'Activity Log', emoji: '📝', to: '/admin/logs'   },
+  { label: 'Pengaturan',   emoji: '🔩', to: '/settings'     },
 ]
 
 const menu = computed(() =>
@@ -132,6 +135,7 @@ const PAGE_TITLES: Record<string, string> = {
   "admin-logs":           "Admin — Activity Log",
   "notifications":        "Notifikasi",
   "profile":              "Profil Saya",
+  "settings":             "Pengaturan Aplikasi",
 }
 
 const pageTitle = computed(() => PAGE_TITLES[route.name as string] || "ERP NEXT1")
@@ -150,9 +154,12 @@ const initials = computed(() => {
 
       <!-- Brand -->
       <div class="sidebar-brand">
-        <div class="brand-logo">N1</div>
+        <div class="brand-logo">
+          <img v-if="cfg.settings.company_logo_url" :src="cfg.settings.company_logo_url" alt="logo" class="brand-logo-img" />
+          <span v-else>{{ (cfg.settings.company_brand || 'N1').slice(0, 2).toUpperCase() }}</span>
+        </div>
         <Transition name="fade-text">
-          <span v-if="sidebarOpen" class="brand-name">ERP NEXT1</span>
+          <span v-if="sidebarOpen" class="brand-name">ERP {{ cfg.settings.company_brand || 'NEXT1' }}</span>
         </Transition>
       </div>
 
@@ -351,6 +358,10 @@ const initials = computed(() => {
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 13px; color: #fff;
   box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+  overflow: hidden;
+}
+.brand-logo-img {
+  width: 100%; height: 100%; object-fit: cover;
 }
 .brand-name {
   font-weight: 700; font-size: 14px; color: #f1f5f9;

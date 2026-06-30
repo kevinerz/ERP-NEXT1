@@ -146,6 +146,11 @@ const router = createRouter({
           name: 'admin-logs',
           component: () => import('@/views/admin/ActivityLogView.vue'),
         },
+        {
+          path: 'settings',
+          name: 'settings',
+          component: () => import('@/views/settings/SettingsView.vue'),
+        },
         // Laporan
         {
           path: 'reports',

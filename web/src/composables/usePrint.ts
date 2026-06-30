@@ -1,3 +1,24 @@
+import { useSettingsStore } from '@/stores/settings'
+
+function getCompany() {
+  try {
+    const s = useSettingsStore().settings
+    return {
+      name:    s.company_name  || 'PT Perdana Global Internet',
+      brand:   s.company_brand || 'Next1',
+      address: s.company_address || '',
+      city:    s.company_city || '',
+      phone:   s.company_phone || '',
+      email:   s.company_email || '',
+      npwp:    s.company_npwp || '',
+      logo:    s.company_logo_url || '',
+      footer:  s.invoice_footer || '',
+    }
+  } catch {
+    return { name: 'PT Perdana Global Internet', brand: 'Next1', address: '', city: '', phone: '', email: '', npwp: '', logo: '', footer: '' }
+  }
+}
+
 export function printDocument(html: string) {
   const win = window.open('', '_blank', 'width=900,height=1000,scrollbars=yes')
   if (!win) { alert('Pop-up diblokir browser. Izinkan pop-up untuk halaman ini.'); return }
@@ -8,9 +29,14 @@ export function printDocument(html: string) {
 }
 
 function logoSvg() {
-  return `<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="32" height="32" rx="6" fill="#1e3a8a"/>
-    <text x="16" y="22" font-size="13" font-weight="800" fill="white" text-anchor="middle" font-family="Arial">N1</text>
+  const c = getCompany()
+  if (c.logo) {
+    return `<img src="${c.logo}" style="width:40px;height:40px;object-fit:contain;border-radius:6px;" />`
+  }
+  const abbr = c.brand.slice(0, 2).toUpperCase()
+  return `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="40" height="40" rx="8" fill="#1e3a8a"/>
+    <text x="20" y="27" font-size="14" font-weight="800" fill="white" text-anchor="middle" font-family="Arial">${abbr}</text>
   </svg>`
 }
 
@@ -59,8 +85,20 @@ function baseStyle() {
 }
 
 function docFooter(nomor: string) {
+  const c = getCompany()
   const now = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-  return `<div class="footer"><span>Dicetak: ${now}</span><span>${nomor}</span></div>`
+  const footerText = c.footer ? `<span>${c.footer}</span>` : ''
+  return `<div class="footer">${footerText}<span>Dicetak: ${now}</span><span>${nomor}</span></div>`
+}
+
+function companyHeader() {
+  const c = getCompany()
+  const sub = [c.address, c.city].filter(Boolean).join(', ')
+  return `${logoSvg()}<div>
+    <div class="company-name">${c.brand}</div>
+    <div class="company-sub">${c.name}</div>
+    ${sub ? `<div class="company-sub" style="font-size:8pt">${sub}</div>` : ''}
+  </div>`
 }
 
 // ─────────────────────────────────────────────
@@ -71,7 +109,7 @@ export function printSuratTugas(wo: any) {
   const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Surat Tugas ${wo.nomor_wo}</title>${baseStyle()}</head>
   <body><div class="doc">
     <div class="header">
-      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="header-left">${companyHeader()}</div>
       <div class="doc-title-block"><div class="doc-title">SURAT TUGAS</div><div class="doc-nomor">${wo.nomor_wo}</div><div class="doc-date">Jadwal: ${tglJadwal}</div></div>
     </div>
 
@@ -127,7 +165,7 @@ export function printBeritaAcara(wo: any, ba: any) {
   const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Berita Acara ${ba.nomor_ba}</title>${baseStyle()}</head>
   <body><div class="doc">
     <div class="header">
-      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="header-left">${companyHeader()}</div>
       <div class="doc-title-block"><div class="doc-title">BERITA ACARA</div><div class="doc-nomor">${ba.nomor_ba}</div><div class="doc-date">${ba.jenis_ba?.replace('_', ' ')}</div></div>
     </div>
 
@@ -170,7 +208,7 @@ export function printBeritaAcara(wo: any, ba: any) {
     <p style="font-size:10pt;color:#475569;margin-bottom:8px;">Dengan ditandatanganinya dokumen ini, para pihak menyatakan bahwa pekerjaan di atas telah dilaksanakan sesuai dengan ketentuan yang berlaku.</p>
 
     <div class="signature-row">
-      <div class="sign-box"><div class="sign-label">Yang melaksanakan,</div><div class="sign-line"><div class="sign-name">${ba.nama_penandatangan_next1 ? '( ' + ba.nama_penandatangan_next1 + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">PT Next One Technology</div></div></div>
+      <div class="sign-box"><div class="sign-label">Yang melaksanakan,</div><div class="sign-line"><div class="sign-name">${ba.nama_penandatangan_next1 ? '( ' + ba.nama_penandatangan_next1 + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">${getCompany().name}</div></div></div>
       <div class="sign-box"><div class="sign-label">Yang menerima,</div><div class="sign-line"><div class="sign-name">${ba.nama_penandatangan_pelanggan ? '( ' + ba.nama_penandatangan_pelanggan + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">${ba.jabatan_penandatangan_pelanggan || wo.site?.pelanggan?.nama_pelanggan || 'Pelanggan'}</div></div></div>
     </div>
     ${docFooter(ba.nomor_ba)}
@@ -188,13 +226,13 @@ export function printKontrak(kt: any) {
   const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Kontrak ${kt.nomor_kontrak}</title>${baseStyle()}</head>
   <body><div class="doc">
     <div class="header">
-      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="header-left">${companyHeader()}</div>
       <div class="doc-title-block"><div class="doc-title">KONTRAK LAYANAN</div><div class="doc-nomor">${kt.nomor_kontrak}</div><div class="doc-date">${fmtDate(kt.tgl_mulai)} s/d ${fmtDate(kt.tgl_berakhir)}</div></div>
     </div>
 
     <p style="font-size:10pt;color:#475569;margin-bottom:20px;line-height:1.7">
       Kontrak Layanan ini dibuat dan ditandatangani oleh para pihak sebagai dasar pelaksanaan layanan
-      telekomunikasi dan internet antara <strong>PT Next One Technology</strong> dengan pelanggan tersebut di bawah ini.
+      telekomunikasi dan internet antara <strong>${getCompany().name}</strong> dengan pelanggan tersebut di bawah ini.
     </p>
 
     <div class="section">
@@ -241,7 +279,7 @@ export function printKontrak(kt: any) {
     </div>
 
     <div class="signature-row">
-      <div class="sign-box"><div class="sign-label">Pihak Pertama,<br>PT Next One Technology</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Direktur</div></div></div>
+      <div class="sign-box"><div class="sign-label">Pihak Pertama,<br>${getCompany().name}</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Direktur</div></div></div>
       <div class="sign-box"><div class="sign-label">Pihak Kedua,<br>${kt.site?.pelanggan?.nama_pelanggan || 'Pelanggan'}</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Direktur / Pimpinan</div></div></div>
     </div>
     ${docFooter(kt.nomor_kontrak)}
@@ -260,7 +298,7 @@ export function printQuotation(qt: any) {
   const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Penawaran ${qt.nomor_quotation}</title>${baseStyle()}</head>
   <body><div class="doc">
     <div class="header">
-      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="header-left">${companyHeader()}</div>
       <div class="doc-title-block"><div class="doc-title">SURAT PENAWARAN HARGA</div><div class="doc-nomor">${qt.nomor_quotation}</div><div class="doc-date">${fmtDate(qt.tgl_quotation)}</div></div>
     </div>
 
@@ -314,7 +352,7 @@ export function printQuotation(qt: any) {
     </div>
 
     <div class="signature-row">
-      <div class="sign-box"><div class="sign-label">Hormat kami,<br>PT Next One Technology</div><div class="sign-line"><div class="sign-name">${qt.sales_pic ? '( ' + qt.sales_pic.nama_lengkap + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">${qt.sales_pic?.jabatan || 'Sales'}</div></div></div>
+      <div class="sign-box"><div class="sign-label">Hormat kami,<br>${getCompany().name}</div><div class="sign-line"><div class="sign-name">${qt.sales_pic ? '( ' + qt.sales_pic.nama_lengkap + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">${qt.sales_pic?.jabatan || 'Sales'}</div></div></div>
       <div class="sign-box"><div class="sign-label">Menyetujui,</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">${qt.opportunity?.lead?.nama_perusahaan || 'Pelanggan'}</div></div></div>
     </div>
     ${docFooter(qt.nomor_quotation)}
@@ -335,13 +373,13 @@ export function printBAST(project: any) {
   const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>BAST ${project.nomor_project}</title>${baseStyle()}</head>
   <body><div class="doc">
     <div class="header">
-      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="header-left">${companyHeader()}</div>
       <div class="doc-title-block"><div class="doc-title">BERITA ACARA SERAH TERIMA</div><div class="doc-nomor">${project.nomor_project}</div><div class="doc-date">${fmtDate(tglSelesai)}</div></div>
     </div>
 
     <p style="font-size:10pt;color:#475569;margin-bottom:20px;line-height:1.7">
       Pada hari ini telah dilaksanakan serah terima pekerjaan instalasi / layanan antara
-      <strong>PT Next One Technology</strong> dengan pelanggan sebagaimana tercantum di bawah ini.
+      <strong>${getCompany().name}</strong> dengan pelanggan sebagaimana tercantum di bawah ini.
     </p>
 
     <div class="section">
@@ -381,7 +419,7 @@ export function printBAST(project: any) {
     </p>
 
     <div class="signature-row">
-      <div class="sign-box"><div class="sign-label">Diserahkan oleh,<br>PT Next One Technology</div><div class="sign-line"><div class="sign-name">${project.pm ? '( ' + project.pm.nama_lengkap + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">Project Manager</div></div></div>
+      <div class="sign-box"><div class="sign-label">Diserahkan oleh,<br>${getCompany().name}</div><div class="sign-line"><div class="sign-name">${project.pm ? '( ' + project.pm.nama_lengkap + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">Project Manager</div></div></div>
       <div class="sign-box"><div class="sign-label">Diterima oleh,<br>Pelanggan</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Pimpinan / PIC</div></div></div>
     </div>
     ${docFooter(project.nomor_project)}
@@ -413,7 +451,7 @@ export function printLaporanTiket(tiket: any) {
   const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Laporan Tiket ${tiket.nomor_tiket}</title>${baseStyle()}</head>
   <body><div class="doc">
     <div class="header">
-      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="header-left">${companyHeader()}</div>
       <div class="doc-title-block"><div class="doc-title">LAPORAN GANGGUAN</div><div class="doc-nomor">${tiket.nomor_tiket}</div><div class="doc-date">${fmtDate(tiket.tgl_open)}</div></div>
     </div>
 
@@ -485,7 +523,7 @@ export function printSuratJalan(wo: any, pengiriman: any) {
   const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Surat Jalan ${wo.nomor_wo}</title>${baseStyle()}</head>
   <body><div class="doc">
     <div class="header">
-      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="header-left">${companyHeader()}</div>
       <div class="doc-title-block"><div class="doc-title">SURAT JALAN</div><div class="doc-nomor">${wo.nomor_wo}</div><div class="doc-date">${fmtDt(pengiriman.created_at)}</div></div>
     </div>
 
@@ -520,7 +558,7 @@ export function printSuratJalan(wo: any, pengiriman: any) {
     </div>
 
     <div class="signature-row">
-      <div class="sign-box"><div class="sign-label">Dikirim oleh,<br>PT Next One Technology</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Pengirim</div></div></div>
+      <div class="sign-box"><div class="sign-label">Dikirim oleh,<br>${getCompany().name}</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Pengirim</div></div></div>
       <div class="sign-box"><div class="sign-label">Diterima oleh,</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">Penerima / ${wo.site?.pelanggan?.nama_pelanggan || 'Pelanggan'}</div></div></div>
     </div>
     ${docFooter(wo.nomor_wo)}
@@ -544,7 +582,7 @@ export function printInvoice(kt: any, bulan?: string) {
   const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Invoice ${nomorInv}</title>${baseStyle()}</head>
   <body><div class="doc">
     <div class="header">
-      <div class="header-left">${logoSvg()}<div><div class="company-name">NEXT1</div><div class="company-sub">PT Next One Technology</div></div></div>
+      <div class="header-left">${companyHeader()}</div>
       <div class="doc-title-block"><div class="doc-title">INVOICE</div><div class="doc-nomor">${nomorInv}</div><div class="doc-date">Periode: ${bulanLabel}</div></div>
     </div>
 
@@ -581,7 +619,7 @@ export function printInvoice(kt: any, bulan?: string) {
       <div class="section-title" style="border:none;padding:0;margin-bottom:8px">Informasi Pembayaran</div>
       <table class="info">
         <tr><td>Bank</td><td>:</td><td>BCA / Mandiri / BNI (sesuai konfirmasi tim Finance)</td></tr>
-        <tr><td>Atas Nama</td><td>:</td><td>PT Next One Technology</td></tr>
+        <tr><td>Atas Nama</td><td>:</td><td>${getCompany().name}</td></tr>
         <tr><td>Jatuh Tempo</td><td>:</td><td style="color:#dc2626;font-weight:700">${fmtDate(tglJatuhTempo.toISOString())}</td></tr>
       </table>
       <p style="font-size:9pt;color:#94a3b8;margin-top:8px">Harap cantumkan nomor invoice pada bukti transfer. Keterlambatan pembayaran dikenakan denda 2% per bulan.</p>
