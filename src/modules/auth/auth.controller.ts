@@ -1,4 +1,5 @@
 import { Controller, Post, Get, Patch, Body, Req, UseGuards } from '@nestjs/common';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
@@ -8,11 +9,14 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt.guard';
 
+@SkipThrottle()  // default: skip global throttle untuk controller ini
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // POST /api/auth/login
+  // POST /api/auth/login — max 5 percobaan/menit per IP
+  @SkipThrottle({ default: false })
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
   @Public()
   @Post('login')
   login(@Body() dto: LoginDto, @Req() req: any) {

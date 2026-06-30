@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { join } from 'path';
 
 // Prisma
@@ -40,6 +41,9 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     // Config — baca .env
     ConfigModule.forRoot({ isGlobal: true }),
 
+    // Rate limiting — default 100 req/menit per IP; login dikunci lebih ketat via @Throttle
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+
     // Serve Vue SPA dari public/
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
@@ -77,6 +81,8 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     SocialchatModule,
   ],
   providers: [
+    // Global rate-limit guard
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     // Global interceptor — log semua POST/PATCH/DELETE
     {
       provide: APP_INTERCEPTOR,
