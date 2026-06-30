@@ -27,7 +27,7 @@ const WO_DETAIL_INCLUDE = {
   teknisi: { select: { id_karyawan: true, nama_lengkap: true, jabatan: true } },
   vendor: { select: { id_vendor: true, nama_vendor: true } },
   ticket: { select: { id_ticket: true, nomor_tiket: true, judul_tiket: true, status_tiket: true } },
-  project: { select: { id_project: true, nama_deliverable: true } },
+  project: { select: { id_project: true, nomor_project: true, status_project: true } },
   foto: { orderBy: { created_at: 'desc' as const } },
   berita_acara: {
     include: { material: true },
