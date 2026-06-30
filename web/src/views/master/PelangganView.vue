@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useMasterStore } from '@/stores/master'
+import api from '@/services/api'
 
 const master = useMasterStore()
 const page = ref(1)
@@ -66,6 +67,17 @@ async function handleSubmit() {
 }
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
+
+async function hapusPelanggan(id: number, nama: string) {
+  if (!confirm(`Hapus pelanggan "${nama}" ini?`)) return
+  try {
+    await api.delete(`/master/pelanggan/${id}`)
+    flash('Pelanggan dihapus')
+    fetchData()
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus pelanggan')
+  }
+}
 </script>
 
 <template>
@@ -111,7 +123,12 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
             <td class="text-gray">{{ p.no_telp || '—' }}</td>
             <td class="text-gray">{{ p.email_billing || '—' }}</td>
             <td class="center">{{ p._count?.sites ?? 0 }}</td>
-            <td><button class="btn-edit-sm" @click="openEdit(p)">Edit</button></td>
+            <td>
+              <div class="action-btns">
+                <button class="btn-edit-sm" @click="openEdit(p)">Edit</button>
+                <button class="btn-hapus" @click="hapusPelanggan(p.id_pelanggan, p.nama_pelanggan)">Hapus</button>
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -194,6 +211,8 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .text-gray { color: #64748b; }
 .center { text-align: center; font-weight: 700; }
 .btn-edit-sm { padding: 4px 12px; background: #f1f5f9; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.action-btns { display: flex; gap: 6px; }
 .pagination { display: flex; gap: 6px; padding: 14px; justify-content: center; border-top: 1px solid #f1f5f9; }
 .page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
 .page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }

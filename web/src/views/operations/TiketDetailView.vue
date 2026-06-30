@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useOperationsStore } from '@/stores/operations'
 import { useProyekStore } from '@/stores/proyek'
 import { printLaporanTiket } from '@/composables/usePrint'
+import api from '@/services/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -118,6 +119,16 @@ async function handleAddWo() {
 }
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
+
+async function hapusTiket() {
+  if (!confirm('Hapus tiket ini?')) return
+  try {
+    await api.delete(`/operations/${id}`)
+    router.push('/operations')
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus tiket')
+  }
+}
 function fmtDt(d?: string) {
   return d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 }
@@ -149,6 +160,11 @@ function ageHours(d: string) {
           </span>
           <button class="btn-print" @click="printLaporanTiket(ops.current)">🖨 Laporan</button>
           <button class="btn-edit" @click="openEdit">Edit</button>
+          <button
+            v-if="ops.current.status_tiket === 'Open' || ops.current.status_tiket === 'Closed'"
+            class="btn-hapus"
+            @click="hapusTiket"
+          >Hapus</button>
         </div>
       </div>
 
@@ -387,6 +403,7 @@ function ageHours(d: string) {
 .btn-print { padding: 9px 16px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-print:hover { background: #dcfce7; }
 .btn-edit { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 14px; }
 
 .info-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }

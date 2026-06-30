@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body,
+  Controller, Get, Post, Patch, Delete, Body,
   Param, Query, ParseIntPipe,
 } from '@nestjs/common';
 import { SalesService } from './sales.service';
@@ -53,4 +53,13 @@ export class SalesController {
   @Post('activity') createActivity(@Body() dto: CreateActivityDto) {
     return this.salesService.createActivity(dto);
   }
+
+  @Delete('lead/:id')
+  removeLead(@Param('id', ParseIntPipe) id: number) { return this.salesService.removeLead(id); }
+
+  @Delete('opportunity/:id')
+  removeOpportunity(@Param('id', ParseIntPipe) id: number) { return this.salesService.removeOpportunity(id); }
+
+  @Delete('quotation/:id')
+  removeQuotation(@Param('id', ParseIntPipe) id: number) { return this.salesService.removeQuotation(id); }
 }

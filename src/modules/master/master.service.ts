@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
@@ -206,6 +207,18 @@ export class MasterService {
     return { data, message: 'Pelanggan diperbarui' };
   }
 
+  async removePelanggan(id: number) {
+    const row = await this.prisma.pelanggan.findUnique({
+      where: { id_pelanggan: id },
+      include: { _count: { select: { sites: true } } },
+    });
+    if (!row) throw new NotFoundException('Pelanggan tidak ditemukan');
+    if ((row as any)._count.sites > 0)
+      throw new BadRequestException('Pelanggan masih memiliki Site, tidak bisa dihapus');
+    await this.prisma.pelanggan.delete({ where: { id_pelanggan: id } });
+    return { message: `Pelanggan ${row.nama_pelanggan} dihapus` };
+  }
+
   // ─── SITE PELANGGAN ──────────────────────────────────────────
 
   async findAllSite(query: { search?: string; id_pelanggan?: string; page?: number; limit?: number }) {
@@ -265,6 +278,21 @@ export class MasterService {
       },
     });
     return { data, message: `Site diperbarui: ${data.kode_site} — ${data.nama_site}` };
+  }
+
+  async removeSite(id: number) {
+    const row = await this.prisma.sitePelanggan.findUnique({
+      where: { id_site: id },
+      include: {
+        _count: { select: { tickets: true, projects: true, kontrak: true } },
+      },
+    });
+    if (!row) throw new NotFoundException('Site tidak ditemukan');
+    const c = (row as any)._count;
+    if (c.tickets > 0 || c.projects > 0 || c.kontrak > 0)
+      throw new BadRequestException('Site masih memiliki Tiket/Project/Kontrak aktif, tidak bisa dihapus');
+    await this.prisma.sitePelanggan.delete({ where: { id_site: id } });
+    return { message: `Site ${row.kode_site} — ${row.nama_site} dihapus` };
   }
 
   async getPelangganDropdown() {

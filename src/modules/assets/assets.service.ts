@@ -114,6 +114,20 @@ export class AssetsService {
     return { data, message: `Aset ${kode_aset} berhasil ditambahkan` };
   }
 
+  async remove(id: number) {
+    const row = await this.prisma.gudangAset.findUnique({
+      where: { id_aset: id },
+      include: { _count: { select: { mutasi: true } } },
+    });
+    if (!row) throw new NotFoundException('Aset tidak ditemukan');
+    if (row.status_aset !== 'Di_Gudang')
+      throw new BadRequestException('Hanya aset berstatus Di_Gudang yang bisa dihapus');
+    if ((row as any)._count.mutasi > 1)
+      throw new BadRequestException('Aset sudah memiliki riwayat mutasi, tidak bisa dihapus');
+    await this.prisma.gudangAset.delete({ where: { id_aset: id } });
+    return { message: `Aset ${row.kode_aset} dihapus` };
+  }
+
   async update(id: number, dto: UpdateAsetDto) {
     const row = await this.prisma.gudangAset.findUnique({ where: { id_aset: id } });
     if (!row) throw new NotFoundException('Aset tidak ditemukan');

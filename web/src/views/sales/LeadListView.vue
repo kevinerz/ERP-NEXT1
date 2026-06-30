@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSalesStore, type Lead } from '@/stores/sales'
+import api from '@/services/api'
 
 const router = useRouter()
 const sales = useSalesStore()
@@ -64,6 +65,16 @@ async function handleSubmit() {
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 }
+
+async function hapusLead(id: number, nama: string) {
+  if (!confirm(`Hapus lead "${nama}" ini?`)) return
+  try {
+    await api.delete(`/sales/lead/${id}`)
+    fetchData()
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus lead')
+  }
+}
 </script>
 
 <template>
@@ -100,11 +111,12 @@ function formatDate(d: string) {
             <th>Status</th>
             <th>Opp</th>
             <th>Tgl</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!sales.leadList.length">
-            <td colspan="8" class="empty">Tidak ada lead</td>
+            <td colspan="9" class="empty">Tidak ada lead</td>
           </tr>
           <tr
             v-for="l in sales.leadList" :key="l.id_lead"
@@ -118,6 +130,13 @@ function formatDate(d: string) {
             <td><span :class="['status-badge', STATUS_COLOR[l.status_lead] || 'badge-gray']">{{ l.status_lead }}</span></td>
             <td class="center">{{ l._count?.opportunities ?? 0 }}</td>
             <td class="text-gray text-sm">{{ formatDate(l.created_at) }}</td>
+            <td @click.stop>
+              <button
+                v-if="l.status_lead === 'Baru' || l.status_lead === 'Tidak_Layak'"
+                class="btn-hapus"
+                @click="hapusLead(l.id_lead, l.nama_prospek)"
+              >Hapus</button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -241,4 +260,5 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 </style>

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
 import { PublicWoService } from './public-wo.service';
 import { CreateWoDto, UpdateWoDto, CreateBeritaAcaraDto } from './dto/wo.dto';
 
@@ -35,4 +35,7 @@ export class PublicWoController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CreateBeritaAcaraDto,
   ) { return this.publicWoService.createBeritaAcara(id, dto); }
+
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) { return this.publicWoService.remove(id); }
 }

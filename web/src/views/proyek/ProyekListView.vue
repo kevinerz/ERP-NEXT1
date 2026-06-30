@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProyekStore } from '@/stores/proyek'
 import { useMasterStore } from '@/stores/master'
+import api from '@/services/api'
 
 const router = useRouter()
 const proyek = useProyekStore()
@@ -64,6 +65,17 @@ async function handleSubmit() {
   } finally { submitting.value = false }
 }
 
+async function hapusProyek(id: number, nomor: string) {
+  if (!confirm(`Hapus project "${nomor}" ini?`)) return
+  try {
+    await api.delete(`/projects/${id}`)
+    await proyek.fetchSummary()
+    fetchData()
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus project')
+  }
+}
+
 function fmtDate(d?: string) {
   return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 }
@@ -117,11 +129,12 @@ function fmtDate(d?: string) {
             <th>Tgl Mulai</th>
             <th>Target Selesai</th>
             <th>WO</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!proyek.list.length">
-            <td colspan="8" class="empty">Tidak ada project</td>
+            <td colspan="9" class="empty">Tidak ada project</td>
           </tr>
           <tr
             v-for="p in proyek.list" :key="p.id_project"
@@ -144,6 +157,13 @@ function fmtDate(d?: string) {
             <td class="text-gray text-sm">{{ fmtDate(p.tgl_mulai) }}</td>
             <td class="text-gray text-sm">{{ fmtDate(p.tgl_target_selesai) }}</td>
             <td class="center">{{ p._count?.work_orders ?? 0 }}</td>
+            <td @click.stop>
+              <button
+                v-if="p.status_project === 'Perencanaan'"
+                class="btn-hapus"
+                @click="hapusProyek(p.id_project, p.nomor_project)"
+              >Hapus</button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -250,6 +270,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
 .page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
+.btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 540px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateWoDto, UpdateWoDto, CreateBeritaAcaraDto } from './dto/wo.dto';
 
@@ -176,6 +176,15 @@ export class PublicWoService {
       orderBy: { nama_lengkap: 'asc' },
     });
     return { data };
+  }
+
+  async remove(id: number) {
+    const row = await this.prisma.workOrder.findUnique({ where: { id_wo: id } });
+    if (!row) throw new NotFoundException('Work Order tidak ditemukan');
+    if (!['Open', 'Cancelled'].includes(row.status_wo))
+      throw new BadRequestException('Hanya WO berstatus Open atau Cancelled yang bisa dihapus');
+    await this.prisma.workOrder.delete({ where: { id_wo: id } });
+    return { message: `Work Order ${row.nomor_wo} dihapus` };
   }
 
   async getSiteDropdown() {

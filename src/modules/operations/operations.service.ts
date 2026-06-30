@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTicketDto, UpdateTicketDto, AddLogDto } from './dto/ticket.dto';
@@ -220,6 +220,15 @@ export class OperationsService {
     const map = Object.fromEntries(rows.map((r) => [r.status_tiket, r._count.id_ticket]));
     const data = statuses.map((s) => ({ status: s, count: map[s] ?? 0 }));
     return { data };
+  }
+
+  async remove(id: number) {
+    const row = await this.prisma.operationTicket.findUnique({ where: { id_ticket: id } });
+    if (!row) throw new NotFoundException('Tiket tidak ditemukan');
+    if (!['Open', 'Closed'].includes(row.status_tiket))
+      throw new BadRequestException('Hanya tiket berstatus Open atau Closed yang bisa dihapus');
+    await this.prisma.operationTicket.delete({ where: { id_ticket: id } });
+    return { message: `Tiket ${row.nomor_tiket} dihapus` };
   }
 
   async getTeknisiList() {

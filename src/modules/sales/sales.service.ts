@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/lead.dto';
@@ -338,5 +338,40 @@ export class SalesService {
       orderBy: { nama_lengkap: 'asc' },
     });
     return { data };
+  }
+
+  // ─── DELETE ──────────────────────────────────────────────────
+
+  async removeLead(id: number) {
+    const row = await this.prisma.salesLead.findUnique({
+      where: { id_lead: id },
+      include: { _count: { select: { opportunities: true } } },
+    });
+    if (!row) throw new NotFoundException('Lead tidak ditemukan');
+    if ((row as any)._count.opportunities > 0)
+      throw new BadRequestException('Lead tidak bisa dihapus karena sudah memiliki Opportunity');
+    await this.prisma.salesLead.delete({ where: { id_lead: id } });
+    return { message: `Lead ${row.nama_prospek} dihapus` };
+  }
+
+  async removeOpportunity(id: number) {
+    const row = await this.prisma.salesOpportunity.findUnique({
+      where: { id_opportunity: id },
+      include: { _count: { select: { quotations: true } } },
+    });
+    if (!row) throw new NotFoundException('Opportunity tidak ditemukan');
+    if ((row as any)._count.quotations > 0)
+      throw new BadRequestException('Opportunity tidak bisa dihapus karena sudah memiliki Quotation');
+    await this.prisma.salesOpportunity.delete({ where: { id_opportunity: id } });
+    return { message: `Opportunity ${row.nama_opportunity} dihapus` };
+  }
+
+  async removeQuotation(id: number) {
+    const row = await this.prisma.salesQuotation.findUnique({ where: { id_quotation: id } });
+    if (!row) throw new NotFoundException('Quotation tidak ditemukan');
+    if (row.status_approval !== 'Draft')
+      throw new BadRequestException('Hanya Quotation berstatus Draft yang bisa dihapus');
+    await this.prisma.salesQuotation.delete({ where: { id_quotation: id } });
+    return { message: `Quotation ${row.nomor_quotation} dihapus` };
   }
 }

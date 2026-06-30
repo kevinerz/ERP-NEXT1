@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useProyekStore } from '@/stores/proyek'
 import { printBAST } from '@/composables/usePrint'
+import api from '@/services/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -87,6 +88,14 @@ async function handleEdit() {
     showEdit.value = false; flash('Project diperbarui')
   } catch (e: any) { editError.value = e.response?.data?.message || 'Gagal' }
   finally { editSubmitting.value = false }
+}
+
+async function handleDelete() {
+  if (!confirm(`Hapus project ${proyek.current?.nomor_project}? Tindakan ini tidak bisa dibatalkan.`)) return
+  try {
+    await api.delete(`/projects/${id}`)
+    router.push('/projects')
+  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus project') }
 }
 
 async function handleAddWo() {
@@ -180,6 +189,7 @@ function fmtDt(d: string) {
           </span>
           <button class="btn-print" @click="printBAST(proyek.current)">🖨 BAST</button>
           <button class="btn-edit" @click="openEdit">Edit</button>
+          <button v-if="proyek.current.status_project === 'Perencanaan'" class="btn-hapus" @click="handleDelete">Hapus</button>
         </div>
       </div>
 

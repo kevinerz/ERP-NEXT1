@@ -77,6 +77,16 @@ async function cancelWo() {
   }
 }
 
+async function hapusWo() {
+  if (!confirm('Hapus Work Order ini?')) return
+  try {
+    await api.delete(`/public-wo/${id}`)
+    router.push('/public-wo')
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus Work Order')
+  }
+}
+
 async function submitBa() {
   if (!baForm.value.jenis_ba) return
   savingBa.value = true
@@ -165,6 +175,11 @@ onMounted(fetchWo)
             :disabled="updatingStatus"
             @click="cancelWo"
           >Batalkan</button>
+          <button
+            v-if="wo.status_wo === 'Open' || wo.status_wo === 'Cancelled'"
+            class="btn-hapus"
+            @click="hapusWo"
+          >Hapus</button>
         </div>
       </div>
 
@@ -411,6 +426,7 @@ onMounted(fetchWo)
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-secondary { padding: 8px 16px; background: #f1f5f9; color: #374151; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-danger { padding: 8px 16px; background: #fff; color: #dc2626; border: 1.5px solid #fca5a5; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-danger:hover:not(:disabled) { background: #fef2f2; }
 .btn-sm { padding: 5px 12px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-print { padding: 7px 14px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }

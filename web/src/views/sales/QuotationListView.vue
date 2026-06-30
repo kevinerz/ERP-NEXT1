@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
+import api from '@/services/api'
 
 const router = useRouter()
 const sales = useSalesStore()
@@ -58,6 +59,16 @@ async function handleApprove() {
   } finally { approveSubmitting.value = false }
 }
 
+async function hapusQuotation(id: number, nomor: string) {
+  if (!confirm(`Hapus quotation "${nomor}" ini?`)) return
+  try {
+    await api.delete(`/sales/quotation/${id}`)
+    fetchData()
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus quotation')
+  }
+}
+
 function fmt(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
 }
@@ -104,11 +115,12 @@ function fmtDate(d: string) {
             <th>OTC</th>
             <th>Status</th>
             <th>Aksi</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!sales.quotationList.length">
-            <td colspan="9" class="empty">Tidak ada quotation</td>
+            <td colspan="10" class="empty">Tidak ada quotation</td>
           </tr>
           <tr v-for="q in sales.quotationList" :key="q.id_quotation">
             <td>
@@ -136,6 +148,13 @@ function fmtDate(d: string) {
                 @click="openApprove(q.id_quotation, q.nomor_quotation)"
               >Approve</button>
               <span v-else class="approver-name">{{ q.approver?.nama_lengkap || '—' }}</span>
+            </td>
+            <td @click.stop>
+              <button
+                v-if="q.status_approval === 'Draft'"
+                class="btn-hapus"
+                @click="hapusQuotation(q.id_quotation, q.nomor_quotation)"
+              >Hapus</button>
             </td>
           </tr>
         </tbody>
@@ -217,6 +236,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .nomor-link { color: #1d4ed8; font-weight: 700; cursor: pointer; text-decoration: underline; }
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 .btn-approve { padding: 5px 12px; background: #fffbeb; color: #b45309; border: 1px solid #fde68a; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .approver-name { font-size: 12px; color: #64748b; }
 
 .pagination { display: flex; gap: 6px; padding: 14px; justify-content: center; border-top: 1px solid #f1f5f9; }

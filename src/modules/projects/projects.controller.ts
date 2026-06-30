@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body,
+  Controller, Get, Post, Patch, Delete, Body,
   Param, Query, ParseIntPipe,
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
@@ -37,4 +37,7 @@ export class ProjectsController {
   @Patch('bast/:id') updateBast(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateBastDto) {
     return this.projectsService.updateBast(id, dto);
   }
+
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) { return this.projectsService.remove(id); }
 }

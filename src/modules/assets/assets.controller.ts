@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, Req, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, ParseIntPipe } from '@nestjs/common';
 import { AssetsService } from './assets.service';
 import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto, CreateSimTopupDto } from './dto/aset.dto';
 
@@ -27,6 +27,9 @@ export class AssetsController {
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateAsetDto) {
     return this.svc.update(id, dto);
   }
+
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) { return this.svc.remove(id); }
 
   @Post('mutasi')
   createMutasi(@Body() dto: CreateMutasiDto, @Req() req: any) {

@@ -113,6 +113,9 @@ export class MasterController {
     return this.masterService.updatePelanggan(id, dto);
   }
 
+  @Delete('pelanggan/:id')
+  removePelanggan(@Param('id', ParseIntPipe) id: number) { return this.masterService.removePelanggan(id); }
+
   // ─── VENDOR DROPDOWN ─────────────────────────────────────────
 
   @Get('vendor-dropdown')
@@ -133,6 +136,9 @@ export class MasterController {
   updateSite(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateSiteDto) {
     return this.masterService.updateSite(id, dto);
   }
+
+  @Delete('site/:id')
+  removeSite(@Param('id', ParseIntPipe) id: number) { return this.masterService.removeSite(id); }
 
   // ─── SUMBER INTERNET ─────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProjectDto, UpdateProjectDto } from './dto/project.dto';
 import { CreateWoDto, UpdateWoDto } from './dto/wo.dto';
@@ -283,6 +283,20 @@ export class ProjectsService {
       take: 50,
     });
     return { data };
+  }
+
+  async remove(id: number) {
+    const row = await this.prisma.projectDelivery.findUnique({
+      where: { id_project: id },
+      include: { _count: { select: { work_orders: true, bast: true } } },
+    });
+    if (!row) throw new NotFoundException('Project tidak ditemukan');
+    if (row.status_project !== 'Perencanaan')
+      throw new BadRequestException('Hanya project berstatus Perencanaan yang bisa dihapus');
+    if ((row as any)._count.work_orders > 0 || (row as any)._count.bast > 0)
+      throw new BadRequestException('Project sudah memiliki WO atau BAST, tidak bisa dihapus');
+    await this.prisma.projectDelivery.delete({ where: { id_project: id } });
+    return { message: `Project ${row.nomor_project} dihapus` };
   }
 
   async getStatusSummary() {

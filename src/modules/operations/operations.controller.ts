@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query,
   ParseIntPipe, Req,
 } from '@nestjs/common';
 import { OperationsService } from './operations.service';
@@ -30,4 +30,7 @@ export class OperationsController {
   @Post('log') addLog(@Body() dto: AddLogDto, @Req() req: any) {
     return this.operationsService.addLog(dto, req.user?.id_user);
   }
+
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) { return this.operationsService.remove(id); }
 }

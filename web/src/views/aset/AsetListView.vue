@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
+import api from '@/services/api'
 
 const router = useRouter()
 const aset = useAsetStore()
@@ -85,6 +86,17 @@ async function handleSubmit() {
   finally { submitting.value = false }
 }
 
+async function hapusAset(id: number, nama: string) {
+  if (!confirm(`Hapus aset "${nama}" ini?`)) return
+  try {
+    await api.delete(`/assets/${id}`)
+    await aset.fetchSummary()
+    fetchData()
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus aset')
+  }
+}
+
 function fmtRupiah(n: number) {
   return n ? 'Rp ' + n.toLocaleString('id-ID') : '—'
 }
@@ -144,11 +156,12 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
             <th>Lokasi / Site</th>
             <th>Stok</th>
             <th>Mutasi</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!aset.list.length">
-            <td colspan="8" class="empty">Belum ada data aset</td>
+            <td colspan="9" class="empty">Belum ada data aset</td>
           </tr>
           <tr v-for="a in aset.list" :key="a.id_aset" class="row-link" @click="router.push(`/assets/${a.id_aset}`)">
             <td class="kode">{{ a.kode_aset }}</td>
@@ -172,6 +185,13 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
             </td>
             <td class="center">{{ a.is_serialized ? '—' : a.stok_jumlah }}</td>
             <td class="center">{{ a._count?.mutasi ?? 0 }}</td>
+            <td @click.stop>
+              <button
+                v-if="a.status_aset === 'Di_Gudang'"
+                class="btn-hapus"
+                @click="hapusAset(a.id_aset, a.nama_perangkat)"
+              >Hapus</button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -304,6 +324,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
 .page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
+.btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
