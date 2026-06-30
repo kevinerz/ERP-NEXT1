@@ -228,6 +228,30 @@ function ageHours(d: string) {
         </div>
       </div>
 
+      <!-- Tiket Lain di Site -->
+      <template v-if="ops.current.related_tickets?.length">
+        <div class="related-header">
+          Tiket lain di <strong>{{ ops.current.site?.nama_site }}</strong>
+        </div>
+        <div class="related-list">
+          <div v-for="t in ops.current.related_tickets" :key="t.id_ticket"
+            class="related-item" @click="router.push(`/operations/${t.id_ticket}`)">
+            <div class="rel-left">
+              <div class="rel-nomor">{{ t.nomor_tiket }}</div>
+              <div class="rel-judul">{{ t.judul_tiket }}</div>
+            </div>
+            <div class="rel-right">
+              <span class="prio-dot" :style="{ color: PRIORITAS_COLOR[t.prioritas] }">● {{ t.prioritas }}</span>
+              <span class="rel-status"
+                :style="{ background: STATUS_COLOR[t.status_tiket]?.bg, color: STATUS_COLOR[t.status_tiket]?.color }">
+                {{ statusLabel(t.status_tiket) }}
+              </span>
+              <span class="rel-arrow">›</span>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <!-- Modal Edit -->
       <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
         <div class="modal">
@@ -410,6 +434,19 @@ function ageHours(d: string) {
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Related tickets */
+.related-header { font-size: 13px; font-weight: 600; color: #64748b; margin: 20px 0 10px; }
+.related-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.related-item { display: flex; align-items: center; gap: 14px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; cursor: pointer; transition: border-color 0.15s; }
+.related-item:hover { border-color: #3b82f6; }
+.rel-left { flex: 1; min-width: 0; }
+.rel-nomor { font-size: 13px; font-weight: 700; color: #0f172a; }
+.rel-judul { font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rel-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.prio-dot { font-size: 11px; font-weight: 700; }
+.rel-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+.rel-arrow { color: #94a3b8; font-size: 16px; }
 
 @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
 </style>

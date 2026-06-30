@@ -87,7 +87,18 @@ export class OperationsService {
       include: TICKET_DETAIL_INCLUDE,
     });
     if (!data) throw new NotFoundException('Tiket tidak ditemukan');
-    return { data };
+
+    const related_tickets = await this.prisma.operationTicket.findMany({
+      where: { id_site: data.id_site, id_ticket: { not: id } },
+      orderBy: { tgl_open: 'desc' },
+      take: 5,
+      select: {
+        id_ticket: true, nomor_tiket: true, judul_tiket: true,
+        status_tiket: true, prioritas: true, tgl_open: true,
+      },
+    });
+
+    return { data: { ...data, related_tickets } };
   }
 
   async create(dto: CreateTicketDto, userId?: number) {
