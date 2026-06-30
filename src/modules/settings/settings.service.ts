@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UploadService } from '../../common/upload/upload.service';
+import { writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 export const SETTING_KEYS = [
   'company_name',
@@ -40,10 +41,7 @@ const DEFAULTS: Record<SettingKey, string> = {
 
 @Injectable()
 export class SettingsService {
-  constructor(
-    private prisma: PrismaService,
-    private upload: UploadService,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async getAll(): Promise<Record<string, string>> {
     const rows = await this.prisma.appSetting.findMany();
@@ -67,8 +65,14 @@ export class SettingsService {
   }
 
   async uploadLogo(buffer: Buffer, originalname: string): Promise<{ url: string }> {
-    const ext = originalname.split('.').pop() ?? 'png';
-    const url = await this.upload.uploadFile(buffer, 'company', `logo.${ext}`);
+    const ext = (originalname.split('.').pop() ?? 'png').toLowerCase();
+    const allowed = ['png', 'jpg', 'jpeg', 'svg', 'webp'];
+    const safeExt = allowed.includes(ext) ? ext : 'png';
+    const uploadDir = join(process.cwd(), 'public', 'uploads');
+    mkdirSync(uploadDir, { recursive: true });
+    const filename = `company-logo.${safeExt}`;
+    writeFileSync(join(uploadDir, filename), buffer);
+    const url = `/uploads/${filename}`;
     await this.prisma.appSetting.upsert({
       where: { key: 'company_logo_url' },
       create: { key: 'company_logo_url', value: url },
