@@ -13,6 +13,7 @@ const PROJECT_INCLUDE = {
   },
   site: { select: { id_site: true, kode_site: true, nama_site: true, alamat_lengkap: true, kota: true } },
   pm: { select: { id_karyawan: true, nama_lengkap: true, jabatan: true } },
+  kontrak: { select: { id_kontrak: true, nomor_kontrak: true, status_kontrak: true } },
 };
 
 const WO_INCLUDE = {

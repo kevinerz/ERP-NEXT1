@@ -13,7 +13,7 @@ const page = ref(1)
 
 // Modal tambah project
 const showModal = ref(false)
-const form = ref({ id_opportunity: 0, id_site: 0, id_pm: 0, tgl_mulai: '', tgl_target_selesai: '', catatan: '' })
+const form = ref({ id_opportunity: 0, id_site: 0, id_pm: 0, id_kontrak: null as number | null, tgl_mulai: '', tgl_target_selesai: '', catatan: '' })
 const submitting = ref(false)
 const formError = ref('')
 
@@ -52,6 +52,7 @@ async function handleSubmit() {
       id_opportunity: Number(form.value.id_opportunity),
       id_site: form.value.id_site,
       id_pm: form.value.id_pm,
+      id_kontrak: form.value.id_kontrak || undefined,
       tgl_mulai: form.value.tgl_mulai || undefined,
       tgl_target_selesai: form.value.tgl_target_selesai || undefined,
       catatan: form.value.catatan || undefined,
@@ -181,6 +182,10 @@ function fmtDate(d?: string) {
               </option>
             </select>
           </div>
+          <div class="field full">
+            <label>ID Kontrak <span class="field-hint">(opsional)</span></label>
+            <input v-model.number="form.id_kontrak" type="number" min="1" placeholder="Isi jika sudah ada kontrak terkait" />
+          </div>
           <div class="field">
             <label>Tgl Mulai</label>
             <input v-model="form.tgl_mulai" type="date" />
@@ -253,6 +258,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field.full { grid-column: 1 / -1; }
 .field label { font-size: 13px; font-weight: 600; color: #374151; }
+.field-hint { font-size: 11px; color: #94a3b8; font-weight: 400; }
 .req { color: #ef4444; }
 .hint { font-size: 11px; color: #94a3b8; }
 .field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }

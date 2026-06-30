@@ -55,6 +55,7 @@ export class ContractsService {
       include: {
         ...KONTRAK_INCLUDE,
         quotation: { select: { nomor_quotation: true, harga_mrc: true, harga_otc: true } },
+        projects: { select: { id_project: true, nomor_project: true, status_project: true } },
       },
     });
     if (!data) throw new NotFoundException('Kontrak tidak ditemukan');

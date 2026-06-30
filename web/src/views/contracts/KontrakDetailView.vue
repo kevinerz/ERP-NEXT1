@@ -144,6 +144,21 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
         </div>
       </div>
 
+      <!-- Project Terkait -->
+      <template v-if="k.projects?.length">
+        <div class="section-title">Project Terkait</div>
+        <div class="project-list">
+          <div v-for="p in k.projects" :key="p.id_project"
+            class="project-item" @click="router.push(`/proyek/${p.id_project}`)">
+            <span class="proj-nomor">{{ p.nomor_project }}</span>
+            <span class="proj-status" :class="`pstatus-${p.status_project.toLowerCase()}`">
+              {{ p.status_project }}
+            </span>
+            <span class="proj-arrow">›</span>
+          </div>
+        </div>
+      </template>
+
       <!-- Terminasi info -->
       <div class="terminasi-card" v-if="k.status_kontrak === 'Terminasi'">
         <div class="t-icon">⚠️</div>
@@ -247,6 +262,19 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
 .info-value.mrc { color: #1d4ed8; font-size: 16px; }
 .sisa { font-size: 11px; color: #94a3b8; margin-top: 2px; }
 .sisa.warn { color: #ea580c; font-weight: 700; }
+
+.section-title { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+.project-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+.project-item { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; cursor: pointer; transition: border-color 0.15s; }
+.project-item:hover { border-color: #3b82f6; }
+.proj-nomor { font-size: 14px; font-weight: 700; color: #0f172a; flex: 1; }
+.proj-status { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 12px; }
+.pstatus-perencanaan { background: #eff6ff; color: #1d4ed8; }
+.pstatus-instalasi { background: #fef9c3; color: #a16207; }
+.pstatus-testing { background: #fff7ed; color: #c2410c; }
+.pstatus-selesai { background: #f0fdf4; color: #15803d; }
+.pstatus-ditahan { background: #fef2f2; color: #dc2626; }
+.proj-arrow { color: #94a3b8; font-size: 18px; }
 
 .terminasi-card { background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px 20px; display: flex; align-items: flex-start; gap: 12px; }
 .t-icon { font-size: 20px; }

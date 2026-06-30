@@ -62,6 +62,7 @@ function openEdit() {
   const p = proyek.current!
   editForm.value = {
     id_pm: p.pm?.id_karyawan,
+    id_kontrak: p.kontrak?.id_kontrak || null,
     status_project: p.status_project,
     tgl_mulai: p.tgl_mulai ? p.tgl_mulai.substring(0, 10) : '',
     tgl_target_selesai: p.tgl_target_selesai ? p.tgl_target_selesai.substring(0, 10) : '',
@@ -76,6 +77,7 @@ async function handleEdit() {
   try {
     await proyek.update(id, {
       ...editForm.value,
+      id_kontrak: editForm.value.id_kontrak || undefined,
       tgl_mulai: editForm.value.tgl_mulai || undefined,
       tgl_target_selesai: editForm.value.tgl_target_selesai || undefined,
       tgl_actual_selesai: editForm.value.tgl_actual_selesai || undefined,
@@ -203,6 +205,14 @@ function fmtDt(d: string) {
           <span class="ic-label">Actual Selesai</span>
           <span class="ic-value" style="color:#15803d;font-weight:700">{{ fmtDate(proyek.current.tgl_actual_selesai) }}</span>
         </div>
+        <div class="info-chip info-chip-link" v-if="proyek.current.kontrak"
+          @click="router.push(`/contracts/${proyek.current.kontrak.id_kontrak}`)">
+          <span class="ic-label">Kontrak</span>
+          <span class="ic-value fw">{{ proyek.current.kontrak.nomor_kontrak }}</span>
+          <span class="ic-status" :class="`kstatus-${proyek.current.kontrak.status_kontrak.toLowerCase()}`">
+            {{ proyek.current.kontrak.status_kontrak.replace('_', ' ') }}
+          </span>
+        </div>
       </div>
 
       <div v-if="proyek.current.catatan" class="catatan-box">{{ proyek.current.catatan }}</div>
@@ -269,6 +279,10 @@ function fmtDt(d: string) {
               <select v-model="editForm.id_pm">
                 <option v-for="p in proyek.pmList" :key="p.id_karyawan" :value="p.id_karyawan">{{ p.nama_lengkap }}</option>
               </select>
+            </div>
+            <div class="field full">
+              <label>ID Kontrak <span class="field-hint">(opsional — nomor ID kontrak terkait)</span></label>
+              <input v-model.number="editForm.id_kontrak" type="number" min="1" placeholder="Kosongkan jika tidak ada" />
             </div>
             <div class="field">
               <label>Tgl Mulai</label>
@@ -427,8 +441,16 @@ function fmtDt(d: string) {
 
 .info-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .info-chip { background: #fff; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); flex: 1; min-width: 130px; }
+.info-chip-link { cursor: pointer; transition: box-shadow 0.15s; }
+.info-chip-link:hover { box-shadow: 0 2px 8px rgba(59,130,246,0.2); border: 1px solid #bfdbfe; }
 .ic-label { display: block; font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
 .ic-value { font-size: 14px; color: #0f172a; }
+.ic-status { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-top: 4px; }
+.kstatus-aktif { background: #f0fdf4; color: #15803d; }
+.kstatus-akan_berakhir { background: #fef9c3; color: #a16207; }
+.kstatus-berakhir { background: #f1f5f9; color: #64748b; }
+.kstatus-terminasi { background: #fef2f2; color: #dc2626; }
+.field-hint { font-size: 11px; color: #94a3b8; font-weight: 400; }
 .fw { font-weight: 700; }
 
 .catatan-box { background: #f8fafc; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #475569; margin-bottom: 4px; }

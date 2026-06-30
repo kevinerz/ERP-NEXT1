@@ -395,6 +395,7 @@ model ProjectDelivery {
   id_opportunity      Int
   id_site             Int
   id_pm               Int
+  id_kontrak          Int?
   tgl_mulai           DateTime? @db.Date
   tgl_target_selesai  DateTime? @db.Date
   tgl_actual_selesai  DateTime? @db.Date
@@ -406,6 +407,7 @@ model ProjectDelivery {
   opportunity  SalesOpportunity    @relation(fields: [id_opportunity], references: [id_opportunity])
   site         SitePelanggan       @relation(fields: [id_site], references: [id_site])
   pm           HrisKaryawan        @relation(fields: [id_pm], references: [id_karyawan])
+  kontrak      KontrakLayanan?     @relation(fields: [id_kontrak], references: [id_kontrak])
   work_orders  WorkOrder[]
   mutasi       GudangMutasiAset[]
   bast         ProjectDokumenLegal[]
@@ -604,6 +606,7 @@ model KontrakLayanan {
   quotation    SalesQuotation?      @relation(fields: [id_quotation], references: [id_quotation])
   dokumen      ProjectDokumenLegal? @relation(fields: [id_dokumen_legal], references: [id_dokumen])
   jurnal_ar    IntegrationJurnalAr[]
+  projects     ProjectDelivery[]
 
   @@map("kontrak_layanan")
 }
