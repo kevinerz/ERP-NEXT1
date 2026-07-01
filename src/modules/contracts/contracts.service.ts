@@ -131,6 +131,48 @@ export class ContractsService {
     return { data, message: 'Kontrak diterminasi' };
   }
 
+  // Buat Project Delivery dari Kontrak (alur Kontrak → Project)
+  async createProject(id_kontrak: number, dto: { id_pm: number; tgl_mulai?: string; tgl_target_selesai?: string; catatan?: string }) {
+    const kontrak = await this.prisma.kontrakLayanan.findUnique({
+      where: { id_kontrak },
+      include: { quotation: { select: { id_opportunity: true } } },
+    });
+    if (!kontrak) throw new NotFoundException('Kontrak tidak ditemukan');
+    if (!kontrak.id_quotation || !kontrak.quotation)
+      throw new BadRequestException('Kontrak harus terhubung ke Quotation agar Project bisa dibuat (butuh data Opportunity)');
+
+    const id_opportunity = kontrak.quotation.id_opportunity;
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `PRJ-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.projectDelivery.findFirst({
+        where: { nomor_project: { startsWith: prefix } },
+        orderBy: { nomor_project: 'desc' },
+      });
+      const seq = (last ? (parseInt(last.nomor_project.split('-')[2], 10) || 0) : 0) + 1;
+      const nomor_project = `${prefix}-${String(seq).padStart(4, '0')}`;
+      try {
+        const data = await this.prisma.projectDelivery.create({
+          data: {
+            nomor_project,
+            id_opportunity,
+            id_site: kontrak.id_site,
+            id_pm: dto.id_pm,
+            id_kontrak,
+            tgl_mulai: dto.tgl_mulai ? new Date(dto.tgl_mulai) : undefined,
+            tgl_target_selesai: dto.tgl_target_selesai ? new Date(dto.tgl_target_selesai) : undefined,
+            catatan: dto.catatan,
+            status_project: 'Perencanaan',
+          },
+        });
+        return { data, message: `Project ${nomor_project} dibuat dari kontrak ${kontrak.nomor_kontrak}` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
+  }
+
   async getSummary() {
     const statuses = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi'];
     const rows = await this.prisma.kontrakLayanan.groupBy({

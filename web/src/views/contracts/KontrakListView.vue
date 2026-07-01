@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useContractsStore } from '@/stores/contracts'
 import { useMasterStore } from '@/stores/master'
 import { useProyekStore } from '@/stores/proyek'
+import api from '@/services/api'
 
 const router = useRouter()
 const contracts = useContractsStore()
@@ -18,6 +19,7 @@ const showModal = ref(false)
 const submitting = ref(false)
 const formError = ref('')
 const form = ref({
+  id_quotation: '' as number | '',
   id_site: 0,
   id_layanan: 0,
   tgl_mulai: '',
@@ -25,6 +27,25 @@ const form = ref({
   harga_mrc: 0,
   harga_otc: 0,
 })
+
+interface ApprovedQuotation {
+  id_quotation: number
+  nomor_quotation: string
+  opportunity?: { nama_opportunity?: string; id_layanan?: number; lead?: { nama_prospek?: string } }
+}
+const approvedQuotations = ref<ApprovedQuotation[]>([])
+
+async function fetchApprovedQuotations() {
+  try {
+    const r = await api.get('/sales/quotation', { params: { status_approval: 'Approved', limit: 100 } })
+    approvedQuotations.value = r.data.data
+  } catch { /* diamkan; quotation opsional */ }
+}
+
+function onQuotationChange() {
+  const q = approvedQuotations.value.find(x => x.id_quotation === form.value.id_quotation)
+  if (q?.opportunity?.id_layanan) form.value.id_layanan = q.opportunity.id_layanan
+}
 
 const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
@@ -35,7 +56,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 }
 
 onMounted(async () => {
-  await Promise.all([contracts.fetchSummary(), master.fetchLayanan(), proyek.fetchSiteList()])
+  await Promise.all([contracts.fetchSummary(), master.fetchLayanan(), proyek.fetchSiteList(), fetchApprovedQuotations()])
   fetchData()
 })
 
@@ -54,7 +75,9 @@ async function handleSubmit() {
   }
   submitting.value = true; formError.value = ''
   try {
-    const result = await contracts.create({ ...form.value })
+    const payload: any = { ...form.value }
+    if (payload.id_quotation === '' || !payload.id_quotation) delete payload.id_quotation
+    const result = await contracts.create(payload)
     showModal.value = false
     await contracts.fetchSummary()
     router.push(`/contracts/${result.id_kontrak}`)
@@ -172,6 +195,15 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
       <div class="modal">
         <h3>Buat Kontrak Baru</h3>
         <div class="form-grid">
+          <div class="field full">
+            <label>Quotation (Approved)</label>
+            <select v-model.number="form.id_quotation" @change="onQuotationChange">
+              <option value="">— Tanpa Quotation —</option>
+              <option v-for="q in approvedQuotations" :key="q.id_quotation" :value="q.id_quotation">
+                {{ q.nomor_quotation }} — {{ q.opportunity?.lead?.nama_prospek }}
+              </option>
+            </select>
+          </div>
           <div class="field full">
             <label>Site <span class="req">*</span></label>
             <select v-model="form.id_site">

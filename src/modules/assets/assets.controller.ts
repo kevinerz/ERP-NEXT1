@@ -20,7 +20,7 @@ export class AssetsController {
 
   @Post()
   create(@Body() dto: CreateAsetDto, @Req() req: any) {
-    return this.svc.create(dto, req.user?.userId);
+    return this.svc.create(dto, req.user?.id_user);
   }
 
   @Patch(':id')
@@ -33,7 +33,7 @@ export class AssetsController {
 
   @Post('mutasi')
   createMutasi(@Body() dto: CreateMutasiDto, @Req() req: any) {
-    return this.svc.createMutasi(dto, req.user?.userId);
+    return this.svc.createMutasi(dto, req.user?.id_user);
   }
 
   // ─── SIM TOPUP ────────────────────────────────────────────────

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useSalesStore, type Lead } from '@/stores/sales'
 import api from '@/services/api'
 
 const router = useRouter()
+const route = useRoute()
 const sales = useSalesStore()
 
 const search = ref('')
@@ -28,6 +29,7 @@ const STATUS_COLOR: Record<string, string> = {
 onMounted(async () => {
   await sales.fetchSalesList()
   if (sales.salesList.length) form.value.id_sales_pic = sales.salesList[0].id_karyawan
+  if (route.query.new) showModal.value = true
   fetchData()
 })
 
@@ -132,7 +134,7 @@ async function hapusLead(id: number, nama: string) {
             <td class="text-gray text-sm">{{ formatDate(l.created_at) }}</td>
             <td @click.stop>
               <button
-                v-if="l.status_lead === 'Baru' || l.status_lead === 'Tidak_Layak'"
+                v-if="l.status_lead === 'Baru' || l.status_lead === 'Tidak Tertarik'"
                 class="btn-hapus"
                 @click="hapusLead(l.id_lead, l.nama_prospek)"
               >Hapus</button>

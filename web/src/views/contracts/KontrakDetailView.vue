@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useContractsStore } from '@/stores/contracts'
 import { printKontrak, printInvoice } from '@/composables/usePrint'
+import api from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +18,11 @@ const formError = ref('')
 
 const editForm = ref({ tgl_berakhir: '', durasi_bulan: 12, harga_mrc: 0, harga_otc: 0, status_kontrak: '' })
 const terminasiForm = ref({ tanggal_terminasi: '', alasan_terminasi: '' })
+
+const showProjectModal = ref(false)
+type PmItem = { id_karyawan: number; nama_lengkap: string; jabatan: string }
+const pmList = ref<PmItem[]>([])
+const projectForm = ref({ id_pm: 0, tgl_mulai: '', tgl_target_selesai: '', catatan: '' })
 
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Aktif:          { bg: '#f0fdf4', color: '#15803d' },
@@ -60,6 +66,37 @@ async function handleTerminasi() {
     showTerminasiModal.value = false
   } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal terminasi' }
   finally { submitting.value = false }
+}
+
+const canBuatProject = computed(() => !!k.value?.quotation && k.value?.status_kontrak === 'Aktif')
+
+async function openProjectModal() {
+  projectForm.value = { id_pm: 0, tgl_mulai: '', tgl_target_selesai: '', catatan: '' }
+  formError.value = ''
+  showProjectModal.value = true
+  try {
+    const r = await api.get('/projects/pm-list')
+    pmList.value = r.data.data
+  } catch (e: any) {
+    formError.value = e?.response?.data?.message ?? 'Gagal memuat daftar PM'
+  }
+}
+
+async function handleBuatProject() {
+  if (!projectForm.value.id_pm) { formError.value = 'Project Manager wajib dipilih'; return }
+  submitting.value = true; formError.value = ''
+  try {
+    const payload: any = { id_pm: projectForm.value.id_pm }
+    if (projectForm.value.tgl_mulai) payload.tgl_mulai = projectForm.value.tgl_mulai
+    if (projectForm.value.tgl_target_selesai) payload.tgl_target_selesai = projectForm.value.tgl_target_selesai
+    if (projectForm.value.catatan) payload.catatan = projectForm.value.catatan
+    await api.post('/contracts/' + id + '/project', payload)
+    await contracts.fetchOne(id)
+    showProjectModal.value = false
+    alert('Project berhasil dibuat')
+  } catch (e: any) {
+    formError.value = e?.response?.data?.message ?? 'Gagal membuat project'
+  } finally { submitting.value = false }
 }
 
 function fmtDate(d: string) {
@@ -153,19 +190,22 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
       </div>
 
       <!-- Project Terkait -->
-      <template v-if="k.projects?.length">
+      <div class="section-head">
         <div class="section-title">Project Terkait</div>
-        <div class="project-list">
-          <div v-for="p in k.projects" :key="p.id_project"
-            class="project-item" @click="router.push(`/proyek/${p.id_project}`)">
-            <span class="proj-nomor">{{ p.nomor_project }}</span>
-            <span class="proj-status" :class="`pstatus-${p.status_project.toLowerCase()}`">
-              {{ p.status_project }}
-            </span>
-            <span class="proj-arrow">›</span>
-          </div>
+        <button v-if="canBuatProject" class="btn-add-proj" @click="openProjectModal">+ Buat Project</button>
+        <span v-else-if="!k.quotation" class="proj-hint">Perlu Quotation terhubung</span>
+      </div>
+      <div class="project-list" v-if="k.projects?.length">
+        <div v-for="p in k.projects" :key="p.id_project"
+          class="project-item" @click="router.push(`/projects/${p.id_project}`)">
+          <span class="proj-nomor">{{ p.nomor_project }}</span>
+          <span class="proj-status" :class="`pstatus-${p.status_project.toLowerCase()}`">
+            {{ p.status_project }}
+          </span>
+          <span class="proj-arrow">›</span>
         </div>
-      </template>
+      </div>
+      <div v-else class="proj-empty">Belum ada project terkait</div>
 
       <!-- Terminasi info -->
       <div class="terminasi-card" v-if="k.status_kontrak === 'Terminasi'">
@@ -211,6 +251,43 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
           <button class="btn-cancel" @click="showEditModal = false">Batal</button>
           <button class="btn-submit" @click="handleEdit" :disabled="submitting">
             {{ submitting ? 'Menyimpan...' : 'Simpan' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Buat Project -->
+    <div v-if="showProjectModal" class="modal-overlay" @click.self="showProjectModal = false">
+      <div class="modal">
+        <h3>Buat Project dari Kontrak</h3>
+        <div class="form-grid">
+          <div class="field full">
+            <label>Project Manager <span class="req">*</span></label>
+            <select v-model.number="projectForm.id_pm">
+              <option :value="0">— Pilih PM —</option>
+              <option v-for="pm in pmList" :key="pm.id_karyawan" :value="pm.id_karyawan">
+                {{ pm.nama_lengkap }}{{ pm.jabatan ? ' — ' + pm.jabatan : '' }}
+              </option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Tgl Mulai</label>
+            <input v-model="projectForm.tgl_mulai" type="date" />
+          </div>
+          <div class="field">
+            <label>Tgl Target Selesai</label>
+            <input v-model="projectForm.tgl_target_selesai" type="date" />
+          </div>
+          <div class="field full">
+            <label>Catatan</label>
+            <textarea v-model="projectForm.catatan" rows="3" placeholder="Catatan (opsional)..."></textarea>
+          </div>
+        </div>
+        <p v-if="formError" class="form-error">{{ formError }}</p>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showProjectModal = false">Batal</button>
+          <button class="btn-submit" @click="handleBuatProject" :disabled="submitting">
+            {{ submitting ? 'Menyimpan...' : 'Buat Project' }}
           </button>
         </div>
       </div>
@@ -275,7 +352,11 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
 .qt-link { color: #1d4ed8; cursor: pointer; font-weight: 700; }
 .qt-link:hover { text-decoration: underline; }
 
-.section-title { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.section-title { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+.btn-add-proj { padding: 7px 14px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.proj-hint { font-size: 12px; color: #94a3b8; font-style: italic; }
+.proj-empty { color: #94a3b8; font-size: 13px; margin-bottom: 24px; }
 .project-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
 .project-item { display: flex; align-items: center; gap: 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; cursor: pointer; transition: border-color 0.15s; }
 .project-item:hover { border-color: #3b82f6; }

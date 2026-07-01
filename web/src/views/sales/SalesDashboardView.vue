@@ -29,7 +29,7 @@ onMounted(() => sales.fetchPipeline())
       </div>
       <div class="header-actions">
         <button class="btn-secondary" @click="router.push('/sales/lead')">Kelola Lead</button>
-        <button class="btn-primary" @click="router.push('/sales/lead/tambah')">+ Tambah Lead</button>
+        <button class="btn-primary" @click="router.push('/sales/lead?new=1')">+ Tambah Lead</button>
       </div>
     </div>
 

@@ -27,4 +27,12 @@ export class ContractsController {
   terminasi(@Param('id', ParseIntPipe) id: number, @Body() dto: TerminasiDto) {
     return this.svc.terminasi(id, dto);
   }
+
+  @Post(':id/project')
+  createProject(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: { id_pm: number; tgl_mulai?: string; tgl_target_selesai?: string; catatan?: string },
+  ) {
+    return this.svc.createProject(id, dto);
+  }
 }

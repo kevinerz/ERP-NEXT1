@@ -116,7 +116,7 @@ export class PublicWoService {
     if (!wo) throw new NotFoundException('Work Order tidak ditemukan');
 
     const updateData: any = { ...dto };
-    if (dto.status_wo === 'Completed') updateData.completed_at = new Date();
+    if (dto.status_wo === 'Selesai') updateData.completed_at = new Date();
 
     const data = await this.prisma.workOrder.update({
       where: { id_wo: id },
@@ -152,7 +152,7 @@ export class PublicWoService {
   }
 
   async getStatusSummary() {
-    const statuses = ['Open', 'In_Progress', 'Completed', 'Cancelled'];
+    const statuses = ['Open', 'Dispatch', 'On-Site', 'Selesai', 'Ditunda', 'Dibatalkan'];
     const rows = await this.prisma.workOrder.groupBy({
       by: ['status_wo'],
       _count: { id_wo: true },
@@ -181,8 +181,8 @@ export class PublicWoService {
   async remove(id: number) {
     const row = await this.prisma.workOrder.findUnique({ where: { id_wo: id } });
     if (!row) throw new NotFoundException('Work Order tidak ditemukan');
-    if (!['Open', 'Cancelled'].includes(row.status_wo))
-      throw new BadRequestException('Hanya WO berstatus Open atau Cancelled yang bisa dihapus');
+    if (!['Open', 'Dibatalkan'].includes(row.status_wo))
+      throw new BadRequestException('Hanya WO berstatus Open atau Dibatalkan yang bisa dihapus');
     await this.prisma.workOrder.delete({ where: { id_wo: id } });
     return { message: `Work Order ${row.nomor_wo} dihapus` };
   }

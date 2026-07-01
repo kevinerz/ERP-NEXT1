@@ -15,14 +15,17 @@ const error   = ref('')
 // Update status
 const updatingStatus = ref(false)
 const STATUS_NEXT: Record<string, string> = {
-  Open: 'In_Progress',
-  In_Progress: 'Completed',
+  Open: 'Dispatch',
+  Dispatch: 'On-Site',
+  'On-Site': 'Selesai',
 }
 const STATUS_LABEL: Record<string, string> = {
-  Open: 'Open', In_Progress: 'In Progress', Completed: 'Selesai', Cancelled: 'Batal',
+  Open: 'Open', Dispatch: 'Dispatch', 'On-Site': 'On-Site',
+  Selesai: 'Selesai', Ditunda: 'Ditunda', Dibatalkan: 'Dibatalkan',
 }
 const STATUS_STYLE: Record<string, string> = {
-  Open: 'badge-blue', In_Progress: 'badge-yellow', Completed: 'badge-green', Cancelled: 'badge-gray',
+  Open: 'badge-blue', Dispatch: 'badge-blue', 'On-Site': 'badge-yellow',
+  Selesai: 'badge-green', Ditunda: 'badge-yellow', Dibatalkan: 'badge-gray',
 }
 
 // Berita Acara modal
@@ -70,7 +73,7 @@ async function cancelWo() {
   if (!confirm('Batalkan Work Order ini?')) return
   updatingStatus.value = true
   try {
-    await api.patch(`/public-wo/${id}`, { status_wo: 'Cancelled' })
+    await api.patch(`/public-wo/${id}`, { status_wo: 'Dibatalkan' })
     await fetchWo()
   } finally {
     updatingStatus.value = false
@@ -170,13 +173,13 @@ onMounted(fetchWo)
             {{ updatingStatus ? '…' : `→ ${STATUS_LABEL[STATUS_NEXT[wo.status_wo]]}` }}
           </button>
           <button
-            v-if="wo.status_wo === 'Open' || wo.status_wo === 'In_Progress'"
+            v-if="wo.status_wo !== 'Selesai' && wo.status_wo !== 'Dibatalkan'"
             class="btn-danger"
             :disabled="updatingStatus"
             @click="cancelWo"
           >Batalkan</button>
           <button
-            v-if="wo.status_wo === 'Open' || wo.status_wo === 'Cancelled'"
+            v-if="wo.status_wo === 'Open' || wo.status_wo === 'Dibatalkan'"
             class="btn-hapus"
             @click="hapusWo"
           >Hapus</button>
@@ -230,7 +233,7 @@ onMounted(fetchWo)
           <div class="card">
             <div class="card-title-row">
               <span class="card-title" style="margin-bottom:0">Catatan Teknisi</span>
-              <button v-if="!editingCatatan && wo.status_wo !== 'Completed' && wo.status_wo !== 'Cancelled'" class="btn-sm" @click="startEditCatatan">Edit</button>
+              <button v-if="!editingCatatan && wo.status_wo !== 'Selesai' && wo.status_wo !== 'Dibatalkan'" class="btn-sm" @click="startEditCatatan">Edit</button>
             </div>
             <div v-if="!editingCatatan">
               <p v-if="wo.catatan_teknisi" class="desc-text">{{ wo.catatan_teknisi }}</p>
@@ -254,7 +257,7 @@ onMounted(fetchWo)
           <div class="card">
             <div class="card-title-row">
               <span class="card-title" style="margin-bottom:0">Berita Acara ({{ wo.berita_acara?.length ?? 0 }})</span>
-              <button v-if="wo.status_wo !== 'Cancelled'" class="btn-sm" @click="showBaModal = true">+ Buat BA</button>
+              <button v-if="wo.status_wo !== 'Dibatalkan'" class="btn-sm" @click="showBaModal = true">+ Buat BA</button>
             </div>
             <div v-if="!wo.berita_acara?.length" class="empty-section">Belum ada Berita Acara</div>
             <div v-else class="ba-list">

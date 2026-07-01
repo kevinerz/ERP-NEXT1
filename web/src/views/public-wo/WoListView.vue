@@ -32,13 +32,16 @@ const form = ref({
 const JENIS_WO = ['Instalasi', 'Maintenance', 'Perbaikan', 'Relokasi', 'Upgrade', 'Lainnya']
 
 const STATUS_STYLE: Record<string, string> = {
-  Open:        'badge-blue',
-  In_Progress: 'badge-yellow',
-  Completed:   'badge-green',
-  Cancelled:   'badge-gray',
+  Open:       'badge-blue',
+  Dispatch:   'badge-blue',
+  'On-Site':  'badge-yellow',
+  Selesai:    'badge-green',
+  Ditunda:    'badge-yellow',
+  Dibatalkan: 'badge-gray',
 }
 const STATUS_LABEL: Record<string, string> = {
-  Open: 'Open', In_Progress: 'In Progress', Completed: 'Selesai', Cancelled: 'Batal',
+  Open: 'Open', Dispatch: 'Dispatch', 'On-Site': 'On-Site',
+  Selesai: 'Selesai', Ditunda: 'Ditunda', Dibatalkan: 'Dibatalkan',
 }
 
 async function fetchSummary() {
@@ -151,9 +154,11 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
       <select v-model="filterStatus" class="select-filter">
         <option value="">Semua Status</option>
         <option value="Open">Open</option>
-        <option value="In_Progress">In Progress</option>
-        <option value="Completed">Selesai</option>
-        <option value="Cancelled">Batal</option>
+        <option value="Dispatch">Dispatch</option>
+        <option value="On-Site">On-Site</option>
+        <option value="Selesai">Selesai</option>
+        <option value="Ditunda">Ditunda</option>
+        <option value="Dibatalkan">Dibatalkan</option>
       </select>
       <select v-model="filterJenis" class="select-filter">
         <option value="">Semua Jenis</option>
