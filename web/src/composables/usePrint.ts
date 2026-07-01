@@ -629,3 +629,71 @@ export function printInvoice(kt: any, bulan?: string) {
   </div></body></html>`
   printDocument(html)
 }
+
+// ─────────────────────────────────────────────
+// LAPORAN OPERASIONAL & BISNIS (rekap)
+// ─────────────────────────────────────────────
+export function printLaporan(payload: {
+  periode?: string
+  kpi?: any
+  revenue?: any[]
+  tiket?: any
+  proyek?: any
+  aset?: any
+}) {
+  const fmtRp = (n: any) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID')
+  const k = payload.kpi || {}
+  const t = payload.tiket || {}
+  const p = payload.proyek || {}
+  const a = payload.aset || {}
+
+  const kpiRows = [
+    ['Kontrak Aktif', k.kontrak_aktif ?? '-'],
+    ['Kontrak Akan Berakhir', k.kontrak_akan_berakhir ?? '-'],
+    ['Total MRC Aktif', fmtRp(k.total_mrc_aktif)],
+    ['Tiket Open', k.tiket_open ?? '-'],
+    ['Tiket In Progress', k.tiket_in_progress ?? '-'],
+    ['Proyek Berjalan', k.proyek_berjalan ?? '-'],
+    ['Aset di Gudang', k.aset_di_gudang ?? '-'],
+  ].map(([l, v]) => `<tr><td>${l}</td><td>:</td><td>${v}</td></tr>`).join('')
+
+  const gridSection = (title: string, headers: string[], rows: string[][]) => {
+    if (!rows.length) return ''
+    return `<div class="section">
+      <div class="section-title">${title}</div>
+      <table class="grid">
+        <thead><tr>${headers.map((h) => `<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+    </div>`
+  }
+
+  const revenueRows = (payload.revenue || []).map((m: any) => [m.label, fmtRp(m.mrc)])
+  const tiketStatusRows = (t.by_status || []).map((s: any) => [String(s.status).replace('_', ' '), String(s.count)])
+  const proyekStatusRows = (p.by_status || []).map((s: any) => [s.status, String(s.count)])
+  const asetStatusRows = (a.by_status || []).map((s: any) => [String(s.status).replace('_', ' '), `${s.count} unit`])
+  const asetKatRows = (a.by_kategori || []).map((s: any) => [s.kategori, String(s.count)])
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Laporan ${payload.periode || ''}</title>${baseStyle()}</head>
+  <body><div class="doc">
+    <div class="header">
+      <div class="header-left">${companyHeader()}</div>
+      <div class="doc-title-block"><div class="doc-title">LAPORAN</div><div class="doc-nomor">Operasional & Bisnis</div>${payload.periode ? `<div class="doc-date">${payload.periode}</div>` : ''}</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Ringkasan (KPI)</div>
+      <table class="info">${kpiRows}</table>
+    </div>
+
+    ${gridSection('Tren MRC Bulanan', ['Bulan', 'MRC'], revenueRows)}
+    ${t.total !== undefined ? `<div class="section"><div class="section-title">Laporan Tiket</div><table class="info"><tr><td>Total Tiket</td><td>:</td><td>${t.total}</td></tr><tr><td>Selesai</td><td>:</td><td>${t.resolved ?? '-'}</td></tr><tr><td>Resolution Rate</td><td>:</td><td>${t.resolution_rate ?? '-'}%</td></tr></table></div>` : ''}
+    ${gridSection('Tiket per Status', ['Status', 'Jumlah'], tiketStatusRows)}
+    ${gridSection('Proyek per Status', ['Status', 'Jumlah'], proyekStatusRows)}
+    ${gridSection('Aset per Status', ['Status', 'Jumlah'], asetStatusRows)}
+    ${gridSection('Aset per Kategori', ['Kategori', 'Jumlah'], asetKatRows)}
+
+    ${docFooter('Laporan')}
+  </div></body></html>`
+  printDocument(html)
+}

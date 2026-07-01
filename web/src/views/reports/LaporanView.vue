@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
+import { exportCsv, type CsvSection } from '@/composables/useExport'
+import { printLaporan } from '@/composables/usePrint'
 
 // KPI
 const kpi = ref<any>(null)
@@ -73,6 +75,81 @@ function fmtRupiah(n: number) {
   return 'Rp ' + (n || 0).toLocaleString('id-ID')
 }
 
+const periodeLabel = () => `${BULAN_LIST[filterBulan.value - 1]} ${filterTahun.value}`
+
+function handleExportExcel() {
+  const sections: CsvSection[] = []
+  const k = kpi.value
+  if (k) {
+    sections.push({
+      title: 'RINGKASAN KPI',
+      headers: ['Metrik', 'Nilai'],
+      rows: [
+        ['Kontrak Aktif', k.kontrak_aktif],
+        ['Kontrak Akan Berakhir', k.kontrak_akan_berakhir],
+        ['Total MRC Aktif', k.total_mrc_aktif],
+        ['Tiket Open', k.tiket_open],
+        ['Tiket In Progress', k.tiket_in_progress],
+        ['Proyek Berjalan', k.proyek_berjalan],
+        ['Aset di Gudang', k.aset_di_gudang],
+      ],
+    })
+  }
+  if (revenue.value.length) {
+    sections.push({
+      title: 'TREN MRC BULANAN',
+      headers: ['Bulan', 'MRC'],
+      rows: revenue.value.map((m: any) => [m.label, m.mrc]),
+    })
+  }
+  if (ticketReport.value) {
+    sections.push({
+      title: `LAPORAN TIKET — ${periodeLabel()}`,
+      headers: ['Keterangan', 'Nilai'],
+      rows: [
+        ['Total Tiket', ticketReport.value.total],
+        ['Selesai', ticketReport.value.resolved],
+        ['Resolution Rate (%)', ticketReport.value.resolution_rate],
+      ],
+    })
+    sections.push({
+      headers: ['Status Tiket', 'Jumlah'],
+      rows: (ticketReport.value.by_status || []).map((s: any) => [String(s.status).replace('_', ' '), s.count]),
+    })
+  }
+  if (proyekReport.value) {
+    sections.push({
+      title: 'LAPORAN PROYEK',
+      headers: ['Status Proyek', 'Jumlah'],
+      rows: (proyekReport.value.by_status || []).map((s: any) => [s.status, s.count]),
+    })
+  }
+  if (asetReport.value) {
+    sections.push({
+      title: 'LAPORAN ASET',
+      headers: ['Status Aset', 'Jumlah'],
+      rows: (asetReport.value.by_status || []).map((s: any) => [String(s.status).replace('_', ' '), s.count]),
+    })
+    sections.push({
+      headers: ['Kategori Aset', 'Jumlah'],
+      rows: (asetReport.value.by_kategori || []).map((k: any) => [k.kategori, k.count]),
+    })
+  }
+  if (!sections.length) { alert('Data laporan belum siap.'); return }
+  exportCsv(`Laporan-${filterTahun.value}-${String(filterBulan.value).padStart(2, '0')}.csv`, sections)
+}
+
+function handleExportPdf() {
+  printLaporan({
+    periode: periodeLabel(),
+    kpi: kpi.value,
+    revenue: revenue.value,
+    tiket: ticketReport.value,
+    proyek: proyekReport.value,
+    aset: asetReport.value,
+  })
+}
+
 // Bar chart helper — max width 100% dari nilai tertinggi
 function barWidth(val: number, data: any[]) {
   const max = Math.max(...data.map((d: any) => d.mrc || d.count || 1))
@@ -99,6 +176,10 @@ const STATUS_ASET_COLOR: Record<string, string> = {
       <div>
         <h2>Laporan</h2>
         <p class="sub">Ringkasan operasional & bisnis</p>
+      </div>
+      <div class="export-actions">
+        <button class="btn-export excel" @click="handleExportExcel">⬇ Export Excel</button>
+        <button class="btn-export pdf" @click="handleExportPdf">🖨 Cetak PDF</button>
       </div>
     </div>
 
@@ -269,9 +350,15 @@ const STATUS_ASET_COLOR: Record<string, string> = {
 
 <style scoped>
 .page { padding: 28px 32px; max-width: 1200px; }
-.page-header { margin-bottom: 24px; }
+.page-header { margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
+.export-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-export { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: background 0.15s; }
+.btn-export.excel { background: #ecfdf5; color: #15803d; border-color: #a7f3d0; }
+.btn-export.excel:hover { background: #d1fae5; }
+.btn-export.pdf { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.btn-export.pdf:hover { background: #dbeafe; }
 
 /* KPI */
 .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
