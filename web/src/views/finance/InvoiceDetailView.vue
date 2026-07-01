@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
 import { printInvoiceDoc } from '@/composables/usePrint'
+import api from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,6 +11,16 @@ const finance = useFinanceStore()
 
 const id = Number(route.params.id)
 const loadError = ref('')
+
+// Mekari sync
+const mekariMode = ref<'live' | 'simulasi' | ''>('')
+const syncing = ref(false)
+const MEKARI_STATUS_COLOR: Record<string, { bg: string; color: string }> = {
+  Belum:      { bg: '#f1f5f9', color: '#64748b' },
+  Tersinkron: { bg: '#f0fdf4', color: '#15803d' },
+  Simulasi:   { bg: '#fefce8', color: '#a16207' },
+  Gagal:      { bg: '#fef2f2', color: '#dc2626' },
+}
 
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Draft:       { bg: '#f1f5f9', color: '#64748b' },
@@ -36,7 +47,10 @@ const bayarForm = ref({
   catatan: '',
 })
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  try { mekariMode.value = (await api.get('/mekari/status')).data.data.mode } catch {}
+})
 
 async function load() {
   loadError.value = ''
@@ -44,6 +58,21 @@ async function load() {
     await finance.fetchOne(id)
   } catch (err: any) {
     loadError.value = err?.response?.data?.message ?? 'Gagal memuat invoice'
+  }
+}
+
+async function handleSyncMekari() {
+  if (!inv.value) return
+  const label = mekariMode.value === 'live' ? 'Mekari Jurnal' : 'Mekari (simulasi)'
+  if (!confirm(`Sinkron invoice ${inv.value.nomor_invoice} ke ${label}?`)) return
+  syncing.value = true
+  try {
+    await api.post(`/mekari/sync/invoice/${id}`)
+    await load()
+  } catch (err: any) {
+    alert(err?.response?.data?.message ?? 'Gagal sinkron ke Mekari')
+  } finally {
+    syncing.value = false
   }
 }
 
@@ -158,6 +187,18 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
           <button v-if="inv.status === 'Draft'" class="btn-edit" @click="handleKirim">Kirim</button>
           <button v-if="inv.status !== 'Lunas' && inv.status !== 'Batal'" class="btn-danger" @click="handleBatal">Batal</button>
           <button v-if="inv.status === 'Draft' && !(inv.pembayaran?.length)" class="btn-danger" @click="handleHapus">Hapus</button>
+          <button
+            v-if="inv.status !== 'Draft' && inv.status !== 'Batal' && !inv.mekari_uid"
+            class="btn-mekari"
+            :disabled="syncing"
+            @click="handleSyncMekari"
+          >{{ syncing ? 'Sinkron…' : `⇅ Sinkron Mekari${mekariMode === 'simulasi' ? ' (simulasi)' : ''}` }}</button>
+          <span
+            v-else-if="inv.mekari_uid"
+            class="mekari-badge"
+            :style="{ background: (MEKARI_STATUS_COLOR[inv.mekari_status] || MEKARI_STATUS_COLOR.Belum).bg, color: (MEKARI_STATUS_COLOR[inv.mekari_status] || MEKARI_STATUS_COLOR.Belum).color }"
+            :title="`Mekari UID: ${inv.mekari_uid}`"
+          >Mekari: {{ inv.mekari_status }}</span>
         </div>
       </div>
 
@@ -295,6 +336,10 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
 .btn-print:hover { background: #dcfce7; }
 .btn-edit { padding: 9px 18px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-danger { padding: 9px 18px; background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-mekari { padding: 9px 18px; background: #eef2ff; color: #4338ca; border: 1.5px solid #c7d2fe; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-mekari:hover:not(:disabled) { background: #e0e7ff; }
+.btn-mekari:disabled { opacity: 0.5; cursor: not-allowed; }
+.mekari-badge { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; }
 
 .info-bar { display: flex; flex-wrap: wrap; gap: 0; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 20px 24px; margin-bottom: 16px; }
 .info-item { flex: 0 0 auto; min-width: 140px; padding: 8px 20px 8px 0; border-right: 1px solid #f1f5f9; margin-right: 20px; margin-bottom: 8px; }

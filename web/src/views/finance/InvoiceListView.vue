@@ -183,12 +183,13 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
               <th style="text-align:right">Sisa</th>
               <th>Jatuh Tempo</th>
               <th>Status</th>
+              <th>Mekari</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!finance.invoices.length">
-              <td colspan="9" class="empty">Belum ada data invoice</td>
+              <td colspan="10" class="empty">Belum ada data invoice</td>
             </tr>
             <tr v-for="inv in finance.invoices" :key="inv.id_invoice" class="row-link"
               @click="router.push(`/finance/invoice/${inv.id_invoice}`)">
@@ -207,6 +208,11 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
                 <span class="status-badge"
                   :style="{ background: STATUS_COLOR[inv.status]?.bg, color: STATUS_COLOR[inv.status]?.color }">
                   {{ statusLabel(inv.status) }}
+                </span>
+              </td>
+              <td>
+                <span class="mekari-tag" :class="'mk-' + (inv.mekari_status || 'Belum').toLowerCase()">
+                  {{ inv.mekari_status || 'Belum' }}
                 </span>
               </td>
               <td class="actions" @click.stop>
@@ -307,6 +313,11 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .text-sm { font-size: 12px; }
 .sisa-danger { color: #dc2626; }
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.mekari-tag { padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.mk-belum { background: #f1f5f9; color: #94a3b8; }
+.mk-tersinkron { background: #f0fdf4; color: #15803d; }
+.mk-simulasi { background: #fefce8; color: #a16207; }
+.mk-gagal { background: #fef2f2; color: #dc2626; }
 .row-link { cursor: pointer; }
 .row-link:hover td { background: #f8fafc; }
 .actions { white-space: nowrap; }

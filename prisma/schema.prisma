@@ -65,6 +65,7 @@ model Pelanggan {
   no_hp_pic_utama String?  @db.VarChar(20)
   has_grup        Boolean  @default(false)
   nama_grup       String?  @db.VarChar(150)
+  mekari_customer_uid String? @db.VarChar(100)
   created_at      DateTime @default(now())
 
   sites SitePelanggan[]
@@ -79,6 +80,7 @@ model MasterLayanan {
   deskripsi    String?  @db.Text
   is_managed   Boolean  @default(true)
   is_aktif     Boolean  @default(true)
+  mekari_product_uid String? @db.VarChar(100)
 
   sites        SitePelanggan[]
   opportunities SalesOpportunity[]
@@ -851,6 +853,8 @@ model Invoice {
   jumlah_dibayar  Decimal  @default(0) @db.Decimal(15, 2)
   status          String   @default("Draft") @db.VarChar(20) // Draft, Terkirim, Sebagian, Lunas, Jatuh_Tempo, Batal
   catatan         String?  @db.Text
+  mekari_uid      String?  @db.VarChar(100)
+  mekari_status   String   @default("Belum") @db.VarChar(30) // Belum, Tersinkron, Simulasi, Gagal
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 

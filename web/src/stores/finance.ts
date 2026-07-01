@@ -25,6 +25,8 @@ export interface Invoice {
   jumlah_dibayar: number
   status: string
   catatan?: string
+  mekari_uid?: string | null
+  mekari_status?: string
   site?: {
     id_site: number
     kode_site: string
