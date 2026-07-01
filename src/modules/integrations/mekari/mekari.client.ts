@@ -11,8 +11,9 @@ import { createHmac } from 'crypto';
  * signing string:
  *   date: {RFC1123}\nrequest-line: {METHOD} {path} HTTP/1.1
  *
- * CATATAN: path & payload spesifik Jurnal harus dikonfirmasi dgn dokumentasi
- * Mekari milik Anda. Struktur di sini mengikuti pola umum Mekari Jurnal API.
+ * Base URL: https://api.mekari.com
+ * Endpoint Jurnal: /public/jurnal/api/v1/{customers,products,sales_invoices}
+ * (mengacu ke api-doc.jurnal.id/swagger.json)
  */
 @Injectable()
 export class MekariClient {

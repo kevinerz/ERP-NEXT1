@@ -28,6 +28,11 @@ export class MekariService {
     return `SIM-${prefix}-${id}-${Date.now().toString().slice(-6)}`;
   }
 
+  // Jurnal API pakai format tanggal YYYY-MM-DD
+  private fmtDate(d: Date | string): string {
+    return new Date(d).toISOString().slice(0, 10);
+  }
+
   // ─── SYNC CUSTOMER (Pelanggan → Mekari Contact) ──────────────
   async syncCustomer(id_pelanggan: number) {
     const p = await this.prisma.pelanggan.findUnique({ where: { id_pelanggan } });
@@ -36,18 +41,18 @@ export class MekariService {
 
     let uid: string;
     if (this.mekari.isConfigured()) {
-      // TODO: sesuaikan path & payload dgn dokumentasi Mekari Jurnal Anda
-      const res = await this.mekari.request('POST', '/jurnal/v1/contacts', {
-        contact: {
-          name: p.nama_pelanggan,
+      const res = await this.mekari.request('POST', '/public/jurnal/api/v1/customers', {
+        customer: {
+          display_name: p.nama_pelanggan,
           email: p.email_billing || undefined,
           phone: p.no_telp || undefined,
-          tax_number: p.npwp || undefined,
-          is_customer: true,
+          address: p.alamat_kantor || undefined,
+          tax_no: p.npwp || undefined,
+          custom_id: p.kode_pelanggan,
         },
       });
-      uid = res?.contact?.id || res?.id || res?.uid;
-      if (!uid) throw new BadRequestException('Respons Mekari tidak berisi ID contact');
+      uid = String(res?.customer?.id ?? res?.contact?.id ?? res?.id ?? '');
+      if (!uid) throw new BadRequestException('Respons Mekari tidak berisi ID customer');
     } else {
       uid = this.simUid('CUST', id_pelanggan);
     }
@@ -67,15 +72,18 @@ export class MekariService {
 
     let uid: string;
     if (this.mekari.isConfigured()) {
-      const res = await this.mekari.request('POST', '/jurnal/v1/products', {
+      const res = await this.mekari.request('POST', '/public/jurnal/api/v1/products', {
         product: {
           name: l.nama_layanan,
-          code: l.kode_layanan,
+          product_code: l.kode_layanan,
           description: l.deskripsi || undefined,
-          sell: true,
+          sell_price_per_unit: '0',
+          is_sold: true,
+          unit_name: 'Unit',
+          custom_id: l.kode_layanan,
         },
       });
-      uid = res?.product?.id || res?.id || res?.uid;
+      uid = String(res?.product?.id ?? res?.id ?? '');
       if (!uid) throw new BadRequestException('Respons Mekari tidak berisi ID product');
     } else {
       uid = this.simUid('PROD', id_layanan);
@@ -115,27 +123,31 @@ export class MekariService {
       let productUid = layanan?.mekari_product_uid ?? null;
       if (layanan && !productUid) productUid = (await this.syncProduct(layanan.id_layanan)).data.mekari_product_uid;
 
+      // Jurnal sales_invoice mereferensi customer & product BY NAME (bukan ID),
+      // jadi customerUid/productUid di atas dipakai untuk memastikan master data
+      // sudah ada di Jurnal + tracking sync kita.
+      void customerUid; void productUid;
       let uid: string;
       let status = 'Tersinkron';
       if (this.mekari.isConfigured()) {
-        const res = await this.mekari.request('POST', '/jurnal/v1/sales_invoices', {
+        const res = await this.mekari.request('POST', '/public/jurnal/api/v1/sales_invoices', {
           sales_invoice: {
             transaction_no: inv.nomor_invoice,
-            transaction_date: inv.tgl_invoice,
-            due_date: inv.tgl_jatuh_tempo,
-            person_id: customerUid,
+            transaction_date: this.fmtDate(inv.tgl_invoice),
+            due_date: this.fmtDate(inv.tgl_jatuh_tempo),
+            person_name: pelanggan.nama_pelanggan,
+            email: pelanggan.email_billing || undefined,
+            memo: inv.catatan || `Tagihan ${inv.periode}`,
             transaction_lines_attributes: [
               {
-                product_id: productUid || undefined,
-                description: inv.catatan || `Tagihan ${inv.periode}`,
+                product_name: layanan?.nama_layanan || `Layanan ${inv.periode}`,
                 quantity: 1,
                 rate: Number(inv.subtotal),
               },
             ],
-            tax_after_discount: true,
           },
         });
-        uid = res?.sales_invoice?.id || res?.id || res?.uid;
+        uid = String(res?.sales_invoice?.id ?? res?.id ?? '');
         if (!uid) throw new BadRequestException('Respons Mekari tidak berisi ID invoice');
       } else {
         uid = this.simUid('INV', id_invoice);
