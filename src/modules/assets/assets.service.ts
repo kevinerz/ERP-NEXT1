@@ -333,4 +333,11 @@ export class AssetsService {
 
     return { data, message: 'Topup berhasil dicatat' };
   }
+
+  async removeTopup(id: number) {
+    const row = await this.prisma.simTopup.findUnique({ where: { id_topup: id } });
+    if (!row) throw new NotFoundException('Topup tidak ditemukan');
+    await this.prisma.simTopup.delete({ where: { id_topup: id } });
+    return { message: 'Topup dihapus' };
+  }
 }

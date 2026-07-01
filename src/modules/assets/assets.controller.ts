@@ -48,4 +48,7 @@ export class AssetsController {
   createTopup(@Body() dto: CreateSimTopupDto, @Req() req: any) {
     return this.svc.createTopup(dto, req.user?.id_user);
   }
+
+  @Delete('sim-topup/:id')
+  removeTopup(@Param('id', ParseIntPipe) id: number) { return this.svc.removeTopup(id); }
 }

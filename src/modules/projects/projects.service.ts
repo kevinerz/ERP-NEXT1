@@ -136,28 +136,6 @@ export class ProjectsService {
 
   // ─── WORK ORDER ───────────────────────────────────────────────
 
-  async findAllWo(query: { status_wo?: string; id_project?: string; page?: number; limit?: number }) {
-    const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
-    const skip = (page - 1) * limit;
-    const where: any = {};
-    if (query.status_wo) where.status_wo = query.status_wo;
-    if (query.id_project) where.id_project = Number(query.id_project);
-
-    const [data, total] = await Promise.all([
-      this.prisma.workOrder.findMany({
-        where, skip, take: limit,
-        orderBy: { tgl_jadwal: 'asc' },
-        include: {
-          ...WO_INCLUDE,
-          project: { select: { nomor_project: true } },
-        },
-      }),
-      this.prisma.workOrder.count({ where }),
-    ]);
-    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
-  }
-
   async createWo(dto: CreateWoDto) {
     for (let attempt = 0; attempt < 5; attempt++) {
       const now = new Date();
@@ -195,7 +173,62 @@ export class ProjectsService {
     return { data, message: 'Work Order diperbarui' };
   }
 
+  async removeWo(id: number) {
+    const wo = await this.prisma.workOrder.findUnique({
+      where: { id_wo: id },
+      include: { _count: { select: { berita_acara: true, foto: true } } },
+    });
+    if (!wo) throw new NotFoundException('Work Order tidak ditemukan');
+    if (!['Open', 'Dibatalkan'].includes(wo.status_wo))
+      throw new BadRequestException('Hanya WO berstatus Open atau Dibatalkan yang bisa dihapus');
+    if ((wo as any)._count.berita_acara > 0)
+      throw new BadRequestException('WO sudah punya Berita Acara, tidak bisa dihapus');
+    await this.prisma.workOrder.delete({ where: { id_wo: id } });
+    return { message: `Work Order ${wo.nomor_wo} dihapus` };
+  }
+
   // ─── BAST ─────────────────────────────────────────────────────
+
+  async findAllBast(query: { id_project?: string }) {
+    const where: any = {};
+    if (query.id_project) where.id_project = Number(query.id_project);
+    const data = await this.prisma.projectDokumenLegal.findMany({
+      where,
+      orderBy: { created_at: 'desc' },
+      include: {
+        project: {
+          select: {
+            nomor_project: true,
+            site: { select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
+          },
+        },
+      },
+    });
+    return { data };
+  }
+
+  async findOneBast(id: number) {
+    const data = await this.prisma.projectDokumenLegal.findUnique({
+      where: { id_dokumen: id },
+      include: {
+        project: {
+          select: {
+            nomor_project: true,
+            site: { select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
+          },
+        },
+      },
+    });
+    if (!data) throw new NotFoundException('BAST tidak ditemukan');
+    return { data };
+  }
+
+  async removeBast(id: number) {
+    const bast = await this.prisma.projectDokumenLegal.findUnique({ where: { id_dokumen: id } });
+    if (!bast) throw new NotFoundException('BAST tidak ditemukan');
+    await this.prisma.projectDokumenLegal.delete({ where: { id_dokumen: id } });
+    return { message: `BAST ${bast.nomor_bast} dihapus` };
+  }
 
   async createBast(dto: CreateBastDto) {
     await this._check(dto.id_project);

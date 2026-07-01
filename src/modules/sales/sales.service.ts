@@ -4,7 +4,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/lead.dto';
 import { CreateOpportunityDto, UpdateOpportunityDto } from './dto/opportunity.dto';
 import { CreateQuotationDto, UpdateQuotationDto, ApproveQuotationDto } from './dto/quotation.dto';
-import { CreateActivityDto } from './dto/activity.dto';
+import { CreateActivityDto, UpdateActivityDto } from './dto/activity.dto';
 
 const LEAD_INCLUDE = {
   sales_pic: { select: { id_karyawan: true, nama_lengkap: true, jabatan: true } },
@@ -322,6 +322,27 @@ export class SalesService {
       include: { sales_pic: { select: { nama_lengkap: true } } },
     });
     return { data, message: 'Aktivitas dicatat' };
+  }
+
+  async updateActivity(id: number, dto: UpdateActivityDto) {
+    const row = await this.prisma.salesActivity.findUnique({ where: { id_activity: id } });
+    if (!row) throw new NotFoundException('Aktivitas tidak ditemukan');
+    const data = await this.prisma.salesActivity.update({
+      where: { id_activity: id },
+      data: {
+        ...dto,
+        tanggal_aktivitas: dto.tanggal_aktivitas ? new Date(dto.tanggal_aktivitas) : undefined,
+      },
+      include: { sales_pic: { select: { nama_lengkap: true } } },
+    });
+    return { data, message: 'Aktivitas diperbarui' };
+  }
+
+  async removeActivity(id: number) {
+    const row = await this.prisma.salesActivity.findUnique({ where: { id_activity: id } });
+    if (!row) throw new NotFoundException('Aktivitas tidak ditemukan');
+    await this.prisma.salesActivity.delete({ where: { id_activity: id } });
+    return { message: 'Aktivitas dihapus' };
   }
 
   // ─── HELPER: Sales List ──────────────────────────────────────

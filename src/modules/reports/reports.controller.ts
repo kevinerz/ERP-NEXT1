@@ -22,7 +22,4 @@ export class ReportsController {
 
   @Get('assets')
   getAssets() { return this.svc.getAsetReport(); }
-
-  @Get('pelanggan')
-  getPelanggan() { return this.svc.getPelangganReport(); }
 }

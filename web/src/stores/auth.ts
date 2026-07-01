@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import api from '@/services/api'
 
-export const ALL_MODULS = ['hris', 'master', 'sales', 'projects', 'operations', 'assets', 'contracts', 'reports']
+export const ALL_MODULS = ['hris', 'master', 'sales', 'projects', 'operations', 'assets', 'contracts', 'reports', 'notifications', 'public-wo', 'prtg', 'rcms', 'ruijie', 'mekari', 'socialchat']
 
 interface User {
   id_user: number

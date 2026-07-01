@@ -249,32 +249,4 @@ export class ReportsService {
 
   // ─── LAPORAN PELANGGAN ────────────────────────────────────────
 
-  async getPelangganReport() {
-    const pelanggan = await this.prisma.pelanggan.findMany({
-      select: {
-        nama_pelanggan: true,
-        _count: { select: { sites: true } },
-      },
-      orderBy: { nama_pelanggan: 'asc' },
-    });
-
-    // Ambil kontrak aktif per pelanggan via site
-    const kontrakPerPelanggan = await this.prisma.kontrakLayanan.groupBy({
-      by: ['id_site'],
-      _count: { id_kontrak: true },
-      _sum: { harga_mrc: true },
-      where: { status_kontrak: 'Aktif' },
-    });
-
-    return {
-      data: {
-        total_pelanggan: pelanggan.length,
-        pelanggan: pelanggan.map((p) => ({
-          nama: p.nama_pelanggan,
-          total_site: p._count.sites,
-        })),
-        total_kontrak_aktif: kontrakPerPelanggan.reduce((s, r) => s + r._count.id_kontrak, 0),
-      },
-    };
-  }
 }

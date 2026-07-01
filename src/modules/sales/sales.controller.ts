@@ -6,7 +6,7 @@ import { SalesService } from './sales.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/lead.dto';
 import { CreateOpportunityDto, UpdateOpportunityDto } from './dto/opportunity.dto';
 import { CreateQuotationDto, UpdateQuotationDto, ApproveQuotationDto } from './dto/quotation.dto';
-import { CreateActivityDto } from './dto/activity.dto';
+import { CreateActivityDto, UpdateActivityDto } from './dto/activity.dto';
 
 @Controller('sales')
 export class SalesController {
@@ -52,6 +52,12 @@ export class SalesController {
   // Activity
   @Post('activity') createActivity(@Body() dto: CreateActivityDto) {
     return this.salesService.createActivity(dto);
+  }
+  @Patch('activity/:id') updateActivity(
+    @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateActivityDto,
+  ) { return this.salesService.updateActivity(id, dto); }
+  @Delete('activity/:id') removeActivity(@Param('id', ParseIntPipe) id: number) {
+    return this.salesService.removeActivity(id);
   }
 
   @Delete('lead/:id')

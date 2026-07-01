@@ -111,6 +111,15 @@ function sisaHari(d?: string) {
 }
 
 const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
+
+async function handleDelete() {
+  if (!k.value) return
+  if (!confirm(`Hapus kontrak ${k.value.nomor_kontrak}?`)) return
+  try {
+    await api.delete('/contracts/' + id)
+    router.push('/contracts')
+  } catch (e: any) { alert(e?.response?.data?.message ?? 'Gagal menghapus kontrak') }
+}
 </script>
 
 <template>
@@ -145,6 +154,7 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
             Terminasi
           </button>
           <button class="btn-edit" @click="openEdit">Edit</button>
+          <button v-if="k.status_kontrak !== 'Aktif'" class="btn-danger" @click="handleDelete">Hapus</button>
         </div>
       </div>
 

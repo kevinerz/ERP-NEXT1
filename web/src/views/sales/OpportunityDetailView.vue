@@ -35,8 +35,9 @@ const siteForm = ref({ id_pelanggan: 0, kode_site: '', nama_site: '', alamat_len
 const siteSubmitting = ref(false)
 const siteError = ref('')
 
-// Add Activity
+// Add / Edit Activity
 const showAddActivity = ref(false)
+const editingActivityId = ref<number | null>(null)
 const actForm = ref({ jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' })
 const actSubmitting = ref(false)
 const actError = ref('')
@@ -133,21 +134,60 @@ async function handleApprove() {
   finally { approveSubmitting.value = false }
 }
 
+function openAddActivity() {
+  editingActivityId.value = null
+  actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' }
+  actError.value = ''
+  showAddActivity.value = true
+}
+
+function openEditActivity(a: any) {
+  editingActivityId.value = a.id_activity
+  actForm.value = {
+    jenis_aktivitas: a.jenis_aktivitas,
+    tanggal_aktivitas: a.tanggal_aktivitas ? new Date(a.tanggal_aktivitas).toISOString().substring(0, 16) : '',
+    ringkasan: a.ringkasan,
+    hasil: a.hasil || 'Netral',
+  }
+  actError.value = ''
+  showAddActivity.value = true
+}
+
+async function hapusActivity(a: any) {
+  if (!confirm('Hapus aktivitas ini?')) return
+  try {
+    await api.delete('/sales/activity/' + a.id_activity)
+    await sales.fetchOneOpportunity(id)
+    flash('Aktivitas dihapus')
+  } catch (e: any) { alert(e?.response?.data?.message ?? 'Gagal menghapus aktivitas') }
+}
+
 async function handleAddActivity() {
   if (!actForm.value.ringkasan) { actError.value = 'Ringkasan wajib diisi'; return }
   actSubmitting.value = true; actError.value = ''
   try {
-    await sales.createActivity({
-      id_opportunity: id,
-      id_sales_pic: sales.currentOpp.id_sales_pic,
-      jenis_aktivitas: actForm.value.jenis_aktivitas,
-      tanggal_aktivitas: new Date(actForm.value.tanggal_aktivitas).toISOString(),
-      ringkasan: actForm.value.ringkasan,
-      hasil: actForm.value.hasil,
-    })
+    if (editingActivityId.value) {
+      await api.patch('/sales/activity/' + editingActivityId.value, {
+        jenis_aktivitas: actForm.value.jenis_aktivitas,
+        tanggal_aktivitas: new Date(actForm.value.tanggal_aktivitas).toISOString(),
+        ringkasan: actForm.value.ringkasan,
+        hasil: actForm.value.hasil,
+      })
+    } else {
+      await sales.createActivity({
+        id_opportunity: id,
+        id_sales_pic: sales.currentOpp.id_sales_pic,
+        jenis_aktivitas: actForm.value.jenis_aktivitas,
+        tanggal_aktivitas: new Date(actForm.value.tanggal_aktivitas).toISOString(),
+        ringkasan: actForm.value.ringkasan,
+        hasil: actForm.value.hasil,
+      })
+    }
     await sales.fetchOneOpportunity(id)
     showAddActivity.value = false
-    flash('Aktivitas dicatat')
+    flash(editingActivityId.value ? 'Aktivitas diperbarui' : 'Aktivitas dicatat')
+    editingActivityId.value = null
+    actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' }
   } catch (e: any) { actError.value = e.response?.data?.message || 'Gagal' }
   finally { actSubmitting.value = false }
 }
@@ -284,7 +324,7 @@ function fmtDatetime(d: string) {
       <div class="section-card mt16">
         <div class="section-header">
           <span class="card-title">Aktivitas ({{ sales.currentOpp.activities?.length ?? 0 }})</span>
-          <button class="btn-add-small" @click="showAddActivity = true">+ Catat</button>
+          <button class="btn-add-small" @click="openAddActivity">+ Catat</button>
         </div>
         <div v-if="!sales.currentOpp.activities?.length" class="empty-section">Belum ada aktivitas</div>
         <div v-for="a in sales.currentOpp.activities" :key="a.id_activity" class="activity-item">
@@ -295,6 +335,10 @@ function fmtDatetime(d: string) {
           <div class="act-right">
             <p class="act-ringkasan">{{ a.ringkasan }}</p>
             <span :class="['act-hasil', `hasil-${a.hasil?.toLowerCase()}`]">{{ a.hasil }}</span>
+          </div>
+          <div class="act-actions">
+            <button class="btn-act-edit" @click="openEditActivity(a)">Edit</button>
+            <button class="btn-act-hapus" @click="hapusActivity(a)">Hapus</button>
           </div>
         </div>
       </div>
@@ -479,7 +523,7 @@ function fmtDatetime(d: string) {
       <!-- Modal Activity -->
       <div v-if="showAddActivity" class="modal-overlay" @click.self="showAddActivity = false">
         <div class="modal">
-          <h3>Catat Aktivitas</h3>
+          <h3>{{ editingActivityId ? 'Edit Aktivitas' : 'Catat Aktivitas' }}</h3>
           <div class="form-grid">
             <div class="field">
               <label>Jenis</label>
@@ -506,7 +550,7 @@ function fmtDatetime(d: string) {
           <div class="modal-actions">
             <button class="btn-cancel" @click="showAddActivity = false">Batal</button>
             <button class="btn-submit" @click="handleAddActivity" :disabled="actSubmitting">
-              {{ actSubmitting ? 'Menyimpan...' : 'Catat' }}
+              {{ actSubmitting ? 'Menyimpan...' : (editingActivityId ? 'Simpan' : 'Catat') }}
             </button>
           </div>
         </div>
@@ -572,6 +616,9 @@ function fmtDatetime(d: string) {
 .hasil-positif { background: #f0fdf4; color: #15803d; }
 .hasil-negatif { background: #fef2f2; color: #dc2626; }
 .hasil-netral { background: #f1f5f9; color: #64748b; }
+.act-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.btn-act-edit { padding: 3px 10px; background: #f1f5f9; color: #374151; border: none; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.btn-act-hapus { padding: 3px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; }
 
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }

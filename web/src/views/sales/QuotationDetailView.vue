@@ -20,6 +20,11 @@ const approveForm    = ref({ status_approval: 'Approved', id_approver: 0, catata
 const approveSubmit  = ref(false)
 const successMsg     = ref('')
 
+// Edit modal
+const showEdit   = ref(false)
+const editSubmit = ref(false)
+const editForm   = ref({ tgl_quotation: '', tgl_berlaku_sampai: '', harga_mrc: 0, harga_otc: 0, catatan: '' })
+
 // Buat Kontrak modal
 const showKontrakModal = ref(false)
 const savingKontrak    = ref(false)
@@ -57,6 +62,41 @@ function openApprove() {
     catatan_approval: '',
   }
   showApprove.value = true
+}
+
+function toDateInput(d: string) {
+  return d ? new Date(d).toISOString().split('T')[0] : ''
+}
+
+function openEdit() {
+  editForm.value = {
+    tgl_quotation: toDateInput(qt.value?.tgl_quotation),
+    tgl_berlaku_sampai: toDateInput(qt.value?.tgl_berlaku_sampai),
+    harga_mrc: Number(qt.value?.harga_mrc) || 0,
+    harga_otc: Number(qt.value?.harga_otc) || 0,
+    catatan: qt.value?.catatan || '',
+  }
+  showEdit.value = true
+}
+
+async function submitEdit() {
+  editSubmit.value = true
+  try {
+    const payload = {
+      tgl_quotation: editForm.value.tgl_quotation || undefined,
+      tgl_berlaku_sampai: editForm.value.tgl_berlaku_sampai || undefined,
+      harga_mrc: editForm.value.harga_mrc,
+      harga_otc: editForm.value.harga_otc,
+      catatan: editForm.value.catatan || undefined,
+    }
+    await api.patch('/sales/quotation/' + id, payload)
+    await fetchQuotation()
+    showEdit.value = false
+    successMsg.value = 'Quotation diperbarui'
+    setTimeout(() => successMsg.value = '', 3000)
+  } catch (e: any) {
+    alert(e?.response?.data?.message ?? 'Gagal memperbarui quotation')
+  } finally { editSubmit.value = false }
 }
 
 function openKontrak() {
@@ -164,6 +204,7 @@ const kodeProspek = computed(() => null)
           <button class="btn-print" @click="printQuotation(qt)">🖨 Cetak Penawaran</button>
           <template v-if="qt.status_approval === 'Draft'">
             <button class="btn-approve" @click="openApprove">✓ Approve / Reject</button>
+            <button class="btn-edit-qt" @click="openEdit">Edit</button>
             <button class="btn-hapus" @click="hapusQuotation">Hapus</button>
           </template>
           <template v-else-if="qt.status_approval === 'Approved'">
@@ -256,6 +297,39 @@ const kodeProspek = computed(() => null)
         <span>Diperbarui: {{ fmtDateTime(qt.updated_at) }}</span>
       </div>
     </template>
+
+    <!-- Modal Edit Quotation -->
+    <div v-if="showEdit" class="modal-overlay" @click.self="showEdit = false">
+      <div class="modal">
+        <h3>Edit Quotation — {{ qt?.nomor_quotation }}</h3>
+        <div class="field">
+          <label>Tanggal Quotation</label>
+          <input type="date" v-model="editForm.tgl_quotation" />
+        </div>
+        <div class="field">
+          <label>Berlaku Sampai</label>
+          <input type="date" v-model="editForm.tgl_berlaku_sampai" />
+        </div>
+        <div class="field">
+          <label>Harga MRC (Rp/bln)</label>
+          <input type="number" v-model.number="editForm.harga_mrc" placeholder="0" />
+        </div>
+        <div class="field">
+          <label>Harga OTC (Rp)</label>
+          <input type="number" v-model.number="editForm.harga_otc" placeholder="0" />
+        </div>
+        <div class="field">
+          <label>Catatan</label>
+          <textarea v-model="editForm.catatan" rows="3" placeholder="Opsional..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showEdit = false">Batal</button>
+          <button class="btn-submit" @click="submitEdit" :disabled="editSubmit">
+            {{ editSubmit ? 'Menyimpan...' : 'Simpan' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Modal Buat Kontrak -->
     <div v-if="showKontrakModal" class="modal-overlay" @click.self="showKontrakModal = false">
@@ -363,6 +437,8 @@ const kodeProspek = computed(() => null)
 .btn-approve { padding: 9px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .btn-approve:hover { opacity: 0.9; }
 .btn-kontrak { padding: 9px 20px; background: linear-gradient(135deg, #065f46, #10b981); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-edit-qt { padding: 9px 20px; background: #f1f5f9; color: #374151; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-edit-qt:hover { background: #e2e8f0; }
 .btn-hapus { padding: 9px 20px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .btn-hapus:hover { background: #fee2e2; }
 .btn-kontrak:hover { opacity: 0.9; }

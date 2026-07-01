@@ -98,6 +98,24 @@ async function handleDelete() {
   } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus project') }
 }
 
+async function handleDeleteWo(wo: any) {
+  if (!confirm(`Hapus Work Order ${wo.nomor_wo}?`)) return
+  try {
+    await api.delete(`/projects/wo/${wo.id_wo}`)
+    await proyek.fetchOne(id)
+    flash('Work Order dihapus')
+  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus Work Order') }
+}
+
+async function handleDeleteBast(b: any) {
+  if (!confirm(`Hapus BAST ${b.nomor_bast}?`)) return
+  try {
+    await api.delete(`/projects/bast/${b.id_dokumen}`)
+    await proyek.fetchOne(id)
+    flash('BAST dihapus')
+  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus BAST') }
+}
+
 async function handleAddWo() {
   if (!woForm.value.tgl_jadwal || !woForm.value.deskripsi_tugas) {
     woError.value = 'Jadwal dan deskripsi wajib diisi'; return
@@ -251,6 +269,7 @@ function fmtDt(d: string) {
           <div class="wo-right">
             <span class="wo-status" :style="{ color: WO_STATUS_COLOR[wo.status_wo] || '#64748b' }">{{ wo.status_wo }}</span>
             <button class="btn-edit-small" @click="openEditWo(wo)">Update</button>
+            <button v-if="wo.status_wo === 'Open' || wo.status_wo === 'Dibatalkan'" class="btn-hapus-small" @click="handleDeleteWo(wo)">Hapus</button>
           </div>
         </div>
       </div>
@@ -272,6 +291,7 @@ function fmtDt(d: string) {
           <span :class="['bast-sync', b.status_sinkronisasi_finance === 'Sudah' ? 'sync-yes' : 'sync-no']">
             Finance: {{ b.status_sinkronisasi_finance }}
           </span>
+          <button class="btn-hapus-small" @click="handleDeleteBast(b)">Hapus</button>
         </div>
       </div>
 
@@ -487,6 +507,8 @@ function fmtDt(d: string) {
 .wo-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 90px; }
 .wo-status { font-size: 13px; font-weight: 700; }
 .btn-edit-small { padding: 4px 10px; background: #f1f5f9; color: #374151; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-hapus-small { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-hapus-small:hover { background: #fee2e2; }
 
 .bast-item { display: flex; align-items: center; gap: 16px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; }
 .bast-nomor { font-size: 14px; font-weight: 700; color: #0f172a; min-width: 160px; }

@@ -173,6 +173,20 @@ export class ContractsService {
     }
   }
 
+  async remove(id: number) {
+    const row = await this.prisma.kontrakLayanan.findUnique({
+      where: { id_kontrak: id },
+      include: { _count: { select: { projects: true } } },
+    });
+    if (!row) throw new NotFoundException('Kontrak tidak ditemukan');
+    if ((row as any)._count.projects > 0)
+      throw new BadRequestException('Kontrak tidak bisa dihapus karena sudah punya Project');
+    if (row.status_kontrak === 'Aktif')
+      throw new BadRequestException('Kontrak Aktif tidak bisa dihapus. Lakukan Terminasi terlebih dahulu.');
+    await this.prisma.kontrakLayanan.delete({ where: { id_kontrak: id } });
+    return { message: `Kontrak ${row.nomor_kontrak} dihapus` };
+  }
+
   async getSummary() {
     const statuses = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi'];
     const rows = await this.prisma.kontrakLayanan.groupBy({

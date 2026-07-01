@@ -93,6 +93,7 @@
                   <th>Nominal</th>
                   <th>Keterangan</th>
                   <th>Oleh</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -108,9 +109,10 @@
                   <td class="nominal">{{ fmtRp(t.nominal) }}</td>
                   <td class="ket">{{ t.keterangan || '—' }}</td>
                   <td>{{ t.user?.karyawan?.nama_lengkap || '—' }}</td>
+                  <td><button class="btn-hapus-sm" @click="deleteTopup(t.id_topup)">Hapus</button></td>
                 </tr>
                 <tr v-if="topups.length === 0">
-                  <td colspan="8" class="empty-cell">Belum ada data topup</td>
+                  <td colspan="9" class="empty-cell">Belum ada data topup</td>
                 </tr>
               </tbody>
             </table>
@@ -270,6 +272,16 @@ async function submitTopup() {
   } finally { submitting.value = false }
 }
 
+async function deleteTopup(id_topup: number) {
+  if (!confirm('Hapus catatan topup ini?')) return
+  try {
+    await api.delete('/assets/sim-topup/' + id_topup)
+    await fetchTopup()
+  } catch (e: any) {
+    alert(e?.response?.data?.message ?? 'Gagal menghapus topup')
+  }
+}
+
 function fmtRp(v: any) { return 'Rp ' + Number(v).toLocaleString('id-ID') }
 function fmtDate(d: string) { return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) }
 function jenisClass(j: string) {
@@ -336,6 +348,8 @@ tr:hover td { background: #fafafa; }
 .jenis-chip.purple { background: #ede9fe; color: #5b21b6; }
 .jenis-chip.gray   { background: #f3f4f6; color: #374151; }
 .total-badge { font-size: 13px; font-weight: 700; color: #1d4ed8; }
+.btn-hapus-sm { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-hapus-sm:hover { background: #fee2e2; }
 
 .pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px; }
 .pagination button { padding: 4px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; }

@@ -26,16 +26,25 @@ export class ProjectsController {
   }
 
   // Work Order
-  @Get('wo/list') findAllWo(@Query() q: any)                 { return this.projectsService.findAllWo(q); }
   @Post('wo')     createWo(@Body() dto: CreateWoDto)         { return this.projectsService.createWo(dto); }
   @Patch('wo/:id') updateWo(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateWoDto) {
     return this.projectsService.updateWo(id, dto);
   }
+  @Delete('wo/:id') removeWo(@Param('id', ParseIntPipe) id: number) {
+    return this.projectsService.removeWo(id);
+  }
 
   // BAST
+  @Get('bast/list') findAllBast(@Query() q: any)             { return this.projectsService.findAllBast(q); }
+  @Get('bast/:id') findOneBast(@Param('id', ParseIntPipe) id: number) {
+    return this.projectsService.findOneBast(id);
+  }
   @Post('bast')     createBast(@Body() dto: CreateBastDto)   { return this.projectsService.createBast(dto); }
   @Patch('bast/:id') updateBast(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateBastDto) {
     return this.projectsService.updateBast(id, dto);
+  }
+  @Delete('bast/:id') removeBast(@Param('id', ParseIntPipe) id: number) {
+    return this.projectsService.removeBast(id);
   }
 
   @Delete(':id')

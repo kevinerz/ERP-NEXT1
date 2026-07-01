@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
 import { ContractsService } from './contracts.service';
 import { CreateKontrakDto, UpdateKontrakDto, TerminasiDto } from './dto/kontrak.dto';
 
@@ -35,4 +35,7 @@ export class ContractsController {
   ) {
     return this.svc.createProject(id, dto);
   }
+
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) { return this.svc.remove(id); }
 }
