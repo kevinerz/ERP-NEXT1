@@ -12,6 +12,7 @@ const ALL_MODULS = [
   'operations',
   'assets',
   'contracts',
+  'finance',
   'reports',
   // Additional modules
   'notifications',

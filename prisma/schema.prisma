@@ -126,6 +126,7 @@ model CoreUser {
   topup        SimTopup[]
   ticket_logs  OperationTicketLog[]
   rca          OperationRca[]
+  invoice_pembayaran InvoicePembayaran[]
 
   @@map("core_users")
 }
@@ -176,6 +177,7 @@ model SitePelanggan {
   kontrak         KontrakLayanan[]
   topup           SimTopup[]
   jurnal_ar       IntegrationJurnalAr[]
+  invoices        Invoice[]
 
   @@map("site_pelanggan")
 }
@@ -607,6 +609,7 @@ model KontrakLayanan {
   dokumen      ProjectDokumenLegal? @relation(fields: [id_dokumen_legal], references: [id_dokumen])
   jurnal_ar    IntegrationJurnalAr[]
   projects     ProjectDelivery[]
+  invoices     Invoice[]
 
   @@map("kontrak_layanan")
 }
@@ -827,4 +830,54 @@ model AppSetting {
   updated_at  DateTime @default(now()) @updatedAt
 
   @@map("app_settings")
+}
+
+// ============================================================
+// LAYER 11 — FINANCE / INVOICE
+// ============================================================
+
+model Invoice {
+  id_invoice      Int      @id @default(autoincrement())
+  nomor_invoice   String   @unique @db.VarChar(50)
+  id_kontrak      Int?
+  id_site         Int
+  periode         String   @db.VarChar(7)    // "2026-07"
+  tgl_invoice     DateTime @db.Date
+  tgl_jatuh_tempo DateTime @db.Date
+  subtotal        Decimal  @db.Decimal(15, 2)
+  ppn_persen      Decimal  @default(11) @db.Decimal(5, 2)
+  ppn_nominal     Decimal  @default(0) @db.Decimal(15, 2)
+  total           Decimal  @db.Decimal(15, 2)
+  jumlah_dibayar  Decimal  @default(0) @db.Decimal(15, 2)
+  status          String   @default("Draft") @db.VarChar(20) // Draft, Terkirim, Sebagian, Lunas, Jatuh_Tempo, Batal
+  catatan         String?  @db.Text
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  kontrak    KontrakLayanan?     @relation(fields: [id_kontrak], references: [id_kontrak])
+  site       SitePelanggan       @relation(fields: [id_site], references: [id_site])
+  pembayaran InvoicePembayaran[]
+
+  @@index([status])
+  @@index([periode])
+  @@index([tgl_jatuh_tempo])
+  @@map("invoices")
+}
+
+model InvoicePembayaran {
+  id_pembayaran Int      @id @default(autoincrement())
+  id_invoice    Int
+  tgl_bayar     DateTime @db.Date
+  jumlah        Decimal  @db.Decimal(15, 2)
+  metode        String   @db.VarChar(30)   // Transfer, Tunai, Virtual Account, Cek, Lainnya
+  referensi     String?  @db.VarChar(100)
+  catatan       String?  @db.Text
+  id_user       Int?
+  created_at    DateTime @default(now())
+
+  invoice Invoice   @relation(fields: [id_invoice], references: [id_invoice], onDelete: Cascade)
+  user    CoreUser? @relation(fields: [id_user], references: [id_user])
+
+  @@index([id_invoice])
+  @@map("invoice_pembayaran")
 }

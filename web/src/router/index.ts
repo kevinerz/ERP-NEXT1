@@ -168,6 +168,22 @@ const router = createRouter({
           name: 'kontrak-detail',
           component: () => import('@/views/contracts/KontrakDetailView.vue'),
         },
+        // Finance
+        {
+          path: 'finance',
+          name: 'finance-dashboard',
+          component: () => import('@/views/finance/FinanceDashboardView.vue'),
+        },
+        {
+          path: 'finance/invoice',
+          name: 'invoice-list',
+          component: () => import('@/views/finance/InvoiceListView.vue'),
+        },
+        {
+          path: 'finance/invoice/:id',
+          name: 'invoice-detail',
+          component: () => import('@/views/finance/InvoiceDetailView.vue'),
+        },
         // Aset
         {
           path: 'assets',

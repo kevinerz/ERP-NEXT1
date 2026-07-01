@@ -84,6 +84,7 @@ const allMenu = [
   { label: 'Aset',         icon: '▪', emoji: '🖥️', to: '/assets',        modul: 'assets' },
   { label: 'SIM Topup',   icon: '▪', emoji: '📱', to: '/assets/sim-topup', modul: 'assets' },
   { label: 'Kontrak',      icon: '▪', emoji: '📄', to: '/contracts',      modul: 'contracts' },
+  { label: 'Finance',      icon: '▪', emoji: '💰', to: '/finance',        modul: 'finance' },
   { label: 'Laporan',      icon: '▪', emoji: '📈', to: '/reports',        modul: 'reports' },
 ]
 
@@ -129,6 +130,9 @@ const PAGE_TITLES: Record<string, string> = {
   "aset-detail":          "Aset — Detail",
   "sim-topup":            "SIM Card — Topup",
   "kontrak-list":         "Kontrak",
+  "finance-dashboard":    "Finance — Dashboard",
+  "invoice-list":         "Finance — Invoice",
+  "invoice-detail":       "Finance — Detail Invoice",
   "kontrak-detail":       "Kontrak — Detail",
   laporan:                "Laporan",
   "admin-users":          "Admin — Manajemen User",

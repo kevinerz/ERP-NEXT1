@@ -697,3 +697,58 @@ export function printLaporan(payload: {
   </div></body></html>`
   printDocument(html)
 }
+
+// ─────────────────────────────────────────────
+// INVOICE (dari modul Finance — data invoice nyata)
+// ─────────────────────────────────────────────
+export function printInvoiceDoc(inv: any) {
+  const fmtRp = (n: any) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID')
+  const pelanggan = inv.site?.pelanggan?.nama_pelanggan || '-'
+  const sisa = (Number(inv.total) || 0) - (Number(inv.jumlah_dibayar) || 0)
+  const statusLunas = inv.status === 'Lunas'
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Invoice ${inv.nomor_invoice}</title>${baseStyle()}</head>
+  <body><div class="doc">
+    <div class="header">
+      <div class="header-left">${companyHeader()}</div>
+      <div class="doc-title-block"><div class="doc-title">INVOICE</div><div class="doc-nomor">${inv.nomor_invoice}</div><div class="doc-date">Periode: ${inv.periode || '-'}</div></div>
+    </div>
+
+    <div class="section">
+      <table class="info">
+        <tr><td>Kepada</td><td>:</td><td><strong>${pelanggan}</strong></td></tr>
+        <tr><td>Site</td><td>:</td><td>${inv.site?.kode_site || ''} — ${inv.site?.nama_site || '-'}</td></tr>
+        ${inv.kontrak ? `<tr><td>Kontrak</td><td>:</td><td>${inv.kontrak.nomor_kontrak}</td></tr>` : ''}
+        <tr><td>Tanggal Invoice</td><td>:</td><td>${fmtDate(inv.tgl_invoice)}</td></tr>
+        <tr><td>Jatuh Tempo</td><td>:</td><td style="color:#dc2626;font-weight:700">${fmtDate(inv.tgl_jatuh_tempo)}</td></tr>
+        <tr><td>Status</td><td>:</td><td>${String(inv.status).replace('_', ' ')}</td></tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <table class="grid">
+        <thead><tr><th>Deskripsi</th><th style="text-align:right">Jumlah</th></tr></thead>
+        <tbody>
+          <tr><td>${inv.catatan || 'Tagihan layanan'} (periode ${inv.periode || '-'})</td><td style="text-align:right">${fmtRp(inv.subtotal)}</td></tr>
+          <tr><td style="text-align:right;color:#64748b">PPN ${Number(inv.ppn_persen)}%</td><td style="text-align:right">${fmtRp(inv.ppn_nominal)}</td></tr>
+          <tr style="background:#eff6ff"><td style="text-align:right;font-weight:700;color:#1e40af;font-size:12pt">TOTAL</td><td style="text-align:right;font-weight:700;color:#1e40af;font-size:12pt">${fmtRp(inv.total)}</td></tr>
+          ${Number(inv.jumlah_dibayar) > 0 ? `<tr><td style="text-align:right;color:#15803d">Sudah Dibayar</td><td style="text-align:right;color:#15803d">${fmtRp(inv.jumlah_dibayar)}</td></tr>` : ''}
+          ${!statusLunas ? `<tr><td style="text-align:right;font-weight:700;color:#dc2626">SISA TAGIHAN</td><td style="text-align:right;font-weight:700;color:#dc2626">${fmtRp(sisa)}</td></tr>` : ''}
+        </tbody>
+      </table>
+      ${statusLunas ? '<p style="margin-top:12px;text-align:center;font-size:14pt;font-weight:800;color:#15803d;border:2px solid #22c55e;border-radius:8px;padding:8px">✓ LUNAS</p>' : ''}
+    </div>
+
+    <div class="section" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px">
+      <div class="section-title" style="border:none;padding:0;margin-bottom:8px">Informasi Pembayaran</div>
+      <table class="info">
+        <tr><td>Bank</td><td>:</td><td>BCA / Mandiri / BNI (sesuai konfirmasi tim Finance)</td></tr>
+        <tr><td>Atas Nama</td><td>:</td><td>${getCompany().name}</td></tr>
+      </table>
+      <p style="font-size:9pt;color:#94a3b8;margin-top:8px">Harap cantumkan nomor invoice pada bukti transfer.</p>
+    </div>
+
+    ${docFooter(inv.nomor_invoice)}
+  </div></body></html>`
+  printDocument(html)
+}

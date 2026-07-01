@@ -29,6 +29,7 @@ import { PublicWoModule } from './modules/public-wo/public-wo.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { FinanceModule } from './modules/finance/finance.module';
 
 // Integrations
 import { PrtgModule } from './modules/integrations/prtg/prtg.module';
@@ -74,6 +75,7 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     ReportsModule,
     AdminModule,
     SettingsModule,
+    FinanceModule,
 
     // Integrations
     PrtgModule,
