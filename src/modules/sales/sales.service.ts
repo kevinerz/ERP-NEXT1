@@ -263,6 +263,8 @@ export class SalesService {
   async updateQuotation(id: number, dto: UpdateQuotationDto) {
     const qt = await this.prisma.salesQuotation.findUnique({ where: { id_quotation: id } });
     if (!qt) throw new NotFoundException('Quotation tidak ditemukan');
+    if (qt.status_approval !== 'Draft')
+      throw new BadRequestException(`Quotation sudah ${qt.status_approval} — tidak bisa diedit lagi`);
     const data = await this.prisma.salesQuotation.update({
       where: { id_quotation: id },
       data: {
@@ -296,17 +298,39 @@ export class SalesService {
   }
 
   async approveQuotation(id: number, dto: ApproveQuotationDto) {
-    const qt = await this.prisma.salesQuotation.findUnique({ where: { id_quotation: id } });
-    if (!qt) throw new NotFoundException('Quotation tidak ditemukan');
-    const data = await this.prisma.salesQuotation.update({
+    const qt = await this.prisma.salesQuotation.findUnique({
       where: { id_quotation: id },
-      data: {
-        status_approval: dto.status_approval,
-        id_approver: dto.id_approver,
-        tgl_approval: new Date(),
-        catatan_approval: dto.catatan_approval,
-        updated_at: new Date(),
-      },
+      include: { opportunity: { select: { id_opportunity: true, id_lead: true } } },
+    });
+    if (!qt) throw new NotFoundException('Quotation tidak ditemukan');
+    if (!['Approved', 'Rejected'].includes(dto.status_approval))
+      throw new BadRequestException('Status approval harus Approved atau Rejected');
+    if (qt.status_approval !== 'Draft')
+      throw new BadRequestException(`Quotation sudah ${qt.status_approval} — tidak bisa diproses ulang`);
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.salesQuotation.update({
+        where: { id_quotation: id },
+        data: {
+          status_approval: dto.status_approval,
+          id_approver: dto.id_approver,
+          tgl_approval: new Date(),
+          catatan_approval: dto.catatan_approval,
+          updated_at: new Date(),
+        },
+      });
+      // Approved → deal menang: Opportunity jadi Won, Lead jadi Konversi
+      if (dto.status_approval === 'Approved' && qt.opportunity) {
+        await tx.salesOpportunity.update({
+          where: { id_opportunity: qt.opportunity.id_opportunity },
+          data: { tahapan: 'Won', updated_at: new Date() },
+        });
+        await tx.salesLead.update({
+          where: { id_lead: qt.opportunity.id_lead },
+          data: { status_lead: 'Konversi', updated_at: new Date() },
+        });
+      }
+      return updated;
     });
     return { data, message: `Quotation ${dto.status_approval}` };
   }

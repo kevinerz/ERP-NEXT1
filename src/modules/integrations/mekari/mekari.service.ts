@@ -28,6 +28,14 @@ export class MekariService {
     return `SIM-${prefix}-${id}-${Date.now().toString().slice(-6)}`;
   }
 
+  // UID simulasi TIDAK dianggap tersinkron saat mode live —
+  // supaya record hasil uji-coba bisa disinkron ulang beneran.
+  private isSyncedUid(uid?: string | null): boolean {
+    if (!uid) return false;
+    if (this.mekari.isConfigured() && uid.startsWith('SIM-')) return false;
+    return true;
+  }
+
   // Jurnal API pakai format tanggal YYYY-MM-DD
   private fmtDate(d: Date | string): string {
     return new Date(d).toISOString().slice(0, 10);
@@ -37,7 +45,7 @@ export class MekariService {
   async syncCustomer(id_pelanggan: number) {
     const p = await this.prisma.pelanggan.findUnique({ where: { id_pelanggan } });
     if (!p) throw new NotFoundException('Pelanggan tidak ditemukan');
-    if (p.mekari_customer_uid) return { data: p, message: 'Pelanggan sudah tersinkron', already: true };
+    if (this.isSyncedUid(p.mekari_customer_uid)) return { data: p, message: 'Pelanggan sudah tersinkron', already: true };
 
     let uid: string;
     if (this.mekari.isConfigured()) {
@@ -68,7 +76,7 @@ export class MekariService {
   async syncProduct(id_layanan: number) {
     const l = await this.prisma.masterLayanan.findUnique({ where: { id_layanan } });
     if (!l) throw new NotFoundException('Layanan tidak ditemukan');
-    if (l.mekari_product_uid) return { data: l, message: 'Layanan sudah tersinkron', already: true };
+    if (this.isSyncedUid(l.mekari_product_uid)) return { data: l, message: 'Layanan sudah tersinkron', already: true };
 
     let uid: string;
     if (this.mekari.isConfigured()) {
@@ -109,19 +117,20 @@ export class MekariService {
       throw new BadRequestException('Invoice masih Draft — kirim/finalisasi dulu sebelum sinkron ke Mekari');
     if (inv.status === 'Batal')
       throw new BadRequestException('Invoice sudah dibatalkan');
-    if (inv.mekari_uid)
+    if (this.isSyncedUid(inv.mekari_uid))
       return { data: inv, message: 'Invoice sudah tersinkron ke Mekari', already: true };
 
     const pelanggan = inv.site?.pelanggan;
     const layanan = inv.site?.layanan;
     if (!pelanggan) throw new BadRequestException('Data pelanggan tidak lengkap');
 
+    let liveUid: string | null = null;
     try {
       // Pastikan master data sudah tersinkron dulu (mapping ID benar)
       let customerUid = pelanggan.mekari_customer_uid;
-      if (!customerUid) customerUid = (await this.syncCustomer(pelanggan.id_pelanggan)).data.mekari_customer_uid;
+      if (!this.isSyncedUid(customerUid)) customerUid = (await this.syncCustomer(pelanggan.id_pelanggan)).data.mekari_customer_uid;
       let productUid = layanan?.mekari_product_uid ?? null;
-      if (layanan && !productUid) productUid = (await this.syncProduct(layanan.id_layanan)).data.mekari_product_uid;
+      if (layanan && !this.isSyncedUid(productUid)) productUid = (await this.syncProduct(layanan.id_layanan)).data.mekari_product_uid;
 
       // Jurnal sales_invoice mereferensi customer & product BY NAME (bukan ID),
       // jadi customerUid/productUid di atas dipakai untuk memastikan master data
@@ -130,6 +139,7 @@ export class MekariService {
       let uid: string;
       let status = 'Tersinkron';
       if (this.mekari.isConfigured()) {
+        const ppn = Number(inv.ppn_persen);
         const res = await this.mekari.request('POST', '/public/jurnal/api/v1/sales_invoices', {
           sales_invoice: {
             transaction_no: inv.nomor_invoice,
@@ -143,41 +153,50 @@ export class MekariService {
                 product_name: layanan?.nama_layanan || `Layanan ${inv.periode}`,
                 quantity: 1,
                 rate: Number(inv.subtotal),
+                // PPN ikut disinkron — tanpa ini AR di Jurnal selisih 11% dari ERP
+                ...(ppn > 0 ? { line_tax_name: 'PPN' } : {}),
               },
             ],
           },
         });
         uid = String(res?.sales_invoice?.id ?? res?.id ?? '');
         if (!uid) throw new BadRequestException('Respons Mekari tidak berisi ID invoice');
+        liveUid = uid; // simpan agar tidak hilang bila tulis lokal gagal (cegah double-post saat retry)
       } else {
         uid = this.simUid('INV', id_invoice);
         status = 'Simulasi';
       }
 
-      // Catat juga di ledger AR (sesuai desain schema)
-      await this.prisma.integrationJurnalAr.create({
-        data: {
-          id_site: inv.id_site,
-          id_kontrak: inv.id_kontrak,
-          periode_tagihan: inv.periode,
-          jumlah_tagihan: inv.total,
-          mekari_jurnal_uid: uid,
-          status_sinkronisasi: 'Terkirim',
-          tanggal_sinkronisasi: new Date(),
-          catatan: `Invoice ${inv.nomor_invoice}`,
-        },
-      });
-
-      const data = await this.prisma.invoice.update({
-        where: { id_invoice },
-        data: { mekari_uid: uid, mekari_status: status },
+      // Ledger AR + update invoice dalam SATU transaksi — kalau salah satu gagal
+      // setelah POST live sukses, state lokal tidak setengah-setengah.
+      const data = await this.prisma.$transaction(async (tx) => {
+        await tx.integrationJurnalAr.create({
+          data: {
+            id_site: inv.id_site,
+            id_kontrak: inv.id_kontrak,
+            periode_tagihan: inv.periode,
+            jumlah_tagihan: inv.total,
+            mekari_jurnal_uid: uid,
+            status_sinkronisasi: 'Terkirim',
+            tanggal_sinkronisasi: new Date(),
+            catatan: `Invoice ${inv.nomor_invoice}`,
+          },
+        });
+        return tx.invoice.update({
+          where: { id_invoice },
+          data: { mekari_uid: uid, mekari_status: status },
+        });
       });
       return { data, message: status === 'Simulasi' ? 'Invoice disinkron (simulasi)' : 'Invoice disinkron ke Mekari Jurnal' };
     } catch (e: any) {
+      // Kalau POST live sudah sukses (liveUid ada) tapi tulis lokal gagal,
+      // tetap simpan UID supaya retry tidak membuat invoice ganda di Jurnal.
       await this.prisma.invoice.update({
         where: { id_invoice },
-        data: { mekari_status: 'Gagal' },
-      });
+        data: liveUid
+          ? { mekari_uid: liveUid, mekari_status: 'Tersinkron' }
+          : { mekari_status: 'Gagal' },
+      }).catch(() => {});
       throw new BadRequestException(`Gagal sinkron ke Mekari: ${e.message}`);
     }
   }

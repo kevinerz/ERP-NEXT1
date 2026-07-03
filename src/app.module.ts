@@ -13,6 +13,7 @@ import { UploadModule } from './common/upload/upload.module';
 import { DocumentNumberModule } from './common/document-number/document-number.module';
 import { AuditModule } from './common/audit/audit.module';
 import { LogModule } from './common/log/log.module';
+import { SchedulerModule } from './common/scheduler/scheduler.module';
 import { LogInterceptor } from './common/log/log.interceptor';
 
 // Modules
@@ -60,6 +61,7 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     DocumentNumberModule,
     AuditModule,
     LogModule,
+    SchedulerModule,
 
     // Business modules
     AuthModule,

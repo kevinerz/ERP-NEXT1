@@ -20,7 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.get<string>('JWT_SECRET'),
+      secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
     });
   }
 
@@ -37,6 +37,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Akun tidak aktif atau tidak ditemukan');
     }
 
+    let modul_akses: string[] = [];
+    if (user.modul_akses) {
+      try { modul_akses = JSON.parse(user.modul_akses); } catch { modul_akses = []; }
+    }
+
     return {
       id_user: user.id_user,
       username: user.username,
@@ -44,6 +49,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       nama_lengkap: user.karyawan.nama_lengkap,
       departemen: user.karyawan.departemen,
       roles: user.user_roles.map((ur) => ur.role.nama_role),
+      modul_akses,
     };
   }
 }

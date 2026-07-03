@@ -21,7 +21,7 @@ export class SettingsController {
   }
 
   @Post('logo')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
   uploadLogo(@UploadedFile() file: { buffer: Buffer; mimetype: string }) {
     return this.settingsService.uploadLogo(file.buffer, file.mimetype);
   }

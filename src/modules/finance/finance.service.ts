@@ -29,12 +29,12 @@ export class FinanceService {
   private computeStatus(total: number, dibayar: number, tgl_jatuh_tempo: Date, current: string): string {
     if (current === 'Batal') return 'Batal';
     if (dibayar >= total && total > 0) return 'Lunas';
-    if (dibayar > 0) return 'Sebagian';
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const overdue = new Date(tgl_jatuh_tempo) < today;
+    if (dibayar > 0) return overdue ? 'Jatuh_Tempo' : 'Sebagian';
     // belum ada bayaran
     if (current === 'Draft') return 'Draft';
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    if (tgl_jatuh_tempo < today) return 'Jatuh_Tempo';
-    return current === 'Terkirim' ? 'Terkirim' : 'Terkirim';
+    return overdue ? 'Jatuh_Tempo' : 'Terkirim';
   }
 
   async findAll(query: {
@@ -142,13 +142,24 @@ export class FinanceService {
     const ppn_persen = dto.ppn_persen ?? Number(inv.ppn_persen);
     const { ppn_nominal, total } = this.calcTotals(subtotal, ppn_persen);
 
+    const dibayar = Number(inv.jumlah_dibayar);
+    if (total < dibayar)
+      throw new BadRequestException(`Total baru (${total}) tidak boleh lebih kecil dari yang sudah dibayar (${dibayar})`);
+
+    // Status manual hanya boleh nilai valid; sisanya dihitung ulang dari pembayaran & jatuh tempo
+    const VALID_STATUS = ['Draft', 'Terkirim', 'Sebagian', 'Lunas', 'Jatuh_Tempo', 'Batal'];
+    if (dto.status && !VALID_STATUS.includes(dto.status))
+      throw new BadRequestException('Status invoice tidak valid');
+    const jatuhTempoBaru = dto.tgl_jatuh_tempo ? new Date(dto.tgl_jatuh_tempo) : inv.tgl_jatuh_tempo;
+    const statusBaru = this.computeStatus(total, dibayar, jatuhTempoBaru, dto.status ?? inv.status);
+
     const data = await this.prisma.invoice.update({
       where: { id_invoice: id },
       data: {
         tgl_invoice: dto.tgl_invoice ? new Date(dto.tgl_invoice) : undefined,
         tgl_jatuh_tempo: dto.tgl_jatuh_tempo ? new Date(dto.tgl_jatuh_tempo) : undefined,
         subtotal, ppn_persen, ppn_nominal, total,
-        status: dto.status ?? undefined,
+        status: statusBaru,
         catatan: dto.catatan,
       },
       include: INVOICE_INCLUDE,
@@ -200,6 +211,7 @@ export class FinanceService {
   async addPembayaran(id_invoice: number, dto: CreatePembayaranDto, userId?: number) {
     const inv = await this.prisma.invoice.findUnique({ where: { id_invoice } });
     if (!inv) throw new NotFoundException('Invoice tidak ditemukan');
+    if (inv.status === 'Draft') throw new BadRequestException('Invoice masih Draft — kirim dulu sebelum menerima pembayaran');
     if (inv.status === 'Batal') throw new BadRequestException('Invoice sudah dibatalkan');
     if (inv.status === 'Lunas') throw new BadRequestException('Invoice sudah Lunas');
     if (dto.jumlah <= 0) throw new BadRequestException('Jumlah pembayaran harus lebih dari 0');
@@ -269,31 +281,45 @@ export class FinanceService {
     const ppn_persen = dto.ppn_persen ?? 11;
     let dibuat = 0;
     let dilewati = 0;
+    const gagal: string[] = [];
 
     for (const k of kontrakAktif) {
       if (k.invoices.length > 0) { dilewati++; continue; }
       const subtotal = Number(k.harga_mrc);
       if (subtotal <= 0) { dilewati++; continue; }
       const { ppn_nominal, total } = this.calcTotals(subtotal, ppn_persen);
-      const nomor_invoice = await this._genNomor();
-      try {
-        await this.prisma.invoice.create({
-          data: {
-            nomor_invoice,
-            id_site: k.id_site,
-            id_kontrak: k.id_kontrak,
-            periode: dto.periode,
-            tgl_invoice: new Date(dto.tgl_invoice),
-            tgl_jatuh_tempo: new Date(dto.tgl_jatuh_tempo),
-            subtotal, ppn_persen, ppn_nominal, total,
-            status: 'Draft',
-            catatan: `Tagihan MRC ${dto.periode} — ${k.nomor_kontrak}`,
-          },
-        });
-        dibuat++;
-      } catch { dilewati++; }
+
+      // Retry 5x saat nomor tabrakan (P2002) — konsisten dgn generator lain.
+      // Kegagalan lain dilaporkan eksplisit, bukan diam-diam "dilewati".
+      let sukses = false;
+      for (let attempt = 0; attempt < 5 && !sukses; attempt++) {
+        const nomor_invoice = await this._genNomor();
+        try {
+          await this.prisma.invoice.create({
+            data: {
+              nomor_invoice,
+              id_site: k.id_site,
+              id_kontrak: k.id_kontrak,
+              periode: dto.periode,
+              tgl_invoice: new Date(dto.tgl_invoice),
+              tgl_jatuh_tempo: new Date(dto.tgl_jatuh_tempo),
+              subtotal, ppn_persen, ppn_nominal, total,
+              status: 'Draft',
+              catatan: `Tagihan MRC ${dto.periode} — ${k.nomor_kontrak}`,
+            },
+          });
+          sukses = true;
+          dibuat++;
+        } catch (e: any) {
+          if (e.code !== 'P2002' || attempt === 4) {
+            gagal.push(k.nomor_kontrak);
+            break;
+          }
+        }
+      }
     }
-    return { data: { dibuat, dilewati, total_kontrak: kontrakAktif.length }, message: `${dibuat} invoice dibuat, ${dilewati} dilewati` };
+    const msg = `${dibuat} invoice dibuat, ${dilewati} dilewati${gagal.length ? `, GAGAL: ${gagal.join(', ')}` : ''}`;
+    return { data: { dibuat, dilewati, gagal, total_kontrak: kontrakAktif.length }, message: msg };
   }
 
   // ─── SUMMARY & AGING ─────────────────────────────────────────

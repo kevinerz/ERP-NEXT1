@@ -2,7 +2,12 @@ import {
   IsInt, IsString, IsOptional, IsArray, MinLength, MaxLength, IsIn,
 } from 'class-validator';
 
-const ALL_MODULS = ['hris', 'master', 'sales', 'projects', 'operations', 'assets', 'contracts', 'reports'];
+// HARUS sinkron dgn ALL_MODULS di admin.service.ts & web/src/stores/auth.ts
+const ALL_MODULS = [
+  'hris', 'master', 'sales', 'projects', 'operations', 'assets', 'contracts',
+  'finance', 'reports', 'notifications', 'public-wo',
+  'prtg', 'rcms', 'ruijie', 'mekari', 'socialchat',
+];
 
 export class CreateAdminUserDto {
   @IsInt()

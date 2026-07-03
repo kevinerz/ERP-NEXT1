@@ -862,6 +862,7 @@ model Invoice {
   site       SitePelanggan       @relation(fields: [id_site], references: [id_site])
   pembayaran InvoicePembayaran[]
 
+  @@unique([id_kontrak, periode])
   @@index([status])
   @@index([periode])
   @@index([tgl_jatuh_tempo])

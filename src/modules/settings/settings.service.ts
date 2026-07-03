@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export const SETTING_KEYS = [
@@ -63,11 +63,15 @@ export class SettingsService {
   }
 
   async uploadLogo(buffer: Buffer, mimetype: string): Promise<{ url: string }> {
-    // Simpan sebagai data URL langsung di DB — tidak perlu filesystem
-    const safe = ['image/png','image/jpeg','image/jpg','image/svg+xml','image/webp'].includes(mimetype)
-      ? mimetype : 'image/png';
+    // Simpan sebagai data URL langsung di DB — tidak perlu filesystem.
+    // SVG ditolak (vektor XSS saat dirender sebagai data-URL).
+    const ALLOWED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!ALLOWED.includes(mimetype))
+      throw new BadRequestException('Format logo harus PNG, JPG, atau WebP');
+    if (buffer.length > 2 * 1024 * 1024)
+      throw new BadRequestException('Ukuran logo maksimal 2MB');
     const b64 = buffer.toString('base64');
-    const url = `data:${safe};base64,${b64}`;
+    const url = `data:${mimetype};base64,${b64}`;
     await this.prisma.appSetting.upsert({
       where: { key: 'company_logo_url' },
       create: { key: 'company_logo_url', value: url },

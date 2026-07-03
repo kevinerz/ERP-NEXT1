@@ -67,6 +67,11 @@ export class ContractsService {
       const qt = await this.prisma.salesQuotation.findUnique({ where: { id_quotation: dto.id_quotation } });
       if (!qt) throw new NotFoundException('Quotation tidak ditemukan');
       if (qt.status_approval !== 'Approved') throw new BadRequestException('Kontrak hanya bisa dibuat dari Quotation yang sudah Approved');
+      const existing = await this.prisma.kontrakLayanan.findFirst({
+        where: { id_quotation: dto.id_quotation, status_kontrak: { not: 'Terminasi' } },
+      });
+      if (existing)
+        throw new BadRequestException(`Quotation ini sudah punya kontrak (${existing.nomor_kontrak})`);
     }
 
     const durasi_bulan = dto.durasi_bulan ?? 12;
@@ -108,6 +113,8 @@ export class ContractsService {
   async update(id: number, dto: UpdateKontrakDto) {
     const row = await this.prisma.kontrakLayanan.findUnique({ where: { id_kontrak: id } });
     if (!row) throw new NotFoundException('Kontrak tidak ditemukan');
+    if (row.status_kontrak === 'Terminasi')
+      throw new BadRequestException('Kontrak yang sudah diterminasi tidak bisa diubah');
     const data = await this.prisma.kontrakLayanan.update({
       where: { id_kontrak: id },
       data: dto,
@@ -117,16 +124,40 @@ export class ContractsService {
   }
 
   async terminasi(id: number, dto: TerminasiDto) {
-    const row = await this.prisma.kontrakLayanan.findUnique({ where: { id_kontrak: id } });
-    if (!row) throw new NotFoundException('Kontrak tidak ditemukan');
-    const data = await this.prisma.kontrakLayanan.update({
+    const row = await this.prisma.kontrakLayanan.findUnique({
       where: { id_kontrak: id },
-      data: {
-        status_kontrak: 'Terminasi',
-        tanggal_terminasi: new Date(dto.tanggal_terminasi),
-        alasan_terminasi: dto.alasan_terminasi,
-      },
-      include: KONTRAK_INCLUDE,
+      include: { projects: { select: { nomor_project: true, status_project: true } } },
+    });
+    if (!row) throw new NotFoundException('Kontrak tidak ditemukan');
+    if (row.status_kontrak === 'Terminasi')
+      throw new BadRequestException('Kontrak sudah diterminasi');
+    const projekBerjalan = row.projects.filter((p) => !['Selesai', 'Ditahan'].includes(p.status_project));
+    if (projekBerjalan.length)
+      throw new BadRequestException(
+        `Masih ada project berjalan: ${projekBerjalan.map((p) => p.nomor_project).join(', ')}. Selesaikan atau tahan dulu.`,
+      );
+
+    const data = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.kontrakLayanan.update({
+        where: { id_kontrak: id },
+        data: {
+          status_kontrak: 'Terminasi',
+          tanggal_terminasi: new Date(dto.tanggal_terminasi),
+          alasan_terminasi: dto.alasan_terminasi,
+        },
+        include: KONTRAK_INCLUDE,
+      });
+      // Nonaktifkan site kalau tidak ada kontrak Aktif lain di site yg sama
+      const kontrakAktifLain = await tx.kontrakLayanan.count({
+        where: { id_site: row.id_site, status_kontrak: 'Aktif', id_kontrak: { not: id } },
+      });
+      if (kontrakAktifLain === 0) {
+        await tx.sitePelanggan.update({
+          where: { id_site: row.id_site },
+          data: { status_site: 'Terminasi', tgl_terminasi: new Date(dto.tanggal_terminasi) },
+        });
+      }
+      return updated;
     });
     return { data, message: 'Kontrak diterminasi' };
   }

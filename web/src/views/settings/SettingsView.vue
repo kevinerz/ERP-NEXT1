@@ -17,10 +17,10 @@
           </div>
         </div>
         <label class="upload-btn">
-          <input type="file" accept="image/*" @change="handleLogoUpload" hidden />
+          <input type="file" accept="image/png,image/jpeg,image/webp" @change="handleLogoUpload" hidden />
           <span>{{ uploading ? 'Mengunggah...' : '📁 Pilih Logo' }}</span>
         </label>
-        <p class="hint">Format: PNG/JPG/SVG. Rekomendasi 400×120px, transparan.</p>
+        <p class="hint">Format: PNG/JPG/WebP, maks 2MB. Rekomendasi 400×120px, transparan.</p>
 
         <div class="divider" />
 
