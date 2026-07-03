@@ -69,9 +69,9 @@ async function fetchData() {
 }
 
 const prioColors: Record<string, string> = {
-  Critical: '#f87171',
-  High: '#fb923c',
-  Medium: '#facc15',
+  Critical: '#dc2626',
+  High: '#ea580c',
+  Medium: '#ca8a04',
   Low: '#64748b',
 }
 
@@ -173,28 +173,20 @@ onUnmounted(() => {
       <!-- Stat strip -->
       <div class="stat-row">
         <div class="stat-tile accent-blue">
-          <div class="stat-body">
-            <div class="stat-num">{{ data.total_aktif }}</div>
-            <div class="stat-label">Tiket Aktif</div>
-          </div>
+          <div class="stat-num">{{ data.total_aktif }}</div>
+          <div class="stat-label">Tiket Aktif</div>
         </div>
         <div class="stat-tile accent-red" :class="{ alarm: data.sla_breach > 0 }">
-          <div class="stat-body">
-            <div class="stat-num" :class="{ 'num-red': data.sla_breach > 0 }">{{ data.sla_breach }}</div>
-            <div class="stat-label">SLA Telat</div>
-          </div>
+          <div class="stat-num" :class="{ 'num-red': data.sla_breach > 0 }">{{ data.sla_breach }}</div>
+          <div class="stat-label">SLA Telat</div>
         </div>
         <div class="stat-tile accent-amber">
-          <div class="stat-body">
-            <div class="stat-num" :class="{ 'num-amber': data.sla_warning > 0 }">{{ data.sla_warning }}</div>
-            <div class="stat-label">Hampir Telat</div>
-          </div>
+          <div class="stat-num" :class="{ 'num-amber': data.sla_warning > 0 }">{{ data.sla_warning }}</div>
+          <div class="stat-label">Hampir Telat</div>
         </div>
         <div class="stat-tile accent-green">
-          <div class="stat-body">
-            <div class="stat-num num-green">{{ data.resolved_hari_ini }}</div>
-            <div class="stat-label">Selesai Hari Ini</div>
-          </div>
+          <div class="stat-num num-green">{{ data.resolved_hari_ini }}</div>
+          <div class="stat-label">Selesai Hari Ini</div>
         </div>
         <div class="stat-tile prio-tile">
           <div class="stat-label prio-title">Per Prioritas</div>
@@ -202,7 +194,7 @@ onUnmounted(() => {
             <div v-for="p in prioList" :key="p.label" class="prio-item" :class="{ dim: p.count === 0 }">
               <span class="prio-dot" :style="{ background: p.color }"></span>
               <span class="prio-name">{{ p.label }}</span>
-              <span class="prio-count" :style="{ color: p.count > 0 ? p.color : '#334155' }">{{ p.count }}</span>
+              <span class="prio-count" :style="{ color: p.count > 0 ? p.color : '#cbd5e1' }">{{ p.count }}</span>
             </div>
           </div>
         </div>
@@ -296,8 +288,8 @@ onUnmounted(() => {
 
 <style scoped>
 .noc-board {
-  background: linear-gradient(160deg, #0a1020 0%, #0d1528 60%, #0a1222 100%);
-  color: #e2e8f0;
+  background: #f4f7fc;
+  color: #1e293b;
   border-radius: 14px;
   min-height: calc(100vh - 120px);
   padding: 22px 26px;
@@ -309,6 +301,7 @@ onUnmounted(() => {
   min-height: 100vh;
   overflow: auto;
   padding: 32px 40px;
+  background: #f4f7fc;
 }
 
 /* ── Header ─────────────────────────────── */
@@ -332,11 +325,12 @@ onUnmounted(() => {
   letter-spacing: 0.12em;
   padding: 5px 12px;
   border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
 }
 .noc-brand h1 {
   font-size: 1.25rem;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #0f172a;
   margin: 0;
   letter-spacing: 0.01em;
 }
@@ -344,18 +338,18 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #64748b;
+  color: #94a3b8;
   font-size: 0.8rem;
   margin-top: 7px;
   font-weight: 600;
   letter-spacing: 0.06em;
 }
-.noc-live > span:nth-child(2) { color: #4ade80; }
-.live-sep { color: #334155; }
+.noc-live > span:nth-child(2) { color: #16a34a; }
+.live-sep { color: #cbd5e1; }
 .live-dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
   animation: blink 2s ease-in-out infinite;
 }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
@@ -364,36 +358,37 @@ onUnmounted(() => {
 .noc-clock {
   font-size: 2.1rem;
   font-weight: 800;
-  color: #f8fafc;
+  color: #0f172a;
   line-height: 1;
   letter-spacing: 0.04em;
 }
 .noc-date {
-  color: #64748b;
+  color: #94a3b8;
   font-size: 0.8rem;
   margin-top: 4px;
 }
 .fs-btn {
-  background: rgba(30, 41, 59, 0.6);
-  color: #94a3b8;
-  border: 1px solid #253347;
+  background: #fff;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
   width: 42px; height: 42px;
   cursor: pointer;
   font-size: 1.1rem;
   flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
-.fs-btn:hover { background: #253347; color: #e2e8f0; }
+.fs-btn:hover { background: #f1f5f9; color: #0f172a; }
 
 .noc-error {
-  background: rgba(220, 38, 38, 0.12);
-  border: 1px solid rgba(220, 38, 38, 0.4);
-  color: #fca5a5;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
   padding: 12px 16px;
   border-radius: 10px;
   margin-bottom: 16px;
 }
-.noc-loading { text-align: center; color: #64748b; padding: 80px 0; font-size: 1.1rem; }
+.noc-loading { text-align: center; color: #94a3b8; padding: 80px 0; font-size: 1.1rem; }
 
 /* ── Stat strip ─────────────────────────── */
 .stat-row {
@@ -404,17 +399,18 @@ onUnmounted(() => {
 }
 .stat-tile {
   position: relative;
-  background: rgba(17, 26, 46, 0.85);
-  border: 1px solid #1c2a44;
+  background: #fff;
+  border: 1px solid #e8edf5;
   border-radius: 12px;
   padding: 16px 18px 14px;
   overflow: hidden;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 .stat-tile::before {
   content: '';
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  width: 3px;
+  width: 4px;
 }
 .accent-blue::before  { background: #3b82f6; }
 .accent-red::before   { background: #ef4444; }
@@ -425,29 +421,29 @@ onUnmounted(() => {
   font-size: 2.4rem;
   font-weight: 800;
   line-height: 1;
-  color: #f8fafc;
+  color: #0f172a;
 }
-.num-red   { color: #f87171; }
-.num-amber { color: #fbbf24; }
-.num-green { color: #4ade80; }
+.num-red   { color: #dc2626; }
+.num-amber { color: #d97706; }
+.num-green { color: #16a34a; }
 .stat-label {
   margin-top: 7px;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #64748b;
+  color: #94a3b8;
 }
 .stat-tile.alarm {
-  border-color: rgba(239, 68, 68, 0.6);
+  border-color: rgba(239, 68, 68, 0.45);
   animation: alarmGlow 1.6s ease-in-out infinite;
 }
 @keyframes alarmGlow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.35); }
-  50% { box-shadow: 0 0 18px 2px rgba(239, 68, 68, 0.25); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.28); }
+  50% { box-shadow: 0 0 16px 2px rgba(239, 68, 68, 0.18); }
 }
 
-/* Prioritas tile — 2×2 grid di dalam satu kartu */
+/* Prioritas tile — grid 2×2 dalam satu kartu */
 .prio-tile { padding: 12px 16px; }
 .prio-title { margin: 0 0 8px; }
 .prio-grid {
@@ -461,9 +457,9 @@ onUnmounted(() => {
   gap: 7px;
   font-size: 0.82rem;
 }
-.prio-item.dim { opacity: 0.45; }
+.prio-item.dim { opacity: 0.5; }
 .prio-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
-.prio-name { color: #94a3b8; flex: 1; }
+.prio-name { color: #64748b; flex: 1; }
 .prio-count { font-weight: 800; font-size: 1rem; }
 
 /* ── Main grid ──────────────────────────── */
@@ -474,10 +470,11 @@ onUnmounted(() => {
   align-items: start;
 }
 .panel {
-  background: rgba(17, 26, 46, 0.85);
-  border: 1px solid #1c2a44;
+  background: #fff;
+  border: 1px solid #e8edf5;
   border-radius: 12px;
   padding: 14px 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 .panel-head {
   display: flex;
@@ -485,17 +482,17 @@ onUnmounted(() => {
   gap: 10px;
   margin-bottom: 10px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #1c2a44;
+  border-bottom: 1px solid #eef2f7;
 }
 .panel-title {
   font-size: 0.78rem;
   font-weight: 700;
-  color: #94a3b8;
+  color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 .panel-count {
-  background: #1d4ed8;
+  background: #2563eb;
   color: #fff;
   font-size: 0.72rem;
   font-weight: 800;
@@ -507,7 +504,7 @@ onUnmounted(() => {
 .tiket-table { width: 100%; border-collapse: collapse; }
 .tiket-table th {
   text-align: left;
-  color: #475569;
+  color: #94a3b8;
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -516,25 +513,25 @@ onUnmounted(() => {
 .th-right, .td-right { text-align: right; }
 .tiket-table td {
   padding: 10px;
-  border-top: 1px solid #16213a;
+  border-top: 1px solid #f1f5f9;
   vertical-align: middle;
 }
 .tiket-table tbody tr { cursor: pointer; transition: background 0.15s; }
-.tiket-table tbody tr:hover { background: rgba(30, 41, 59, 0.5); }
-.tiket-table tbody tr.breached { background: rgba(220, 38, 38, 0.08); box-shadow: inset 3px 0 0 #dc2626; }
-.tiket-table tbody tr.breached:hover { background: rgba(220, 38, 38, 0.14); }
+.tiket-table tbody tr:hover { background: #f8fafc; }
+.tiket-table tbody tr.breached { background: #fff5f5; box-shadow: inset 3px 0 0 #dc2626; }
+.tiket-table tbody tr.breached:hover { background: #fee2e2; }
 
-.tk-nomor { font-weight: 700; color: #93c5fd; font-size: 0.88rem; }
+.tk-nomor { font-weight: 700; color: #2563eb; font-size: 0.88rem; }
 .tk-judul {
-  color: #64748b; font-size: 0.8rem; max-width: 300px;
+  color: #94a3b8; font-size: 0.8rem; max-width: 300px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.tk-pelanggan { color: #e2e8f0; font-weight: 600; font-size: 0.88rem; }
-.tk-site { color: #64748b; font-size: 0.78rem; }
+.tk-pelanggan { color: #0f172a; font-weight: 600; font-size: 0.88rem; }
+.tk-site { color: #94a3b8; font-size: 0.78rem; }
 .prio-cell { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; font-size: 0.84rem; }
-.tk-teknisi { color: #cbd5e1; font-size: 0.88rem; }
-.belum-tugas { color: #fbbf24; font-weight: 700; font-size: 0.78rem; }
-.tk-umur { color: #94a3b8; white-space: nowrap; text-align: right; font-size: 0.88rem; }
+.tk-teknisi { color: #334155; font-size: 0.88rem; }
+.belum-tugas { color: #d97706; font-weight: 700; font-size: 0.78rem; }
+.tk-umur { color: #64748b; white-space: nowrap; text-align: right; font-size: 0.88rem; }
 
 .sla-badge {
   display: inline-block;
@@ -547,9 +544,9 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 .sla-late { background: #dc2626; color: #fff; animation: blink 1.2s ease-in-out infinite; }
-.sla-warn { background: rgba(245, 158, 11, 0.16); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
-.sla-ok   { background: rgba(34, 197, 94, 0.12);  color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.28); }
-.sla-none { color: #475569; }
+.sla-warn { background: #fef9c3; color: #a16207; border: 1px solid #fde68a; }
+.sla-ok   { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.sla-none { color: #cbd5e1; }
 
 /* ── Empty states ───────────────────────── */
 .empty-tiket { text-align: center; padding: 44px 0 40px; }
@@ -557,32 +554,32 @@ onUnmounted(() => {
   width: 58px; height: 58px;
   margin: 0 auto 12px;
   border-radius: 50%;
-  background: rgba(34, 197, 94, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.35);
-  color: #4ade80;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #16a34a;
   font-size: 1.7rem;
   font-weight: 800;
   display: flex; align-items: center; justify-content: center;
 }
-.empty-text { color: #4ade80; font-size: 1.25rem; font-weight: 700; }
-.empty-sub { color: #475569; font-size: 0.85rem; margin-top: 4px; }
-.empty-wo { text-align: center; color: #475569; padding: 32px 0; font-size: 0.9rem; }
+.empty-text { color: #16a34a; font-size: 1.25rem; font-weight: 700; }
+.empty-sub { color: #94a3b8; font-size: 0.85rem; margin-top: 4px; }
+.empty-wo { text-align: center; color: #94a3b8; padding: 32px 0; font-size: 0.9rem; }
 .empty-icon-sm { font-size: 1.6rem; margin-bottom: 8px; opacity: 0.5; }
 
 /* ── WO cards ───────────────────────────── */
 .wo-list { display: flex; flex-direction: column; gap: 8px; }
 .wo-card {
-  background: rgba(13, 20, 38, 0.8);
-  border: 1px solid #1c2a44;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
   border-left: 3px solid #3b82f6;
   border-radius: 10px;
   padding: 10px 13px;
 }
 .wo-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 3px; }
-.wo-nama { font-weight: 700; color: #f1f5f9; font-size: 0.9rem; }
+.wo-nama { font-weight: 700; color: #0f172a; font-size: 0.9rem; }
 .wo-status { padding: 2px 9px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; white-space: nowrap; }
-.wo-dispatch { background: rgba(59, 130, 246, 0.16); color: #60a5fa; }
-.wo-onsite   { background: rgba(245, 158, 11, 0.16); color: #fbbf24; }
+.wo-dispatch { background: #dbeafe; color: #1d4ed8; }
+.wo-onsite   { background: #fef3c7; color: #b45309; }
 .wo-detail { color: #64748b; font-size: 0.8rem; }
-.wo-site   { color: #475569; font-size: 0.78rem; margin-top: 2px; }
+.wo-site   { color: #94a3b8; font-size: 0.78rem; margin-top: 2px; }
 </style>
