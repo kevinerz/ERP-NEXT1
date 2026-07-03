@@ -169,12 +169,28 @@ export class PrtgService {
         },
       });
       hasil.auto_resolved++;
-      this.notif.notifyForModul('operations', {
-        tipe: 'tiket_update',
-        judul: `🟢 [PRTG] ${w.prtg_device_name} kembali UP`,
-        deskripsi: `${w.ticket.nomor_tiket} auto-resolved`,
-        url: `/operations/${w.ticket.id_ticket}`,
+      // Bersihkan notif DOWN yang belum dibaca — sudah tidak relevan, jangan numpuk.
+      // Tidak kirim notif UP terpisah; kronologi tetap tercatat di log tiket.
+      await this.prisma.notification.deleteMany({
+        where: { is_read: false, url: `/operations/${w.ticket.id_ticket}` },
       }).catch(() => {});
+    }
+
+    // ── 3. Sensor UP untuk device tanpa site (tak ada tiket) ──
+    // Hapus penanda + notif 'site tidak dikenali' yang belum dibaca,
+    // supaya kalau down lagi nanti bisa alert ulang.
+    const tanpaTiket = await this.prisma.integrationPrtgWebhook.findMany({
+      where: {
+        id_ticket_terbentuk: null,
+        diterima_pada: { gte: new Date(Date.now() - 24 * 3600_000) },
+      },
+    });
+    for (const w of tanpaTiket) {
+      if (!w.prtg_sensor_id || downIds.has(w.prtg_sensor_id)) continue;
+      await this.prisma.notification.deleteMany({
+        where: { is_read: false, judul: { contains: `[PRTG] ${w.prtg_device_name} DOWN` } },
+      }).catch(() => {});
+      await this.prisma.integrationPrtgWebhook.delete({ where: { id_webhook: w.id_webhook } }).catch(() => {});
     }
 
     if (hasil.tiket_dibuat || hasil.auto_resolved || hasil.tanpa_site) {
