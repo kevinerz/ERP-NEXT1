@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSalesStore, type Lead } from '@/stores/sales'
+import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 
 const router = useRouter()
 const route = useRoute()
 const sales = useSalesStore()
+const auth = useAuthStore()
+const canForce = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
 
 const search = ref('')
 const filterStatus = ref('')
@@ -74,7 +77,27 @@ async function hapusLead(id: number, nama: string) {
     await api.delete(`/sales/lead/${id}`)
     fetchData()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus lead')
+    const msg = e.response?.data?.message || 'Gagal menghapus lead'
+    // Lead masih punya data terkait → tawarkan force delete (Admin/Director)
+    if (e.response?.status === 400 && String(msg).includes('force delete')) {
+      if (!canForce.value) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
+      const ketik = prompt(
+        `⚠️ PERINGATAN — Lead "${nama}" akan DIHAPUS PERMANEN.\n\n` +
+        `Seluruh opportunity, quotation, dan aktivitas milik lead ini ikut terhapus permanen.\n\n` +
+        `Ketik nama prospek "${nama}" untuk konfirmasi:`,
+      )
+      if (ketik === null) return
+      if (ketik.trim() !== nama) { alert('Nama prospek tidak cocok — dibatalkan.'); return }
+      try {
+        const r = await api.delete(`/sales/lead/${id}?force=true`)
+        fetchData()
+        alert(r.data?.message || 'Lead + data terkait dihapus')
+      } catch (e2: any) {
+        alert(e2.response?.data?.message || 'Force delete gagal')
+      }
+      return
+    }
+    alert(msg)
   }
 }
 </script>
@@ -134,7 +157,7 @@ async function hapusLead(id: number, nama: string) {
             <td class="text-gray text-sm">{{ formatDate(l.created_at) }}</td>
             <td @click.stop>
               <button
-                v-if="l.status_lead === 'Baru' || l.status_lead === 'Tidak Tertarik'"
+                v-if="l.status_lead === 'Baru' || l.status_lead === 'Tidak Tertarik' || canForce"
                 class="btn-hapus"
                 @click="hapusLead(l.id_lead, l.nama_prospek)"
               >Hapus</button>

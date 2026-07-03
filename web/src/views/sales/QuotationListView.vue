@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
+import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 
 const router = useRouter()
 const sales = useSalesStore()
+const auth = useAuthStore()
+const canForce = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
 
 const filterStatus = ref('')
 const page = ref(1)
@@ -65,7 +68,27 @@ async function hapusQuotation(id: number, nomor: string) {
     await api.delete(`/sales/quotation/${id}`)
     fetchData()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus quotation')
+    const msg = e.response?.data?.message || 'Gagal menghapus quotation'
+    // Quotation non-Draft → tawarkan force delete (Admin/Director)
+    if (e.response?.status === 400 && String(msg).includes('force delete')) {
+      if (!canForce.value) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
+      const ketik = prompt(
+        `⚠️ PERINGATAN — Quotation "${nomor}" akan DIHAPUS PERMANEN.\n\n` +
+        `Kontrak yang terhubung TIDAK ikut terhapus, hanya dilepas dari quotation ini.\n\n` +
+        `Ketik nomor quotation "${nomor}" untuk konfirmasi:`,
+      )
+      if (ketik === null) return
+      if (ketik.trim() !== nomor) { alert('Nomor quotation tidak cocok — dibatalkan.'); return }
+      try {
+        const r = await api.delete(`/sales/quotation/${id}?force=true`)
+        fetchData()
+        alert(r.data?.message || 'Quotation dihapus (force)')
+      } catch (e2: any) {
+        alert(e2.response?.data?.message || 'Force delete gagal')
+      }
+      return
+    }
+    alert(msg)
   }
 }
 
@@ -151,7 +174,7 @@ function fmtDate(d: string) {
             </td>
             <td @click.stop>
               <button
-                v-if="q.status_approval === 'Draft'"
+                v-if="q.status_approval === 'Draft' || canForce"
                 class="btn-hapus"
                 @click="hapusQuotation(q.id_quotation, q.nomor_quotation)"
               >Hapus</button>

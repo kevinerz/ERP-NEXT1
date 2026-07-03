@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
+import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 
 const router = useRouter()
 const route = useRoute()
 const sales = useSalesStore()
+const auth = useAuthStore()
+const canForce = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
 
 const search = ref('')
 const filterTahapan = ref((route.query.tahapan as string) || '')
@@ -35,7 +38,27 @@ async function hapusOpportunity(id: number, nama: string) {
     await api.delete(`/sales/opportunity/${id}`)
     fetchData()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus opportunity')
+    const msg = e.response?.data?.message || 'Gagal menghapus opportunity'
+    // Opportunity masih punya data terkait → tawarkan force delete (Admin/Director)
+    if (e.response?.status === 400 && String(msg).includes('force delete')) {
+      if (!canForce.value) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
+      const ketik = prompt(
+        `⚠️ PERINGATAN — Opportunity "${nama}" akan DIHAPUS PERMANEN.\n\n` +
+        `Seluruh quotation, aktivitas, dan survey milik opportunity ini ikut terhapus permanen.\n\n` +
+        `Ketik nama opportunity "${nama}" untuk konfirmasi:`,
+      )
+      if (ketik === null) return
+      if (ketik.trim() !== nama) { alert('Nama opportunity tidak cocok — dibatalkan.'); return }
+      try {
+        const r = await api.delete(`/sales/opportunity/${id}?force=true`)
+        fetchData()
+        alert(r.data?.message || 'Opportunity + data terkait dihapus')
+      } catch (e2: any) {
+        alert(e2.response?.data?.message || 'Force delete gagal')
+      }
+      return
+    }
+    alert(msg)
   }
 }
 

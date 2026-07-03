@@ -3,11 +3,14 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
+import { useAuthStore } from '@/stores/auth'
 import { printQuotation } from '@/composables/usePrint'
 
 const route  = useRoute()
 const router = useRouter()
 const sales  = useSalesStore()
+const auth   = useAuthStore()
+const canForce = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
 
 const id      = Number(route.params.id)
 const qt      = ref<any>(null)
@@ -141,12 +144,33 @@ async function handleApprove() {
 }
 
 async function hapusQuotation() {
-  if (!confirm(`Hapus quotation "${qt.value?.nomor_quotation}" ini?`)) return
+  const nomor = qt.value?.nomor_quotation
+  if (!confirm(`Hapus quotation "${nomor}" ini?`)) return
   try {
     await api.delete(`/sales/quotation/${id}`)
     router.push('/sales/quotation')
   } catch (e: any) {
-    alert(e?.response?.data?.message ?? 'Gagal menghapus quotation')
+    const msg = e?.response?.data?.message ?? 'Gagal menghapus quotation'
+    // Quotation non-Draft → tawarkan force delete (Admin/Director)
+    if (e?.response?.status === 400 && String(msg).includes('force delete')) {
+      if (!canForce.value) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
+      const ketik = prompt(
+        `⚠️ PERINGATAN — Quotation "${nomor}" akan DIHAPUS PERMANEN.\n\n` +
+        `Kontrak yang terhubung TIDAK ikut terhapus, hanya dilepas dari quotation ini.\n\n` +
+        `Ketik nomor quotation "${nomor}" untuk konfirmasi:`,
+      )
+      if (ketik === null) return
+      if (ketik.trim() !== nomor) { alert('Nomor quotation tidak cocok — dibatalkan.'); return }
+      try {
+        const r = await api.delete(`/sales/quotation/${id}?force=true`)
+        alert(r.data?.message || 'Quotation dihapus (force)')
+        router.push('/sales/quotation')
+      } catch (e2: any) {
+        alert(e2?.response?.data?.message ?? 'Force delete gagal')
+      }
+      return
+    }
+    alert(msg)
   }
 }
 
@@ -210,6 +234,11 @@ const kodeProspek = computed(() => null)
           <template v-else-if="qt.status_approval === 'Approved'">
             <button class="btn-kontrak" @click="openKontrak">+ Buat Kontrak</button>
           </template>
+          <button
+            v-if="qt.status_approval !== 'Draft' && canForce"
+            class="btn-hapus"
+            @click="hapusQuotation"
+          >Hapus</button>
         </div>
       </div>
 

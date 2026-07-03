@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Delete, Body,
-  Param, Query, ParseIntPipe,
+  Param, Query, ParseIntPipe, ForbiddenException, Req,
 } from '@nestjs/common';
 import { SalesService } from './sales.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/lead.dto';
@@ -60,12 +60,26 @@ export class SalesController {
     return this.salesService.removeActivity(id);
   }
 
+  private cekForce(force: string, req: any): boolean {
+    if (force !== 'true') return false;
+    const roles: string[] = req.user?.roles || [];
+    if (!roles.includes('Admin') && !roles.includes('Director'))
+      throw new ForbiddenException('Force delete hanya untuk Admin/Director');
+    return true;
+  }
+
   @Delete('lead/:id')
-  removeLead(@Param('id', ParseIntPipe) id: number) { return this.salesService.removeLead(id); }
+  removeLead(@Param('id', ParseIntPipe) id: number, @Query('force') force: string, @Req() req: any) {
+    return this.salesService.removeLead(id, this.cekForce(force, req));
+  }
 
   @Delete('opportunity/:id')
-  removeOpportunity(@Param('id', ParseIntPipe) id: number) { return this.salesService.removeOpportunity(id); }
+  removeOpportunity(@Param('id', ParseIntPipe) id: number, @Query('force') force: string, @Req() req: any) {
+    return this.salesService.removeOpportunity(id, this.cekForce(force, req));
+  }
 
   @Delete('quotation/:id')
-  removeQuotation(@Param('id', ParseIntPipe) id: number) { return this.salesService.removeQuotation(id); }
+  removeQuotation(@Param('id', ParseIntPipe) id: number, @Query('force') force: string, @Req() req: any) {
+    return this.salesService.removeQuotation(id, this.cekForce(force, req));
+  }
 }

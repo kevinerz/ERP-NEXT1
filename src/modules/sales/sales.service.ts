@@ -387,36 +387,118 @@ export class SalesService {
 
   // ─── DELETE ──────────────────────────────────────────────────
 
-  async removeLead(id: number) {
+  async removeLead(id: number, force = false) {
     const row = await this.prisma.salesLead.findUnique({
       where: { id_lead: id },
-      include: { _count: { select: { opportunities: true } } },
+      include: {
+        opportunities: { select: { id_opportunity: true, _count: { select: { projects: true } } } },
+        _count: { select: { opportunities: true, activities: true } },
+      },
     });
     if (!row) throw new NotFoundException('Lead tidak ditemukan');
-    if ((row as any)._count.opportunities > 0)
-      throw new BadRequestException('Lead tidak bisa dihapus karena sudah memiliki Opportunity');
-    await this.prisma.salesLead.delete({ where: { id_lead: id } });
-    return { message: `Lead ${row.nama_prospek} dihapus` };
+
+    if (!force) {
+      if ((row as any)._count.opportunities > 0)
+        throw new BadRequestException(
+          'Lead sudah memiliki Opportunity, tidak bisa dihapus. Gunakan force delete untuk menghapus beserta seluruh data sales-nya.',
+        );
+      await this.prisma.$transaction([
+        this.prisma.salesActivity.deleteMany({ where: { id_lead: id } }),
+        this.prisma.salesLead.delete({ where: { id_lead: id } }),
+      ]);
+      return { message: `Lead ${row.nama_prospek} dihapus` };
+    }
+
+    // Project mereferensi opportunity (NOT NULL) — kalau sudah ada project, blok total
+    const punyaProject = row.opportunities.filter((o: any) => o._count.projects > 0);
+    if (punyaProject.length)
+      throw new BadRequestException(
+        'Lead ini punya Opportunity yang sudah menjadi Project — tidak bisa dihapus (data delivery akan yatim). Hapus/selesaikan project-nya dulu.',
+      );
+
+    const oppIds = row.opportunities.map((o) => o.id_opportunity);
+    await this.prisma.$transaction(async (tx) => {
+      if (oppIds.length) {
+        // Lepas kontrak dari quotation milik opportunity ini (kontrak tetap hidup)
+        await tx.kontrakLayanan.updateMany({
+          where: { quotation: { id_opportunity: { in: oppIds } } },
+          data: { id_quotation: null },
+        });
+        await tx.salesQuotation.deleteMany({ where: { id_opportunity: { in: oppIds } } });
+        await tx.presalesSurvey.deleteMany({ where: { id_opportunity: { in: oppIds } } });
+        await tx.salesActivity.deleteMany({ where: { id_opportunity: { in: oppIds } } });
+        await tx.salesOpportunity.deleteMany({ where: { id_lead: id } });
+      }
+      await tx.salesActivity.deleteMany({ where: { id_lead: id } });
+      await tx.salesLead.delete({ where: { id_lead: id } });
+    });
+    return { message: `Lead ${row.nama_prospek} beserta ${oppIds.length} opportunity & seluruh quotation/aktivitasnya DIHAPUS PERMANEN` };
   }
 
-  async removeOpportunity(id: number) {
+  async removeOpportunity(id: number, force = false) {
     const row = await this.prisma.salesOpportunity.findUnique({
       where: { id_opportunity: id },
-      include: { _count: { select: { quotations: true } } },
+      include: { _count: { select: { quotations: true, projects: true, activities: true, surveys: true } } },
     });
     if (!row) throw new NotFoundException('Opportunity tidak ditemukan');
-    if ((row as any)._count.quotations > 0)
-      throw new BadRequestException('Opportunity tidak bisa dihapus karena sudah memiliki Quotation');
-    await this.prisma.salesOpportunity.delete({ where: { id_opportunity: id } });
-    return { message: `Opportunity ${row.nama_opportunity} dihapus` };
+    const c = (row as any)._count;
+
+    // Project butuh opportunity (NOT NULL) — selalu blok
+    if (c.projects > 0)
+      throw new BadRequestException('Opportunity sudah menjadi Project — tidak bisa dihapus. Hapus project-nya dulu.');
+
+    if (!force) {
+      if (c.quotations > 0)
+        throw new BadRequestException(
+          'Opportunity sudah memiliki Quotation, tidak bisa dihapus. Gunakan force delete untuk menghapus beserta quotation-nya.',
+        );
+      await this.prisma.$transaction([
+        this.prisma.salesActivity.deleteMany({ where: { id_opportunity: id } }),
+        this.prisma.presalesSurvey.deleteMany({ where: { id_opportunity: id } }),
+        this.prisma.salesOpportunity.delete({ where: { id_opportunity: id } }),
+      ]);
+      return { message: `Opportunity ${row.nama_opportunity} dihapus` };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.kontrakLayanan.updateMany({
+        where: { quotation: { id_opportunity: id } },
+        data: { id_quotation: null },
+      });
+      await tx.salesQuotation.deleteMany({ where: { id_opportunity: id } });
+      await tx.presalesSurvey.deleteMany({ where: { id_opportunity: id } });
+      await tx.salesActivity.deleteMany({ where: { id_opportunity: id } });
+      await tx.salesOpportunity.delete({ where: { id_opportunity: id } });
+    });
+    return { message: `Opportunity ${row.nama_opportunity} beserta ${c.quotations} quotation DIHAPUS PERMANEN` };
   }
 
-  async removeQuotation(id: number) {
-    const row = await this.prisma.salesQuotation.findUnique({ where: { id_quotation: id } });
+  async removeQuotation(id: number, force = false) {
+    const row = await this.prisma.salesQuotation.findUnique({
+      where: { id_quotation: id },
+      include: { kontrak: { select: { id_kontrak: true, nomor_kontrak: true } } },
+    });
     if (!row) throw new NotFoundException('Quotation tidak ditemukan');
-    if (row.status_approval !== 'Draft')
-      throw new BadRequestException('Hanya Quotation berstatus Draft yang bisa dihapus');
-    await this.prisma.salesQuotation.delete({ where: { id_quotation: id } });
-    return { message: `Quotation ${row.nomor_quotation} dihapus` };
+
+    if (!force && row.status_approval !== 'Draft')
+      throw new BadRequestException(
+        `Quotation sudah ${row.status_approval}, hanya Draft yang bisa dihapus. Gunakan force delete untuk menghapus paksa.`,
+      );
+
+    const kontrakList = (row as any).kontrak as { nomor_kontrak: string }[];
+    await this.prisma.$transaction(async (tx) => {
+      // Kontrak tetap hidup — hanya dilepas dari quotation ini
+      if (kontrakList.length) {
+        await tx.kontrakLayanan.updateMany({
+          where: { id_quotation: id },
+          data: { id_quotation: null },
+        });
+      }
+      await tx.salesQuotation.delete({ where: { id_quotation: id } });
+    });
+    const info = kontrakList.length
+      ? ` (kontrak ${kontrakList.map((k) => k.nomor_kontrak).join(', ')} dilepas dari quotation, tidak ikut terhapus)`
+      : '';
+    return { message: `Quotation ${row.nomor_quotation} dihapus${info}` };
   }
 }
