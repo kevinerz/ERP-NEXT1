@@ -67,6 +67,23 @@ function fmtDt(d: string) {
   return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function statusLabel(s: string) { return s.replace('_', ' ') }
+
+// SLA badge: sisa waktu / TELAT untuk tiket aktif; ✓ untuk yang selesai
+function slaInfo(t: any): { label: string; cls: string } {
+  if (['Resolved', 'Closed'].includes(t.status_tiket)) {
+    return t.sla_breached ? { label: 'Telat', cls: 'sla-late-done' } : { label: '✓', cls: 'sla-ok' }
+  }
+  if (!t.sla_due) return { label: '—', cls: 'sla-none' }
+  const sisaMs = new Date(t.sla_due).getTime() - Date.now()
+  if (sisaMs <= 0) {
+    const jam = Math.floor(-sisaMs / 3600_000)
+    return { label: `TELAT ${jam >= 1 ? jam + 'j' : '<1j'}`, cls: 'sla-late' }
+  }
+  const jam = Math.floor(sisaMs / 3600_000)
+  const menit = Math.floor((sisaMs % 3600_000) / 60_000)
+  const label = jam >= 1 ? `${jam}j ${menit}m` : `${menit}m`
+  return { label, cls: sisaMs < 2 * 3600_000 ? 'sla-warning' : 'sla-safe' }
+}
 </script>
 
 <template>
@@ -114,6 +131,7 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
             <th>Judul</th>
             <th>Site / Pelanggan</th>
             <th>Prioritas</th>
+            <th>SLA</th>
             <th>Status</th>
             <th>Teknisi</th>
             <th>Tgl Open</th>
@@ -122,7 +140,7 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
         </thead>
         <tbody>
           <tr v-if="!ops.list.length">
-            <td colspan="8" class="empty">Tidak ada tiket</td>
+            <td colspan="9" class="empty">Tidak ada tiket</td>
           </tr>
           <tr v-for="t in ops.list" :key="t.id_ticket" class="row-link" @click="router.push(`/operations/${t.id_ticket}`)">
             <td class="fw700">{{ t.nomor_tiket }}</td>
@@ -137,6 +155,9 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
             <td>
               <span class="prioritas-dot" :style="{ color: PRIORITAS_COLOR[t.prioritas] }">●</span>
               {{ t.prioritas }}
+            </td>
+            <td>
+              <span :class="['sla-badge', slaInfo(t).cls]">{{ slaInfo(t).label }}</span>
             </td>
             <td>
               <span class="status-badge"
@@ -251,6 +272,14 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .judul { font-weight: 600; font-size: 14px; }
 .sumber { font-size: 11px; color: #94a3b8; }
 .prioritas-dot { font-size: 10px; margin-right: 4px; }
+.sla-badge { padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.sla-safe { background: #f0fdf4; color: #15803d; }
+.sla-warning { background: #fefce8; color: #a16207; }
+.sla-late { background: #dc2626; color: #fff; animation: slaPulse 1.2s infinite; }
+.sla-late-done { background: #fef2f2; color: #dc2626; }
+.sla-ok { background: #f0fdf4; color: #15803d; }
+.sla-none { color: #cbd5e1; }
+@keyframes slaPulse { 50% { opacity: 0.6; } }
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 .row-link { cursor: pointer; }
 .row-link:hover td { background: #f8fafc; }

@@ -133,6 +133,21 @@ function fmtDt(d?: string) {
   return d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 }
 function statusLabel(s: string) { return s.replace('_', ' ') }
+
+function slaInfo(t: any): { label: string; cls: string } {
+  if (['Resolved', 'Closed'].includes(t.status_tiket)) {
+    return t.sla_breached ? { label: 'Selesai (telat)', cls: 'sla-late-done' } : { label: 'Terpenuhi ✓', cls: 'sla-ok' }
+  }
+  if (!t.sla_due) return { label: '—', cls: 'sla-none' }
+  const sisaMs = new Date(t.sla_due).getTime() - Date.now()
+  if (sisaMs <= 0) {
+    const jam = Math.floor(-sisaMs / 3600_000)
+    return { label: `TELAT ${jam >= 1 ? jam + ' jam' : '<1 jam'}`, cls: 'sla-late' }
+  }
+  const jam = Math.floor(sisaMs / 3600_000)
+  const menit = Math.floor((sisaMs % 3600_000) / 60_000)
+  return { label: `sisa ${jam >= 1 ? jam + 'j ' : ''}${menit}m`, cls: sisaMs < 2 * 3600_000 ? 'sla-warning' : 'sla-safe' }
+}
 function ageHours(d: string) {
   const h = Math.floor((Date.now() - new Date(d).getTime()) / 3600000)
   return h < 24 ? `${h} jam` : `${Math.floor(h / 24)} hari`
@@ -151,6 +166,9 @@ function ageHours(d: string) {
           <p class="sub">{{ ops.current.judul_tiket }}</p>
         </div>
         <div class="header-right">
+          <span :class="['sla-badge-lg', slaInfo(ops.current).cls]" title="Deadline SLA berdasarkan prioritas">
+            SLA: {{ slaInfo(ops.current).label }}
+          </span>
           <span class="prioritas-badge" :style="{ color: PRIORITAS_COLOR[ops.current.prioritas], background: PRIORITAS_COLOR[ops.current.prioritas] + '20' }">
             ● {{ ops.current.prioritas }}
           </span>
@@ -398,6 +416,14 @@ function ageHours(d: string) {
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 .header-right { display: flex; align-items: center; gap: 10px; }
+.sla-badge-lg { padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.sla-safe { background: #f0fdf4; color: #15803d; }
+.sla-warning { background: #fefce8; color: #a16207; }
+.sla-late { background: #dc2626; color: #fff; animation: slaPulse 1.2s infinite; }
+.sla-late-done { background: #fef2f2; color: #dc2626; }
+.sla-ok { background: #f0fdf4; color: #15803d; }
+.sla-none { color: #cbd5e1; }
+@keyframes slaPulse { 50% { opacity: 0.6; } }
 .prioritas-badge { padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; }
 .status-big { padding: 5px 14px; border-radius: 20px; font-size: 14px; font-weight: 700; }
 .btn-print { padding: 9px 16px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }

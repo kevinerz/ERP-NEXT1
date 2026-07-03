@@ -25,6 +25,57 @@ export class SchedulerService {
     await this.tandaiInvoiceJatuhTempo();
     await this.tandaiKontrakBerakhir();
     await this.ingatkanKontrakAkanBerakhir();
+    await this.ingatkanTiketDingin();
+  }
+
+  // Tiap 15 menit — SLA tiket harus dicek lebih sering dari harian
+  @Cron('*/15 * * * *')
+  async cekSlaTiket() {
+    const now = new Date();
+    const telat = await this.prisma.operationTicket.findMany({
+      where: {
+        status_tiket: { in: ['Open', 'In_Progress', 'Pending_Customer'] },
+        sla_breached: false,
+        sla_due: { lt: now },
+      },
+      select: { id_ticket: true, nomor_tiket: true, judul_tiket: true, prioritas: true },
+    });
+    if (!telat.length) return;
+
+    await this.prisma.operationTicket.updateMany({
+      where: { id_ticket: { in: telat.map((t) => t.id_ticket) } },
+      data: { sla_breached: true },
+    });
+    this.logger.warn(`${telat.length} tiket melewati SLA`);
+    for (const t of telat) {
+      this.notif.notifyForModul('operations', {
+        tipe: 'sla_breach',
+        judul: `⚠️ SLA TERLEWATI [${t.prioritas}]`,
+        deskripsi: `${t.nomor_tiket} — ${t.judul_tiket}`,
+        url: `/operations/${t.id_ticket}`,
+      }).catch(() => {});
+    }
+  }
+
+  // Tiket open tanpa aktivitas (log) > 24 jam — ingatkan tim ops
+  async ingatkanTiketDingin() {
+    const batas = new Date(Date.now() - 24 * 3600_000);
+    const dingin = await this.prisma.operationTicket.findMany({
+      where: {
+        status_tiket: { in: ['Open', 'In_Progress'] },
+        updated_at: { lt: batas },
+        logs: { none: { created_at: { gte: batas } } },
+      },
+      select: { id_ticket: true, nomor_tiket: true, judul_tiket: true },
+      take: 20,
+    });
+    if (!dingin.length) return;
+    this.notif.notifyForModul('operations', {
+      tipe: 'tiket_dingin',
+      judul: `${dingin.length} tiket tanpa aktivitas >24 jam`,
+      deskripsi: dingin.slice(0, 5).map((t) => t.nomor_tiket).join(', ') + (dingin.length > 5 ? ', …' : ''),
+      url: '/operations',
+    }).catch(() => {});
   }
 
   async tandaiInvoiceJatuhTempo() {

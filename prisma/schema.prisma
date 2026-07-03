@@ -434,6 +434,8 @@ model OperationTicket {
   tgl_open                   DateTime  @default(now())
   tgl_resolved               DateTime?
   tgl_closed                 DateTime?
+  sla_due                    DateTime?
+  sla_breached               Boolean   @default(false)
   created_at                 DateTime  @default(now())
   updated_at                 DateTime  @updatedAt
 

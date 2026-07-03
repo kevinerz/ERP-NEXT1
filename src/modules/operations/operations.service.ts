@@ -36,6 +36,19 @@ const TICKET_DETAIL_INCLUDE = {
   },
 };
 
+// Target resolve SLA per prioritas (jam)
+export const SLA_JAM: Record<string, number> = {
+  Critical: 4,
+  High: 8,
+  Medium: 24,
+  Low: 72,
+};
+
+function hitungSlaDue(prioritas: string, dariWaktu: Date): Date {
+  const jam = SLA_JAM[prioritas] ?? SLA_JAM.Medium;
+  return new Date(dariWaktu.getTime() + jam * 3600_000);
+}
+
 @Injectable()
 export class OperationsService {
   constructor(
@@ -112,12 +125,14 @@ export class OperationsService {
       const seq = (last ? (parseInt(last.nomor_tiket.split('-')[2], 10) || 0) : 0) + 1;
       const nomor_tiket = `${prefix}-${String(seq).padStart(4, '0')}`;
       try {
+        const prioritas = dto.prioritas || 'Medium';
         const data = await this.prisma.operationTicket.create({
           data: {
             ...dto,
             nomor_tiket,
-            prioritas: dto.prioritas || 'Medium',
+            prioritas,
             sumber_tiket: dto.sumber_tiket || 'Internal',
+            sla_due: hitungSlaDue(prioritas, now),
           },
           include: TICKET_INCLUDE,
         });
@@ -151,6 +166,11 @@ export class OperationsService {
     }
     if (dto.status_tiket === 'Closed') {
       updateData.tgl_closed = new Date();
+    }
+    // Prioritas berubah → hitung ulang deadline SLA dari tgl_open
+    if (dto.prioritas && dto.prioritas !== ticket.prioritas) {
+      updateData.sla_due = hitungSlaDue(dto.prioritas, ticket.tgl_open);
+      updateData.sla_breached = false; // dinilai ulang oleh scheduler
     }
 
     const data = await this.prisma.operationTicket.update({
