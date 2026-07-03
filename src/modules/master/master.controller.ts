@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Delete,
-  Body, Param, Query, ParseIntPipe,
+  Body, Param, Query, ParseIntPipe, ForbiddenException, Req,
 } from '@nestjs/common';
 import { MasterService } from './master.service';
 import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
@@ -144,7 +144,19 @@ export class MasterController {
   }
 
   @Delete('site/:id')
-  removeSite(@Param('id', ParseIntPipe) id: number) { return this.masterService.removeSite(id); }
+  removeSite(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('force') force: string,
+    @Req() req: any,
+  ) {
+    const isForce = force === 'true';
+    if (isForce) {
+      const roles: string[] = req.user?.roles || [];
+      if (!roles.includes('Admin') && !roles.includes('Director'))
+        throw new ForbiddenException('Force delete site hanya untuk Admin/Director');
+    }
+    return this.masterService.removeSite(id, isForce);
+  }
 
   // ─── SUMBER INTERNET ─────────────────────────────────────────
 

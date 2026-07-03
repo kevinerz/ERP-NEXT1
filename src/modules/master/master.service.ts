@@ -304,19 +304,68 @@ export class MasterService {
     return { data, message: `Site diperbarui: ${data.kode_site} — ${data.nama_site}` };
   }
 
-  async removeSite(id: number) {
+  async removeSite(id: number, force = false) {
     const row = await this.prisma.sitePelanggan.findUnique({
       where: { id_site: id },
       include: {
-        _count: { select: { tickets: true, projects: true, kontrak: true } },
+        _count: { select: { tickets: true, projects: true, kontrak: true, work_orders: true, invoices: true } },
       },
     });
     if (!row) throw new NotFoundException('Site tidak ditemukan');
     const c = (row as any)._count;
-    if (c.tickets > 0 || c.projects > 0 || c.kontrak > 0)
-      throw new BadRequestException('Site masih memiliki Tiket/Project/Kontrak aktif, tidak bisa dihapus');
-    await this.prisma.sitePelanggan.delete({ where: { id_site: id } });
-    return { message: `Site ${row.kode_site} — ${row.nama_site} dihapus` };
+
+    if (!force) {
+      if (c.tickets > 0 || c.projects > 0 || c.kontrak > 0)
+        throw new BadRequestException(
+          'Site masih memiliki Tiket/Project/Kontrak aktif, tidak bisa dihapus. ' +
+          'Gunakan force delete untuk menghapus site BESERTA seluruh datanya.',
+        );
+      await this.prisma.sitePelanggan.delete({ where: { id_site: id } });
+      return { message: `Site ${row.kode_site} — ${row.nama_site} dihapus` };
+    }
+
+    // ─── FORCE DELETE: hapus site + SEMUA data terkait, transaksional ───
+    // Urutan penting: cucu → anak → site.
+    // Cascade otomatis: WO(foto/BA/material/pengiriman), Tiket(log/RCA),
+    // Invoice(pembayaran), Site(perangkat/pic/sumber_internet). Aset: id_site SetNull.
+    await this.prisma.$transaction(async (tx) => {
+      // Lepas referensi mutasi gudang (riwayat gudang tetap disimpan)
+      await tx.gudangMutasiAset.updateMany({
+        where: { wo: { id_site: id } }, data: { id_wo: null },
+      });
+      await tx.gudangMutasiAset.updateMany({
+        where: { project: { id_site: id } }, data: { id_project: null },
+      });
+      // Lepas referensi webhook monitoring ke tiket site ini
+      await tx.integrationPrtgWebhook.updateMany({
+        where: { ticket: { id_site: id } }, data: { id_ticket_terbentuk: null },
+      });
+      await tx.integrationRcmsWebhook.updateMany({
+        where: { ticket: { id_site: id } }, data: { id_ticket_terbentuk: null },
+      });
+      await tx.integrationRuijieWebhook.updateMany({
+        where: { ticket: { id_site: id } }, data: { id_ticket_terbentuk: null },
+      });
+
+      // Anak-anak WO & Tiket & Project
+      await tx.workOrder.deleteMany({ where: { id_site: id } });
+      await tx.operationTicket.deleteMany({ where: { id_site: id } });
+      await tx.projectDokumenLegal.deleteMany({ where: { project: { id_site: id } } });
+      await tx.projectDelivery.deleteMany({ where: { id_site: id } });
+
+      // Finance & integrasi
+      await tx.invoice.deleteMany({ where: { id_site: id } });
+      await tx.integrationJurnalAr.deleteMany({ where: { id_site: id } });
+      await tx.simTopup.deleteMany({ where: { id_site: id } });
+
+      // Kontrak, lalu site (perangkat/pic/sumber ikut cascade)
+      await tx.kontrakLayanan.deleteMany({ where: { id_site: id } });
+      await tx.sitePelanggan.delete({ where: { id_site: id } });
+    });
+
+    return {
+      message: `Site ${row.kode_site} — ${row.nama_site} beserta ${c.tickets} tiket, ${c.projects} project, ${c.kontrak} kontrak, ${c.work_orders} WO, dan ${c.invoices} invoice DIHAPUS PERMANEN`,
+    };
   }
 
   async getPelangganDropdown() {

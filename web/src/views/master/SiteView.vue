@@ -2,10 +2,12 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
+import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 
 const router = useRouter()
 const master = useMasterStore()
+const auth = useAuthStore()
 const page = ref(1)
 const search = ref('')
 const filterPelanggan = ref(0)
@@ -68,7 +70,29 @@ async function hapusSite(site: any) {
     master.siteList = master.siteList.filter((s: any) => s.id_site !== site.id_site)
     flash('Site dihapus')
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus site')
+    const msg = e.response?.data?.message || 'Gagal menghapus site'
+    // Site masih punya data terkait → tawarkan force delete (Admin/Director)
+    if (e.response?.status === 400 && String(msg).includes('force delete')) {
+      const canForce = auth.hasRole('Admin') || auth.hasRole('Director')
+      if (!canForce) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
+      const ketik = prompt(
+        `⚠️ PERINGATAN — Site "${site.nama_site}" masih punya tiket/project/kontrak/invoice.\n\n` +
+        `Force delete akan MENGHAPUS PERMANEN site beserta SEMUA data terkait ` +
+        `(tiket, project, WO, BAST, kontrak, invoice, pembayaran, topup).\n\n` +
+        `Ketik kode site "${site.kode_site}" untuk konfirmasi:`,
+      )
+      if (ketik === null) return
+      if (ketik.trim() !== site.kode_site) { alert('Kode site tidak cocok — dibatalkan.'); return }
+      try {
+        const r = await api.delete('/master/site/' + site.id_site + '?force=true')
+        master.siteList = master.siteList.filter((s: any) => s.id_site !== site.id_site)
+        flash(r.data?.message || 'Site + semua data terkait dihapus')
+      } catch (e2: any) {
+        alert(e2.response?.data?.message || 'Force delete gagal')
+      }
+      return
+    }
+    alert(msg)
   }
 }
 
