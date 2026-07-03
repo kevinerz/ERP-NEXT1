@@ -130,6 +130,7 @@ const PAGE_TITLES: Record<string, string> = {
   "aset-detail":          "Aset — Detail",
   "sim-topup":            "SIM Card — Topup",
   "kontrak-list":         "Kontrak",
+  "noc-board":            "NOC Board",
   "finance-dashboard":    "Finance — Dashboard",
   "invoice-list":         "Finance — Invoice",
   "invoice-detail":       "Finance — Detail Invoice",

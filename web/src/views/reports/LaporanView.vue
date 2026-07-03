@@ -26,6 +26,10 @@ const proyekLoading = ref(true)
 const asetReport = ref<any>(null)
 const asetLoading = ref(true)
 
+// Metrik NOC (MTTA/MTTR/SLA)
+const nocMetrics = ref<any>(null)
+const nocLoading = ref(true)
+
 const BULAN_LIST = [
   'Januari','Februari','Maret','April','Mei','Juni',
   'Juli','Agustus','September','Oktober','November','Desember',
@@ -39,7 +43,26 @@ onMounted(() => {
   loadTickets()
   loadProyek()
   loadAset()
+  loadNocMetrics()
 })
+
+async function loadNocMetrics() {
+  nocLoading.value = true
+  try {
+    nocMetrics.value = (await api.get('/operations/metrics', {
+      params: { bulan: filterBulan.value, tahun: filterTahun.value }
+    })).data.data
+  } catch {}
+  finally { nocLoading.value = false }
+}
+
+function fmtMenit(m: number | null) {
+  if (m === null || m === undefined) return '—'
+  if (m < 60) return `${m} mnt`
+  const j = Math.floor(m / 60)
+  if (j < 24) return `${j}j ${m % 60}m`
+  return `${Math.floor(j / 24)}h ${j % 24}j`
+}
 
 async function loadKpi() {
   kpiLoading.value = true
@@ -237,7 +260,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
         <div class="card-header">
           <h3>Laporan Tiket</h3>
           <div class="filter-row">
-            <select v-model.number="filterBulan" @change="loadTickets" class="filter-sm">
+            <select v-model.number="filterBulan" @change="loadTickets(); loadNocMetrics()" class="filter-sm">
               <option v-for="(b, i) in BULAN_LIST" :key="i" :value="i+1">{{ b }}</option>
             </select>
             <select v-model.number="filterTahun" @change="loadTickets" class="filter-sm">
@@ -276,6 +299,64 @@ const STATUS_ASET_COLOR: Record<string, string> = {
           </div>
         </template>
       </div>
+    </div>
+
+    <!-- Metrik NOC / SLA -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <h3>Metrik NOC — {{ BULAN_LIST[filterBulan - 1] }} {{ filterTahun }}</h3>
+      </div>
+      <div v-if="nocLoading" class="loading-sm">Memuat...</div>
+      <template v-else-if="nocMetrics">
+        <div class="metric-row">
+          <div class="metric">
+            <div class="metric-val">{{ nocMetrics.total_tiket }}</div>
+            <div class="metric-label">Total Tiket</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val blue-val">{{ fmtMenit(nocMetrics.mtta_menit) }}</div>
+            <div class="metric-label">MTTA (rata-rata respon)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val blue-val">{{ fmtMenit(nocMetrics.mttr_menit) }}</div>
+            <div class="metric-label">MTTR (rata-rata resolve)</div>
+          </div>
+          <div class="metric">
+            <div class="metric-val" :class="(nocMetrics.sla_compliance ?? 100) >= 90 ? 'green-val' : 'red-val'">
+              {{ nocMetrics.sla_compliance ?? '—' }}{{ nocMetrics.sla_compliance !== null ? '%' : '' }}
+            </div>
+            <div class="metric-label">Kepatuhan SLA ({{ nocMetrics.sla_breach }} telat)</div>
+          </div>
+        </div>
+        <div class="noc-tables">
+          <div>
+            <div class="section-title-sm">Per Prioritas</div>
+            <table class="mini-table">
+              <thead><tr><th>Prioritas</th><th>Tiket</th><th>Selesai</th><th>MTTR</th><th>Telat SLA</th></tr></thead>
+              <tbody>
+                <tr v-for="p in nocMetrics.per_prioritas" :key="p.prioritas">
+                  <td>{{ p.prioritas }}</td><td>{{ p.total }}</td><td>{{ p.resolved }}</td>
+                  <td>{{ fmtMenit(p.mttr_menit) }}</td>
+                  <td :class="{ 'red-text': p.sla_breach > 0 }">{{ p.sla_breach }}</td>
+                </tr>
+                <tr v-if="!nocMetrics.per_prioritas.length"><td colspan="5" class="empty-sm">Belum ada tiket periode ini</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <div class="section-title-sm">Per Teknisi</div>
+            <table class="mini-table">
+              <thead><tr><th>Teknisi</th><th>Selesai</th><th>MTTR</th></tr></thead>
+              <tbody>
+                <tr v-for="t in nocMetrics.per_teknisi" :key="t.nama">
+                  <td>{{ t.nama }}</td><td>{{ t.resolved }}</td><td>{{ fmtMenit(t.mttr_menit) }}</td>
+                </tr>
+                <tr v-if="!nocMetrics.per_teknisi.length"><td colspan="3" class="empty-sm">Belum ada tiket selesai</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
     </div>
 
     <div class="two-col">
@@ -420,5 +501,13 @@ const STATUS_ASET_COLOR: Record<string, string> = {
 .prio-badge.critical { background: #fef2f2; color: #dc2626; }
 
 .section-title-sm { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.metric-val.red-val { color: #dc2626; }
+.red-text { color: #dc2626; font-weight: 700; }
+.noc-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 8px; }
+@media (max-width: 768px) { .noc-tables { grid-template-columns: 1fr; } }
+.mini-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mini-table th { text-align: left; padding: 6px 8px; color: #94a3b8; font-size: 11px; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
+.mini-table td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+.empty-sm { color: #94a3b8; text-align: center; padding: 12px !important; }
 .mt8 { margin-top: 12px; }
 </style>

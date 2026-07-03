@@ -93,7 +93,10 @@ function slaInfo(t: any): { label: string; cls: string } {
         <h2>Operasional</h2>
         <p class="sub">Manajemen tiket helpdesk & troubleshoot</p>
       </div>
-      <button class="btn-primary" @click="showModal = true; formError = ''">+ Buat Tiket</button>
+      <div style="display:flex; gap:8px">
+        <button class="btn-noc" @click="router.push('/operations/noc')">📺 NOC Board</button>
+        <button class="btn-primary" @click="showModal = true; formError = ''">+ Buat Tiket</button>
+      </div>
     </div>
 
     <!-- Summary chips -->
@@ -243,6 +246,8 @@ function slaInfo(t: any): { label: string; cls: string } {
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 .btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-noc { padding: 10px 20px; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-noc:hover { background: #1e293b; }
 
 .summary-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 .summary-chip { background: #fff; border-radius: 8px; padding: 12px 16px; border-left: 4px solid #94a3b8; box-shadow: 0 1px 3px rgba(0,0,0,0.07); cursor: pointer; min-width: 110px; }

@@ -231,6 +231,137 @@ export class OperationsService {
 
   // ─── HELPERS ──────────────────────────────────────────────────
 
+  // ─── NOC BOARD — snapshot real-time untuk wallboard ───────────
+  async getNocBoard() {
+    const now = new Date();
+    const awalHari = new Date(now); awalHari.setHours(0, 0, 0, 0);
+
+    const [aktif, resolvedHariIni, woLapangan] = await Promise.all([
+      this.prisma.operationTicket.findMany({
+        where: { status_tiket: { in: ['Open', 'In_Progress', 'Pending_Customer'] } },
+        select: {
+          id_ticket: true, nomor_tiket: true, judul_tiket: true,
+          prioritas: true, status_tiket: true, tgl_open: true,
+          sla_due: true, sla_breached: true,
+          site: { select: { nama_site: true, kota: true, pelanggan: { select: { nama_pelanggan: true } } } },
+          teknisi: { select: { nama_lengkap: true } },
+        },
+        orderBy: [{ sla_due: 'asc' }],
+        take: 100,
+      }),
+      this.prisma.operationTicket.count({
+        where: { status_tiket: { in: ['Resolved', 'Closed'] }, tgl_resolved: { gte: awalHari } },
+      }),
+      // Teknisi yang sedang bertugas di lapangan (WO Dispatch/On-Site)
+      this.prisma.workOrder.findMany({
+        where: { status_wo: { in: ['Dispatch', 'On-Site'] } },
+        select: {
+          nomor_wo: true, status_wo: true, jenis_wo: true,
+          teknisi: { select: { nama_lengkap: true } },
+          vendor: { select: { nama_vendor: true } },
+          site: { select: { nama_site: true } },
+        },
+        orderBy: { tgl_jadwal: 'asc' },
+        take: 30,
+      }),
+    ]);
+
+    const byPrioritas: Record<string, number> = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+    let slaBreach = 0;
+    let slaWarning = 0; // < 2 jam menuju deadline
+    for (const t of aktif) {
+      byPrioritas[t.prioritas] = (byPrioritas[t.prioritas] ?? 0) + 1;
+      if (t.sla_breached || (t.sla_due && t.sla_due < now)) slaBreach++;
+      else if (t.sla_due && t.sla_due.getTime() - now.getTime() < 2 * 3600_000) slaWarning++;
+    }
+
+    return {
+      data: {
+        waktu_server: now,
+        total_aktif: aktif.length,
+        by_prioritas: byPrioritas,
+        sla_breach: slaBreach,
+        sla_warning: slaWarning,
+        resolved_hari_ini: resolvedHariIni,
+        tiket: aktif,
+        wo_lapangan: woLapangan,
+      },
+    };
+  }
+
+  // ─── METRIK NOC: MTTA / MTTR / kepatuhan SLA ──────────────────
+  async getMetrics(query: { bulan?: string; tahun?: string }) {
+    const now = new Date();
+    const bulan = Number(query.bulan) || now.getMonth() + 1;
+    const tahun = Number(query.tahun) || now.getFullYear();
+    const awal = new Date(tahun, bulan - 1, 1);
+    const akhir = new Date(tahun, bulan, 1);
+
+    const tikets = await this.prisma.operationTicket.findMany({
+      where: { tgl_open: { gte: awal, lt: akhir } },
+      select: {
+        prioritas: true, status_tiket: true, tgl_open: true, tgl_resolved: true,
+        sla_breached: true,
+        teknisi: { select: { nama_lengkap: true } },
+        logs: {
+          where: { NOT: { catatan: 'Tiket dibuat' } },
+          orderBy: { created_at: 'asc' },
+          take: 1,
+          select: { created_at: true },
+        },
+      },
+    });
+
+    const menit = (ms: number) => Math.round(ms / 60000);
+    const avg = (arr: number[]) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null);
+
+    const mttaList: number[] = [];
+    const mttrList: number[] = [];
+    const perPrioritas: Record<string, { total: number; resolved: number; mttr: number[]; breach: number }> = {};
+    const perTeknisi: Record<string, { resolved: number; mttr: number[] }> = {};
+    let totalBreach = 0;
+
+    for (const t of tikets) {
+      const p = (perPrioritas[t.prioritas] ??= { total: 0, resolved: 0, mttr: [], breach: 0 });
+      p.total++;
+      if (t.sla_breached) { p.breach++; totalBreach++; }
+      // MTTA: respon pertama = log pertama setelah log pembuatan
+      if (t.logs[0]) mttaList.push(menit(t.logs[0].created_at.getTime() - t.tgl_open.getTime()));
+      // MTTR: open -> resolved
+      if (t.tgl_resolved) {
+        const durasi = menit(t.tgl_resolved.getTime() - t.tgl_open.getTime());
+        mttrList.push(durasi);
+        p.resolved++;
+        p.mttr.push(durasi);
+        const nama = t.teknisi?.nama_lengkap ?? 'Tanpa PIC';
+        const tek = (perTeknisi[nama] ??= { resolved: 0, mttr: [] });
+        tek.resolved++;
+        tek.mttr.push(durasi);
+      }
+    }
+
+    const total = tikets.length;
+    const resolved = mttrList.length;
+    return {
+      data: {
+        periode: `${tahun}-${String(bulan).padStart(2, '0')}`,
+        total_tiket: total,
+        resolved,
+        mtta_menit: avg(mttaList),
+        mttr_menit: avg(mttrList),
+        sla_compliance: total ? Math.round(((total - totalBreach) / total) * 100) : null,
+        sla_breach: totalBreach,
+        per_prioritas: Object.entries(perPrioritas).map(([prioritas, v]) => ({
+          prioritas, total: v.total, resolved: v.resolved,
+          mttr_menit: avg(v.mttr), sla_breach: v.breach,
+        })),
+        per_teknisi: Object.entries(perTeknisi)
+          .map(([nama, v]) => ({ nama, resolved: v.resolved, mttr_menit: avg(v.mttr) }))
+          .sort((a, b) => b.resolved - a.resolved),
+      },
+    };
+  }
+
   async getStatusSummary() {
     const statuses = ['Open', 'In_Progress', 'Pending_Customer', 'Resolved', 'Closed'];
     const rows = await this.prisma.operationTicket.groupBy({

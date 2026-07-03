@@ -170,6 +170,11 @@ const router = createRouter({
         },
         // Finance
         {
+          path: 'operations/noc',
+          name: 'noc-board',
+          component: () => import('@/views/operations/NocBoardView.vue'),
+        },
+        {
           path: 'finance',
           name: 'finance-dashboard',
           component: () => import('@/views/finance/FinanceDashboardView.vue'),
