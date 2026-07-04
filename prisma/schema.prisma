@@ -96,6 +96,10 @@ model MasterVendorIsp {
   kontak_pic  String?  @db.VarChar(100)
   email_pic   String?  @db.VarChar(150)
   no_telp     String?  @db.VarChar(20)
+  alamat      String?  @db.Text
+  bank_nama          String? @db.VarChar(50)
+  bank_no_rekening   String? @db.VarChar(50)
+  bank_atas_nama     String? @db.VarChar(150)
   catatan     String?  @db.Text
   is_aktif    Boolean  @default(true)
   created_at  DateTime @default(now())

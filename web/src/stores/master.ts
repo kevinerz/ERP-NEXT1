@@ -17,6 +17,10 @@ export interface Vendor {
   kontak_pic?: string
   email_pic?: string
   no_telp?: string
+  alamat?: string
+  bank_nama?: string
+  bank_no_rekening?: string
+  bank_atas_nama?: string
   catatan?: string
   is_aktif: boolean
   created_at: string

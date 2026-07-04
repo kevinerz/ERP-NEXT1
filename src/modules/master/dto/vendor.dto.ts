@@ -26,6 +26,25 @@ export class CreateVendorDto {
 
   @IsOptional()
   @IsString()
+  alamat?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  bank_nama?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  bank_no_rekening?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  bank_atas_nama?: string;
+
+  @IsOptional()
+  @IsString()
   catatan?: string;
 
   @IsOptional()
@@ -58,6 +77,25 @@ export class UpdateVendorDto {
   @IsString()
   @MaxLength(20)
   no_telp?: string;
+
+  @IsOptional()
+  @IsString()
+  alamat?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  bank_nama?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  bank_no_rekening?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  bank_atas_nama?: string;
 
   @IsOptional()
   @IsString()

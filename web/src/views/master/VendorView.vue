@@ -16,7 +16,9 @@ const isEdit = ref(false)
 const editId = ref<number | null>(null)
 const form = ref({
   nama_vendor: '', tipe_vendor: '', kontak_pic: '',
-  email_pic: '', no_telp: '', catatan: '', is_aktif: true,
+  email_pic: '', no_telp: '', alamat: '',
+  bank_nama: '', bank_no_rekening: '', bank_atas_nama: '',
+  catatan: '', is_aktif: true,
 })
 const submitting = ref(false)
 const formError = ref('')
@@ -52,7 +54,7 @@ function goPage(p: number) { page.value = p; fetchData() }
 function openAdd() {
   isEdit.value = false
   editId.value = null
-  form.value = { nama_vendor: '', tipe_vendor: '', kontak_pic: '', email_pic: '', no_telp: '', catatan: '', is_aktif: true }
+  form.value = { nama_vendor: '', tipe_vendor: '', kontak_pic: '', email_pic: '', no_telp: '', alamat: '', bank_nama: '', bank_no_rekening: '', bank_atas_nama: '', catatan: '', is_aktif: true }
   formError.value = ''
   showModal.value = true
 }
@@ -66,6 +68,10 @@ function openEdit(v: Vendor) {
     kontak_pic: v.kontak_pic || '',
     email_pic: v.email_pic || '',
     no_telp: v.no_telp || '',
+    alamat: (v as any).alamat || '',
+    bank_nama: (v as any).bank_nama || '',
+    bank_no_rekening: (v as any).bank_no_rekening || '',
+    bank_atas_nama: (v as any).bank_atas_nama || '',
     catatan: v.catatan || '',
     is_aktif: v.is_aktif,
   }
@@ -87,6 +93,10 @@ async function handleSubmit() {
       kontak_pic: form.value.kontak_pic || undefined,
       email_pic: form.value.email_pic || undefined,
       no_telp: form.value.no_telp || undefined,
+      alamat: form.value.alamat || undefined,
+      bank_nama: form.value.bank_nama || undefined,
+      bank_no_rekening: form.value.bank_no_rekening || undefined,
+      bank_atas_nama: form.value.bank_atas_nama || undefined,
       catatan: form.value.catatan || undefined,
       is_aktif: form.value.is_aktif,
     }
@@ -172,8 +182,8 @@ async function hapusVendor(vendor: Vendor) {
             <th>Nama Vendor</th>
             <th style="width:110px">Tipe</th>
             <th>PIC</th>
-            <th>Email</th>
-            <th style="width:130px">No. Telp</th>
+            <th style="width:130px">HP / WA</th>
+            <th>Rekening Bank</th>
             <th style="width:100px">Status</th>
             <th style="width:180px">Aksi</th>
           </tr>
@@ -196,9 +206,18 @@ async function hapusVendor(vendor: Vendor) {
                 :style="{ background: TIPE_COLOR[v.tipe_vendor]?.bg, color: TIPE_COLOR[v.tipe_vendor]?.color }"
               >{{ v.tipe_vendor }}</span>
             </td>
-            <td>{{ v.kontak_pic || '—' }}</td>
-            <td class="text-gray">{{ v.email_pic || '—' }}</td>
+            <td>
+              <div>{{ v.kontak_pic || '—' }}</div>
+              <div class="text-gray text-sm" v-if="v.email_pic">{{ v.email_pic }}</div>
+            </td>
             <td>{{ v.no_telp || '—' }}</td>
+            <td>
+              <template v-if="(v as any).bank_no_rekening">
+                <div class="fw600">{{ (v as any).bank_nama }} · {{ (v as any).bank_no_rekening }}</div>
+                <div class="text-gray text-sm">a.n. {{ (v as any).bank_atas_nama || '—' }}</div>
+              </template>
+              <span v-else class="text-gray">—</span>
+            </td>
             <td>
               <span :class="v.is_aktif ? 'badge-aktif' : 'badge-nonaktif'">
                 {{ v.is_aktif ? 'Aktif' : 'Nonaktif' }}
@@ -266,9 +285,28 @@ async function hapusVendor(vendor: Vendor) {
             <input v-model="form.email_pic" type="email" placeholder="email@vendor.com" />
           </div>
           <div class="field">
-            <label>No. Telp</label>
+            <label>No. HP / WA</label>
             <input v-model="form.no_telp" placeholder="08xx-xxxx" />
           </div>
+          <div class="field full">
+            <label>Alamat</label>
+            <textarea v-model="form.alamat" rows="2" placeholder="Alamat lengkap vendor"></textarea>
+          </div>
+
+          <div class="field full bank-divider">🏦 Rekening Bank (untuk pembayaran)</div>
+          <div class="field">
+            <label>Bank</label>
+            <input v-model="form.bank_nama" placeholder="BCA / Mandiri / BNI ..." />
+          </div>
+          <div class="field">
+            <label>No. Rekening</label>
+            <input v-model="form.bank_no_rekening" placeholder="1234567890" />
+          </div>
+          <div class="field full">
+            <label>Atas Nama</label>
+            <input v-model="form.bank_atas_nama" placeholder="Nama pemilik rekening" />
+          </div>
+
           <div class="field full">
             <label>Catatan</label>
             <textarea v-model="form.catatan" rows="2" placeholder="Opsional"></textarea>
@@ -319,6 +357,12 @@ td { padding: 13px 16px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .empty-desc { font-size: 13px; color: #94a3b8; }
 .loading { padding: 40px; text-align: center; color: #94a3b8; }
 .fw600 { font-weight: 600; }
+.text-sm { font-size: 12px; }
+.bank-divider {
+  font-size: 12px; font-weight: 700; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  border-top: 1px solid #f1f5f9; padding-top: 12px; margin-top: 4px;
+}
 .text-gray { color: #64748b; }
 
 .tipe-badge { padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; }
