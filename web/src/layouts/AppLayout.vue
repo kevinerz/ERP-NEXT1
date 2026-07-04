@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
@@ -14,6 +14,10 @@ const notif  = useNotificationStore()
 const sidebarOpen    = ref(true)
 const showNotifPanel = ref(false)
 const showUserMenu   = ref(false)
+const mobileNavOpen  = ref(false)
+
+// Tutup drawer mobile setiap pindah halaman
+watch(() => route.path, () => { mobileNavOpen.value = false })
 
 const appVersion = __APP_VERSION__
 const appHash    = __APP_GIT_HASH__
@@ -154,8 +158,11 @@ const initials = computed(() => {
 <template>
   <div class="app-shell">
 
+    <!-- Backdrop drawer mobile -->
+    <div v-if="mobileNavOpen" class="mobile-backdrop" @click="mobileNavOpen = false"></div>
+
     <!-- ─── Sidebar ─────────────────────────────────────── -->
-    <aside :class="['sidebar', { collapsed: !sidebarOpen }]">
+    <aside :class="['sidebar', { collapsed: !sidebarOpen, 'mobile-open': mobileNavOpen }]">
 
       <!-- Brand -->
       <div class="sidebar-brand">
@@ -164,40 +171,40 @@ const initials = computed(() => {
           <span v-else>{{ (cfg.settings.company_brand || 'N1').slice(0, 2).toUpperCase() }}</span>
         </div>
         <Transition name="fade-text">
-          <span v-if="sidebarOpen" class="brand-name">ERP {{ cfg.settings.company_brand || 'NEXT1' }}</span>
+          <span v-if="sidebarOpen || mobileNavOpen" class="brand-name">ERP {{ cfg.settings.company_brand || 'NEXT1' }}</span>
         </Transition>
       </div>
 
       <!-- Navigation -->
       <nav class="sidebar-nav">
-        <div class="nav-section-label" v-if="sidebarOpen">MENU</div>
+        <div class="nav-section-label" v-if="sidebarOpen || mobileNavOpen">MENU</div>
         <RouterLink
           v-for="item in menu" :key="item.to" :to="item.to"
           class="nav-item" active-class="active"
         >
           <span class="nav-emoji">{{ item.emoji }}</span>
           <Transition name="fade-text">
-            <span v-if="sidebarOpen" class="nav-label">{{ item.label }}</span>
+            <span v-if="sidebarOpen || mobileNavOpen" class="nav-label">{{ item.label }}</span>
           </Transition>
         </RouterLink>
 
         <template v-if="auth.hasRole('Admin') || auth.hasRole('Director')">
           <div class="nav-divider"></div>
-          <div class="nav-section-label" v-if="sidebarOpen">ADMIN</div>
+          <div class="nav-section-label" v-if="sidebarOpen || mobileNavOpen">ADMIN</div>
           <RouterLink
             v-for="item in adminMenu" :key="item.to" :to="item.to"
             class="nav-item" active-class="active"
           >
             <span class="nav-emoji">{{ item.emoji }}</span>
             <Transition name="fade-text">
-              <span v-if="sidebarOpen" class="nav-label">{{ item.label }}</span>
+              <span v-if="sidebarOpen || mobileNavOpen" class="nav-label">{{ item.label }}</span>
             </Transition>
           </RouterLink>
         </template>
       </nav>
 
       <!-- Version -->
-      <div class="sidebar-version" v-if="sidebarOpen">
+      <div class="sidebar-version" v-if="sidebarOpen || mobileNavOpen">
         <span class="ver-text">v{{ appVersion }}</span>
         <span class="ver-hash">{{ appHash }}</span>
       </div>
@@ -206,7 +213,7 @@ const initials = computed(() => {
       <button class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">
         <span class="toggle-icon">{{ sidebarOpen ? '«' : '»' }}</span>
         <Transition name="fade-text">
-          <span v-if="sidebarOpen" class="toggle-label">Tutup Sidebar</span>
+          <span v-if="sidebarOpen || mobileNavOpen" class="toggle-label">Tutup Sidebar</span>
         </Transition>
       </button>
     </aside>
@@ -217,6 +224,7 @@ const initials = computed(() => {
       <!-- Topbar -->
       <header class="topbar">
         <div class="topbar-left">
+          <button class="hamburger" @click="mobileNavOpen = !mobileNavOpen" aria-label="Menu">☰</button>
           <div class="page-title">{{ pageTitle }}</div>
         </div>
 
@@ -486,7 +494,21 @@ const initials = computed(() => {
   flex-shrink: 0;
 }
 
-.topbar-left {}
+.topbar-left { display: flex; align-items: center; gap: 10px; }
+.hamburger {
+  display: none;
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  width: 38px; height: 38px;
+  font-size: 18px;
+  color: #334155;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mobile-backdrop {
+  display: none;
+}
 .page-title {
   font-size: 15px;
   font-weight: 700;
@@ -701,4 +723,41 @@ const initials = computed(() => {
 .toast-leave-active { animation: toastOut 0.2s ease forwards; }
 @keyframes toastIn  { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes toastOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(110%); opacity: 0; } }
+
+/* ── Mobile (≤768px): sidebar jadi drawer, konten full-width ── */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 250px !important;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .sidebar.mobile-open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35); }
+  /* Di mobile sidebar selalu tampil penuh (label kelihatan) */
+  .sidebar.collapsed { width: 250px !important; }
+  .sidebar-toggle { display: none; }
+
+  .mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.5);
+    z-index: 49;
+  }
+
+  .main-wrapper { margin-left: 0 !important; }
+  .hamburger { display: inline-flex; align-items: center; justify-content: center; }
+
+  .topbar { padding: 0 12px; }
+  .page-title { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; }
+  .main-content { padding: 12px; }
+
+  .notif-panel {
+    position: fixed !important;
+    top: 60px; left: 8px; right: 8px;
+    width: auto !important;
+    max-height: 70vh;
+  }
+  .toast-stack { left: 8px; right: 8px; }
+  .toast { max-width: none; }
+}
 </style>

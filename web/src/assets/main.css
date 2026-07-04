@@ -12,3 +12,41 @@ body {
 #app {
   min-height: 100vh;
 }
+
+/* ===== Mobile global (<=768px) ===== */
+@media (max-width: 768px) {
+  /* Semua tabel bisa digeser horizontal, tidak memecah layout */
+  .table-card, .table-wrap, .panel {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-card table, .panel table {
+    min-width: 640px;
+  }
+
+  /* Grid umum jadi satu kolom */
+  .two-col, .grid-layout, .form-grid, .noc-main, .stat-row,
+  .kpi-row, .metric-row, .field-row, .settings-layout, .noc-tables {
+    grid-template-columns: 1fr !important;
+    display: grid;
+  }
+
+  /* Header halaman menumpuk rapi */
+  .page-header, .header-row, .filter-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Modal penuh layar kecil */
+  .modal, .modal-overlay .modal {
+    width: calc(100vw - 24px) !important;
+    max-width: none !important;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+
+  /* Input & tombol lebih mudah disentuh */
+  input, select, textarea, button {
+    font-size: 16px; /* cegah zoom otomatis iOS */
+  }
+}
