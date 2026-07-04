@@ -633,4 +633,61 @@ export class MasterService {
     const site = (existing as any)?.site;
     return { data: null, message: `PIC dihapus: ${existing?.nama_pic || 'ID ' + id} dari ${site?.nama_site || 'site'}` };
   }
+
+  // ─── KONTAK TEKNISI / PEMASANG (pihak ketiga) ─────────────────
+
+  async findAllKontakTeknisi(query: { search?: string; is_aktif?: string; page?: number; limit?: number }) {
+    const page = Number(query.page) || 1;
+    const limit = Math.min(Number(query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (query.search) {
+      where.OR = [
+        { nama: { contains: query.search } },
+        { no_hp: { contains: query.search } },
+        { asal_vendor: { contains: query.search } },
+        { keahlian: { contains: query.search } },
+      ];
+    }
+    if (query.is_aktif === 'true') where.is_aktif = true;
+    if (query.is_aktif === 'false') where.is_aktif = false;
+
+    const [data, total] = await Promise.all([
+      this.prisma.masterKontakTeknisi.findMany({
+        where, skip, take: limit,
+        orderBy: { nama: 'asc' },
+      }),
+      this.prisma.masterKontakTeknisi.count({ where }),
+    ]);
+    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
+  }
+
+  async createKontakTeknisi(dto: any) {
+    const data = await this.prisma.masterKontakTeknisi.create({ data: dto });
+    return { data, message: `Kontak ${data.nama} ditambahkan` };
+  }
+
+  async updateKontakTeknisi(id: number, dto: any) {
+    const row = await this.prisma.masterKontakTeknisi.findUnique({ where: { id_kontak: id } });
+    if (!row) throw new NotFoundException('Kontak tidak ditemukan');
+    const data = await this.prisma.masterKontakTeknisi.update({ where: { id_kontak: id }, data: dto });
+    return { data, message: 'Kontak diperbarui' };
+  }
+
+  async toggleKontakTeknisi(id: number) {
+    const row = await this.prisma.masterKontakTeknisi.findUnique({ where: { id_kontak: id } });
+    if (!row) throw new NotFoundException('Kontak tidak ditemukan');
+    const data = await this.prisma.masterKontakTeknisi.update({
+      where: { id_kontak: id },
+      data: { is_aktif: !row.is_aktif },
+    });
+    return { data, message: `Kontak ${data.is_aktif ? 'diaktifkan' : 'dinonaktifkan'}` };
+  }
+
+  async removeKontakTeknisi(id: number) {
+    const row = await this.prisma.masterKontakTeknisi.findUnique({ where: { id_kontak: id } });
+    if (!row) throw new NotFoundException('Kontak tidak ditemukan');
+    await this.prisma.masterKontakTeknisi.delete({ where: { id_kontak: id } });
+    return { message: `Kontak ${row.nama} dihapus` };
+  }
 }

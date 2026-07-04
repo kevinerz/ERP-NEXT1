@@ -114,6 +114,7 @@ const PAGE_TITLES: Record<string, string> = {
   "master-index":         "Master Data",
   "master-layanan":       "Master — Layanan",
   "master-vendor":        "Master — Vendor ISP",
+  "master-kontak-teknisi": "Master — Kontak Teknisi",
   "master-pelanggan":     "Master — Pelanggan",
   "master-site":          "Master — Site",
   "master-site-detail":   "Master — Detail Site",

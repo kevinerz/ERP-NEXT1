@@ -20,6 +20,14 @@ const menus = [
     accent: '#15803d',
   },
   {
+    icon: '🧰',
+    label: 'Kontak Teknisi',
+    desc: 'Orang pemasang / teknisi pihak ketiga — HP/WA & rekening bank',
+    to: '/master/kontak-teknisi',
+    color: '#fff7ed',
+    accent: '#c2410c',
+  },
+  {
     icon: '👥',
     label: 'Pelanggan',
     desc: 'Data customer, klien korporat, dan informasi kontrak',

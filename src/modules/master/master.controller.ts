@@ -12,6 +12,7 @@ import {
   CreatePerangkatDto, UpdatePerangkatDto,
   CreatePicDto, UpdatePicDto,
 } from './dto/site-detail.dto';
+import { CreateKontakTeknisiDto, UpdateKontakTeknisiDto } from './dto/kontak-teknisi.dto';
 
 @Controller('master')
 export class MasterController {
@@ -201,4 +202,23 @@ export class MasterController {
 
   @Delete('pic/:id')
   deletePic(@Param('id', ParseIntPipe) id: number) { return this.masterService.deletePic(id); }
+
+  // ─── KONTAK TEKNISI / PEMASANG ───────────────────────────────
+
+  @Get('kontak-teknisi')
+  findAllKontakTeknisi(@Query() q: any) { return this.masterService.findAllKontakTeknisi(q); }
+
+  @Post('kontak-teknisi')
+  createKontakTeknisi(@Body() dto: CreateKontakTeknisiDto) { return this.masterService.createKontakTeknisi(dto); }
+
+  @Patch('kontak-teknisi/:id')
+  updateKontakTeknisi(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateKontakTeknisiDto) {
+    return this.masterService.updateKontakTeknisi(id, dto);
+  }
+
+  @Patch('kontak-teknisi/:id/toggle')
+  toggleKontakTeknisi(@Param('id', ParseIntPipe) id: number) { return this.masterService.toggleKontakTeknisi(id); }
+
+  @Delete('kontak-teknisi/:id')
+  removeKontakTeknisi(@Param('id', ParseIntPipe) id: number) { return this.masterService.removeKontakTeknisi(id); }
 }

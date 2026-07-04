@@ -63,6 +63,11 @@ const router = createRouter({
           component: () => import('@/views/master/VendorView.vue'),
         },
         {
+          path: 'master/kontak-teknisi',
+          name: 'master-kontak-teknisi',
+          component: () => import('@/views/master/KontakTeknisiView.vue'),
+        },
+        {
           path: 'master/pelanggan',
           name: 'master-pelanggan',
           component: () => import('@/views/master/PelangganView.vue'),
@@ -241,7 +246,7 @@ const router = createRouter({
 // Map route name → modul key
 const ROUTE_MODUL: Record<string, string> = {
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris',
-  'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master',
+  'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master',
   'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master',
   'sales-dashboard': 'sales', 'sales-lead-list': 'sales', 'sales-lead-detail': 'sales',
   'sales-opp-list': 'sales', 'sales-opp-detail': 'sales',

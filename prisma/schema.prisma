@@ -112,6 +112,24 @@ model MasterVendorIsp {
   @@map("master_vendor_isp")
 }
 
+// Kontak orang pemasang / teknisi pihak ketiga (freelance/borongan)
+model MasterKontakTeknisi {
+  id_kontak        Int      @id @default(autoincrement())
+  nama             String   @db.VarChar(150)
+  no_hp            String   @db.VarChar(20)     // HP / WA
+  alamat           String?  @db.Text
+  asal_vendor      String?  @db.VarChar(150)    // perusahaan/tim asal (bebas)
+  keahlian         String?  @db.VarChar(150)    // mis. FO splicing, wireless, CCTV
+  bank_nama        String?  @db.VarChar(50)
+  bank_no_rekening String?  @db.VarChar(50)
+  bank_atas_nama   String?  @db.VarChar(150)
+  catatan          String?  @db.Text
+  is_aktif         Boolean  @default(true)
+  created_at       DateTime @default(now())
+
+  @@map("master_kontak_teknisi")
+}
+
 // ============================================================
 // LAYER 2 — USER & ACCESS
 // ============================================================
