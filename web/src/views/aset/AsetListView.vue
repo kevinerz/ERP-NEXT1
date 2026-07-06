@@ -13,7 +13,11 @@ const page = ref(1)
 const filterStatus = ref('')
 const filterKategori = ref('')
 const filterKondisi = ref('')
+const filterGudang = ref(0)
 const search = ref('')
+
+interface GudangOpt { id_gudang: number; kode_gudang: string; nama_gudang: string; kota?: string | null; is_aktif: boolean }
+const gudangList = ref<GudangOpt[]>([])
 
 const showModal = ref(false)
 const submitting = ref(false)
@@ -28,6 +32,7 @@ const form = ref({
   kategori: '',
   kondisi: 'Baru',
   id_site: 0,
+  id_gudang: 0,
   tgl_perolehan: '',
   harga_perolehan: 0,
   catatan: '',
@@ -45,15 +50,23 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 }
 
 onMounted(async () => {
-  await Promise.all([aset.fetchSummary(), aset.fetchKategori(), proyek.fetchSiteList()])
+  await Promise.all([aset.fetchSummary(), aset.fetchKategori(), proyek.fetchSiteList(), fetchGudang()])
   fetchData()
 })
+
+async function fetchGudang() {
+  try {
+    const r = await api.get('/master/gudang')
+    gudangList.value = r.data.data
+  } catch {}
+}
 
 function fetchData() {
   const params: any = { page: page.value }
   if (filterStatus.value) params.status_aset = filterStatus.value
   if (filterKategori.value) params.kategori = filterKategori.value
   if (filterKondisi.value) params.kondisi = filterKondisi.value
+  if (filterGudang.value) params.id_gudang = filterGudang.value
   if (search.value) params.search = search.value
   aset.fetchList(params)
 }
@@ -64,7 +77,8 @@ function resetForm() {
   form.value = {
     nama_perangkat: '', merk: '', tipe_model: '', serial_number: '',
     is_serialized: true, stok_jumlah: 1, kategori: '', kondisi: 'Baru',
-    id_site: 0, tgl_perolehan: '', harga_perolehan: 0, catatan: '',
+    id_site: 0, id_gudang: gudangList.value.find(g => g.is_aktif)?.id_gudang ?? 0,
+    tgl_perolehan: '', harga_perolehan: 0, catatan: '',
   }
 }
 
@@ -76,6 +90,7 @@ async function handleSubmit() {
   try {
     const payload: any = { ...form.value }
     if (!payload.id_site) delete payload.id_site
+    if (!payload.id_gudang) delete payload.id_gudang
     if (!payload.serial_number) delete payload.serial_number
     if (!payload.tgl_perolehan) delete payload.tgl_perolehan
     const result = await aset.create(payload)
@@ -123,6 +138,15 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
       </div>
     </div>
 
+    <!-- Gudang chips -->
+    <div class="gudang-row" v-if="aset.summaryGudang.length">
+      <div v-for="g in aset.summaryGudang" :key="g.id_gudang" class="gudang-chip"
+        :class="{ active: filterGudang === g.id_gudang }"
+        @click="filterGudang = filterGudang === g.id_gudang ? 0 : g.id_gudang; doFilter()">
+        🏬 {{ g.nama_gudang }}: <strong>{{ g.count }}</strong>
+      </div>
+    </div>
+
     <!-- Filters -->
     <div class="filters">
       <input v-model="search" @keyup.enter="doFilter" placeholder="Cari kode / nama / serial / merk..." class="search-input" />
@@ -137,6 +161,12 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
       <select v-model="filterKondisi" @change="doFilter" class="filter-select">
         <option value="">Semua Kondisi</option>
         <option v-for="k in KONDISI_LIST" :key="k" :value="k">{{ k.replace('_', ' ') }}</option>
+      </select>
+      <select v-model.number="filterGudang" @change="doFilter" class="filter-select">
+        <option :value="0">Semua Gudang</option>
+        <option v-for="g in gudangList" :key="g.id_gudang" :value="g.id_gudang">
+          [{{ g.kode_gudang }}] {{ g.nama_gudang }}
+        </option>
       </select>
       <button class="btn-search" @click="doFilter">Cari</button>
     </div>
@@ -181,7 +211,9 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
             <td>
               <div v-if="a.site" class="fw600 text-sm">{{ a.site.nama_site }}</div>
               <div v-if="a.site" class="text-gray text-sm">{{ a.site.pelanggan?.nama_pelanggan }}</div>
-              <div v-else class="text-gray text-sm">Gudang</div>
+              <div v-else class="text-gray text-sm">
+                {{ a.status_aset === 'Di_Gudang' ? (a.gudang?.nama_gudang ?? 'Gudang') : 'Gudang' }}
+              </div>
             </td>
             <td class="center">{{ a.is_serialized ? '—' : a.stok_jumlah }}</td>
             <td class="center">{{ a._count?.mutasi ?? 0 }}</td>
@@ -251,6 +283,15 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
             </div>
           </template>
           <div class="field full">
+            <label>Gudang</label>
+            <select v-model.number="form.id_gudang">
+              <option :value="0">— Gudang default —</option>
+              <option v-for="g in gudangList" :key="g.id_gudang" :value="g.id_gudang">
+                [{{ g.kode_gudang }}] {{ g.nama_gudang }}{{ g.kota ? ' — ' + g.kota : '' }}
+              </option>
+            </select>
+          </div>
+          <div class="field full">
             <label>Lokasi / Site (opsional)</label>
             <select v-model="form.id_site">
               <option :value="0">— Gudang / Belum deploy —</option>
@@ -296,6 +337,11 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
 .summary-chip:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
 .sc-count { font-size: 22px; font-weight: 800; color: #0f172a; }
 .sc-label { font-size: 11px; color: #64748b; }
+
+.gudang-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.gudang-chip { background: #f0f9ff; border: 1.5px solid #bae6fd; color: #0369a1; border-radius: 20px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+.gudang-chip:hover { background: #e0f2fe; }
+.gudang-chip.active { background: #0369a1; border-color: #0369a1; color: #fff; }
 
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .search-input { flex: 1; min-width: 220px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }

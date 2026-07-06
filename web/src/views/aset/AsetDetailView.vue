@@ -23,14 +23,18 @@ const linkSimSubmitting = ref(false)
 const linkSimError = ref('')
 
 const editForm = ref({ nama_perangkat: '', merk: '', tipe_model: '', kondisi: '', catatan: '' })
-const mutasiForm = ref({ id_aset: id, jenis_mutasi: 'Deploy', jumlah: 1, id_site_asal: 0, id_site_tujuan: 0, keterangan: '' })
+const mutasiForm = ref({ id_aset: id, jenis_mutasi: 'Deploy', jumlah: 1, id_site_asal: 0, id_site_tujuan: 0, id_gudang_tujuan: 0, keterangan: '' })
+
+interface GudangOpt { id_gudang: number; kode_gudang: string; nama_gudang: string; kota?: string | null; is_aktif: boolean }
+const gudangList = ref<GudangOpt[]>([])
+const gudangLoaded = ref(false)
 
 const KONDISI_LIST = ['Baru', 'Baik', 'Perlu_Perbaikan', 'Rusak']
 // Opsi mutasi menyesuaikan tipe aset (sesuai guard backend):
 // - Ber-serial: 1 unit berpindah status
 // - Stok: jumlah berpindah, status tetap
-const JENIS_SERIALIZED = ['Deploy', 'Return', 'Pinjam', 'Rusak', 'Disposed']
-const JENIS_STOK       = ['Masuk', 'Keluar', 'Deploy', 'Return', 'Rusak', 'Disposed']
+const JENIS_SERIALIZED = ['Deploy', 'Return', 'Transfer', 'Pinjam', 'Rusak', 'Disposed']
+const JENIS_STOK       = ['Masuk', 'Keluar', 'Deploy', 'Return', 'Transfer', 'Rusak', 'Disposed']
 const JENIS_MUTASI = computed(() => (a.value?.is_serialized ? JENIS_SERIALIZED : JENIS_STOK))
 
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
@@ -102,9 +106,20 @@ function openMutasi() {
     jumlah: 1,
     id_site_asal: a.value?.id_site || 0,
     id_site_tujuan: 0,
+    id_gudang_tujuan: 0,
     keterangan: '',
   }
   showMutasiModal.value = true; formError.value = ''
+  loadGudang()
+}
+
+async function loadGudang() {
+  if (gudangLoaded.value) return
+  try {
+    const r = await api.get('/master/gudang')
+    gudangList.value = r.data.data
+    gudangLoaded.value = true
+  } catch {}
 }
 
 async function handleMutasi() {
@@ -113,6 +128,7 @@ async function handleMutasi() {
     const payload: any = { ...mutasiForm.value }
     if (!payload.id_site_asal) delete payload.id_site_asal
     if (!payload.id_site_tujuan) delete payload.id_site_tujuan
+    if (!payload.id_gudang_tujuan) delete payload.id_gudang_tujuan
     await aset.createMutasi(payload)
     showMutasiModal.value = false
   } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal mencatat mutasi' }
@@ -131,7 +147,7 @@ function fmtRupiah(n: number) {
 function statusLabel(s: string) { return s.replace('_', ' ') }
 
 const mutasiColor: Record<string, string> = {
-  Masuk: '#15803d', Deploy: '#1d4ed8', Return: '#0891b2',
+  Masuk: '#15803d', Deploy: '#1d4ed8', Return: '#0891b2', Transfer: '#0369a1',
   Pinjam: '#a16207', Keluar: '#c2410c', Rusak: '#dc2626', Disposed: '#64748b',
 }
 </script>
@@ -183,7 +199,7 @@ const mutasiColor: Record<string, string> = {
         </div>
         <div class="info-item">
           <div class="info-label">Lokasi</div>
-          <div class="info-value">{{ a.site ? a.site.nama_site : 'Gudang' }}</div>
+          <div class="info-value">{{ a.site ? a.site.nama_site : (a.status_aset === 'Di_Gudang' ? (a.gudang?.nama_gudang ?? 'Gudang') : 'Gudang') }}</div>
         </div>
         <div class="info-item" v-if="a.site?.pelanggan">
           <div class="info-label">Pelanggan</div>
@@ -344,6 +360,24 @@ const mutasiColor: Record<string, string> = {
               <option :value="0">— Gudang —</option>
               <option v-for="s in proyek.siteList" :key="s.id_site" :value="s.id_site">
                 [{{ s.kode_site }}] {{ s.nama_site }}
+              </option>
+            </select>
+          </div>
+          <div class="field full" v-if="mutasiForm.jenis_mutasi === 'Transfer'">
+            <label>Gudang Tujuan <span class="req">*</span></label>
+            <select v-model.number="mutasiForm.id_gudang_tujuan">
+              <option :value="0">— Pilih gudang tujuan —</option>
+              <option v-for="g in gudangList.filter(g => g.id_gudang !== a?.gudang?.id_gudang)" :key="g.id_gudang" :value="g.id_gudang">
+                [{{ g.kode_gudang }}] {{ g.nama_gudang }}{{ g.kota ? ' — ' + g.kota : '' }}
+              </option>
+            </select>
+          </div>
+          <div class="field full" v-if="mutasiForm.jenis_mutasi === 'Return'">
+            <label>Kembali ke Gudang</label>
+            <select v-model.number="mutasiForm.id_gudang_tujuan">
+              <option :value="0">— gudang asal —</option>
+              <option v-for="g in gudangList" :key="g.id_gudang" :value="g.id_gudang">
+                [{{ g.kode_gudang }}] {{ g.nama_gudang }}{{ g.kota ? ' — ' + g.kota : '' }}
               </option>
             </select>
           </div>

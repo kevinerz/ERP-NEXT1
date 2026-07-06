@@ -28,6 +28,14 @@ const menus = [
     accent: '#c2410c',
   },
   {
+    icon: '🏬',
+    label: 'Gudang',
+    desc: 'Lokasi gudang fisik — stok aset per gudang',
+    to: '/master/gudang',
+    color: '#f0f9ff',
+    accent: '#0369a1',
+  },
+  {
     icon: '👥',
     label: 'Pelanggan',
     desc: 'Data customer, klien korporat, dan informasi kontrak',

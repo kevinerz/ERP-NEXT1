@@ -29,6 +29,7 @@ export class CreateAsetDto {
   @IsString() kategori: string;
   @IsOptional() @IsString() kondisi?: string;
   @IsOptional() @IsInt() id_site?: number;
+  @IsOptional() @IsInt() id_gudang?: number;
   @IsOptional() @IsDateString() tgl_perolehan?: string;
   @IsOptional() @IsNumber() harga_perolehan?: number;
   @IsOptional() @IsString() catatan?: string;
@@ -52,5 +53,7 @@ export class CreateMutasiDto {
   @IsOptional() @IsInt() id_wo?: number;
   @IsOptional() @IsInt() id_site_asal?: number;
   @IsOptional() @IsInt() id_site_tujuan?: number;
+  @IsOptional() @IsInt() id_gudang_asal?: number;
+  @IsOptional() @IsInt() id_gudang_tujuan?: number;
   @IsOptional() @IsString() keterangan?: string;
 }

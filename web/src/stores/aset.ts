@@ -14,11 +14,13 @@ export interface Aset {
   kondisi: string
   status_aset: string
   id_site?: number
+  id_gudang?: number
   tgl_perolehan?: string
   harga_perolehan?: number
   catatan?: string
   created_at: string
   site?: { kode_site: string; nama_site: string; pelanggan?: { nama_pelanggan: string } }
+  gudang?: { id_gudang: number; kode_gudang: string; nama_gudang: string; kota?: string | null } | null
   _count?: { mutasi: number }
   mutasi?: MutasiAset[]
 }
@@ -38,6 +40,7 @@ export interface MutasiAset {
 }
 
 export interface AsetSummary { status: string; count: number }
+export interface AsetSummaryGudang { id_gudang: number; kode_gudang: string; nama_gudang: string; kota?: string | null; count: number }
 
 export const useAsetStore = defineStore('aset', {
   state: () => ({
@@ -45,6 +48,7 @@ export const useAsetStore = defineStore('aset', {
     meta: { total: 0, page: 1, limit: 20, total_pages: 0 },
     current: null as Aset | null,
     summary: [] as AsetSummary[],
+    summaryGudang: [] as AsetSummaryGudang[],
     kategoriList: [] as string[],
     loading: false,
     error: '',
@@ -85,7 +89,8 @@ export const useAsetStore = defineStore('aset', {
     async fetchSummary() {
       try {
         const r = await api.get('/assets/summary')
-        this.summary = r.data.data
+        this.summary = r.data.data?.by_status ?? []
+        this.summaryGudang = r.data.data?.by_gudang ?? []
       } catch {}
     },
     async fetchKategori() {

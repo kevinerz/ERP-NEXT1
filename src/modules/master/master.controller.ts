@@ -203,6 +203,22 @@ export class MasterController {
   @Delete('pic/:id')
   deletePic(@Param('id', ParseIntPipe) id: number) { return this.masterService.deletePic(id); }
 
+  // ─── MASTER GUDANG ───────────────────────────────────────────
+
+  @Get('gudang')
+  findAllGudang() { return this.masterService.findAllGudang(); }
+
+  @Post('gudang')
+  createGudang(@Body() dto: any) { return this.masterService.createGudang(dto); }
+
+  @Patch('gudang/:id')
+  updateGudang(@Param('id', ParseIntPipe) id: number, @Body() dto: any) {
+    return this.masterService.updateGudang(id, dto);
+  }
+
+  @Delete('gudang/:id')
+  removeGudang(@Param('id', ParseIntPipe) id: number) { return this.masterService.removeGudang(id); }
+
   // ─── KONTAK TEKNISI / PEMASANG ───────────────────────────────
 
   @Get('kontak-teknisi')

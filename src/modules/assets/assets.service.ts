@@ -4,6 +4,7 @@ import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto } from './dto/aset.dto';
 
 const ASET_INCLUDE = {
   site: { select: { kode_site: true, nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
+  gudang: { select: { id_gudang: true, kode_gudang: true, nama_gudang: true, kota: true } },
   _count: { select: { mutasi: true } },
 };
 
@@ -15,7 +16,7 @@ export class AssetsService {
 
   async findAll(query: {
     search?: string; kategori?: string; kondisi?: string;
-    status_aset?: string; page?: number; limit?: number;
+    status_aset?: string; id_gudang?: string; page?: number; limit?: number;
   }) {
     const page = Number(query.page) || 1;
     const limit = Math.min(Number(query.limit) || 20, 200);
@@ -33,6 +34,7 @@ export class AssetsService {
     if (query.kategori) where.kategori = query.kategori;
     if (query.kondisi) where.kondisi = query.kondisi;
     if (query.status_aset) where.status_aset = query.status_aset;
+    if (query.id_gudang) where.id_gudang = Number(query.id_gudang);
 
     const [data, total] = await Promise.all([
       this.prisma.gudangAset.findMany({
@@ -77,6 +79,16 @@ export class AssetsService {
       if (dup) throw new ConflictException('Serial number sudah terdaftar');
     }
 
+    // Gudang wajib jelas — default ke gudang aktif pertama bila tidak dipilih
+    let id_gudang = dto.id_gudang;
+    if (id_gudang) {
+      const g = await this.prisma.masterGudang.findUnique({ where: { id_gudang } });
+      if (!g) throw new NotFoundException('Gudang tidak ditemukan');
+    } else {
+      const g = await this.prisma.masterGudang.findFirst({ where: { is_aktif: true }, orderBy: { id_gudang: 'asc' } });
+      id_gudang = g?.id_gudang;
+    }
+
     // Auto kode AST-YYYYMM-XXXX — retry 5x saat tabrakan, transaksional dgn log Masuk
     for (let attempt = 0; attempt < 5; attempt++) {
       const now = new Date();
@@ -93,6 +105,7 @@ export class AssetsService {
           const created = await tx.gudangAset.create({
             data: {
               ...dto,
+              id_gudang,
               kode_aset,
               stok_jumlah: dto.stok_jumlah ?? 1,
               is_serialized: dto.is_serialized ?? true,
@@ -139,7 +152,7 @@ export class AssetsService {
     if (!row) throw new NotFoundException('Aset tidak ditemukan');
     // status_aset & id_site TIDAK boleh diubah lewat edit — wajib lewat mutasi
     // (agar log gudang & sinkron PerangkatSite tidak bisa dilompati)
-    const { status_aset: _s, id_site: _i, ...aman } = dto as any;
+    const { status_aset: _s, id_site: _i, id_gudang: _g, ...aman } = dto as any;
     if (aman.serial_number && aman.serial_number !== row.serial_number) {
       const dup = await this.prisma.gudangAset.findUnique({ where: { serial_number: aman.serial_number } });
       if (dup) throw new ConflictException('Serial number sudah terdaftar');
@@ -171,7 +184,19 @@ export class AssetsService {
 
       let newStatus = aset.status_aset;
       let newStok = aset.stok_jumlah;
-      let newSite: number | null | undefined = undefined; // undefined = tidak diubah
+      let newSite: number | null | undefined = undefined;   // undefined = tidak diubah
+      let newGudang: number | undefined = undefined;        // undefined = tidak diubah
+
+      // Transfer antar gudang: validasi tujuan di depan (berlaku serial & stok)
+      if (dto.jenis_mutasi === 'Transfer') {
+        if (!dto.id_gudang_tujuan)
+          throw new BadRequestException('id_gudang_tujuan wajib diisi untuk Transfer antar gudang');
+        if (dto.id_gudang_tujuan === aset.id_gudang)
+          throw new BadRequestException('Gudang tujuan sama dengan gudang asal');
+        const gTujuan = await tx.masterGudang.findUnique({ where: { id_gudang: dto.id_gudang_tujuan } });
+        if (!gTujuan || !gTujuan.is_aktif)
+          throw new BadRequestException('Gudang tujuan tidak ditemukan / nonaktif');
+      }
 
       // ── STATE MACHINE ────────────────────────────────────────
       // Serialized (1 unit ber-serial): status yang berpindah.
@@ -190,6 +215,12 @@ export class AssetsService {
               throw new BadRequestException(`Aset berstatus ${aset.status_aset} — tidak ada yang bisa di-Return`);
             newStatus = 'Di_Gudang';
             newSite = null;
+            if (dto.id_gudang_tujuan) newGudang = dto.id_gudang_tujuan; // kembali ke gudang tertentu
+            break;
+          case 'Transfer':
+            if (aset.status_aset !== 'Di_Gudang')
+              throw new BadRequestException(`Aset berstatus ${aset.status_aset} — hanya aset Di_Gudang yang bisa ditransfer antar gudang`);
+            newGudang = dto.id_gudang_tujuan!;
             break;
           case 'Pinjam':
             if (aset.status_aset !== 'Di_Gudang')
@@ -225,6 +256,54 @@ export class AssetsService {
           case 'Return':
             newStok = aset.stok_jumlah + jumlah;
             break;
+          case 'Transfer': {
+            if (jumlah > aset.stok_jumlah)
+              throw new BadRequestException(`Stok tidak cukup: tersisa ${aset.stok_jumlah}, diminta ${jumlah}`);
+            newStok = aset.stok_jumlah - jumlah;
+            // Cari record barang yang sama di gudang tujuan → tambah stoknya;
+            // kalau belum ada, buatkan record baru di sana.
+            const kembar = await tx.gudangAset.findFirst({
+              where: {
+                id_gudang: dto.id_gudang_tujuan!,
+                is_serialized: false,
+                nama_perangkat: aset.nama_perangkat,
+                merk: aset.merk,
+                tipe_model: aset.tipe_model,
+                kategori: aset.kategori,
+              },
+            });
+            if (kembar) {
+              await tx.gudangAset.update({
+                where: { id_aset: kembar.id_aset },
+                data: { stok_jumlah: kembar.stok_jumlah + jumlah, status_aset: 'Di_Gudang' },
+              });
+            } else {
+              const now = new Date();
+              const prefix = `AST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+              const lastKode = await tx.gudangAset.findFirst({
+                where: { kode_aset: { startsWith: prefix } },
+                orderBy: { kode_aset: 'desc' },
+              });
+              const seq = lastKode ? (parseInt(lastKode.kode_aset.split('-')[2], 10) || 0) + 1 : 1;
+              await tx.gudangAset.create({
+                data: {
+                  kode_aset: `${prefix}-${String(seq).padStart(4, '0')}`,
+                  nama_perangkat: aset.nama_perangkat,
+                  merk: aset.merk,
+                  tipe_model: aset.tipe_model,
+                  kategori: aset.kategori,
+                  kondisi: aset.kondisi,
+                  is_serialized: false,
+                  stok_jumlah: jumlah,
+                  status_aset: 'Di_Gudang',
+                  id_gudang: dto.id_gudang_tujuan!,
+                  harga_perolehan: aset.harga_perolehan,
+                  catatan: `Transfer dari ${aset.kode_aset}`,
+                },
+              });
+            }
+            break;
+          }
           case 'Pinjam':
             throw new BadRequestException('Barang stok tidak bisa dipinjam per-unit — gunakan Keluar/Masuk');
           default:
@@ -238,6 +317,7 @@ export class AssetsService {
           status_aset: newStatus,
           stok_jumlah: newStok,
           ...(newSite !== undefined ? { id_site: newSite } : {}),
+          ...(newGudang !== undefined ? { id_gudang: newGudang } : {}),
         },
       });
 
@@ -271,7 +351,12 @@ export class AssetsService {
       }
 
       return tx.gudangMutasiAset.create({
-        data: { ...dto, jumlah, id_user: userId || null },
+        data: {
+          ...dto,
+          jumlah,
+          id_gudang_asal: dto.id_gudang_asal ?? aset.id_gudang,
+          id_user: userId || null,
+        },
         include: { user: { include: { karyawan: { select: { nama_lengkap: true } } } } },
       });
   }
@@ -289,13 +374,29 @@ export class AssetsService {
 
   async getSummary() {
     const statuses = ['Di_Gudang', 'Terpasang', 'Dipinjam', 'Rusak', 'Disposed'];
-    const rows = await this.prisma.gudangAset.groupBy({
-      by: ['status_aset'],
-      _count: { id_aset: true },
-    });
+    const [rows, gudangRows] = await Promise.all([
+      this.prisma.gudangAset.groupBy({
+        by: ['status_aset'],
+        _count: { id_aset: true },
+      }),
+      // Stok per gudang (hanya yang masih di gudang)
+      this.prisma.masterGudang.findMany({
+        where: { is_aktif: true },
+        select: {
+          id_gudang: true, kode_gudang: true, nama_gudang: true, kota: true,
+          _count: { select: { aset: { where: { status_aset: 'Di_Gudang' } } } },
+        },
+        orderBy: { nama_gudang: 'asc' },
+      }),
+    ]);
     const map = Object.fromEntries(rows.map((r) => [r.status_aset, r._count.id_aset]));
     const data = statuses.map((s) => ({ status: s, count: map[s] ?? 0 }));
-    return { data };
+    const by_gudang = gudangRows.map((g) => ({
+      id_gudang: g.id_gudang, kode_gudang: g.kode_gudang,
+      nama_gudang: g.nama_gudang, kota: g.kota,
+      count: (g as any)._count.aset,
+    }));
+    return { data: { by_status: data, by_gudang } };
   }
 
   // ─── SIM TOPUP ────────────────────────────────────────────────

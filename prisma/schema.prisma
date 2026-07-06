@@ -112,6 +112,21 @@ model MasterVendorIsp {
   @@map("master_vendor_isp")
 }
 
+// Master gudang fisik (Jakarta, Surabaya, dst)
+model MasterGudang {
+  id_gudang   Int      @id @default(autoincrement())
+  kode_gudang String   @unique @db.VarChar(20)
+  nama_gudang String   @db.VarChar(100)
+  kota        String?  @db.VarChar(100)
+  alamat      String?  @db.Text
+  is_aktif    Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  aset GudangAset[]
+
+  @@map("master_gudang")
+}
+
 // Kontak orang pemasang / teknisi pihak ketiga (freelance/borongan)
 model MasterKontakTeknisi {
   id_kontak        Int      @id @default(autoincrement())
@@ -219,12 +234,14 @@ model GudangAset {
   kondisi         String    @default("Baru") @db.VarChar(20)
   status_aset     String    @default("Di_Gudang") @db.VarChar(30)
   id_site         Int?
+  id_gudang       Int?
   tgl_perolehan   DateTime? @db.Date
   harga_perolehan Decimal   @default(0) @db.Decimal(15, 2)
   catatan         String?   @db.Text
   created_at      DateTime  @default(now())
 
   site               SitePelanggan?      @relation(fields: [id_site], references: [id_site], onDelete: SetNull)
+  gudang             MasterGudang?       @relation(fields: [id_gudang], references: [id_gudang], onDelete: SetNull)
   perangkat          PerangkatSite[]
   sumber_internet    SumberInternetSite?
   mutasi             GudangMutasiAset[]
@@ -653,6 +670,8 @@ model GudangMutasiAset {
   id_wo          Int?
   id_site_asal   Int?
   id_site_tujuan Int?
+  id_gudang_asal   Int?
+  id_gudang_tujuan Int?
   keterangan     String?  @db.Text
   id_user        Int?
   created_at     DateTime @default(now())

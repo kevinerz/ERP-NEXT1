@@ -641,6 +641,40 @@ export class MasterService {
     return { data: null, message: `PIC dihapus: ${existing?.nama_pic || 'ID ' + id} dari ${site?.nama_site || 'site'}` };
   }
 
+  // ─── MASTER GUDANG ───────────────────────────────────────────
+
+  async findAllGudang() {
+    const data = await this.prisma.masterGudang.findMany({
+      orderBy: { nama_gudang: 'asc' },
+      include: { _count: { select: { aset: true } } },
+    });
+    return { data };
+  }
+
+  async createGudang(dto: { kode_gudang: string; nama_gudang: string; kota?: string; alamat?: string }) {
+    const data = await this.prisma.masterGudang.create({ data: dto });
+    return { data, message: `Gudang ${data.nama_gudang} ditambahkan` };
+  }
+
+  async updateGudang(id: number, dto: { kode_gudang?: string; nama_gudang?: string; kota?: string; alamat?: string; is_aktif?: boolean }) {
+    const row = await this.prisma.masterGudang.findUnique({ where: { id_gudang: id } });
+    if (!row) throw new NotFoundException('Gudang tidak ditemukan');
+    const data = await this.prisma.masterGudang.update({ where: { id_gudang: id }, data: dto });
+    return { data, message: 'Gudang diperbarui' };
+  }
+
+  async removeGudang(id: number) {
+    const row = await this.prisma.masterGudang.findUnique({
+      where: { id_gudang: id },
+      include: { _count: { select: { aset: true } } },
+    });
+    if (!row) throw new NotFoundException('Gudang tidak ditemukan');
+    if ((row as any)._count.aset > 0)
+      throw new BadRequestException(`Gudang masih menyimpan ${(row as any)._count.aset} aset — transfer dulu ke gudang lain`);
+    await this.prisma.masterGudang.delete({ where: { id_gudang: id } });
+    return { message: `Gudang ${row.nama_gudang} dihapus` };
+  }
+
   // ─── KONTAK TEKNISI / PEMASANG (pihak ketiga) ─────────────────
 
   async findAllKontakTeknisi(query: { search?: string; is_aktif?: string; page?: number; limit?: number }) {
