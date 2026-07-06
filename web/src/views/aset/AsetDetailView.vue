@@ -22,12 +22,16 @@ const linkSimId = ref<number | null>(null)
 const linkSimSubmitting = ref(false)
 const linkSimError = ref('')
 
-const editForm = ref({ nama_perangkat: '', merk: '', tipe_model: '', kondisi: '', status_aset: '', id_site: 0, catatan: '' })
+const editForm = ref({ nama_perangkat: '', merk: '', tipe_model: '', kondisi: '', catatan: '' })
 const mutasiForm = ref({ id_aset: id, jenis_mutasi: 'Deploy', jumlah: 1, id_site_asal: 0, id_site_tujuan: 0, keterangan: '' })
 
 const KONDISI_LIST = ['Baru', 'Baik', 'Perlu_Perbaikan', 'Rusak']
-const STATUS_LIST = ['Di_Gudang', 'Terpasang', 'Dipinjam', 'Rusak', 'Disposed']
-const JENIS_MUTASI = ['Deploy', 'Return', 'Masuk', 'Pinjam', 'Keluar', 'Rusak', 'Disposed']
+// Opsi mutasi menyesuaikan tipe aset (sesuai guard backend):
+// - Ber-serial: 1 unit berpindah status
+// - Stok: jumlah berpindah, status tetap
+const JENIS_SERIALIZED = ['Deploy', 'Return', 'Pinjam', 'Rusak', 'Disposed']
+const JENIS_STOK       = ['Masuk', 'Keluar', 'Deploy', 'Return', 'Rusak', 'Disposed']
+const JENIS_MUTASI = computed(() => (a.value?.is_serialized ? JENIS_SERIALIZED : JENIS_STOK))
 
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Di_Gudang:  { bg: '#f0fdf4', color: '#15803d' },
@@ -76,8 +80,6 @@ function openEdit() {
     merk: a.value.merk || '',
     tipe_model: a.value.tipe_model || '',
     kondisi: a.value.kondisi,
-    status_aset: a.value.status_aset,
-    id_site: a.value.id_site || 0,
     catatan: a.value.catatan || '',
   }
   showEditModal.value = true; formError.value = ''
@@ -86,9 +88,8 @@ function openEdit() {
 async function handleEdit() {
   submitting.value = true; formError.value = ''
   try {
-    const payload: any = { ...editForm.value }
-    if (!payload.id_site) { payload.id_site = null }
-    await aset.update(id, payload)
+    // status & lokasi TIDAK diedit di sini — wajib lewat mutasi (jejak gudang)
+    await aset.update(id, { ...editForm.value })
     showEditModal.value = false
   } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal menyimpan perubahan' }
   finally { submitting.value = false }
@@ -272,25 +273,11 @@ const mutasiColor: Record<string, string> = {
               <option v-for="k in KONDISI_LIST" :key="k" :value="k">{{ k.replace('_', ' ') }}</option>
             </select>
           </div>
-          <div class="field">
-            <label>Status</label>
-            <select v-model="editForm.status_aset">
-              <option v-for="s in STATUS_LIST" :key="s" :value="s">{{ s.replace('_', ' ') }}</option>
-            </select>
-          </div>
-          <div class="field full">
-            <label>Lokasi / Site</label>
-            <select v-model="editForm.id_site">
-              <option :value="0">— Gudang —</option>
-              <option v-for="s in proyek.siteList" :key="s.id_site" :value="s.id_site">
-                [{{ s.kode_site }}] {{ s.nama_site }}
-              </option>
-            </select>
-          </div>
           <div class="field full">
             <label>Catatan</label>
             <textarea v-model="editForm.catatan" rows="2"></textarea>
           </div>
+          <p class="field full edit-hint">ℹ️ Status & lokasi aset diubah lewat tombol <strong>+ Mutasi</strong> (Deploy/Return/dll) agar riwayat gudang tercatat.</p>
         </div>
         <p v-if="formError" class="form-error">{{ formError }}</p>
         <div class="modal-actions">
@@ -442,6 +429,7 @@ const mutasiColor: Record<string, string> = {
 .field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
 .form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 8px 0; }
+.edit-hint { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; color: #1e40af; font-size: 12px; padding: 8px 12px; margin: 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }

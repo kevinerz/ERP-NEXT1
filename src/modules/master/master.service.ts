@@ -480,6 +480,13 @@ export class MasterService {
   }
 
   async updateSumberInternet(id: number, dto: UpdateSumberInternetDto) {
+    // Link SIM: aset target harus berkategori SIM
+    if (dto.id_aset_sim) {
+      const sim = await this.prisma.gudangAset.findUnique({ where: { id_aset: dto.id_aset_sim } });
+      if (!sim) throw new NotFoundException('Aset SIM tidak ditemukan');
+      if (!/sim/i.test(sim.kategori))
+        throw new BadRequestException(`Aset ${sim.kode_aset} berkategori ${sim.kategori}, bukan SIM`);
+    }
     const data = await this.prisma.sumberInternetSite.update({
       where: { id_sumber: id },
       data: {

@@ -72,46 +72,52 @@ export class AssetsService {
   }
 
   async create(dto: CreateAsetDto, userId?: number) {
-    // Auto kode: AST-YYYYMM-XXXX
-    const now = new Date();
-    const prefix = `AST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.gudangAset.findFirst({
-      where: { kode_aset: { startsWith: prefix } },
-      orderBy: { kode_aset: 'desc' },
-    });
-    const seq = last ? (parseInt(last.kode_aset.split('-')[2], 10) || 0) + 1 : 1;
-    const kode_aset = `${prefix}-${String(seq).padStart(4, '0')}`;
-
     if (dto.serial_number) {
       const dup = await this.prisma.gudangAset.findUnique({ where: { serial_number: dto.serial_number } });
       if (dup) throw new ConflictException('Serial number sudah terdaftar');
     }
 
-    const data = await this.prisma.gudangAset.create({
-      data: {
-        ...dto,
-        kode_aset,
-        stok_jumlah: dto.stok_jumlah ?? 1,
-        is_serialized: dto.is_serialized ?? true,
-        kondisi: dto.kondisi || 'Baru',
-        harga_perolehan: dto.harga_perolehan ?? 0,
-        tgl_perolehan: dto.tgl_perolehan ? new Date(dto.tgl_perolehan) : undefined,
-      },
-      include: ASET_INCLUDE,
-    });
+    // Auto kode AST-YYYYMM-XXXX — retry 5x saat tabrakan, transaksional dgn log Masuk
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const now = new Date();
+      const prefix = `AST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const last = await this.prisma.gudangAset.findFirst({
+        where: { kode_aset: { startsWith: prefix } },
+        orderBy: { kode_aset: 'desc' },
+      });
+      const seq = last ? (parseInt(last.kode_aset.split('-')[2], 10) || 0) + 1 : 1;
+      const kode_aset = `${prefix}-${String(seq).padStart(4, '0')}`;
 
-    // Log masuk awal
-    await this.prisma.gudangMutasiAset.create({
-      data: {
-        id_aset: data.id_aset,
-        jenis_mutasi: 'Masuk',
-        jumlah: data.stok_jumlah,
-        keterangan: 'Aset baru ditambahkan ke gudang',
-        id_user: userId || null,
-      },
-    });
-
-    return { data, message: `Aset ${kode_aset} berhasil ditambahkan` };
+      try {
+        const data = await this.prisma.$transaction(async (tx) => {
+          const created = await tx.gudangAset.create({
+            data: {
+              ...dto,
+              kode_aset,
+              stok_jumlah: dto.stok_jumlah ?? 1,
+              is_serialized: dto.is_serialized ?? true,
+              kondisi: dto.kondisi || 'Baru',
+              harga_perolehan: dto.harga_perolehan ?? 0,
+              tgl_perolehan: dto.tgl_perolehan ? new Date(dto.tgl_perolehan) : undefined,
+            },
+            include: ASET_INCLUDE,
+          });
+          await tx.gudangMutasiAset.create({
+            data: {
+              id_aset: created.id_aset,
+              jenis_mutasi: 'Masuk',
+              jumlah: created.stok_jumlah,
+              keterangan: 'Aset baru ditambahkan ke gudang',
+              id_user: userId || null,
+            },
+          });
+          return created;
+        });
+        return { data, message: `Aset ${kode_aset} berhasil ditambahkan` };
+      } catch (e: any) {
+        if (e.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
   }
 
   async remove(id: number) {
@@ -131,16 +137,22 @@ export class AssetsService {
   async update(id: number, dto: UpdateAsetDto) {
     const row = await this.prisma.gudangAset.findUnique({ where: { id_aset: id } });
     if (!row) throw new NotFoundException('Aset tidak ditemukan');
+    // status_aset & id_site TIDAK boleh diubah lewat edit — wajib lewat mutasi
+    // (agar log gudang & sinkron PerangkatSite tidak bisa dilompati)
+    const { status_aset: _s, id_site: _i, ...aman } = dto as any;
+    if (aman.serial_number && aman.serial_number !== row.serial_number) {
+      const dup = await this.prisma.gudangAset.findUnique({ where: { serial_number: aman.serial_number } });
+      if (dup) throw new ConflictException('Serial number sudah terdaftar');
+    }
     const data = await this.prisma.gudangAset.update({
       where: { id_aset: id },
-      data: dto,
+      data: aman,
       include: ASET_INCLUDE,
     });
     return { data, message: 'Aset diperbarui' };
   }
 
   async createMutasi(dto: CreateMutasiDto, userId?: number) {
-    // Fix 2: id_site_tujuan wajib untuk Deploy
     if (dto.jenis_mutasi === 'Deploy' && !dto.id_site_tujuan) {
       throw new BadRequestException('id_site_tujuan wajib diisi untuk mutasi Deploy');
     }
@@ -150,21 +162,69 @@ export class AssetsService {
       if (!aset) throw new NotFoundException('Aset tidak ditemukan');
 
       const jumlah = dto.jumlah ?? 1;
+      if (jumlah < 1) throw new BadRequestException('Jumlah minimal 1');
+
       let newStatus = aset.status_aset;
       let newStok = aset.stok_jumlah;
+      let newSite: number | null | undefined = undefined; // undefined = tidak diubah
 
-      if (dto.jenis_mutasi === 'Deploy' || dto.jenis_mutasi === 'Keluar') {
-        newStatus = dto.jenis_mutasi === 'Deploy' ? 'Terpasang' : aset.status_aset;
-        newStok = Math.max(0, aset.stok_jumlah - jumlah);
-      } else if (dto.jenis_mutasi === 'Return' || dto.jenis_mutasi === 'Masuk') {
-        newStatus = 'Di_Gudang';
-        newStok = aset.stok_jumlah + jumlah;
-      } else if (dto.jenis_mutasi === 'Pinjam') {
-        newStatus = 'Dipinjam';
-      } else if (dto.jenis_mutasi === 'Rusak') {
-        newStatus = 'Rusak';
-      } else if (dto.jenis_mutasi === 'Disposed') {
-        newStatus = 'Disposed';
+      // ── STATE MACHINE ────────────────────────────────────────
+      // Serialized (1 unit ber-serial): status yang berpindah.
+      // Non-serialized (stok): jumlah stok yang berpindah, status tetap Di_Gudang.
+
+      if (aset.is_serialized) {
+        switch (dto.jenis_mutasi) {
+          case 'Deploy':
+            if (aset.status_aset !== 'Di_Gudang')
+              throw new BadRequestException(`Aset berstatus ${aset.status_aset} — hanya aset Di_Gudang yang bisa di-Deploy`);
+            newStatus = 'Terpasang';
+            newSite = dto.id_site_tujuan!;
+            break;
+          case 'Return':
+            if (!['Terpasang', 'Dipinjam'].includes(aset.status_aset))
+              throw new BadRequestException(`Aset berstatus ${aset.status_aset} — tidak ada yang bisa di-Return`);
+            newStatus = 'Di_Gudang';
+            newSite = null;
+            break;
+          case 'Pinjam':
+            if (aset.status_aset !== 'Di_Gudang')
+              throw new BadRequestException(`Aset berstatus ${aset.status_aset} — hanya aset Di_Gudang yang bisa dipinjam`);
+            newStatus = 'Dipinjam';
+            break;
+          case 'Rusak':
+          case 'Disposed':
+            if (aset.status_aset === 'Disposed')
+              throw new BadRequestException('Aset sudah Disposed');
+            newStatus = dto.jenis_mutasi;
+            newSite = null;
+            break;
+          case 'Masuk':
+            throw new BadRequestException('Aset ber-serial tidak bisa mutasi Masuk — tambahkan sebagai aset baru');
+          case 'Keluar':
+            throw new BadRequestException('Aset ber-serial pakai Deploy/Pinjam/Disposed, bukan Keluar');
+          default:
+            throw new BadRequestException(`Jenis mutasi ${dto.jenis_mutasi} tidak dikenal`);
+        }
+      } else {
+        // Non-serialized: validasi stok, status tidak berubah
+        switch (dto.jenis_mutasi) {
+          case 'Deploy':
+          case 'Keluar':
+          case 'Rusak':
+          case 'Disposed':
+            if (jumlah > aset.stok_jumlah)
+              throw new BadRequestException(`Stok tidak cukup: tersisa ${aset.stok_jumlah}, diminta ${jumlah}`);
+            newStok = aset.stok_jumlah - jumlah;
+            break;
+          case 'Masuk':
+          case 'Return':
+            newStok = aset.stok_jumlah + jumlah;
+            break;
+          case 'Pinjam':
+            throw new BadRequestException('Barang stok tidak bisa dipinjam per-unit — gunakan Keluar/Masuk');
+          default:
+            throw new BadRequestException(`Jenis mutasi ${dto.jenis_mutasi} tidak dikenal`);
+        }
       }
 
       await tx.gudangAset.update({
@@ -172,29 +232,37 @@ export class AssetsService {
         data: {
           status_aset: newStatus,
           stok_jumlah: newStok,
-          id_site: dto.id_site_tujuan ?? (dto.jenis_mutasi === 'Return' ? null : aset.id_site),
+          ...(newSite !== undefined ? { id_site: newSite } : {}),
         },
       });
 
-      // Fix 1: Sync Deploy/Return dengan PerangkatSite
-      if (dto.jenis_mutasi === 'Deploy') {
-        await tx.perangkatSite.create({
-          data: {
-            id_site: dto.id_site_tujuan!,
-            id_aset: dto.id_aset,
-            jenis_perangkat: aset.kategori || 'Perangkat',
-            merk: aset.merk || '',
-            tipe_model: aset.tipe_model || '',
-            serial_number: aset.serial_number || '',
-            status_perangkat: 'Aktif',
-            tgl_pasang: new Date(),
-          },
-        });
-      } else if (dto.jenis_mutasi === 'Return' && aset.id_site) {
-        await tx.perangkatSite.updateMany({
-          where: { id_aset: dto.id_aset, id_site: aset.id_site, status_perangkat: 'Aktif' },
-          data: { status_perangkat: 'Nonaktif' },
-        });
+      // ── SINKRON PERANGKAT SITE (hanya aset ber-serial) ────────
+      if (aset.is_serialized) {
+        if (dto.jenis_mutasi === 'Deploy') {
+          // Nonaktifkan sisa row Aktif lama dulu (cegah perangkat hantu saat re-deploy)
+          await tx.perangkatSite.updateMany({
+            where: { id_aset: dto.id_aset, status_perangkat: 'Aktif' },
+            data: { status_perangkat: 'Nonaktif' },
+          });
+          await tx.perangkatSite.create({
+            data: {
+              id_site: dto.id_site_tujuan!,
+              id_aset: dto.id_aset,
+              jenis_perangkat: aset.kategori || 'Perangkat',
+              merk: aset.merk || '',
+              tipe_model: aset.tipe_model || '',
+              serial_number: aset.serial_number || '',
+              status_perangkat: 'Aktif',
+              tgl_pasang: new Date(),
+            },
+          });
+        } else if (['Return', 'Rusak', 'Disposed'].includes(dto.jenis_mutasi)) {
+          // Nonaktifkan SEMUA row Aktif aset ini di site manapun (fix perangkat hantu)
+          await tx.perangkatSite.updateMany({
+            where: { id_aset: dto.id_aset, status_perangkat: 'Aktif' },
+            data: { status_perangkat: 'Nonaktif' },
+          });
+        }
       }
 
       return tx.gudangMutasiAset.create({
