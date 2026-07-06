@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AssetsService } from '../assets/assets.service';
 import { CreateWoDto, UpdateWoDto, CreateBeritaAcaraDto } from './dto/wo.dto';
 
 const WO_INCLUDE = {
@@ -41,7 +42,10 @@ const WO_DETAIL_INCLUDE = {
 
 @Injectable()
 export class PublicWoService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private assetsService: AssetsService,
+  ) {}
 
   async findAll(query: {
     search?: string;
@@ -127,9 +131,11 @@ export class PublicWoService {
     return { data, message: 'Work Order diperbarui' };
   }
 
-  async createBeritaAcara(id_wo: number, dto: CreateBeritaAcaraDto) {
+  async createBeritaAcara(id_wo: number, dto: CreateBeritaAcaraDto, userId?: number) {
     const wo = await this.prisma.workOrder.findUnique({ where: { id_wo } });
     if (!wo) throw new NotFoundException('Work Order tidak ditemukan');
+
+    const { material, ...baData } = dto;
 
     for (let attempt = 0; attempt < 5; attempt++) {
       const now = new Date();
@@ -141,10 +147,60 @@ export class PublicWoService {
       const seq = (last ? (parseInt(last.nomor_ba.split('-')[2], 10) || 0) : 0) + 1;
       const nomor_ba = `${prefix}-${String(seq).padStart(4, '0')}`;
       try {
-        const data = await this.prisma.woBeritaAcara.create({
-          data: { id_wo, nomor_ba, ...dto },
+        const data = await this.prisma.$transaction(async (tx) => {
+          const ba = await tx.woBeritaAcara.create({
+            data: { id_wo, nomor_ba, ...baData },
+          });
+
+          // Material BA — dari gudang: potong stok via mutasi resmi (satu pintu)
+          for (const m of material ?? []) {
+            const jumlah = m.jumlah ?? 1;
+            let snapshot = {
+              nama_item: m.nama_item || 'Material',
+              merk: null as string | null,
+              tipe_model: null as string | null,
+              serial_number: null as string | null,
+            };
+
+            if (m.id_aset) {
+              const aset = await tx.gudangAset.findUnique({ where: { id_aset: m.id_aset } });
+              if (!aset) throw new NotFoundException(`Aset material #${m.id_aset} tidak ditemukan`);
+              snapshot = {
+                nama_item: aset.nama_perangkat,
+                merk: aset.merk,
+                tipe_model: aset.tipe_model,
+                serial_number: aset.serial_number,
+              };
+              // Ber-serial = Deploy ke site WO (status+PerangkatSite ikut);
+              // barang stok = Keluar (stok terpotong, tervalidasi cukup)
+              await this.assetsService.applyMutasiTx(tx, {
+                id_aset: m.id_aset,
+                jenis_mutasi: aset.is_serialized ? 'Deploy' : 'Keluar',
+                jumlah,
+                id_site_tujuan: wo.id_site,
+                id_wo,
+                keterangan: `Material BA ${nomor_ba}`,
+              } as any, userId);
+            }
+
+            await tx.woBaMaterial.create({
+              data: {
+                id_ba: ba.id_ba,
+                id_aset: m.id_aset ?? null,
+                nama_item: snapshot.nama_item,
+                merk: snapshot.merk,
+                tipe_model: snapshot.tipe_model,
+                serial_number: snapshot.serial_number,
+                jumlah,
+                keterangan: m.keterangan || 'Penyerahan',
+              },
+            });
+          }
+
+          return ba;
         });
-        return { data, message: `Berita Acara ${nomor_ba} dibuat` };
+        const jumlahMaterial = material?.length ?? 0;
+        return { data, message: `Berita Acara ${nomor_ba} dibuat${jumlahMaterial ? ` (${jumlahMaterial} material, stok gudang terpotong)` : ''}` };
       } catch (e: any) {
         if (e.code !== 'P2002' || attempt === 4) throw e;
       }

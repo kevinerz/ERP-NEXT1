@@ -1,6 +1,6 @@
 import {
   IsString, IsInt, IsOptional, IsDateString, IsNumber,
-  Min, MaxLength, IsIn,
+  Min, MaxLength, IsIn, IsArray, ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -71,6 +71,21 @@ export class UpdateWoDto {
   status_pembayaran_fee?: string;
 }
 
+export class BaMaterialItemDto {
+  // Dari gudang (stok ikut terpotong) — atau kosongkan & isi nama_item manual
+  @IsOptional() @IsInt()
+  id_aset?: number;
+
+  @IsOptional() @IsString() @MaxLength(150)
+  nama_item?: string;
+
+  @IsOptional() @IsInt() @Min(1)
+  jumlah?: number;
+
+  @IsOptional() @IsString() @MaxLength(30)
+  keterangan?: string; // Penyerahan / Terpakai / Penarikan
+}
+
 export class CreateBeritaAcaraDto {
   @IsString() @MaxLength(30)
   @IsIn(['Instalasi', 'Maintenance', 'Serah_Terima', 'Penarikan', 'Lainnya'])
@@ -87,4 +102,7 @@ export class CreateBeritaAcaraDto {
 
   @IsOptional() @IsString()
   catatan?: string;
+
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => BaMaterialItemDto)
+  material?: BaMaterialItemDto[];
 }

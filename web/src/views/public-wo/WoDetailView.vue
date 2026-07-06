@@ -40,6 +40,63 @@ const baForm = ref({
 })
 const JENIS_BA = ['Instalasi', 'Maintenance', 'Serah_Terima', 'Penarikan', 'Lainnya']
 
+// Material BA
+interface AssetOption {
+  id_aset: number
+  kode_aset: string
+  nama_perangkat: string
+  is_serialized: boolean
+  stok_jumlah: number | null
+  serial_number: string | null
+}
+interface MaterialRow {
+  id_aset: number
+  nama_item: string
+  jumlah: number
+  keterangan: string
+}
+const KETERANGAN_MATERIAL = ['Penyerahan', 'Terpakai', 'Penarikan']
+const assets = ref<AssetOption[]>([])
+const assetsLoaded = ref(false)
+const materialRows = ref<MaterialRow[]>([])
+
+async function fetchAssets() {
+  if (assetsLoaded.value) return
+  try {
+    const r = await api.get('/assets', { params: { status_aset: 'Di_Gudang', limit: 100 } })
+    assets.value = r.data.data || []
+    assetsLoaded.value = true
+  } catch { /* dropdown tetap kosong, input manual masih bisa */ }
+}
+
+function assetLabel(a: AssetOption) {
+  let label = `[${a.kode_aset}] ${a.nama_perangkat}`
+  if (!a.is_serialized) label += ` (stok: ${a.stok_jumlah ?? 0})`
+  return label
+}
+
+function addMaterialRow() {
+  materialRows.value.push({ id_aset: 0, nama_item: '', jumlah: 1, keterangan: 'Penyerahan' })
+}
+function removeMaterialRow(i: number) {
+  materialRows.value.splice(i, 1)
+}
+function isSerializedAsset(idAset: number) {
+  return assets.value.find(a => a.id_aset === idAset)?.is_serialized ?? false
+}
+function onRowAssetChange(row: MaterialRow) {
+  if (row.id_aset > 0) {
+    row.nama_item = ''
+    if (isSerializedAsset(row.id_aset)) row.jumlah = 1
+  }
+}
+
+function openBaModal() {
+  materialRows.value = []
+  showBaModal.value = true
+  fetchAssets()
+}
+
 // Catatan teknisi inline edit
 const editingCatatan = ref(false)
 const catatanDraft   = ref('')
@@ -94,7 +151,15 @@ async function submitBa() {
   if (!baForm.value.jenis_ba) return
   savingBa.value = true
   try {
-    await api.post(`/public-wo/${id}/berita-acara`, baForm.value)
+    const payload: Record<string, any> = { ...baForm.value }
+    if (materialRows.value.length) {
+      payload.material = materialRows.value.map(r => ({
+        ...(r.id_aset > 0 ? { id_aset: r.id_aset } : { nama_item: r.nama_item }),
+        jumlah: r.jumlah,
+        keterangan: r.keterangan,
+      }))
+    }
+    await api.post(`/public-wo/${id}/berita-acara`, payload)
     showBaModal.value = false
     await fetchWo()
   } catch (e: any) {
@@ -257,7 +322,7 @@ onMounted(fetchWo)
           <div class="card">
             <div class="card-title-row">
               <span class="card-title" style="margin-bottom:0">Berita Acara ({{ wo.berita_acara?.length ?? 0 }})</span>
-              <button v-if="wo.status_wo !== 'Dibatalkan'" class="btn-sm" @click="showBaModal = true">+ Buat BA</button>
+              <button v-if="wo.status_wo !== 'Dibatalkan'" class="btn-sm" @click="openBaModal">+ Buat BA</button>
             </div>
             <div v-if="!wo.berita_acara?.length" class="empty-section">Belum ada Berita Acara</div>
             <div v-else class="ba-list">
@@ -275,7 +340,12 @@ onMounted(fetchWo)
                   <span v-if="ba.nama_penandatangan_pelanggan">Pelanggan: {{ ba.nama_penandatangan_pelanggan }}</span>
                 </div>
                 <div v-if="ba.material?.length" class="ba-material">
-                  {{ ba.material.length }} item material
+                  <div class="ba-material-count">{{ ba.material.length }} item material</div>
+                  <div class="ba-material-chips">
+                    <span v-for="(m, mi) in ba.material" :key="mi" class="material-chip">
+                      {{ m.nama_item }} ×{{ m.jumlah }}
+                    </span>
+                  </div>
                 </div>
                 <div class="ba-time">{{ fmtDateTime(ba.created_at) }}</div>
               </div>
@@ -358,6 +428,40 @@ onMounted(fetchWo)
             <label>Catatan</label>
             <textarea v-model="baForm.catatan" rows="3" class="form-control" placeholder="Catatan tambahan…" />
           </div>
+          <div class="form-group">
+            <div class="material-section-header">
+              <label>Material / Barang</label>
+              <button type="button" class="btn-sm" @click="addMaterialRow">+ Tambah Baris</button>
+            </div>
+            <div v-if="materialRows.length" class="material-rows">
+              <div v-for="(row, i) in materialRows" :key="i" class="material-row">
+                <select v-model.number="row.id_aset" class="form-control material-asset" @change="onRowAssetChange(row)">
+                  <option :value="0">— Manual / bukan dari gudang —</option>
+                  <option v-for="a in assets" :key="a.id_aset" :value="a.id_aset">{{ assetLabel(a) }}</option>
+                </select>
+                <input
+                  v-if="row.id_aset === 0"
+                  v-model="row.nama_item"
+                  class="form-control material-nama"
+                  placeholder="Nama barang"
+                />
+                <div class="material-row-sub">
+                  <input
+                    v-model.number="row.jumlah"
+                    type="number"
+                    min="1"
+                    class="form-control material-jumlah"
+                    :disabled="row.id_aset > 0 && isSerializedAsset(row.id_aset)"
+                  />
+                  <select v-model="row.keterangan" class="form-control material-ket">
+                    <option v-for="k in KETERANGAN_MATERIAL" :key="k" :value="k">{{ k }}</option>
+                  </select>
+                  <button type="button" class="btn-remove-row" title="Hapus baris" @click="removeMaterialRow(i)">✕</button>
+                </div>
+              </div>
+            </div>
+            <div class="material-hint">Item dari gudang otomatis memotong stok &amp; tercatat di riwayat mutasi aset.</div>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" @click="showBaModal = false">Batal</button>
@@ -417,6 +521,9 @@ onMounted(fetchWo)
 .ba-meta { display: flex; gap: 6px; margin-bottom: 6px; }
 .ba-signs { font-size: 12px; color: #64748b; display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
 .ba-material { font-size: 12px; color: #475569; }
+.ba-material-count { margin-bottom: 4px; }
+.ba-material-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.material-chip { display: inline-block; padding: 1px 8px; background: #eef2ff; color: #4338ca; border-radius: 10px; font-size: 11px; font-weight: 500; }
 .ba-time { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 
 .foto-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -447,6 +554,16 @@ textarea.form-control { resize: vertical; font-family: inherit; }
 .form-group label { font-size: 13px; font-weight: 600; color: #374151; }
 .form-row { display: flex; gap: 12px; }
 .form-row .form-group { flex: 1; }
+
+.material-section-header { display: flex; justify-content: space-between; align-items: center; }
+.material-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.material-row { display: flex; flex-direction: column; gap: 6px; padding: 10px; background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 8px; }
+.material-row-sub { display: flex; gap: 6px; align-items: center; }
+.material-jumlah { width: 80px; flex: none; }
+.material-ket { flex: 1; }
+.btn-remove-row { flex: none; padding: 4px 9px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.btn-remove-row:hover { background: #fee2e2; }
+.material-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }

@@ -153,11 +153,16 @@ export class AssetsService {
   }
 
   async createMutasi(dto: CreateMutasiDto, userId?: number) {
+    const mutasi = await this.prisma.$transaction((tx) => this.applyMutasiTx(tx, dto, userId));
+    return { data: mutasi, message: 'Mutasi aset dicatat' };
+  }
+
+  // Logika inti mutasi — dipakai createMutasi & modul lain (mis. material BA)
+  // di dalam transaksi masing-masing, supaya aturan stok/status satu pintu.
+  async applyMutasiTx(tx: any, dto: CreateMutasiDto, userId?: number) {
     if (dto.jenis_mutasi === 'Deploy' && !dto.id_site_tujuan) {
       throw new BadRequestException('id_site_tujuan wajib diisi untuk mutasi Deploy');
     }
-
-    const mutasi = await this.prisma.$transaction(async (tx) => {
       const aset = await tx.gudangAset.findUnique({ where: { id_aset: dto.id_aset } });
       if (!aset) throw new NotFoundException('Aset tidak ditemukan');
 
@@ -269,9 +274,6 @@ export class AssetsService {
         data: { ...dto, jumlah, id_user: userId || null },
         include: { user: { include: { karyawan: { select: { nama_lengkap: true } } } } },
       });
-    });
-
-    return { data: mutasi, message: 'Mutasi aset dicatat' };
   }
 
   // ─── HELPERS ──────────────────────────────────────────────────
