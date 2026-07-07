@@ -308,19 +308,40 @@ export class MasterService {
     const row = await this.prisma.sitePelanggan.findUnique({
       where: { id_site: id },
       include: {
-        _count: { select: { tickets: true, projects: true, kontrak: true, work_orders: true, invoices: true } },
+        _count: {
+          select: {
+            tickets: true, projects: true, kontrak: true,
+            work_orders: true, invoices: true, topup: true, jurnal_ar: true,
+          },
+        },
       },
     });
     if (!row) throw new NotFoundException('Site tidak ditemukan');
     const c = (row as any)._count;
 
     if (!force) {
-      if (c.tickets > 0 || c.projects > 0 || c.kontrak > 0)
+      // Cek SEMUA relasi yang memblokir hapus (bukan cascade).
+      // perangkat/pic/sumber_internet cascade otomatis → tidak perlu dicek.
+      const blok: string[] = [];
+      if (c.tickets > 0) blok.push(`${c.tickets} tiket`);
+      if (c.projects > 0) blok.push(`${c.projects} project`);
+      if (c.kontrak > 0) blok.push(`${c.kontrak} kontrak`);
+      if (c.work_orders > 0) blok.push(`${c.work_orders} work order`);
+      if (c.invoices > 0) blok.push(`${c.invoices} invoice`);
+      if (c.topup > 0) blok.push(`${c.topup} topup`);
+      if (c.jurnal_ar > 0) blok.push(`${c.jurnal_ar} jurnal AR`);
+      if (blok.length)
         throw new BadRequestException(
-          'Site masih memiliki Tiket/Project/Kontrak aktif, tidak bisa dihapus. ' +
+          `Site masih memiliki ${blok.join(', ')} — tidak bisa dihapus. ` +
           'Gunakan force delete untuk menghapus site BESERTA seluruh datanya.',
         );
-      await this.prisma.sitePelanggan.delete({ where: { id_site: id } });
+      try {
+        await this.prisma.sitePelanggan.delete({ where: { id_site: id } });
+      } catch (e: any) {
+        if (e.code === 'P2003')
+          throw new BadRequestException('Site masih terkait data lain, tidak bisa dihapus. Gunakan force delete.');
+        throw e;
+      }
       return { message: `Site ${row.kode_site} — ${row.nama_site} dihapus` };
     }
 
