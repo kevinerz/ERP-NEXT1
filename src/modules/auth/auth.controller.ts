@@ -36,7 +36,8 @@ export class AuthController {
   @Post('logout')
   logout(@CurrentUser() user: any, @Req() req: any) {
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '';
-    return this.authService.logout(user, ip);
+    const token = req.headers.authorization?.replace('Bearer ', '') || '';
+    return this.authService.logout(user, token, ip);
   }
 
   // GET /api/auth/me

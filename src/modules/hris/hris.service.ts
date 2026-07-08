@@ -93,12 +93,52 @@ export class HrisService {
     });
     if (existing) throw new ConflictException(`NIP ${dto.nip} sudah digunakan`);
 
-    return this.prisma.hrisKaryawan.create({
-      data: {
-        ...dto,
-        tgl_bergabung: dto.tgl_bergabung ? new Date(dto.tgl_bergabung) : undefined,
-      },
+    // Check username uniqueness jika provided
+    if (dto.username) {
+      const userExists = await this.prisma.coreUser.findUnique({
+        where: { username: dto.username },
+      });
+      if (userExists) throw new ConflictException(`Username '${dto.username}' sudah digunakan`);
+    }
+
+    // Create karyawan + optionally create user dalam 1 transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      const karyawan = await tx.hrisKaryawan.create({
+        data: {
+          nip: dto.nip,
+          nama_lengkap: dto.nama_lengkap,
+          jabatan: dto.jabatan,
+          departemen: dto.departemen,
+          no_hp: dto.no_hp,
+          email: dto.email,
+          tgl_bergabung: dto.tgl_bergabung ? new Date(dto.tgl_bergabung) : undefined,
+          status_aktif: dto.status_aktif !== false, // default true
+        },
+      });
+
+      // Auto-create user account jika username provided
+      if (dto.username) {
+        const passwordHash = await bcrypt.hash(
+          dto.password || `Karyawan@${dto.nip}`,
+          12,
+        );
+        await tx.coreUser.create({
+          data: {
+            id_karyawan: karyawan.id_karyawan,
+            username: dto.username,
+            password_hash: passwordHash,
+            is_aktif: true,
+          },
+        });
+      }
+
+      return karyawan;
     });
+
+    return {
+      data: result,
+      message: `Karyawan '${result.nama_lengkap}' berhasil dibuat${dto.username ? ' dengan akun user' : ''}`,
+    };
   }
 
   async updateKaryawan(id: number, dto: UpdateKaryawanDto) {

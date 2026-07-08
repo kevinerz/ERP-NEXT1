@@ -224,33 +224,50 @@ export class FinanceService {
     if (inv.status === 'Lunas') throw new BadRequestException('Invoice sudah Lunas');
     if (dto.jumlah <= 0) throw new BadRequestException('Jumlah pembayaran harus lebih dari 0');
 
-    const total = Number(inv.total);
-    const sudah = Number(inv.jumlah_dibayar);
-    const sisa = this.round(total - sudah);
-    if (dto.jumlah > sisa + 0.01)
-      throw new BadRequestException(`Jumlah melebihi sisa tagihan (sisa: ${sisa})`);
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        // Reread invoice dalam transaction untuk get fresh jumlah_dibayar
+        const invFresh = await tx.invoice.findUnique({ where: { id_invoice } });
+        if (!invFresh) throw new NotFoundException('Invoice tidak ditemukan');
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const bayar = await tx.invoicePembayaran.create({
-        data: {
-          id_invoice,
-          tgl_bayar: new Date(dto.tgl_bayar),
-          jumlah: dto.jumlah,
-          metode: dto.metode,
-          referensi: dto.referensi,
-          catatan: dto.catatan,
-          id_user: userId || null,
-        },
-      });
-      const dibayarBaru = this.round(sudah + dto.jumlah);
-      const statusBaru = this.computeStatus(total, dibayarBaru, inv.tgl_jatuh_tempo, inv.status);
-      const invoice = await tx.invoice.update({
-        where: { id_invoice },
-        data: { jumlah_dibayar: dibayarBaru, status: statusBaru },
-        include: INVOICE_INCLUDE,
-      });
-      return { bayar, invoice };
-    });
+        const total = Number(invFresh.total);
+        const sudah = Number(invFresh.jumlah_dibayar);
+        const sisa = this.round(total - sudah);
+
+        // Check: tidak boleh overpay
+        if (dto.jumlah > sisa + 0.01) {
+          throw new BadRequestException(`Jumlah melebihi sisa tagihan (sisa: ${sisa})`);
+        }
+
+        // Create pembayaran
+        const bayar = await tx.invoicePembayaran.create({
+          data: {
+            id_invoice,
+            tgl_bayar: new Date(dto.tgl_bayar),
+            jumlah: dto.jumlah,
+            metode: dto.metode,
+            referensi: dto.referensi,
+            catatan: dto.catatan,
+            id_user: userId || null,
+          },
+        });
+
+        // Update invoice dengan jumlah_dibayar & status
+        const dibayarBaru = this.round(sudah + dto.jumlah);
+        const statusBaru = this.computeStatus(total, dibayarBaru, invFresh.tgl_jatuh_tempo, invFresh.status);
+        const invoice = await tx.invoice.update({
+          where: { id_invoice },
+          data: { jumlah_dibayar: dibayarBaru, status: statusBaru },
+          include: INVOICE_INCLUDE,
+        });
+
+        return { bayar, invoice };
+      },
+      {
+        timeout: 5000,
+        isolationLevel: 'Serializable', // Serialize untuk prevent concurrent payment race condition
+      },
+    );
 
     return { data: result.invoice, message: 'Pembayaran dicatat' };
   }

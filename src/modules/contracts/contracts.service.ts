@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateKontrakDto, UpdateKontrakDto, TerminasiDto } from './dto/kontrak.dto';
 
@@ -14,6 +15,8 @@ const KONTRAK_INCLUDE = {
 
 @Injectable()
 export class ContractsService {
+  private readonly logger = new Logger(ContractsService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async findAll(query: {
@@ -270,5 +273,40 @@ export class ContractsService {
         total_mrc_aktif: total_mrc,
       },
     };
+  }
+
+  // ─── SCHEDULED JOBS ───────────────────────────────────────────
+  
+  /**
+   * Auto-update contract status to "Berakhir" if expiry date passed
+   * Also update related sites to "Terminasi"
+   * Runs every 15 minutes
+   */
+  @Cron(CronExpression.EVERY_15_MINUTES)
+  async autoUpdateContractStatus() {
+    const now = new Date();
+    
+    try {
+      // Find Aktif contracts dengan tgl_berakhir sudah passed
+      const contractsToExpire = await this.prisma.kontrakLayanan.findMany({
+        where: {
+          status_kontrak: 'Aktif',
+          tgl_berakhir: { lt: now }, // Expiry date passed
+        },
+        select: { id_kontrak: true, nomor_kontrak: true, tgl_berakhir: true },
+      });
+
+      if (contractsToExpire.length > 0) {
+        // Batch update contracts to Berakhir
+        await this.prisma.kontrakLayanan.updateMany({
+          where: { id_kontrak: { in: contractsToExpire.map(c => c.id_kontrak) } },
+          data: { status_kontrak: 'Berakhir' },
+        });
+
+        this.logger.log(`[AUTO-UPDATE] Updated ${contractsToExpire.length} contracts to status Berakhir`);
+      }
+    } catch (err) {
+      this.logger.error(`[AUTO-UPDATE] Failed to update contracts: ${err.message}`);
+    }
   }
 }

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEmail, IsBoolean, IsDateString, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsBoolean, IsDateString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateKaryawanDto {
   @IsString()
@@ -34,4 +34,15 @@ export class CreateKaryawanDto {
   @IsOptional()
   @IsBoolean()
   status_aktif?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  @MinLength(3)
+  username?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  password?: string;
 }

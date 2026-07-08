@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateTicketDto, UpdateTicketDto, AddLogDto } from './dto/ticket.dto';
@@ -51,6 +52,8 @@ function hitungSlaDue(prioritas: string, dariWaktu: Date): Date {
 
 @Injectable()
 export class OperationsService {
+  private readonly logger = new Logger(OperationsService.name);
+
   constructor(
     private prisma: PrismaService,
     private notifService: NotificationsService,
@@ -395,5 +398,40 @@ export class OperationsService {
       orderBy: { nama_lengkap: 'asc' },
     });
     return { data };
+  }
+
+  // ─── SCHEDULED JOBS ───────────────────────────────────────────
+  
+  /**
+   * Auto-update ticket status to "Overdue" if SLA passed
+   * Runs every 10 minutes (setiap 10 menit check & update)
+   */
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async autoUpdateTicketStatus() {
+    const now = new Date();
+    
+    try {
+      // Find open tickets dengan SLA yang sudah passed
+      const ticketsToUpdate = await this.prisma.operationTicket.findMany({
+        where: {
+          status_tiket: { in: ['Open', 'In_Progress', 'Pending_Customer'] },
+          sla_due: { lt: now }, // SLA passed
+          sla_breached: false, // Belum di-mark sebagai breached
+        },
+        select: { id_ticket: true, nomor_tiket: true, sla_due: true },
+      });
+
+      if (ticketsToUpdate.length > 0) {
+        // Batch update semua tickets yang breached
+        await this.prisma.operationTicket.updateMany({
+          where: { id_ticket: { in: ticketsToUpdate.map(t => t.id_ticket) } },
+          data: { sla_breached: true },
+        });
+
+        this.logger.log(`[AUTO-UPDATE] Updated ${ticketsToUpdate.length} tickets to sla_breached=true`);
+      }
+    } catch (err) {
+      this.logger.error(`[AUTO-UPDATE] Failed to update tickets: ${err.message}`);
+    }
   }
 }

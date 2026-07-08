@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LogService } from '../../common/log/log.service';
+import { TokenBlacklistService } from './token-blacklist.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
@@ -20,6 +21,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private logService: LogService,
+    private tokenBlacklist: TokenBlacklistService,
   ) {}
 
   async login(dto: LoginDto, ip?: string) {
@@ -94,7 +96,20 @@ export class AuthService {
     };
   }
 
-  async logout(user: { id_user: number; username: string; nama_lengkap?: string }, ip?: string) {
+  async logout(user: { id_user: number; username: string; nama_lengkap?: string }, token: string, ip?: string) {
+    // Add token ke blacklist untuk mencegah reuse
+    const jwtSecret = this.config.getOrThrow<string>('JWT_ACCESS_SECRET');
+    try {
+      const payload = this.jwt.verify<JwtPayload>(token, { secret: jwtSecret });
+      // Hitung sisa waktu token (exp - now)
+      const expirySeconds = Math.max(0, payload.exp ? Math.floor((payload.exp * 1000 - Date.now()) / 1000) : 0);
+      if (expirySeconds > 0) {
+        this.tokenBlacklist.add(token, expirySeconds);
+      }
+    } catch (err) {
+      // Token tidak valid, skip blacklist
+    }
+
     await this.logService.log({
       id_user: user.id_user,
       username: user.username,
