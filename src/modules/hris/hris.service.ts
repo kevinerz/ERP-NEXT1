@@ -276,4 +276,56 @@ export class HrisService {
       'IT_Internal',
     ];
   }
+
+  // ─── DELETION WITH VALIDATION ───────────────────────────────
+
+  /**
+   * Delete employee dengan validation bahwa karyawan tidak digunakan di operations
+   * Prevent data integrity issues dengan cascade deletions
+   */
+  async deleteKaryawan(id_karyawan: number) {
+    const karyawan = await this.findOneKaryawan(id_karyawan);
+
+    // Check jika employee dipakai di berbagai operasi
+    const [kontrakCount, ticketCount, woCount, userExists] = await Promise.all([
+      this.prisma.kontrakLayanan.count({
+        where: { id_teknisi_pic: id_karyawan },
+      }),
+      this.prisma.operationTicket.count({
+        where: { id_teknisi_pic: id_karyawan },
+      }),
+      this.prisma.operationWorkOrder.count({
+        where: { id_teknisi: id_karyawan },
+      }),
+      this.prisma.coreUser.findUnique({
+        where: { id_karyawan },
+      }),
+    ]);
+
+    const inUse: string[] = [];
+    if (kontrakCount > 0) inUse.push(`${kontrakCount} kontrak`);
+    if (ticketCount > 0) inUse.push(`${ticketCount} tiket`);
+    if (woCount > 0) inUse.push(`${woCount} work order`);
+
+    if (inUse.length > 0) {
+      throw new BadRequestException(
+        `Karyawan '${karyawan.nama_lengkap}' tidak bisa dihapus karena masih digunakan di: ${inUse.join(', ')}. ` +
+        `Reassign dulu sebelum menghapus.`,
+      );
+    }
+
+    // Delete dalam transaction: hapus user dulu (jika ada), lalu karyawan
+    await this.prisma.$transaction(async (tx) => {
+      if (userExists) {
+        // Delete user roles dulu
+        await tx.coreUserRole.deleteMany({ where: { id_user: userExists.id_user } });
+        // Delete user
+        await tx.coreUser.delete({ where: { id_user: userExists.id_user } });
+      }
+      // Delete karyawan
+      await tx.hrisKaryawan.delete({ where: { id_karyawan } });
+    });
+
+    return { message: `Karyawan '${karyawan.nama_lengkap}' berhasil dihapus` };
+  }
 }

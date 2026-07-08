@@ -285,20 +285,44 @@ export class MasterService {
   }
 
   async createSite(dto: CreateSiteDto) {
-    const exists = await this.prisma.sitePelanggan.findUnique({ where: { kode_site: dto.kode_site } });
-    if (exists) throw new ConflictException('Kode site sudah digunakan');
-    const data = await this.prisma.sitePelanggan.create({
-      data: {
-        ...dto,
-        tgl_aktif: dto.tgl_aktif ? new Date(dto.tgl_aktif) : undefined,
-        updated_at: new Date(),
-      },
-      include: {
-        pelanggan: { select: { nama_pelanggan: true } },
-        layanan: { select: { kode_layanan: true, nama_layanan: true } },
-      },
-    });
-    return { data, message: `Site ditambahkan: ${dto.kode_site} — ${dto.nama_site}` };
+    // Validate that customer and service exist
+    const [pelanggan, layanan] = await Promise.all([
+      this.prisma.masterPelanggan.findUnique({ where: { id_pelanggan: dto.id_pelanggan } }),
+      this.prisma.masterLayanan.findUnique({ where: { id_layanan: dto.id_layanan } }),
+    ]);
+
+    if (!pelanggan) throw new NotFoundException(`Pelanggan (${dto.id_pelanggan}) tidak ditemukan`);
+    if (!layanan) throw new NotFoundException(`Layanan (${dto.id_layanan}) tidak ditemukan`);
+
+    try {
+      const data = await this.prisma.sitePelanggan.create({
+        data: {
+          id_pelanggan: dto.id_pelanggan,
+          id_layanan: dto.id_layanan,
+          kode_site: dto.kode_site,
+          nama_site: dto.nama_site,
+          alamat_lengkap: dto.alamat_lengkap,
+          kota: dto.kota,
+          provinsi: dto.provinsi,
+          koordinat_gps: dto.koordinat_gps,
+          status_site: dto.status_site || 'Aktif', // Default to Aktif
+          tgl_aktif: dto.tgl_aktif ? new Date(dto.tgl_aktif) : new Date(),
+          catatan: dto.catatan,
+          updated_at: new Date(),
+        },
+        include: {
+          pelanggan: { select: { nama_pelanggan: true, kode_pelanggan: true } },
+          layanan: { select: { kode_layanan: true, nama_layanan: true } },
+        },
+      });
+      return { data, message: `Site '${dto.kode_site}' berhasil ditambahkan di ${dto.kota}, ${dto.provinsi}` };
+    } catch (e: any) {
+      if (e.code === 'P2002') {
+        const field = e.meta?.target?.[0] || 'kode_site';
+        throw new ConflictException(`${field} '${dto[field]}' sudah digunakan`);
+      }
+      throw e;
+    }
   }
 
   async updateSite(id: number, dto: UpdateSiteDto) {
