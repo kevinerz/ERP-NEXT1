@@ -64,6 +64,7 @@ export class AuthService {
       username: user.username,
       id_karyawan: user.id_karyawan,
       roles,
+      modul_akses,
     };
 
     // Log login berhasil
@@ -121,11 +122,16 @@ export class AuthService {
       if (!user || !user.is_aktif) throw new UnauthorizedException('Akun tidak aktif');
 
       const roles = user.user_roles.map((ur) => ur.role.nama_role);
+      const modul_akses: string[] = user.modul_akses
+        ? JSON.parse(user.modul_akses)
+        : [];
+
       const newPayload: JwtPayload = {
         sub: user.id_user,
         username: user.username,
         id_karyawan: user.id_karyawan,
         roles,
+        modul_akses,
       };
 
       return { access_token: await this.generateAccessToken(newPayload) };

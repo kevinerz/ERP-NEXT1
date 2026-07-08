@@ -21,8 +21,9 @@ const OUTSTANDING = ['Draft', 'Terkirim', 'Sebagian', 'Jatuh_Tempo'];
 export class FinanceService {
   constructor(private prisma: PrismaService) {}
 
-  private round(n: number) {
-    return Math.round((n + Number.EPSILON) * 100) / 100;
+  private round(n: number, decimals = 2): number {
+    const factor = Math.pow(10, decimals);
+    return Math.round((n + Number.EPSILON) * factor) / factor;
   }
 
   // Hitung status berdasarkan jumlah dibayar vs total & jatuh tempo
@@ -35,6 +36,13 @@ export class FinanceService {
     // belum ada bayaran
     if (current === 'Draft') return 'Draft';
     return overdue ? 'Jatuh_Tempo' : 'Terkirim';
+  }
+
+  private calcTotals(subtotal: number, ppn_persen: number) {
+    // Use more precise calculation for large numbers
+    const ppn_nominal = this.round(subtotal * (ppn_persen / 100));
+    const total = this.round(subtotal + ppn_nominal);
+    return { ppn_nominal, total };
   }
 
   async findAll(query: {

@@ -137,29 +137,54 @@ export class ContractsService {
         `Masih ada project berjalan: ${projekBerjalan.map((p) => p.nomor_project).join(', ')}. Selesaikan atau tahan dulu.`,
       );
 
-    const data = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.kontrakLayanan.update({
-        where: { id_kontrak: id },
-        data: {
-          status_kontrak: 'Terminasi',
-          tanggal_terminasi: new Date(dto.tanggal_terminasi),
-          alasan_terminasi: dto.alasan_terminasi,
+    try {
+      const data = await this.prisma.$transaction(
+        async (tx) => {
+          const updated = await tx.kontrakLayanan.update({
+            where: { id_kontrak: id },
+            data: {
+              status_kontrak: 'Terminasi',
+              tanggal_terminasi: new Date(dto.tanggal_terminasi),
+              alasan_terminasi: dto.alasan_terminasi,
+            },
+            include: KONTRAK_INCLUDE,
+          });
+          
+          // Nonaktifkan site kalau tidak ada kontrak Aktif lain di site yg sama
+          const kontrakAktifLain = await tx.kontrakLayanan.count({
+            where: { id_site: row.id_site, status_kontrak: 'Aktif', id_kontrak: { not: id } },
+          });
+          
+          if (kontrakAktifLain === 0) {
+            const site = await tx.sitePelanggan.findUnique({
+              where: { id_site: row.id_site },
+            });
+            
+            if (!site) {
+              throw new NotFoundException(`Site ${row.id_site} tidak ditemukan saat terminasi`);
+            }
+            
+            await tx.sitePelanggan.update({
+              where: { id_site: row.id_site },
+              data: { status_site: 'Terminasi', tgl_terminasi: new Date(dto.tanggal_terminasi) },
+            });
+          }
+          
+          return updated;
         },
-        include: KONTRAK_INCLUDE,
-      });
-      // Nonaktifkan site kalau tidak ada kontrak Aktif lain di site yg sama
-      const kontrakAktifLain = await tx.kontrakLayanan.count({
-        where: { id_site: row.id_site, status_kontrak: 'Aktif', id_kontrak: { not: id } },
-      });
-      if (kontrakAktifLain === 0) {
-        await tx.sitePelanggan.update({
-          where: { id_site: row.id_site },
-          data: { status_site: 'Terminasi', tgl_terminasi: new Date(dto.tanggal_terminasi) },
-        });
+        {
+          timeout: 10000, // 10 second timeout
+          isolationLevel: 'Serializable', // Prevent race conditions
+        },
+      );
+      
+      return { data, message: 'Kontrak diterminasi' };
+    } catch (e: any) {
+      if (e.message?.includes('not found')) {
+        throw new NotFoundException(e.message);
       }
-      return updated;
-    });
-    return { data, message: 'Kontrak diterminasi' };
+      throw new BadRequestException(`Gagal meneterminasi kontrak: ${e.message}`);
+    }
   }
 
   // Buat Project Delivery dari Kontrak (alur Kontrak → Project)

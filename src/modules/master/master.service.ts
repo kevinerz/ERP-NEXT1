@@ -48,12 +48,16 @@ export class MasterService {
   }
 
   async createLayanan(dto: CreateLayananDto) {
-    const exists = await this.prisma.masterLayanan.findUnique({
-      where: { kode_layanan: dto.kode_layanan },
-    });
-    if (exists) throw new ConflictException('Kode layanan sudah digunakan');
-    const data = await this.prisma.masterLayanan.create({ data: dto });
-    return { data, message: 'Layanan berhasil dibuat' };
+    try {
+      const data = await this.prisma.masterLayanan.create({ data: dto });
+      return { data, message: 'Layanan berhasil dibuat' };
+    } catch (e: any) {
+      if (e.code === 'P2002') {
+        const field = e.meta?.target?.[0] || 'kode_layanan';
+        throw new ConflictException(`${field} sudah digunakan`);
+      }
+      throw e;
+    }
   }
 
   async updateLayanan(id: number, dto: UpdateLayananDto) {
@@ -137,12 +141,15 @@ export class MasterService {
   }
 
   async createVendor(dto: CreateVendorDto) {
-    const exists = await this.prisma.masterVendorIsp.findFirst({
-      where: { nama_vendor: dto.nama_vendor },
-    });
-    if (exists) throw new ConflictException('Nama vendor sudah terdaftar');
-    const data = await this.prisma.masterVendorIsp.create({ data: dto });
-    return { data, message: 'Vendor berhasil ditambahkan' };
+    try {
+      const data = await this.prisma.masterVendorIsp.create({ data: dto });
+      return { data, message: 'Vendor berhasil ditambahkan' };
+    } catch (e: any) {
+      if (e.code === 'P2002') {
+        throw new ConflictException(`Vendor '${dto.nama_vendor}' sudah terdaftar`);
+      }
+      throw e;
+    }
   }
 
   async updateVendor(id: number, dto: UpdateVendorDto) {
@@ -218,10 +225,15 @@ export class MasterService {
   }
 
   async createPelanggan(dto: CreatePelangganDto) {
-    const exists = await this.prisma.pelanggan.findUnique({ where: { kode_pelanggan: dto.kode_pelanggan } });
-    if (exists) throw new ConflictException('Kode pelanggan sudah digunakan');
-    const data = await this.prisma.pelanggan.create({ data: dto });
-    return { data, message: 'Pelanggan berhasil ditambahkan' };
+    try {
+      const data = await this.prisma.pelanggan.create({ data: dto });
+      return { data, message: 'Pelanggan berhasil ditambahkan' };
+    } catch (e: any) {
+      if (e.code === 'P2002') {
+        throw new ConflictException(`Kode pelanggan '${dto.kode_pelanggan}' sudah digunakan`);
+      }
+      throw e;
+    }
   }
 
   async updatePelanggan(id: number, dto: UpdatePelangganDto) {
