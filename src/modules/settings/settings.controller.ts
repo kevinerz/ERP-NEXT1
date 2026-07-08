@@ -4,11 +4,15 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SettingsService, SettingKey } from './settings.service';
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('settings')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
+  // Publik — dibutuhkan halaman Login untuk tampilkan logo/nama perusahaan
+  // sebelum user login. Update tetap wajib login (lihat @Patch/@Post di bawah).
+  @Public()
   @Get()
   getAll() {
     return this.settingsService.getAll();

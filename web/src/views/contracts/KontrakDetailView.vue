@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useContractsStore } from '@/stores/contracts'
 import { printKontrak, printInvoice } from '@/composables/usePrint'
+import { fmtRupiah, fmtDate, statusLabel } from '@/composables/useFormat'
 import api from '@/services/api'
 
 const route = useRoute()
@@ -98,12 +99,6 @@ async function handleBuatProject() {
     formError.value = e?.response?.data?.message ?? 'Gagal membuat project'
   } finally { submitting.value = false }
 }
-
-function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-function fmtRupiah(n: number) { return 'Rp ' + (n || 0).toLocaleString('id-ID') }
-function statusLabel(s: string) { return s.replace('_', ' ') }
 
 function sisaHari(d?: string) {
   if (!d) return null
@@ -252,7 +247,7 @@ async function handleDelete() {
           <div class="field full">
             <label>Status</label>
             <select v-model="editForm.status_kontrak">
-              <option v-for="s in STATUS_LIST" :key="s" :value="s">{{ s.replace('_', ' ') }}</option>
+              <option v-for="s in STATUS_LIST" :key="s" :value="s">{{ statusLabel(s) }}</option>
             </select>
           </div>
         </div>

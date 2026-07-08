@@ -28,6 +28,7 @@ const mutasiForm = ref({ id_aset: id, jenis_mutasi: 'Deploy', jumlah: 1, id_site
 interface GudangOpt { id_gudang: number; kode_gudang: string; nama_gudang: string; kota?: string | null; is_aktif: boolean }
 const gudangList = ref<GudangOpt[]>([])
 const gudangLoaded = ref(false)
+const gudangLoadError = ref(false)
 
 const KONDISI_LIST = ['Baru', 'Baik', 'Perlu_Perbaikan', 'Rusak']
 // Opsi mutasi menyesuaikan tipe aset (sesuai guard backend):
@@ -115,11 +116,14 @@ function openMutasi() {
 
 async function loadGudang() {
   if (gudangLoaded.value) return
+  gudangLoadError.value = false
   try {
     const r = await api.get('/master/gudang')
     gudangList.value = r.data.data
     gudangLoaded.value = true
-  } catch {}
+  } catch {
+    gudangLoadError.value = true
+  }
 }
 
 async function handleMutasi() {
@@ -371,6 +375,7 @@ const mutasiColor: Record<string, string> = {
                 [{{ g.kode_gudang }}] {{ g.nama_gudang }}{{ g.kota ? ' — ' + g.kota : '' }}
               </option>
             </select>
+            <span v-if="gudangLoadError" class="hint-error">⚠ Gagal memuat daftar gudang — coba tutup & buka lagi form ini.</span>
           </div>
           <div class="field full" v-if="mutasiForm.jenis_mutasi === 'Return'">
             <label>Kembali ke Gudang</label>
@@ -464,6 +469,7 @@ const mutasiColor: Record<string, string> = {
 .field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
 .form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 8px 0; }
 .edit-hint { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; color: #1e40af; font-size: 12px; padding: 8px 12px; margin: 0; }
+.hint-error { display: block; font-size: 11px; color: #d97706; margin-top: 4px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }

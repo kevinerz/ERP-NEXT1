@@ -103,7 +103,7 @@ const today = computed(() =>
 
       <!-- KPI Cards Row 1 -->
       <div class="kpi-grid">
-        <div class="kpi-card blue" @click="router.push('/master/site')">
+        <div class="kpi-card blue" @click="router.push('/contracts')">
           <div class="kpi-icon">📋</div>
           <div class="kpi-body">
             <div class="kpi-label">Kontrak Aktif</div>
@@ -111,7 +111,7 @@ const today = computed(() =>
             <div class="kpi-sub">{{ kpi.total_pelanggan }} pelanggan</div>
           </div>
         </div>
-        <div class="kpi-card green" @click="router.push('/contracts')">
+        <div class="kpi-card green" @click="router.push('/reports')">
           <div class="kpi-icon">💰</div>
           <div class="kpi-body">
             <div class="kpi-label">Revenue MRC</div>

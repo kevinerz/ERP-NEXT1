@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useContractsStore } from '@/stores/contracts'
 import { useMasterStore } from '@/stores/master'
 import { useProyekStore } from '@/stores/proyek'
+import { fmtRupiah, fmtDateShort as fmtDate, statusLabel } from '@/composables/useFormat'
 import api from '@/services/api'
 
 const router = useRouter()
@@ -85,18 +86,11 @@ async function handleSubmit() {
   finally { submitting.value = false }
 }
 
-function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-function fmtRupiah(n: number) {
-  return 'Rp ' + (n || 0).toLocaleString('id-ID')
-}
 function sisaHari(d?: string) {
   if (!d) return null
   const diff = Math.ceil((new Date(d).getTime() - Date.now()) / 86400000)
   return diff
 }
-function statusLabel(s: string) { return s.replace('_', ' ') }
 </script>
 
 <template>

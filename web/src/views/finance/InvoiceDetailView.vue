@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
 import { printInvoiceDoc } from '@/composables/usePrint'
+import { fmtRupiah, fmtDate, statusLabel } from '@/composables/useFormat'
 import api from '@/services/api'
 
 const route = useRoute()
@@ -49,7 +50,9 @@ const bayarForm = ref({
 
 onMounted(async () => {
   await load()
-  try { mekariMode.value = (await api.get('/mekari/status')).data.data.mode } catch {}
+  // Kalau gagal dicek, anggap simulasi (asumsi paling aman — tombol & konfirmasi
+  // jadi konsisten, tidak menyiratkan "live" padahal statusnya tak diketahui)
+  try { mekariMode.value = (await api.get('/mekari/status')).data.data.mode } catch { mekariMode.value = 'simulasi' }
 })
 
 async function load() {
@@ -148,11 +151,6 @@ async function handleHapusPembayaran(idPembayaran: number) {
   }
 }
 
-function fmtRupiah(n: number) { return 'Rp ' + (Number(n) || 0).toLocaleString('id-ID') }
-function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-function statusLabel(s: string) { return s.replace('_', ' ') }
 </script>
 
 <template>

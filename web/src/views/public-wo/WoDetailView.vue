@@ -58,15 +58,19 @@ interface MaterialRow {
 const KETERANGAN_MATERIAL = ['Penyerahan', 'Terpakai', 'Penarikan']
 const assets = ref<AssetOption[]>([])
 const assetsLoaded = ref(false)
+const assetsLoadError = ref(false)
 const materialRows = ref<MaterialRow[]>([])
 
 async function fetchAssets() {
   if (assetsLoaded.value) return
+  assetsLoadError.value = false
   try {
     const r = await api.get('/assets', { params: { status_aset: 'Di_Gudang', limit: 100 } })
     assets.value = r.data.data || []
     assetsLoaded.value = true
-  } catch { /* dropdown tetap kosong, input manual masih bisa */ }
+  } catch {
+    assetsLoadError.value = true // dropdown kosong bukan krn stok habis, tapi API gagal — beri tahu user
+  }
 }
 
 function assetLabel(a: AssetOption) {
@@ -460,7 +464,8 @@ onMounted(fetchWo)
                 </div>
               </div>
             </div>
-            <div class="material-hint">Item dari gudang otomatis memotong stok &amp; tercatat di riwayat mutasi aset.</div>
+            <div v-if="assetsLoadError" class="material-hint material-hint-error">⚠ Gagal memuat daftar aset gudang — pakai input manual, atau coba lagi nanti.</div>
+            <div v-else class="material-hint">Item dari gudang otomatis memotong stok &amp; tercatat di riwayat mutasi aset.</div>
           </div>
         </div>
         <div class="modal-footer">
@@ -564,6 +569,7 @@ textarea.form-control { resize: vertical; font-family: inherit; }
 .btn-remove-row { flex: none; padding: 4px 9px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; cursor: pointer; }
 .btn-remove-row:hover { background: #fee2e2; }
 .material-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+.material-hint-error { color: #d97706; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }

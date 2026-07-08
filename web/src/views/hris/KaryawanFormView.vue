@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
 
@@ -10,7 +10,7 @@ const hris = useHrisStore()
 const isEdit = computed(() => !!route.params.id && route.params.id !== 'tambah')
 const id = computed(() => isEdit.value ? Number(route.params.id) : null)
 
-const form = ref({
+const EMPTY_FORM = () => ({
   nip: '',
   nama_lengkap: '',
   jabatan: '',
@@ -21,11 +21,15 @@ const form = ref({
   status_aktif: true,
 })
 
+const form = ref(EMPTY_FORM())
 const submitting = ref(false)
 const errorMsg = ref('')
 
-onMounted(async () => {
-  await hris.fetchDepartemen()
+// Muat ulang tiap kali route berubah (Tambah -> Edit -> Tambah tanpa reload
+// halaman sebelumnya membuat data karyawan lama tetap nempel di form).
+async function loadForm() {
+  errorMsg.value = ''
+  form.value = EMPTY_FORM()
   if (isEdit.value && id.value) {
     const data = await hris.fetchOne(id.value)
     if (data) {
@@ -41,7 +45,14 @@ onMounted(async () => {
       }
     }
   }
+}
+
+onMounted(async () => {
+  await hris.fetchDepartemen()
+  await loadForm()
 })
+
+watch(() => route.params.id, () => { loadForm() })
 
 async function submit() {
   errorMsg.value = ''

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
+import { fmtRupiah, fmtDateShort as fmtDate, statusLabel } from '@/composables/useFormat'
 
 const router = useRouter()
 const finance = useFinanceStore()
@@ -55,16 +56,6 @@ async function handleBulk() {
   } finally {
     submitting.value = false
   }
-}
-
-function fmtRupiah(n: number) {
-  return 'Rp ' + (Number(n) || 0).toLocaleString('id-ID')
-}
-function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-function statusLabel(s: string) {
-  return s.replace('_', ' ')
 }
 </script>
 

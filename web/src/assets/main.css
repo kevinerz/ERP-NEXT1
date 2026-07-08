@@ -24,11 +24,17 @@ body {
     min-width: 640px;
   }
 
-  /* Grid umum jadi satu kolom */
+  /* Grid umum jadi satu kolom.
+     display juga !important — kalau tidak, rule scoped lokal ber-display:flex
+     (spesifisitasnya lebih tinggi krn atribut scoped Vue) menang & override ini
+     jadi tak berlaku (ditemukan di LaporanView .metric-row & SalesDashboard
+     .menu-grid). */
   .two-col, .grid-layout, .form-grid, .noc-main, .stat-row,
-  .kpi-row, .metric-row, .field-row, .settings-layout, .noc-tables {
+  .kpi-row, .kpi-grid, .metric-row, .field-row, .settings-layout, .noc-tables,
+  .info-grid, .menu-grid, .pricing-row {
     grid-template-columns: 1fr !important;
-    display: grid;
+    display: grid !important;
+    flex-wrap: wrap !important;
   }
 
   /* Header halaman menumpuk rapi */

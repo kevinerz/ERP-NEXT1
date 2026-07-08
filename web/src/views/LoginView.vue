@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useSettingsStore } from '@/stores/settings'
 
 const router = useRouter()
 const auth = useAuthStore()
+const cfg = useSettingsStore()
 
 const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
+const appVersion = __APP_VERSION__
+
+onMounted(() => { cfg.fetch() })
 
 async function handleLogin() {
   if (!username.value || !password.value) return
@@ -22,10 +27,11 @@ async function handleLogin() {
     <div class="login-card">
       <div class="login-header">
         <div class="logo-box">
-          <span class="logo-text">N1</span>
+          <img v-if="cfg.settings.company_logo_url" :src="cfg.settings.company_logo_url" alt="logo" class="logo-img" />
+          <span v-else class="logo-text">{{ (cfg.settings.company_brand || 'N1').slice(0, 2).toUpperCase() }}</span>
         </div>
-        <h1>ERP NEXT1</h1>
-        <p>PT. Perdana Global Internet</p>
+        <h1>ERP {{ cfg.settings.company_brand || 'NEXT1' }}</h1>
+        <p>{{ cfg.settings.company_name || 'PT. Perdana Global Internet' }}</p>
       </div>
 
       <form @submit.prevent="handleLogin" class="login-form">
@@ -65,7 +71,7 @@ async function handleLogin() {
         </button>
       </form>
 
-      <p class="version">v1.0.0</p>
+      <p class="version">v{{ appVersion }}</p>
     </div>
   </div>
 </template>
@@ -96,6 +102,7 @@ async function handleLogin() {
   margin: 0 auto 16px;
 }
 .logo-text { color: #fff; font-size: 24px; font-weight: 800; letter-spacing: -1px; }
+.logo-img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .login-header h1 { margin: 0; font-size: 24px; font-weight: 700; color: #0f172a; }
 .login-header p { margin: 4px 0 0; font-size: 13px; color: #64748b; }
 .login-form { display: flex; flex-direction: column; gap: 20px; }
