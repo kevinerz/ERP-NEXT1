@@ -273,6 +273,14 @@ export class MasterService {
   }
 
   async createSite(dto: CreateSiteDto) {
+    // Pastikan pelanggan & layanan benar-benar ada (cegah FK/data yatim)
+    const [pelanggan, layanan] = await Promise.all([
+      this.prisma.pelanggan.findUnique({ where: { id_pelanggan: dto.id_pelanggan } }),
+      this.prisma.masterLayanan.findUnique({ where: { id_layanan: dto.id_layanan } }),
+    ]);
+    if (!pelanggan) throw new BadRequestException('Pelanggan tidak ditemukan');
+    if (!layanan) throw new BadRequestException('Layanan tidak ditemukan');
+
     const exists = await this.prisma.sitePelanggan.findUnique({ where: { kode_site: dto.kode_site } });
     if (exists) throw new ConflictException('Kode site sudah digunakan');
     const data = await this.prisma.sitePelanggan.create({

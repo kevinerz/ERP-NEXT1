@@ -236,4 +236,47 @@ export class HrisService {
       'IT_Internal',
     ];
   }
+
+  // ─── HAPUS KARYAWAN (dengan guard pemakaian) ─────────────────
+
+  async deleteKaryawan(id: number) {
+    const row = await this.prisma.hrisKaryawan.findUnique({
+      where: { id_karyawan: id },
+      include: {
+        user: { select: { id_user: true } },
+        _count: {
+          select: {
+            tickets_teknisi: true, wo_teknisi: true, projects_pm: true,
+            leads_pic: true, opportunities: true, quotations: true,
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Karyawan tidak ditemukan');
+    const c = (row as any)._count;
+
+    const inUse: string[] = [];
+    if (c.tickets_teknisi > 0) inUse.push(`${c.tickets_teknisi} tiket`);
+    if (c.wo_teknisi > 0) inUse.push(`${c.wo_teknisi} work order`);
+    if (c.projects_pm > 0) inUse.push(`${c.projects_pm} project`);
+    if (c.leads_pic > 0) inUse.push(`${c.leads_pic} lead`);
+    if (c.opportunities > 0) inUse.push(`${c.opportunities} opportunity`);
+    if (c.quotations > 0) inUse.push(`${c.quotations} quotation`);
+    if (inUse.length)
+      throw new BadRequestException(
+        `Karyawan '${row.nama_lengkap}' tidak bisa dihapus karena masih dipakai di: ${inUse.join(', ')}. ` +
+        'Nonaktifkan saja (toggle status) agar riwayat tetap utuh.',
+      );
+
+    // Aman dihapus: buang akun user (+roles) dulu bila ada, lalu karyawan
+    await this.prisma.$transaction(async (tx) => {
+      const u = (row as any).user;
+      if (u) {
+        await tx.coreUserRole.deleteMany({ where: { id_user: u.id_user } });
+        await tx.coreUser.delete({ where: { id_user: u.id_user } });
+      }
+      await tx.hrisKaryawan.delete({ where: { id_karyawan: id } });
+    });
+    return { message: `Karyawan '${row.nama_lengkap}' dihapus` };
+  }
 }

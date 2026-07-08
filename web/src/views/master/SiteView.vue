@@ -100,6 +100,9 @@ async function handleSubmit() {
   if (!form.value.id_pelanggan || !form.value.id_layanan || !form.value.kode_site || !form.value.nama_site || !form.value.alamat_lengkap) {
     formError.value = 'Pelanggan, Layanan, Kode, Nama, dan Alamat wajib diisi'; return
   }
+  if (!editId.value && (!form.value.kota || !form.value.provinsi)) {
+    formError.value = 'Kota dan Provinsi wajib diisi (dipakai laporan & NOC)'; return
+  }
   submitting.value = true; formError.value = ''
   try {
     const payload: any = { ...form.value }

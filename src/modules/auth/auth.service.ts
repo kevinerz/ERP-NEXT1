@@ -12,6 +12,7 @@ import { LogService } from '../../common/log/log.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { TokenBlacklistService } from './token-blacklist.service';
 
 @Injectable()
 export class AuthService {
@@ -20,6 +21,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private logService: LogService,
+    private tokenBlacklist: TokenBlacklistService,
   ) {}
 
   async login(dto: LoginDto, ip?: string) {
@@ -93,7 +95,18 @@ export class AuthService {
     };
   }
 
-  async logout(user: { id_user: number; username: string; nama_lengkap?: string }, ip?: string) {
+  async logout(user: { id_user: number; username: string; nama_lengkap?: string }, token?: string, ip?: string) {
+    // Blacklist token sampai kedaluwarsa agar tidak bisa dipakai lagi setelah logout
+    if (token) {
+      try {
+        const payload: any = this.jwt.verify(token, { secret: this.config.getOrThrow<string>('JWT_SECRET') });
+        const sisaDetik = payload.exp ? Math.floor(payload.exp - Date.now() / 1000) : 0;
+        if (sisaDetik > 0) this.tokenBlacklist.add(token, sisaDetik);
+      } catch {
+        // token tak valid/expired — tak perlu di-blacklist
+      }
+    }
+
     await this.logService.log({
       id_user: user.id_user,
       username: user.username,

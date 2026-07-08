@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -47,6 +48,12 @@ export class HrisController {
   @Patch('karyawan/:id/toggle-status')
   toggleStatus(@Param('id', ParseIntPipe) id: number) {
     return this.hrisService.toggleStatusKaryawan(id);
+  }
+
+  // DELETE /api/hris/karyawan/:id
+  @Delete('karyawan/:id')
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.hrisService.deleteKaryawan(id);
   }
 
   // ─── USER ACCOUNT ─────────────────────────────────────────────

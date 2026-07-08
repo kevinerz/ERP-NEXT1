@@ -9,6 +9,7 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { JwtAuthGuard } from './common/guards/jwt.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ModulAksesGuard } from './common/guards/modul-akses.guard';
+import { TokenBlacklistService } from './modules/auth/token-blacklist.service';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -34,7 +35,8 @@ async function bootstrap() {
 
   // Global JWT guard + RolesGuard — semua route butuh token kecuali yang @Public()
   const reflector = app.get(Reflector);
-  app.useGlobalGuards(new JwtAuthGuard(reflector), new RolesGuard(reflector), new ModulAksesGuard(reflector));
+  const tokenBlacklist = app.get(TokenBlacklistService);
+  app.useGlobalGuards(new JwtAuthGuard(reflector, tokenBlacklist), new RolesGuard(reflector), new ModulAksesGuard(reflector));
 
   // Serve Vue 3 SPA dari folder public/
   app.useStaticAssets(join(__dirname, '..', 'public'));
