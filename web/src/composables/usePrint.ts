@@ -1,4 +1,5 @@
 import { useSettingsStore } from '@/stores/settings'
+import QRCode from 'qrcode'
 
 function getCompany() {
   try {
@@ -751,4 +752,78 @@ export function printInvoiceDoc(inv: any) {
     ${docFooter(inv.nomor_invoice)}
   </div></body></html>`
   printDocument(html)
+}
+
+// ─────────────────────────────────────────────
+// LABEL ASET — QR code + kode, ditempel di fisik perangkat
+// Scan QR → langsung ke halaman detail aset (butuh login; tujuan
+// disimpan lewat ?redirect= kalau belum login — lihat router/index.ts)
+// ─────────────────────────────────────────────
+export async function printLabelAset(asetList: any[]) {
+  if (!asetList.length) return
+  // window.open HARUS dipanggil sinkron (langsung dari klik user) agar
+  // tidak diblokir popup blocker — baru generate QR (async) setelah itu.
+  const win = window.open('', '_blank', 'width=900,height=700,scrollbars=yes')
+  if (!win) { alert('Pop-up diblokir browser. Izinkan pop-up untuk halaman ini.'); return }
+  win.document.write('<p style="padding:40px;font-family:sans-serif;color:#64748b">Menyiapkan label…</p>')
+
+  const baseUrl = window.location.origin
+  const c = getCompany()
+
+  const items = await Promise.all(asetList.map(async (a) => {
+    const url = `${baseUrl}/assets/${a.id_aset}`
+    let qr = ''
+    try { qr = await QRCode.toDataURL(url, { width: 200, margin: 1 }) } catch { /* label tampil tanpa QR kalau gagal generate */ }
+    return { a, qr }
+  }))
+
+  const labelsHtml = items.map(({ a, qr }) => `
+    <div class="label">
+      <div class="label-qr">${qr ? `<img src="${qr}" />` : ''}</div>
+      <div class="label-info">
+        <div class="label-brand">${c.brand}</div>
+        <div class="label-kode">${a.kode_aset}</div>
+        <div class="label-nama">${a.nama_perangkat}</div>
+        ${a.merk || a.tipe_model ? `<div class="label-model">${[a.merk, a.tipe_model].filter(Boolean).join(' ')}</div>` : ''}
+        ${a.serial_number ? `<div class="label-sn">SN: ${a.serial_number}</div>` : ''}
+      </div>
+    </div>
+  `).join('')
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Label Aset (${asetList.length})</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; background:#fff; }
+    .toolbar { padding:10px 14px; background:#f1f5f9; display:flex; justify-content:space-between; align-items:center; }
+    .toolbar button { background:#1e3a8a; color:#fff; border:none; border-radius:6px; padding:8px 16px; font-size:10pt; cursor:pointer; }
+    .sheet { display:flex; flex-wrap:wrap; gap:2mm; padding:5mm; }
+    .label {
+      width:70mm; height:37mm; border:1px dashed #cbd5e1; border-radius:2mm;
+      display:flex; align-items:center; gap:3mm; padding:3mm; page-break-inside:avoid;
+    }
+    .label-qr img { width:28mm; height:28mm; display:block; }
+    .label-info { flex:1; overflow:hidden; min-width:0; }
+    .label-brand { font-size:7pt; font-weight:700; color:#1e3a8a; text-transform:uppercase; letter-spacing:0.5pt; }
+    .label-kode { font-size:11pt; font-weight:800; font-family:'Consolas',monospace; color:#0f172a; margin-top:1mm; }
+    .label-nama { font-size:8pt; color:#334155; margin-top:0.5mm; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .label-model { font-size:7pt; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .label-sn { font-size:6.5pt; color:#94a3b8; font-family:'Consolas',monospace; margin-top:0.5mm; }
+    @media print {
+      .toolbar { display:none; }
+      .label { border-color:#e2e8f0; }
+      @page { size: A4; margin: 5mm; }
+    }
+  </style>
+  </head>
+  <body>
+    <div class="toolbar no-print">
+      <span style="font-size:10pt;color:#475569">${asetList.length} label siap cetak — tempel di stiker label ukuran 70×37mm</span>
+      <button onclick="window.print()">🖨 Cetak</button>
+    </div>
+    <div class="sheet">${labelsHtml}</div>
+  </body></html>`
+
+  win.document.open()
+  win.document.write(html)
+  win.document.close()
 }

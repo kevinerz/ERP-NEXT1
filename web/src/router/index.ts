@@ -271,8 +271,10 @@ router.beforeEach((to) => {
   const loggedIn = auth.user !== null
   const isLogin = to.name === 'login'
 
-  if (!loggedIn && !isLogin) return '/login'
-  if (loggedIn && isLogin) return '/dashboard'
+  // Simpan tujuan asli (mis. dari scan QR label aset) supaya setelah login
+  // user diarahkan ke sana, bukan selalu ke Dashboard.
+  if (!loggedIn && !isLogin) return { path: '/login', query: { redirect: to.fullPath } }
+  if (loggedIn && isLogin) return (to.query.redirect as string) || '/dashboard'
 
   // Cek akses modul
   if (loggedIn && to.name) {

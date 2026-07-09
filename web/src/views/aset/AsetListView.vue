@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
+import { printLabelAset } from '@/composables/usePrint'
 import api from '@/services/api'
 
 const router = useRouter()
@@ -37,6 +38,22 @@ const form = ref({
   harga_perolehan: 0,
   catatan: '',
 })
+
+const selectedIds = ref<Set<number>>(new Set())
+
+function toggleSelect(id: number) {
+  if (selectedIds.value.has(id)) selectedIds.value.delete(id)
+  else selectedIds.value.add(id)
+}
+function toggleSelectAll() {
+  if (selectedIds.value.size === aset.list.length) selectedIds.value.clear()
+  else aset.list.forEach((a: any) => selectedIds.value.add(a.id_aset))
+}
+function cetakLabelTerpilih() {
+  const items = aset.list.filter((a: any) => selectedIds.value.has(a.id_aset))
+  if (!items.length) { alert('Pilih dulu aset yang mau dicetak labelnya.'); return }
+  printLabelAset(items)
+}
 
 const STATUS_LIST = ['Di_Gudang', 'Terpasang', 'Dipinjam', 'Rusak', 'Disposed']
 const KONDISI_LIST = ['Baru', 'Baik', 'Perlu_Perbaikan', 'Rusak']
@@ -173,11 +190,20 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
 
     <div v-if="aset.error" class="alert-error">{{ aset.error }}</div>
 
+    <div v-if="selectedIds.size > 0" class="selection-bar">
+      <span>{{ selectedIds.size }} aset dipilih</span>
+      <button class="btn-label" @click="cetakLabelTerpilih">🏷️ Cetak Label Terpilih</button>
+      <button class="btn-clear-sel" @click="selectedIds.clear()">Batal Pilih</button>
+    </div>
+
     <div class="table-card">
       <div v-if="aset.loading" class="loading">Memuat...</div>
       <table v-else>
         <thead>
           <tr>
+            <th class="center" style="width:36px">
+              <input type="checkbox" :checked="aset.list.length > 0 && selectedIds.size === aset.list.length" @change="toggleSelectAll" />
+            </th>
             <th>Kode Aset</th>
             <th>Perangkat</th>
             <th>Kategori</th>
@@ -191,9 +217,12 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
         </thead>
         <tbody>
           <tr v-if="!aset.list.length">
-            <td colspan="9" class="empty">Belum ada data aset</td>
+            <td colspan="10" class="empty">Belum ada data aset</td>
           </tr>
           <tr v-for="a in aset.list" :key="a.id_aset" class="row-link" @click="router.push(`/assets/${a.id_aset}`)">
+            <td class="center" @click.stop>
+              <input type="checkbox" :checked="selectedIds.has(a.id_aset)" @change="toggleSelect(a.id_aset)" />
+            </td>
             <td class="kode">{{ a.kode_aset }}</td>
             <td>
               <div class="fw600">{{ a.nama_perangkat }}</div>
@@ -349,6 +378,10 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
 .filter-select { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
 .btn-search { padding: 9px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.selection-bar { display: flex; align-items: center; gap: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #1e40af; font-weight: 600; }
+.btn-label { padding: 6px 14px; background: #1e40af; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-label:hover { background: #1e3a8a; }
+.btn-clear-sel { padding: 6px 14px; background: #fff; color: #64748b; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; margin-left: auto; }
 
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
 table { width: 100%; border-collapse: collapse; }

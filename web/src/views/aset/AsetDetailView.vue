@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
+import { printLabelAset } from '@/composables/usePrint'
 import api from '@/services/api'
 
 const route = useRoute()
@@ -182,6 +183,7 @@ const mutasiColor: Record<string, string> = {
           </div>
         </div>
         <div class="header-actions">
+          <button class="btn-secondary" @click="a && printLabelAset([a])">🏷️ Cetak Label</button>
           <button class="btn-secondary" @click="openMutasi">+ Mutasi</button>
           <button class="btn-edit" @click="openEdit">Edit</button>
         </div>

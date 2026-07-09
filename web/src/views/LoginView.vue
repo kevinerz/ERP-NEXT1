@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
 const cfg = useSettingsStore()
 
@@ -18,7 +19,9 @@ onMounted(() => { cfg.fetch() })
 async function handleLogin() {
   if (!username.value || !password.value) return
   const ok = await auth.login(username.value, password.value)
-  if (ok) router.push('/dashboard')
+  // Kalau tadinya diarahkan ke sini dari halaman lain (mis. scan QR label
+  // aset saat belum login), balik ke sana — bukan selalu ke Dashboard.
+  if (ok) router.push((route.query.redirect as string) || '/dashboard')
 }
 </script>
 
