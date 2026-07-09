@@ -21,7 +21,12 @@ export class NotificationsService {
     return users
       .filter((u) => {
         if (!u.modul_akses) return true; // superadmin
-        return u.modul_akses.split(',').map((s) => s.trim()).includes(modul);
+        // modul_akses disimpan sebagai JSON array string (lihat admin.service.ts) —
+        // bukan comma-separated. Fallback ke format lama untuk data legacy.
+        let akses: string[];
+        try { akses = JSON.parse(u.modul_akses); }
+        catch { akses = u.modul_akses.split(',').map((s) => s.trim()); }
+        return akses.includes(modul);
       })
       .map((u) => u.id_user);
   }
