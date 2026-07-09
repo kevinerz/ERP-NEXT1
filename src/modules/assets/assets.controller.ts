@@ -2,6 +2,8 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, ParseInt
 import { AssetsService } from './assets.service';
 import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto, CreateSimTopupDto } from './dto/aset.dto';
 import { CreateStokOpnameDto, ScanStokOpnameDto } from './dto/stok-opname.dto';
+import { CreatePengajuanAsetDto, ApprovePengajuanAsetDto, SelesaikanPengajuanAsetDto } from './dto/pengajuan-aset.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('assets')
 export class AssetsController {
@@ -68,6 +70,36 @@ export class AssetsController {
 
   @Delete('stok-opname/:id')
   removeOpname(@Param('id', ParseIntPipe) id: number) { return this.svc.removeOpname(id); }
+
+  // ─── PENGAJUAN ASET (PROCUREMENT) ────────────────────────────────
+  // (path statis 'pengajuan*' HARUS di atas ':id')
+
+  @Post('pengajuan')
+  createPengajuan(@Body() dto: CreatePengajuanAsetDto, @Req() req: any) {
+    return this.svc.createPengajuan(dto, req.user.id_user);
+  }
+
+  @Get('pengajuan')
+  findAllPengajuan(@Query() q: any) { return this.svc.findAllPengajuan(q); }
+
+  @Get('pengajuan/:id')
+  findOnePengajuan(@Param('id', ParseIntPipe) id: number) { return this.svc.findOnePengajuan(id); }
+
+  @Roles('Director', 'Manager_Ops')
+  @Patch('pengajuan/:id/approve')
+  approvePengajuan(@Param('id', ParseIntPipe) id: number, @Body() dto: ApprovePengajuanAsetDto, @Req() req: any) {
+    return this.svc.approvePengajuan(id, dto, req.user.id_user);
+  }
+
+  @Patch('pengajuan/:id/selesai')
+  selesaikanPengajuan(@Param('id', ParseIntPipe) id: number, @Body() dto: SelesaikanPengajuanAsetDto, @Req() req: any) {
+    return this.svc.selesaikanPengajuan(id, dto, req.user?.id_user);
+  }
+
+  @Delete('pengajuan/:id')
+  removePengajuan(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    return this.svc.removePengajuan(id, req.user?.id_user);
+  }
 
   // ─── ASET CRUD ────────────────────────────────────────────────
 

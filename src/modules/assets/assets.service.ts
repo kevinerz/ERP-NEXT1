@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException }
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto } from './dto/aset.dto';
 import { CreateStokOpnameDto, ScanStokOpnameDto } from './dto/stok-opname.dto';
+import { CreatePengajuanAsetDto, ApprovePengajuanAsetDto, SelesaikanPengajuanAsetDto } from './dto/pengajuan-aset.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const ASET_INCLUDE = {
   site: { select: { kode_site: true, nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
@@ -11,7 +13,7 @@ const ASET_INCLUDE = {
 
 @Injectable()
 export class AssetsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private notifService: NotificationsService) {}
 
   // ─── ASET ────────────────────────────────────────────────────
 
@@ -671,5 +673,127 @@ export class AssetsService {
     if (opname.status_opname !== 'Berjalan') throw new BadRequestException('Hanya sesi yang masih Berjalan yang bisa dibatalkan');
     await this.prisma.stokOpname.delete({ where: { id_opname: id } });
     return { message: 'Sesi opname dibatalkan' };
+  }
+
+  // ─── PENGAJUAN ASET (PROCUREMENT) ──────────────────────────────
+
+  private readonly PENGAJUAN_INCLUDE = {
+    gudang_tujuan: { select: { kode_gudang: true, nama_gudang: true } },
+    pemohon: { include: { karyawan: { select: { nama_lengkap: true } } } },
+    approver: { include: { karyawan: { select: { nama_lengkap: true } } } },
+    aset_hasil: { select: { id_aset: true, kode_aset: true } },
+  };
+
+  async createPengajuan(dto: CreatePengajuanAsetDto, userId: number) {
+    const data = await this.prisma.pengajuanAset.create({
+      data: {
+        ...dto,
+        jumlah: dto.jumlah ?? 1,
+        estimasi_harga: dto.estimasi_harga ?? 0,
+        id_pemohon: userId,
+      },
+      include: this.PENGAJUAN_INCLUDE,
+    });
+    this.notifService.notifyForRoles(['Director', 'Manager_Ops'], {
+      tipe: 'pengajuan_aset_approval',
+      judul: 'Pengajuan Aset Menunggu Approval',
+      deskripsi: `${dto.nama_item} (x${dto.jumlah ?? 1}) diajukan — perlu disetujui`,
+      url: `/assets/pengajuan/${data.id_pengajuan}`,
+    }).catch(() => {});
+    return { data, message: `Pengajuan aset "${dto.nama_item}" dibuat, menunggu approval` };
+  }
+
+  async findAllPengajuan(query: { status_pengajuan?: string; page?: number; limit?: number }) {
+    const page = Number(query.page) || 1;
+    const limit = Math.min(Number(query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (query.status_pengajuan) where.status_pengajuan = query.status_pengajuan;
+
+    const [data, total] = await Promise.all([
+      this.prisma.pengajuanAset.findMany({
+        where, skip, take: limit,
+        orderBy: { created_at: 'desc' },
+        include: this.PENGAJUAN_INCLUDE,
+      }),
+      this.prisma.pengajuanAset.count({ where }),
+    ]);
+    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
+  }
+
+  async findOnePengajuan(id: number) {
+    const data = await this.prisma.pengajuanAset.findUnique({
+      where: { id_pengajuan: id },
+      include: this.PENGAJUAN_INCLUDE,
+    });
+    if (!data) throw new NotFoundException('Pengajuan tidak ditemukan');
+    return { data };
+  }
+
+  async approvePengajuan(id: number, dto: ApprovePengajuanAsetDto, approverId: number) {
+    if (!['Disetujui', 'Ditolak'].includes(dto.status_approval))
+      throw new BadRequestException('Status approval harus Disetujui atau Ditolak');
+    const p = await this.prisma.pengajuanAset.findUnique({ where: { id_pengajuan: id } });
+    if (!p) throw new NotFoundException('Pengajuan tidak ditemukan');
+    if (p.status_pengajuan !== 'Diajukan')
+      throw new BadRequestException(`Pengajuan sudah ${p.status_pengajuan} — tidak bisa diproses ulang`);
+
+    const data = await this.prisma.pengajuanAset.update({
+      where: { id_pengajuan: id },
+      data: {
+        status_pengajuan: dto.status_approval,
+        id_approver: approverId,
+        tgl_approval: new Date(),
+        catatan_approval: dto.catatan_approval,
+      },
+      include: this.PENGAJUAN_INCLUDE,
+    });
+    this.notifService.notifyForModul('assets', {
+      tipe: 'pengajuan_aset_hasil',
+      judul: `Pengajuan Aset ${dto.status_approval}`,
+      deskripsi: `${p.nama_item} — ${dto.status_approval}`,
+      url: `/assets/pengajuan/${id}`,
+    }).catch(() => {});
+    return { data, message: `Pengajuan ${dto.status_approval}` };
+  }
+
+  async selesaikanPengajuan(id: number, dto: SelesaikanPengajuanAsetDto, userId?: number) {
+    const p = await this.prisma.pengajuanAset.findUnique({ where: { id_pengajuan: id } });
+    if (!p) throw new NotFoundException('Pengajuan tidak ditemukan');
+    if (p.status_pengajuan !== 'Disetujui')
+      throw new BadRequestException('Hanya pengajuan yang sudah Disetujui yang bisa diselesaikan');
+
+    const idGudang = dto.id_gudang ?? p.id_gudang_tujuan ?? undefined;
+    const asetResult = await this.create(
+      {
+        nama_perangkat: p.nama_item,
+        kategori: p.kategori,
+        kondisi: 'Baru',
+        stok_jumlah: p.jumlah,
+        is_serialized: !!dto.serial_number,
+        serial_number: dto.serial_number,
+        harga_perolehan: dto.harga_aktual ?? Number(p.estimasi_harga),
+        id_gudang: idGudang,
+        tgl_perolehan: dto.tgl_terima ?? new Date().toISOString().slice(0, 10),
+        catatan: `Dari pengajuan #${p.id_pengajuan}: ${p.alasan}`,
+      },
+      userId,
+    );
+
+    const data = await this.prisma.pengajuanAset.update({
+      where: { id_pengajuan: id },
+      data: { status_pengajuan: 'Selesai', tgl_selesai: new Date(), id_aset_hasil: asetResult.data.id_aset },
+      include: this.PENGAJUAN_INCLUDE,
+    });
+    return { data, message: `Barang diterima — aset ${asetResult.data.kode_aset} tercatat` };
+  }
+
+  async removePengajuan(id: number, userId?: number) {
+    const p = await this.prisma.pengajuanAset.findUnique({ where: { id_pengajuan: id } });
+    if (!p) throw new NotFoundException('Pengajuan tidak ditemukan');
+    if (p.status_pengajuan !== 'Diajukan')
+      throw new BadRequestException('Hanya pengajuan berstatus Diajukan yang bisa dibatalkan');
+    await this.prisma.pengajuanAset.delete({ where: { id_pengajuan: id } });
+    return { message: 'Pengajuan dibatalkan' };
   }
 }

@@ -39,6 +39,22 @@ export class NotificationsService {
     }
   }
 
+  /** Buat notifikasi untuk semua user aktif yang punya salah satu role tertentu */
+  async notifyForRoles(roles: string[], data: NotifData): Promise<void> {
+    try {
+      const users = await this.prisma.coreUser.findMany({
+        where: { is_aktif: true, user_roles: { some: { role: { nama_role: { in: roles } } } } },
+        select: { id_user: true },
+      });
+      if (!users.length) return;
+      await this.prisma.notification.createMany({
+        data: users.map((u) => ({ id_user: u.id_user, ...data })),
+      });
+    } catch (e) {
+      // Jangan sampai notifikasi gagal merusak proses utama
+    }
+  }
+
   /** GET /notifications — list notifikasi user dengan paginasi */
   async findForUser(userId: number, page = 1) {
     const limit = 25;

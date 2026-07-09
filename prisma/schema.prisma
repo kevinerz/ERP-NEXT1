@@ -122,8 +122,9 @@ model MasterGudang {
   is_aktif    Boolean  @default(true)
   created_at  DateTime @default(now())
 
-  aset   GudangAset[]
-  opname StokOpname[]
+  aset      GudangAset[]
+  opname    StokOpname[]
+  pengajuan PengajuanAset[]
 
   @@map("master_gudang")
 }
@@ -168,6 +169,8 @@ model CoreUser {
   rca          OperationRca[]
   invoice_pembayaran InvoicePembayaran[]
   stok_opname        StokOpname[]
+  pengajuan_dibuat   PengajuanAset[] @relation("PengajuanPemohon")
+  pengajuan_disetujui PengajuanAset[] @relation("PengajuanApprover")
 
   @@map("core_users")
 }
@@ -251,6 +254,7 @@ model GudangAset {
   ba_material        WoBaMaterial[]
   pengiriman_items   PengirimanItem[]
   opname_items       StokOpnameItem[]
+  pengajuan_asal     PengajuanAset?
 
   @@map("gudang_aset")
 }
@@ -721,6 +725,34 @@ model StokOpnameItem {
 
   @@unique([id_opname, id_aset])
   @@map("stok_opname_item")
+}
+
+// Pengajuan pembelian aset baru — approval Director/Manager_Ops sebelum
+// dibeli, lalu dikonversi jadi GudangAset setelah barang fisik tiba.
+model PengajuanAset {
+  id_pengajuan     Int       @id @default(autoincrement())
+  nama_item        String    @db.VarChar(150)
+  kategori         String    @db.VarChar(30)
+  jumlah           Int       @default(1)
+  alasan           String    @db.Text
+  estimasi_harga   Decimal   @default(0) @db.Decimal(15, 2)
+  id_gudang_tujuan Int?
+  status_pengajuan String    @default("Diajukan") @db.VarChar(20)
+  id_pemohon       Int
+  id_approver      Int?
+  catatan_approval String?   @db.Text
+  id_aset_hasil    Int?      @unique
+  tgl_diajukan     DateTime  @default(now())
+  tgl_approval     DateTime?
+  tgl_selesai      DateTime?
+  created_at       DateTime  @default(now())
+
+  gudang_tujuan MasterGudang? @relation(fields: [id_gudang_tujuan], references: [id_gudang])
+  pemohon       CoreUser      @relation("PengajuanPemohon", fields: [id_pemohon], references: [id_user])
+  approver      CoreUser?     @relation("PengajuanApprover", fields: [id_approver], references: [id_user])
+  aset_hasil    GudangAset?   @relation(fields: [id_aset_hasil], references: [id_aset])
+
+  @@map("pengajuan_aset")
 }
 
 model SimTopup {

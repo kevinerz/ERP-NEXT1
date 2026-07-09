@@ -225,6 +225,16 @@ const router = createRouter({
           name: 'stok-opname-detail',
           component: () => import('@/views/aset/StokOpnameDetailView.vue'),
         },
+        {
+          path: 'assets/pengajuan',
+          name: 'pengajuan-aset-list',
+          component: () => import('@/views/aset/PengajuanAsetListView.vue'),
+        },
+        {
+          path: 'assets/pengajuan/:id',
+          name: 'pengajuan-aset-detail',
+          component: () => import('@/views/aset/PengajuanAsetDetailView.vue'),
+        },
         // Work Order
         {
           path: 'public-wo',
@@ -270,6 +280,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'tiket-list': 'operations', 'tiket-detail': 'operations',
   'aset-list': 'assets', 'aset-detail': 'assets', 'sim-topup': 'assets',
   'stok-opname-list': 'assets', 'stok-opname-detail': 'assets',
+  'pengajuan-aset-list': 'assets', 'pengajuan-aset-detail': 'assets',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'laporan': 'reports',
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',

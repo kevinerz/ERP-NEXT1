@@ -69,6 +69,25 @@ export interface StokOpname {
   ringkasan?: { total: number; ditemukan: number; hilang: number; anomali: number }
 }
 
+export interface PengajuanAset {
+  id_pengajuan: number
+  nama_item: string
+  kategori: string
+  jumlah: number
+  alasan: string
+  estimasi_harga: number
+  id_gudang_tujuan?: number | null
+  status_pengajuan: string
+  catatan_approval?: string | null
+  tgl_diajukan: string
+  tgl_approval?: string | null
+  tgl_selesai?: string | null
+  gudang_tujuan?: { kode_gudang: string; nama_gudang: string } | null
+  pemohon?: { karyawan?: { nama_lengkap: string } }
+  approver?: { karyawan?: { nama_lengkap: string } } | null
+  aset_hasil?: { id_aset: number; kode_aset: string } | null
+}
+
 export const useAsetStore = defineStore('aset', {
   state: () => ({
     list: [] as Aset[],
@@ -82,6 +101,9 @@ export const useAsetStore = defineStore('aset', {
     opnameList: [] as StokOpname[],
     opnameMeta: { total: 0, page: 1, limit: 20, total_pages: 0 },
     opnameCurrent: null as StokOpname | null,
+    pengajuanList: [] as PengajuanAset[],
+    pengajuanMeta: { total: 0, page: 1, limit: 20, total_pages: 0 },
+    pengajuanCurrent: null as PengajuanAset | null,
   }),
   actions: {
     async fetchList(params: Record<string, any> = {}) {
@@ -165,6 +187,40 @@ export const useAsetStore = defineStore('aset', {
     },
     async removeOpname(id: number) {
       await api.delete(`/assets/stok-opname/${id}`)
+    },
+
+    // ─── PENGAJUAN ASET ─────────────────────────────────────────
+    async fetchPengajuanList(params: Record<string, any> = {}) {
+      this.loading = true; this.error = ''
+      try {
+        const r = await api.get('/assets/pengajuan', { params })
+        this.pengajuanList = r.data.data
+        this.pengajuanMeta = r.data.meta
+      } catch (e: any) { this.error = e.response?.data?.message || 'Gagal memuat pengajuan' }
+      finally { this.loading = false }
+    },
+    async fetchPengajuanOne(id: number) {
+      this.loading = true; this.error = ''
+      try {
+        const r = await api.get(`/assets/pengajuan/${id}`)
+        this.pengajuanCurrent = r.data.data
+      } catch (e: any) { this.error = e.response?.data?.message || 'Gagal memuat pengajuan' }
+      finally { this.loading = false }
+    },
+    async createPengajuan(payload: Record<string, any>) {
+      const r = await api.post('/assets/pengajuan', payload)
+      return r.data.data
+    },
+    async approvePengajuan(id: number, payload: { status_approval: string; catatan_approval?: string }) {
+      const r = await api.patch(`/assets/pengajuan/${id}/approve`, payload)
+      return r.data.data
+    },
+    async selesaikanPengajuan(id: number, payload: Record<string, any>) {
+      const r = await api.patch(`/assets/pengajuan/${id}/selesai`, payload)
+      return r.data.data
+    },
+    async removePengajuan(id: number) {
+      await api.delete(`/assets/pengajuan/${id}`)
     },
   },
 })

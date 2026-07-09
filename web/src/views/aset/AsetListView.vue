@@ -162,6 +162,7 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
         <p class="sub">Manajemen inventaris & perangkat</p>
       </div>
       <div class="header-actions">
+        <button class="btn-secondary" @click="router.push('/assets/pengajuan')">🧾 Pengajuan Aset</button>
         <button class="btn-secondary" @click="router.push('/assets/stok-opname')">📋 Stok Opname</button>
         <button class="btn-primary" @click="showModal = true; resetForm(); formError = ''">+ Tambah Aset</button>
       </div>
