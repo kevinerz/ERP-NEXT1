@@ -157,6 +157,11 @@ const router = createRouter({
           component: () => import('@/views/admin/ActivityLogView.vue'),
         },
         {
+          path: 'integrations/prtg',
+          name: 'prtg-settings',
+          component: () => import('@/views/integrations/PrtgSettingsView.vue'),
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('@/views/settings/SettingsView.vue'),
@@ -281,6 +286,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'aset-list': 'assets', 'aset-detail': 'assets', 'sim-topup': 'assets',
   'stok-opname-list': 'assets', 'stok-opname-detail': 'assets',
   'pengajuan-aset-list': 'assets', 'pengajuan-aset-detail': 'assets',
+  'prtg-settings': 'prtg',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'laporan': 'reports',
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',

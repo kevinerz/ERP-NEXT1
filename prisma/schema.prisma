@@ -222,6 +222,7 @@ model SitePelanggan {
   topup           SimTopup[]
   jurnal_ar       IntegrationJurnalAr[]
   invoices        Invoice[]
+  prtg_mapping    IntegrationPrtgMapping[]
 
   @@map("site_pelanggan")
 }
@@ -864,6 +865,33 @@ model IntegrationPrtgWebhook {
   ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
 
   @@map("integration_prtg_webhooks")
+}
+
+// Konfigurasi koneksi PRTG dari UI (bukan lewat AppSetting — itu ada
+// endpoint publik untuk branding login, kredensial PRTG tidak boleh ikut bocor
+// di sana). Single-row, selalu id=1. Fallback ke env var kalau row belum ada.
+model IntegrationPrtgConfig {
+  id         Int      @id @default(1)
+  base_url   String?  @db.VarChar(255)
+  username   String?  @db.VarChar(100)
+  passhash   String?  @db.VarChar(100)
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("integration_prtg_config")
+}
+
+// Mapping manual nama device PRTG -> site pelanggan, dipakai saat matching
+// otomatis (substring nama) gagal ("site tidak dikenali"). Sekali di-mapping,
+// device itu langsung match persis di polling berikutnya.
+model IntegrationPrtgMapping {
+  id_mapping  Int      @id @default(autoincrement())
+  device_name String   @unique @db.VarChar(150)
+  id_site     Int
+  created_at  DateTime @default(now())
+
+  site SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+
+  @@map("integration_prtg_mapping")
 }
 
 model IntegrationRcmsWebhook {

@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
 import { PrtgService } from './prtg.service';
+import { Roles } from '../../../common/decorators/roles.decorator';
 
 @Controller('prtg')
 export class PrtgController {
@@ -14,4 +15,37 @@ export class PrtgController {
   // Trigger polling manual (tanpa menunggu cron 5 menit)
   @Post('poll')
   poll() { return this.prtgService.poll(); }
+
+  // ─── KONFIGURASI (Admin/Director — menyentuh kredensial) ────────
+
+  @Roles('Admin', 'Director')
+  @Get('config')
+  getConfig() { return this.prtgService.getConfig(); }
+
+  @Roles('Admin', 'Director')
+  @Patch('config')
+  updateConfig(@Body() dto: { base_url?: string; username?: string; passhash?: string }) {
+    return this.prtgService.updateConfig(dto);
+  }
+
+  // ─── MAPPING DEVICE → SITE ────────────────────────────────────────
+
+  @Get('mapping')
+  listMapping() { return this.prtgService.listMapping(); }
+
+  @Get('mapping/unmatched')
+  listUnmatched() { return this.prtgService.listUnmatched(); }
+
+  @Post('mapping')
+  createMapping(@Body() dto: { device_name: string; id_site: number }) {
+    return this.prtgService.createMapping(dto);
+  }
+
+  @Delete('mapping/:id')
+  removeMapping(@Param('id', ParseIntPipe) id: number) { return this.prtgService.removeMapping(id); }
+
+  // ─── AUDIT SENSOR ────────────────────────────────────────────────
+
+  @Get('devices')
+  getDeviceOverview() { return this.prtgService.getDeviceOverview(); }
 }

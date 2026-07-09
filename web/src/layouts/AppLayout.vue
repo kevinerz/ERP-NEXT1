@@ -95,6 +95,7 @@ const allMenu = [
 const adminMenu = [
   { label: 'Users',        emoji: '⚙️', to: '/admin/users'  },
   { label: 'Activity Log', emoji: '📝', to: '/admin/logs'   },
+  { label: 'PRTG',         emoji: '📡', to: '/integrations/prtg' },
   { label: 'Pengaturan',   emoji: '🔩', to: '/settings'     },
 ]
 
@@ -147,6 +148,7 @@ const PAGE_TITLES: Record<string, string> = {
   "notifications":        "Notifikasi",
   "profile":              "Profil Saya",
   "settings":             "Pengaturan Aplikasi",
+  "prtg-settings":        "PRTG — Monitoring",
 }
 
 const pageTitle = computed(() => PAGE_TITLES[route.name as string] || "ERP NEXT1")
