@@ -39,18 +39,37 @@ const form = ref({
   catatan: '',
 })
 
-const selectedIds = ref<Set<number>>(new Set())
+// Simpan OBJEK aset yang dipilih (bukan cuma id) — supaya pilihan dari
+// halaman lain tidak hilang saat pindah halaman (aset.list diganti tiap fetch).
+const selectedItems = ref<Map<number, any>>(new Map())
+const selectingAll = ref(false)
 
-function toggleSelect(id: number) {
-  if (selectedIds.value.has(id)) selectedIds.value.delete(id)
-  else selectedIds.value.add(id)
+function toggleSelect(a: any) {
+  if (selectedItems.value.has(a.id_aset)) selectedItems.value.delete(a.id_aset)
+  else selectedItems.value.set(a.id_aset, a)
 }
 function toggleSelectAll() {
-  if (selectedIds.value.size === aset.list.length) selectedIds.value.clear()
-  else aset.list.forEach((a: any) => selectedIds.value.add(a.id_aset))
+  const semuaDiHalamanTerpilih = aset.list.length > 0 && aset.list.every((a: any) => selectedItems.value.has(a.id_aset))
+  if (semuaDiHalamanTerpilih) aset.list.forEach((a: any) => selectedItems.value.delete(a.id_aset))
+  else aset.list.forEach((a: any) => selectedItems.value.set(a.id_aset, a))
+}
+async function pilihSemuaSesuaiFilter() {
+  selectingAll.value = true
+  try {
+    const params: any = { page: 1, limit: 200 }
+    if (filterStatus.value) params.status_aset = filterStatus.value
+    if (filterKategori.value) params.kategori = filterKategori.value
+    if (filterKondisi.value) params.kondisi = filterKondisi.value
+    if (filterGudang.value) params.id_gudang = filterGudang.value
+    if (search.value) params.search = search.value
+    const r = await api.get('/assets', { params })
+    r.data.data.forEach((a: any) => selectedItems.value.set(a.id_aset, a))
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal memilih semua aset')
+  } finally { selectingAll.value = false }
 }
 function cetakLabelTerpilih() {
-  const items = aset.list.filter((a: any) => selectedIds.value.has(a.id_aset))
+  const items = Array.from(selectedItems.value.values())
   if (!items.length) { alert('Pilih dulu aset yang mau dicetak labelnya.'); return }
   printLabelAset(items)
 }
@@ -193,10 +212,13 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
 
     <div v-if="aset.error" class="alert-error">{{ aset.error }}</div>
 
-    <div v-if="selectedIds.size > 0" class="selection-bar">
-      <span>{{ selectedIds.size }} aset dipilih</span>
+    <div v-if="selectedItems.size > 0" class="selection-bar">
+      <span>{{ selectedItems.size }} aset dipilih</span>
+      <button class="btn-select-all" v-if="aset.meta.total > aset.list.length" @click="pilihSemuaSesuaiFilter" :disabled="selectingAll">
+        {{ selectingAll ? 'Memilih...' : `Pilih Semua Sesuai Filter (${aset.meta.total})` }}
+      </button>
       <button class="btn-label" @click="cetakLabelTerpilih">🏷️ Cetak Label Terpilih</button>
-      <button class="btn-clear-sel" @click="selectedIds.clear()">Batal Pilih</button>
+      <button class="btn-clear-sel" @click="selectedItems.clear()">Batal Pilih</button>
     </div>
 
     <div class="table-card">
@@ -205,7 +227,7 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
         <thead>
           <tr>
             <th class="center" style="width:36px">
-              <input type="checkbox" :checked="aset.list.length > 0 && selectedIds.size === aset.list.length" @change="toggleSelectAll" />
+              <input type="checkbox" :checked="aset.list.length > 0 && aset.list.every((a: any) => selectedItems.has(a.id_aset))" @change="toggleSelectAll" />
             </th>
             <th>Kode Aset</th>
             <th>Perangkat</th>
@@ -224,7 +246,7 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
           </tr>
           <tr v-for="a in aset.list" :key="a.id_aset" class="row-link" @click="router.push(`/assets/${a.id_aset}`)">
             <td class="center" @click.stop>
-              <input type="checkbox" :checked="selectedIds.has(a.id_aset)" @change="toggleSelect(a.id_aset)" />
+              <input type="checkbox" :checked="selectedItems.has(a.id_aset)" @change="toggleSelect(a)" />
             </td>
             <td class="kode">{{ a.kode_aset }}</td>
             <td>
@@ -386,6 +408,8 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
 .selection-bar { display: flex; align-items: center; gap: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #1e40af; font-weight: 600; }
 .btn-label { padding: 6px 14px; background: #1e40af; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-label:hover { background: #1e3a8a; }
+.btn-select-all { padding: 6px 14px; background: #fff; color: #1e40af; border: 1px solid #93c5fd; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-select-all:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-clear-sel { padding: 6px 14px; background: #fff; color: #64748b; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; margin-left: auto; }
 
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
