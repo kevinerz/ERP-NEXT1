@@ -215,6 +215,16 @@ const router = createRouter({
           name: 'sim-topup',
           component: () => import('@/views/aset/SimTopupView.vue'),
         },
+        {
+          path: 'assets/stok-opname',
+          name: 'stok-opname-list',
+          component: () => import('@/views/aset/StokOpnameListView.vue'),
+        },
+        {
+          path: 'assets/stok-opname/:id',
+          name: 'stok-opname-detail',
+          component: () => import('@/views/aset/StokOpnameDetailView.vue'),
+        },
         // Work Order
         {
           path: 'public-wo',
@@ -259,6 +269,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'proyek-list': 'projects', 'proyek-detail': 'projects',
   'tiket-list': 'operations', 'tiket-detail': 'operations',
   'aset-list': 'assets', 'aset-detail': 'assets', 'sim-topup': 'assets',
+  'stok-opname-list': 'assets', 'stok-opname-detail': 'assets',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'laporan': 'reports',
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',

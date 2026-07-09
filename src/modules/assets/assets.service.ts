@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto } from './dto/aset.dto';
+import { CreateStokOpnameDto, ScanStokOpnameDto } from './dto/stok-opname.dto';
 
 const ASET_INCLUDE = {
   site: { select: { kode_site: true, nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
@@ -510,5 +511,165 @@ export class AssetsService {
     if (!row) throw new NotFoundException('Topup tidak ditemukan');
     await this.prisma.simTopup.delete({ where: { id_topup: id } });
     return { message: 'Topup dihapus' };
+  }
+
+  // ─── STOK OPNAME / AUDIT FISIK ─────────────────────────────────
+
+  async createOpname(dto: CreateStokOpnameDto, userId?: number) {
+    const gudang = await this.prisma.masterGudang.findUnique({ where: { id_gudang: dto.id_gudang } });
+    if (!gudang) throw new NotFoundException('Gudang tidak ditemukan');
+
+    const sedangBerjalan = await this.prisma.stokOpname.findFirst({
+      where: { id_gudang: dto.id_gudang, status_opname: 'Berjalan' },
+    });
+    if (sedangBerjalan)
+      throw new BadRequestException(`Sudah ada sesi opname #${sedangBerjalan.id_opname} yang masih berjalan untuk gudang ini`);
+
+    // Snapshot semua aset "Di_Gudang" di gudang ini saat sesi dibuat
+    const asetDiGudang = await this.prisma.gudangAset.findMany({
+      where: { id_gudang: dto.id_gudang, status_aset: 'Di_Gudang' },
+      select: { id_aset: true },
+    });
+    if (!asetDiGudang.length)
+      throw new BadRequestException('Tidak ada aset berstatus Di_Gudang di gudang ini untuk diopname');
+
+    const data = await this.prisma.stokOpname.create({
+      data: {
+        id_gudang: dto.id_gudang,
+        catatan: dto.catatan,
+        id_user_buat: userId || null,
+        items: { create: asetDiGudang.map((a) => ({ id_aset: a.id_aset })) },
+      },
+      include: {
+        gudang: { select: { kode_gudang: true, nama_gudang: true } },
+        _count: { select: { items: true } },
+      },
+    });
+    return { data, message: `Sesi opname dibuat — ${asetDiGudang.length} aset di-snapshot untuk dicek` };
+  }
+
+  async findAllOpname(query: { id_gudang?: string; status_opname?: string; page?: number; limit?: number }) {
+    const page = Number(query.page) || 1;
+    const limit = Math.min(Number(query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+    const where: any = {};
+    if (query.id_gudang) where.id_gudang = Number(query.id_gudang);
+    if (query.status_opname) where.status_opname = query.status_opname;
+
+    const [rows, total] = await Promise.all([
+      this.prisma.stokOpname.findMany({
+        where, skip, take: limit,
+        orderBy: { created_at: 'desc' },
+        include: {
+          gudang: { select: { kode_gudang: true, nama_gudang: true } },
+          user_buat: { include: { karyawan: { select: { nama_lengkap: true } } } },
+          _count: { select: { items: true } },
+        },
+      }),
+      this.prisma.stokOpname.count({ where }),
+    ]);
+
+    const ids = rows.map((r) => r.id_opname);
+    const foundCounts = ids.length
+      ? await this.prisma.stokOpnameItem.groupBy({
+          by: ['id_opname'],
+          where: { id_opname: { in: ids }, ditemukan: true },
+          _count: { id_item: true },
+        })
+      : [];
+    const foundMap = Object.fromEntries(foundCounts.map((f) => [f.id_opname, f._count.id_item]));
+    const data = rows.map((r) => ({ ...r, jumlah_ditemukan: foundMap[r.id_opname] ?? 0 }));
+
+    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
+  }
+
+  async findOneOpname(id: number) {
+    const data = await this.prisma.stokOpname.findUnique({
+      where: { id_opname: id },
+      include: {
+        gudang: { select: { kode_gudang: true, nama_gudang: true } },
+        user_buat: { include: { karyawan: { select: { nama_lengkap: true } } } },
+        items: {
+          orderBy: [{ ditemukan: 'asc' }, { created_at: 'asc' }],
+          include: {
+            aset: { select: { kode_aset: true, nama_perangkat: true, merk: true, tipe_model: true, serial_number: true, kategori: true } },
+          },
+        },
+      },
+    });
+    if (!data) throw new NotFoundException('Sesi opname tidak ditemukan');
+    return { data };
+  }
+
+  async scanOpname(id: number, dto: ScanStokOpnameDto, userId?: number) {
+    const opname = await this.prisma.stokOpname.findUnique({ where: { id_opname: id } });
+    if (!opname) throw new NotFoundException('Sesi opname tidak ditemukan');
+    if (opname.status_opname !== 'Berjalan') throw new BadRequestException('Sesi opname sudah selesai');
+
+    const aset = await this.prisma.gudangAset.findUnique({ where: { kode_aset: dto.kode_aset } });
+    if (!aset) throw new NotFoundException(`Kode aset "${dto.kode_aset}" tidak ditemukan`);
+
+    const existingItem = await this.prisma.stokOpnameItem.findFirst({
+      where: { id_opname: id, id_aset: aset.id_aset },
+    });
+
+    if (existingItem) {
+      if (existingItem.ditemukan) throw new BadRequestException(`${aset.kode_aset} sudah ditandai ditemukan sebelumnya`);
+      const data = await this.prisma.stokOpnameItem.update({
+        where: { id_item: existingItem.id_item },
+        data: { ditemukan: true, waktu_scan: new Date(), catatan: dto.catatan },
+        include: { aset: { select: { kode_aset: true, nama_perangkat: true } } },
+      });
+      return { data, message: `${aset.kode_aset} ditandai ditemukan` };
+    }
+
+    // Aset tersebut tidak ada di snapshot awal gudang ini — anomali (mis. dipindah manual tanpa mutasi tercatat)
+    const data = await this.prisma.stokOpnameItem.create({
+      data: { id_opname: id, id_aset: aset.id_aset, ditemukan: true, tidak_terdaftar: true, waktu_scan: new Date(), catatan: dto.catatan },
+      include: { aset: { select: { kode_aset: true, nama_perangkat: true } } },
+    });
+    return { data, message: `${aset.kode_aset} ditemukan tapi TIDAK terdaftar di snapshot awal gudang ini`, anomali: true };
+  }
+
+  async toggleOpnameItem(idItem: number, ditemukan: boolean) {
+    const item = await this.prisma.stokOpnameItem.findUnique({
+      where: { id_item: idItem },
+      include: { opname: true },
+    });
+    if (!item) throw new NotFoundException('Item opname tidak ditemukan');
+    if (item.opname.status_opname !== 'Berjalan') throw new BadRequestException('Sesi opname sudah selesai');
+    const data = await this.prisma.stokOpnameItem.update({
+      where: { id_item: idItem },
+      data: { ditemukan, waktu_scan: ditemukan ? new Date() : null },
+    });
+    return { data };
+  }
+
+  async selesaikanOpname(id: number) {
+    const opname = await this.prisma.stokOpname.findUnique({ where: { id_opname: id }, include: { items: true } });
+    if (!opname) throw new NotFoundException('Sesi opname tidak ditemukan');
+    if (opname.status_opname !== 'Berjalan') throw new BadRequestException('Sesi opname sudah selesai');
+
+    const snapshotItems = opname.items.filter((i) => !i.tidak_terdaftar);
+    const jumlah_ditemukan = snapshotItems.filter((i) => i.ditemukan).length;
+    const jumlah_hilang = snapshotItems.length - jumlah_ditemukan;
+    const jumlah_anomali = opname.items.length - snapshotItems.length;
+
+    const data = await this.prisma.stokOpname.update({
+      where: { id_opname: id },
+      data: { status_opname: 'Selesai', tgl_selesai: new Date() },
+    });
+    return {
+      data: { ...data, ringkasan: { total: snapshotItems.length, ditemukan: jumlah_ditemukan, hilang: jumlah_hilang, anomali: jumlah_anomali } },
+      message: 'Sesi opname diselesaikan',
+    };
+  }
+
+  async removeOpname(id: number) {
+    const opname = await this.prisma.stokOpname.findUnique({ where: { id_opname: id } });
+    if (!opname) throw new NotFoundException('Sesi opname tidak ditemukan');
+    if (opname.status_opname !== 'Berjalan') throw new BadRequestException('Hanya sesi yang masih Berjalan yang bisa dibatalkan');
+    await this.prisma.stokOpname.delete({ where: { id_opname: id } });
+    return { message: 'Sesi opname dibatalkan' };
   }
 }

@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, ParseIntPipe } from '@nestjs/common';
 import { AssetsService } from './assets.service';
 import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto, CreateSimTopupDto } from './dto/aset.dto';
+import { CreateStokOpnameDto, ScanStokOpnameDto } from './dto/stok-opname.dto';
 
 @Controller('assets')
 export class AssetsController {
@@ -37,6 +38,36 @@ export class AssetsController {
   createMutasi(@Body() dto: CreateMutasiDto, @Req() req: any) {
     return this.svc.createMutasi(dto, req.user?.id_user);
   }
+
+  // ─── STOK OPNAME / AUDIT FISIK ──────────────────────────────────
+  // (path statis 'stok-opname*' HARUS di atas ':id' — lihat catatan di atas)
+
+  @Post('stok-opname')
+  createOpname(@Body() dto: CreateStokOpnameDto, @Req() req: any) {
+    return this.svc.createOpname(dto, req.user?.id_user);
+  }
+
+  @Get('stok-opname')
+  findAllOpname(@Query() q: any) { return this.svc.findAllOpname(q); }
+
+  @Get('stok-opname/:id')
+  findOneOpname(@Param('id', ParseIntPipe) id: number) { return this.svc.findOneOpname(id); }
+
+  @Post('stok-opname/:id/scan')
+  scanOpname(@Param('id', ParseIntPipe) id: number, @Body() dto: ScanStokOpnameDto, @Req() req: any) {
+    return this.svc.scanOpname(id, dto, req.user?.id_user);
+  }
+
+  @Patch('stok-opname/:id/selesai')
+  selesaikanOpname(@Param('id', ParseIntPipe) id: number) { return this.svc.selesaikanOpname(id); }
+
+  @Patch('stok-opname-item/:idItem')
+  toggleOpnameItem(@Param('idItem', ParseIntPipe) idItem: number, @Body('ditemukan') ditemukan: boolean) {
+    return this.svc.toggleOpnameItem(idItem, !!ditemukan);
+  }
+
+  @Delete('stok-opname/:id')
+  removeOpname(@Param('id', ParseIntPipe) id: number) { return this.svc.removeOpname(id); }
 
   // ─── ASET CRUD ────────────────────────────────────────────────
 

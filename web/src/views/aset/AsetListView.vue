@@ -142,7 +142,10 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
         <h2>Aset</h2>
         <p class="sub">Manajemen inventaris & perangkat</p>
       </div>
-      <button class="btn-primary" @click="showModal = true; resetForm(); formError = ''">+ Tambah Aset</button>
+      <div class="header-actions">
+        <button class="btn-secondary" @click="router.push('/assets/stok-opname')">📋 Stok Opname</button>
+        <button class="btn-primary" @click="showModal = true; resetForm(); formError = ''">+ Tambah Aset</button>
+      </div>
     </div>
 
     <!-- Summary chips -->
@@ -360,6 +363,8 @@ function statusLabel(s: string) { return s.replace('_', ' ') }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 .btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.header-actions { display: flex; gap: 10px; }
+.btn-secondary { padding: 10px 18px; background: #fff; color: #1e40af; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 
 .summary-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 .summary-chip { background: #fff; border-radius: 8px; padding: 12px 16px; border-left: 4px solid #94a3b8; box-shadow: 0 1px 3px rgba(0,0,0,0.07); cursor: pointer; min-width: 110px; }

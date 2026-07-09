@@ -122,7 +122,8 @@ model MasterGudang {
   is_aktif    Boolean  @default(true)
   created_at  DateTime @default(now())
 
-  aset GudangAset[]
+  aset   GudangAset[]
+  opname StokOpname[]
 
   @@map("master_gudang")
 }
@@ -166,6 +167,7 @@ model CoreUser {
   ticket_logs  OperationTicketLog[]
   rca          OperationRca[]
   invoice_pembayaran InvoicePembayaran[]
+  stok_opname        StokOpname[]
 
   @@map("core_users")
 }
@@ -248,6 +250,7 @@ model GudangAset {
   topup              SimTopup[]
   ba_material        WoBaMaterial[]
   pengiriman_items   PengirimanItem[]
+  opname_items       StokOpnameItem[]
 
   @@map("gudang_aset")
 }
@@ -682,6 +685,42 @@ model GudangMutasiAset {
   user    CoreUser?        @relation(fields: [id_user], references: [id_user])
 
   @@map("gudang_mutasi_aset")
+}
+
+// Sesi stok opname / audit fisik per gudang — snapshot aset "Di_Gudang"
+// saat sesi dibuat, lalu tim mencocokkan lewat scan/input kode_aset.
+model StokOpname {
+  id_opname     Int       @id @default(autoincrement())
+  id_gudang     Int
+  status_opname String    @default("Berjalan") @db.VarChar(20)
+  catatan       String?   @db.Text
+  id_user_buat  Int?
+  tgl_mulai     DateTime  @default(now())
+  tgl_selesai   DateTime?
+  created_at    DateTime  @default(now())
+
+  gudang    MasterGudang     @relation(fields: [id_gudang], references: [id_gudang])
+  user_buat CoreUser?        @relation(fields: [id_user_buat], references: [id_user])
+  items     StokOpnameItem[]
+
+  @@map("stok_opname")
+}
+
+model StokOpnameItem {
+  id_item         Int       @id @default(autoincrement())
+  id_opname       Int
+  id_aset         Int
+  ditemukan       Boolean   @default(false)
+  tidak_terdaftar Boolean   @default(false)
+  waktu_scan      DateTime?
+  catatan         String?   @db.Text
+  created_at      DateTime  @default(now())
+
+  opname StokOpname @relation(fields: [id_opname], references: [id_opname], onDelete: Cascade)
+  aset   GudangAset @relation(fields: [id_aset], references: [id_aset])
+
+  @@unique([id_opname, id_aset])
+  @@map("stok_opname_item")
 }
 
 model SimTopup {
