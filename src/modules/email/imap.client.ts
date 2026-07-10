@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, OnModuleDestroy } from '@nestjs/common';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 
@@ -38,11 +38,33 @@ function hasAttachmentPart(struct: any): boolean {
   return (struct.childNodes || []).some(hasAttachmentPart);
 }
 
-@Injectable()
-export class ImapClientService {
-  private readonly logger = new Logger('ImapClient');
+interface PooledConn { client: ImapFlow; timer: NodeJS.Timeout }
 
-  private async open(creds: ImapCreds): Promise<ImapFlow> {
+/**
+ * ImapClientService — konek+login IMAP makan waktu ~3-4 detik (TLS handshake
+ * + auth roundtrip ke server Hostinger), jauh lebih lambat daripada operasi
+ * fetch itu sendiri. Simpan koneksi yang sudah login per akun ("pool") dan
+ * pakai ulang untuk request berikutnya — hanya reconnect kalau memang idle
+ * lama atau koneksi putus, bukan setiap request.
+ */
+@Injectable()
+export class ImapClientService implements OnModuleDestroy {
+  private readonly logger = new Logger('ImapClient');
+  private pool = new Map<string, PooledConn>();
+  private static readonly IDLE_TIMEOUT_MS = 4 * 60 * 1000;
+
+  private poolKey(creds: ImapCreds) { return `${creds.email_address}@${creds.imap_host}`; }
+
+  private evict(key: string, reason: string) {
+    const entry = this.pool.get(key);
+    if (!entry) return;
+    this.pool.delete(key);
+    clearTimeout(entry.timer);
+    this.logger.debug(`Menutup koneksi IMAP idle (${key}): ${reason}`);
+    entry.client.logout().catch(() => {});
+  }
+
+  private async connect(creds: ImapCreds): Promise<ImapFlow> {
     const client = new ImapFlow({
       host: creds.imap_host,
       port: creds.imap_port,
@@ -58,8 +80,25 @@ export class ImapClientService {
     return client;
   }
 
+  /** Ambil koneksi yang sudah login — dari pool kalau masih hidup, buat baru kalau tidak */
+  private async getClient(creds: ImapCreds): Promise<{ client: ImapFlow; key: string }> {
+    const key = this.poolKey(creds);
+    const existing = this.pool.get(key);
+    if (existing && existing.client.usable) {
+      clearTimeout(existing.timer);
+      existing.timer = setTimeout(() => this.evict(key, 'idle timeout'), ImapClientService.IDLE_TIMEOUT_MS);
+      return { client: existing.client, key };
+    }
+    if (existing) this.pool.delete(key); // stale — bukan usable lagi
+
+    const client = await this.connect(creds);
+    const timer = setTimeout(() => this.evict(key, 'idle timeout'), ImapClientService.IDLE_TIMEOUT_MS);
+    this.pool.set(key, { client, timer });
+    return { client, key };
+  }
+
   private async withInbox<T>(creds: ImapCreds, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
-    const client = await this.open(creds);
+    const { client, key } = await this.getClient(creds);
     try {
       const lock = await client.getMailboxLock('INBOX');
       try {
@@ -67,15 +106,28 @@ export class ImapClientService {
       } finally {
         lock.release();
       }
-    } finally {
-      await client.logout().catch(() => {});
+    } catch (e: any) {
+      // Koneksi basi/putus di tengah jalan — buang dari pool, biar request
+      // berikutnya (bukan yang ini, supaya user tidak nunggu 2x) bikin baru.
+      this.evict(key, `error: ${e.message}`);
+      throw e;
     }
   }
 
-  /** Tes koneksi — dipakai saat user connect akun baru, supaya error kredensial ketahuan langsung */
+  /** Tes koneksi — dipakai saat user connect akun baru. Sengaja tidak pakai pool
+   * (harus benar-benar connect+logout bersih untuk memvalidasi kredensial). */
   async testConnection(creds: ImapCreds): Promise<void> {
-    const client = await this.open(creds);
+    const client = await this.connect(creds);
     await client.logout().catch(() => {});
+  }
+
+  /** Putus & buang koneksi dari pool — dipanggil saat user disconnect akun */
+  disconnect(creds: ImapCreds) {
+    this.evict(this.poolKey(creds), 'user disconnect');
+  }
+
+  onModuleDestroy() {
+    for (const key of this.pool.keys()) this.evict(key, 'module shutdown');
   }
 
   async listInbox(creds: ImapCreds, opts: { page: number; limit: number; search?: string }) {

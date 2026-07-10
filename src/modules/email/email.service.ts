@@ -61,6 +61,7 @@ export class EmailService {
   async disconnectAccount(userId: number) {
     const row = await this.prisma.emailAccount.findUnique({ where: { id_user: userId } });
     if (!row) throw new NotFoundException('Belum ada akun email yang terhubung');
+    this.imap.disconnect({ email_address: row.email_address, imap_host: row.imap_host, imap_port: row.imap_port, password: '' });
     await this.prisma.emailAccount.delete({ where: { id_user: userId } });
     return { message: 'Akun email diputus' };
   }
