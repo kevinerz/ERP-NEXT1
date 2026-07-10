@@ -171,8 +171,31 @@ model CoreUser {
   stok_opname        StokOpname[]
   pengajuan_dibuat   PengajuanAset[] @relation("PengajuanPemohon")
   pengajuan_disetujui PengajuanAset[] @relation("PengajuanApprover")
+  email_account       EmailAccount?
 
   @@map("core_users")
+}
+
+// Koneksi email IMAP/SMTP per user (self-service, mis. akun Hostinger
+// webmail) — 1 user = 1 akun. Password disimpan terenkripsi (AES-256-GCM),
+// bukan plaintext. Tidak ada sinkronisasi/cache pesan — semua ditarik
+// live dari server IMAP tiap kali dibuka.
+model EmailAccount {
+  id_email_account Int       @id @default(autoincrement())
+  id_user          Int       @unique
+  email_address    String    @db.VarChar(150)
+  imap_host        String    @db.VarChar(150)
+  imap_port        Int       @default(993)
+  smtp_host        String    @db.VarChar(150)
+  smtp_port        Int       @default(465)
+  password_enc     String    @db.Text
+  is_aktif         Boolean   @default(true)
+  last_error       String?   @db.Text
+  connected_at     DateTime  @default(now())
+
+  user CoreUser @relation(fields: [id_user], references: [id_user], onDelete: Cascade)
+
+  @@map("email_accounts")
 }
 
 model CoreUserRole {

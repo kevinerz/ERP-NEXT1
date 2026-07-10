@@ -31,8 +31,10 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   socialchat: 'socialchat',
 };
 
-// admin sudah dijaga @Roles(Admin/Director) di controller-nya
-const UNGATED = new Set(['auth', 'notifications', 'settings', 'admin', 'webhook']);
+// admin sudah dijaga @Roles(Admin/Director) di controller-nya.
+// email tidak digating modul — koneksi self-service, tiap user cuma akses
+// inbox miliknya sendiri (bukan data organisasi yang perlu dibatasi role).
+const UNGATED = new Set(['auth', 'notifications', 'settings', 'admin', 'webhook', 'email']);
 
 @Injectable()
 export class ModulAksesGuard implements CanActivate {

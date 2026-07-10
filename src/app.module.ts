@@ -31,6 +31,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { FinanceModule } from './modules/finance/finance.module';
+import { EmailModule } from './modules/email/email.module';
 
 // Integrations
 import { PrtgModule } from './modules/integrations/prtg/prtg.module';
@@ -73,6 +74,7 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     AssetsModule,
     ContractsModule,
     NotificationsModule,
+    EmailModule,
     PublicWoModule,
     ReportsModule,
     AdminModule,

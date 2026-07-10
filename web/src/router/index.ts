@@ -240,6 +240,12 @@ const router = createRouter({
           name: 'pengajuan-aset-detail',
           component: () => import('@/views/aset/PengajuanAsetDetailView.vue'),
         },
+        // Email
+        {
+          path: 'email',
+          name: 'email-inbox',
+          component: () => import('@/views/email/EmailInboxView.vue'),
+        },
         // Work Order
         {
           path: 'public-wo',
