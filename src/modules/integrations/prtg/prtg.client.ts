@@ -52,10 +52,14 @@ export class PrtgClient {
     return `${c.base_url}${path}&${qs}`;
   }
 
+  // PRTG "count" adalah batas keras, bukan default — server ini punya ±6.700
+  // sensor di ±2.150 device. Set jauh di atas itu (tidak ada penalti kalau lebih).
+  private static readonly MAX_COUNT = 20_000;
+
   // Semua sensor berstatus Down (5) / DownPartial (14)
   async getDownSensors(): Promise<PrtgSensor[]> {
     const url = await this.authedUrl(
-      `/api/table.json?content=sensors&columns=objid,sensor,device,status,message&filter_status=5&filter_status=14&count=200`,
+      `/api/table.json?content=sensors&columns=objid,sensor,device,status,message&filter_status=5&filter_status=14&count=${PrtgClient.MAX_COUNT}`,
     );
     const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
     if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
@@ -65,8 +69,8 @@ export class PrtgClient {
 
   // Semua sensor tanpa filter status — buat halaman audit/daftar device
   async getAllSensors(): Promise<PrtgSensor[]> {
-    const url = await this.authedUrl(`/api/table.json?content=sensors&columns=objid,sensor,device,status,message&count=500`);
-    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    const url = await this.authedUrl(`/api/table.json?content=sensors&columns=objid,sensor,device,status,message&count=${PrtgClient.MAX_COUNT}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
     const json: any = await res.json();
     return (json.sensors ?? []) as PrtgSensor[];
