@@ -68,9 +68,16 @@ export class EmailService {
 
   private async resolveCreds(userId: number) {
     const row = await this.prisma.emailAccount.findUnique({ where: { id_user: userId } });
-    if (!row || !row.is_aktif) throw new BadRequestException('Belum terhubung ke akun email — buka Settings untuk connect');
-    const password = this.crypto.decrypt(row.password_enc);
-    return { account: row, password };
+    if (!row || !row.is_aktif) throw new BadRequestException('Belum terhubung ke akun email — buka menu Email untuk connect');
+    try {
+      const password = this.crypto.decrypt(row.password_enc);
+      return { account: row, password };
+    } catch {
+      // Kunci enkripsi tidak cocok lagi (mis. JWT_SECRET pernah berubah) —
+      // password tersimpan jadi tidak terbaca. Bukan hal yang bisa diperbaiki
+      // otomatis, minta user connect ulang daripada crash 500 mentah.
+      throw new BadRequestException('Koneksi email bermasalah (kredensial tidak terbaca) — putuskan lalu connect ulang di menu Email');
+    }
   }
 
   async listInbox(userId: number, query: { page?: number; limit?: number; search?: string }) {
