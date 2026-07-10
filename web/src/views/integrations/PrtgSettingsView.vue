@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
@@ -87,6 +87,8 @@ const auditLoading = ref(false)
 const auditError = ref('')
 const onlyUnmatched = ref(false)
 const searchDevice = ref('')
+const auditPage = ref(1)
+const AUDIT_PAGE_SIZE = 100
 
 async function fetchDevices() {
   auditLoading.value = true; auditError.value = ''
@@ -100,6 +102,18 @@ const filteredDevices = computed(() => {
   const q = searchDevice.value.trim().toLowerCase()
   if (q) list = list.filter((d) => d.device_name.toLowerCase().includes(q))
   return list
+})
+const auditTotalPages = computed(() => Math.max(1, Math.ceil(filteredDevices.value.length / AUDIT_PAGE_SIZE)))
+const pagedDevices = computed(() => {
+  const start = (auditPage.value - 1) * AUDIT_PAGE_SIZE
+  return filteredDevices.value.slice(start, start + AUDIT_PAGE_SIZE)
+})
+// Filter/search berubah -> balik ke halaman 1, dan jangan sampai nyangkut di halaman kosong/invalid
+watch([searchDevice, onlyUnmatched], () => { auditPage.value = 1 })
+watch(filteredDevices, () => { if (auditPage.value > auditTotalPages.value) auditPage.value = auditTotalPages.value })
+watch(auditPage, (v) => {
+  const clamped = Math.min(Math.max(1, Math.trunc(v) || 1), auditTotalPages.value)
+  if (clamped !== v) auditPage.value = clamped
 })
 
 function mapDariAudit(deviceName: string) {
@@ -196,7 +210,7 @@ onMounted(async () => {
             <thead><tr><th>Device PRTG</th><th>Sensor</th><th>Ada Down</th><th>Status Match</th><th>Site</th><th></th></tr></thead>
             <tbody>
               <tr v-if="!filteredDevices.length"><td colspan="6" class="empty">{{ devices.length ? 'Tidak ada device yang cocok pencarian' : 'Tidak ada data — klik Muat Ulang' }}</td></tr>
-              <tr v-for="d in filteredDevices" :key="d.device_name">
+              <tr v-for="d in pagedDevices" :key="d.device_name">
                 <td class="mono">{{ d.device_name }}</td>
                 <td class="center">{{ d.jumlah_sensor }}</td>
                 <td class="center">{{ d.ada_down ? '🔴' : '—' }}</td>
@@ -210,6 +224,17 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
+          <div v-if="auditTotalPages > 1" class="pagination">
+            <button class="page-btn" :disabled="auditPage === 1" @click="auditPage = 1">« Awal</button>
+            <button class="page-btn" :disabled="auditPage === 1" @click="auditPage--">‹ Sebelumnya</button>
+            <span class="page-info">
+              Halaman
+              <input type="number" class="page-jump" min="1" :max="auditTotalPages" v-model.number="auditPage" />
+              / {{ auditTotalPages }}
+            </span>
+            <button class="page-btn" :disabled="auditPage === auditTotalPages" @click="auditPage++">Berikutnya ›</button>
+            <button class="page-btn" :disabled="auditPage === auditTotalPages" @click="auditPage = auditTotalPages">Akhir »</button>
+          </div>
         </template>
       </div>
     </div>
@@ -290,6 +315,13 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .search-input:focus { border-color: #3b82f6; background: #fff; }
 .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; white-space: nowrap; }
 .result-count { margin: 0 0 10px; font-size: 12px; color: #94a3b8; }
+
+.pagination { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 16px 0 4px; }
+.page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
+.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.page-info { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #64748b; }
+.page-jump { width: 52px; padding: 5px 6px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; text-align: center; outline: none; }
+.page-jump:focus { border-color: #3b82f6; }
 
 .badge { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
 .badge-auto { background: #eff6ff; color: #1d4ed8; }
