@@ -86,6 +86,7 @@ const devices = ref<any[]>([])
 const auditLoading = ref(false)
 const auditError = ref('')
 const onlyUnmatched = ref(false)
+const searchDevice = ref('')
 
 async function fetchDevices() {
   auditLoading.value = true; auditError.value = ''
@@ -93,7 +94,13 @@ async function fetchDevices() {
   catch (e: any) { auditError.value = e.response?.data?.message || 'Gagal memuat daftar sensor' }
   finally { auditLoading.value = false }
 }
-const filteredDevices = computed(() => onlyUnmatched.value ? devices.value.filter((d) => !d.matched) : devices.value)
+const filteredDevices = computed(() => {
+  let list = devices.value
+  if (onlyUnmatched.value) list = list.filter((d) => !d.matched)
+  const q = searchDevice.value.trim().toLowerCase()
+  if (q) list = list.filter((d) => d.device_name.toLowerCase().includes(q))
+  return list
+})
 
 function mapDariAudit(deviceName: string) {
   tab.value = 'mapping'
@@ -177,29 +184,33 @@ onMounted(async () => {
     <div v-if="tab === 'audit'" class="tab-content">
       <div class="card">
         <div class="audit-toolbar">
-          <label class="chk"><input type="checkbox" v-model="onlyUnmatched" /> Hanya tampilkan yang belum match</label>
+          <input v-model="searchDevice" class="search-input" placeholder="🔍 Cari nama device..." />
+          <label class="chk"><input type="checkbox" v-model="onlyUnmatched" /> Hanya yang belum match</label>
           <button class="btn-secondary" @click="fetchDevices">🔄 Muat Ulang</button>
         </div>
         <p v-if="auditError" class="msg err">{{ auditError }}</p>
         <div v-if="auditLoading" class="loading">Memuat dari PRTG...</div>
-        <table v-else>
-          <thead><tr><th>Device PRTG</th><th>Sensor</th><th>Ada Down</th><th>Status Match</th><th>Site</th><th></th></tr></thead>
-          <tbody>
-            <tr v-if="!filteredDevices.length"><td colspan="6" class="empty">Tidak ada data — klik Muat Ulang</td></tr>
-            <tr v-for="d in filteredDevices" :key="d.device_name">
-              <td class="mono">{{ d.device_name }}</td>
-              <td class="center">{{ d.jumlah_sensor }}</td>
-              <td class="center">{{ d.ada_down ? '🔴' : '—' }}</td>
-              <td>
-                <span class="badge" :class="d.matched ? (d.mapped_manual ? 'badge-manual' : 'badge-auto') : 'badge-none'">
-                  {{ d.matched ? (d.mapped_manual ? 'Manual' : 'Otomatis') : 'Belum Match' }}
-                </span>
-              </td>
-              <td>{{ d.site ? `[${d.site.nama_site}]` : '—' }}</td>
-              <td><button v-if="!d.matched" class="btn-map" @click="mapDariAudit(d.device_name)">Map ke Site</button></td>
-            </tr>
-          </tbody>
-        </table>
+        <template v-else>
+          <p class="result-count">{{ filteredDevices.length }} dari {{ devices.length }} device</p>
+          <table>
+            <thead><tr><th>Device PRTG</th><th>Sensor</th><th>Ada Down</th><th>Status Match</th><th>Site</th><th></th></tr></thead>
+            <tbody>
+              <tr v-if="!filteredDevices.length"><td colspan="6" class="empty">{{ devices.length ? 'Tidak ada device yang cocok pencarian' : 'Tidak ada data — klik Muat Ulang' }}</td></tr>
+              <tr v-for="d in filteredDevices" :key="d.device_name">
+                <td class="mono">{{ d.device_name }}</td>
+                <td class="center">{{ d.jumlah_sensor }}</td>
+                <td class="center">{{ d.ada_down ? '🔴' : '—' }}</td>
+                <td>
+                  <span class="badge" :class="d.matched ? (d.mapped_manual ? 'badge-manual' : 'badge-auto') : 'badge-none'">
+                    {{ d.matched ? (d.mapped_manual ? 'Manual' : 'Otomatis') : 'Belum Match' }}
+                  </span>
+                </td>
+                <td>{{ d.site ? `[${d.site.nama_site}]` : '—' }}</td>
+                <td><button v-if="!d.matched" class="btn-map" @click="mapDariAudit(d.device_name)">Map ke Site</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
       </div>
     </div>
 
@@ -274,8 +285,11 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-map { padding: 4px 10px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 
-.audit-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-.chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; }
+.audit-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+.search-input { flex: 1; min-width: 200px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
+.search-input:focus { border-color: #3b82f6; background: #fff; }
+.chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; white-space: nowrap; }
+.result-count { margin: 0 0 10px; font-size: 12px; color: #94a3b8; }
 
 .badge { padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
 .badge-auto { background: #eff6ff; color: #1d4ed8; }
