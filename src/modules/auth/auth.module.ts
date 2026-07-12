@@ -17,7 +17,9 @@ import { LogModule } from '../../common/log/log.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>('JWT_SECRET'),
-        signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN') || '8h' },
+        // @nestjs/jwt 11 mengetatkan tipe expiresIn ke literal "1d"/"8h"/dst — nilai dari
+        // env tetap valid di runtime (lib `ms`), cuma perlu di-cast karena berasal dari string biasa.
+        signOptions: { expiresIn: (config.get<string>('JWT_EXPIRES_IN') || '8h') as any },
       }),
     }),
   ],

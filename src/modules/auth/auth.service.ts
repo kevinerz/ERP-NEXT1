@@ -238,14 +238,14 @@ export class AuthService {
   private async generateAccessToken(payload: JwtPayload): Promise<string> {
     return this.jwt.signAsync(payload, {
       secret: this.config.getOrThrow<string>('JWT_SECRET'),
-      expiresIn: this.config.get<string>('JWT_EXPIRES_IN') || '8h',
+      expiresIn: (this.config.get<string>('JWT_EXPIRES_IN') || '8h') as any,
     });
   }
 
   private async generateRefreshToken(payload: JwtPayload): Promise<string> {
     return this.jwt.signAsync(payload, {
       secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d',
+      expiresIn: (this.config.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d') as any,
     });
   }
 }
