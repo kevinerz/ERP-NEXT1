@@ -246,6 +246,11 @@ const router = createRouter({
           name: 'email-inbox',
           component: () => import('@/views/email/EmailInboxView.vue'),
         },
+        {
+          path: 'whatsapp',
+          name: 'whatsapp-inbox',
+          component: () => import('@/views/whatsapp/WhatsappInboxView.vue'),
+        },
         // Work Order
         {
           path: 'public-wo',
@@ -293,6 +298,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'stok-opname-list': 'assets', 'stok-opname-detail': 'assets',
   'pengajuan-aset-list': 'assets', 'pengajuan-aset-detail': 'assets',
   'prtg-settings': 'prtg',
+  'whatsapp-inbox': 'socialchat',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'laporan': 'reports',
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',

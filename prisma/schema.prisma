@@ -172,6 +172,7 @@ model CoreUser {
   pengajuan_dibuat   PengajuanAset[] @relation("PengajuanPemohon")
   pengajuan_disetujui PengajuanAset[] @relation("PengajuanApprover")
   email_account       EmailAccount?
+  whatsapp_messages   WhatsappMessage[]
 
   @@map("core_users")
 }
@@ -1073,4 +1074,64 @@ model InvoicePembayaran {
 
   @@index([id_invoice])
   @@map("invoice_pembayaran")
+}
+
+// ============================================================
+// LAYER 12 — WHATSAPP (Baileys, satu koneksi bersama untuk tim)
+// ============================================================
+
+// Sesi login Baileys disimpan di DB (bukan file lokal) supaya tidak hilang
+// / perlu scan ulang QR tiap kali aplikasi di-deploy ulang di server.
+model WhatsappAuthCreds {
+  id         Int      @id @default(1)
+  creds_json String   @db.LongText
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("whatsapp_auth_creds")
+}
+
+// Signal key store Baileys (pre-key, session, sender-key, dst) — satu baris
+// per key, meniru pola file-per-key dari useMultiFileAuthState tapi di DB.
+model WhatsappAuthKey {
+  category   String   @db.VarChar(50)
+  key_id     String   @db.VarChar(150)
+  value_json String?  @db.LongText
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@id([category, key_id])
+  @@map("whatsapp_auth_keys")
+}
+
+model WhatsappChat {
+  id_chat        Int       @id @default(autoincrement())
+  jid            String    @unique @db.VarChar(60)
+  nama_kontak    String?   @db.VarChar(150)
+  pesan_terakhir String?   @db.Text
+  waktu_terakhir DateTime?
+  unread_count   Int       @default(0)
+  created_at     DateTime  @default(now())
+
+  messages WhatsappMessage[]
+
+  @@index([waktu_terakhir])
+  @@map("whatsapp_chats")
+}
+
+model WhatsappMessage {
+  id_pesan   Int      @id @default(autoincrement())
+  id_chat    Int
+  message_id String   @db.VarChar(100)
+  from_me    Boolean  @default(false)
+  body       String?  @db.Text
+  tipe       String   @default("text") @db.VarChar(20) // text | image | document | audio | video | lainnya
+  waktu      DateTime
+  id_user    Int?
+  created_at DateTime @default(now())
+
+  chat WhatsappChat @relation(fields: [id_chat], references: [id_chat], onDelete: Cascade)
+  user CoreUser?    @relation(fields: [id_user], references: [id_user])
+
+  @@unique([id_chat, message_id])
+  @@index([waktu])
+  @@map("whatsapp_messages")
 }
