@@ -49,9 +49,11 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
 
     // Serve Vue SPA dari public/
+    // path-to-regexp v7+ (ikut naik lewat @nestjs/serve-static 5) tidak lagi
+    // terima wildcard polos '/api*' — wajib named wildcard '/api/*splat'.
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
-      exclude: ['/api*', '/webhook*'],
+      exclude: ['/api/{*splat}', '/webhook/{*splat}'],
     }),
 
     // Prisma
