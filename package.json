@@ -20,7 +20,6 @@
     "seed": "npx ts-node -r tsconfig-paths/register prisma/seed.ts"
   },
   "dependencies": {
-    "@hapi/boom": "^10.0.1",
     "@nestjs/cli": "^11.0.24",
     "@nestjs/common": "^11.1.28",
     "@nestjs/config": "^4.0.4",
@@ -34,7 +33,6 @@
     "@nestjs/serve-static": "^5.0.5",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^5.0.0",
-    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
@@ -46,9 +44,7 @@
     "nodemailer": "^9.0.3",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
-    "pino": "^10.3.1",
     "prisma": "^5.0.0",
-    "qrcode": "^1.5.4",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "ts-node": "^10.9.2",
@@ -60,7 +56,6 @@
     "@types/mailparser": "^3.4.6",
     "@types/multer": "^1.4.7",
     "@types/nodemailer": "^8.0.0",
-    "@types/passport-jwt": "^3.0.0",
-    "@types/qrcode": "^1.5.6"
+    "@types/passport-jwt": "^3.0.0"
   }
 }

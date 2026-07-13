@@ -80,7 +80,6 @@ function fmtTime(d: string) {
 const allMenu = [
   { label: 'Dashboard',    icon: '▪', emoji: '📊', to: '/dashboard',     modul: null },
   { label: 'Email',        icon: '▪', emoji: '📧', to: '/email',          modul: null },
-  { label: 'WhatsApp',     icon: '▪', emoji: '💬', to: '/whatsapp',       modul: 'socialchat' },
   { label: 'HRIS',         icon: '▪', emoji: '👤', to: '/hris/karyawan', modul: 'hris' },
   { label: 'Master Data',  icon: '▪', emoji: '📦', to: '/master',         modul: 'master' },
   { label: 'Sales',        icon: '▪', emoji: '💼', to: '/sales',          modul: 'sales' },
@@ -152,7 +151,6 @@ const PAGE_TITLES: Record<string, string> = {
   "settings":             "Pengaturan Aplikasi",
   "prtg-settings":        "PRTG — Monitoring",
   "email-inbox":          "Email",
-  "whatsapp-inbox":       "WhatsApp",
 }
 
 const pageTitle = computed(() => PAGE_TITLES[route.name as string] || "ERP NEXT1")
