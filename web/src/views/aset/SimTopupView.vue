@@ -67,8 +67,11 @@
             <span class="filter-sep">s/d</span>
             <input v-model="filterSampai" type="date" @change="fetchTopup" />
             <button class="btn-reset" @click="resetFilter">Reset</button>
+            <button v-if="digiConfigured" class="btn-beli" @click="openBeliModal">⚡ Beli Digiflazz</button>
             <button class="btn-primary" @click="openModal">+ Tambah Topup</button>
+            <button v-if="bisaKelolaDigiflazz" class="btn-config" @click="openConfigModal" title="Konfigurasi Digiflazz">⚙️</button>
           </div>
+          <p v-if="digiConfigured && digiSaldo !== null" class="saldo-info">💰 Saldo Digiflazz: {{ fmtRp(digiSaldo) }}</p>
         </div>
 
         <!-- History table -->
@@ -91,6 +94,7 @@
                   <th>No. Pelanggan</th>
                   <th>Jenis</th>
                   <th>Nominal</th>
+                  <th>Status</th>
                   <th>Keterangan</th>
                   <th>Oleh</th>
                   <th></th>
@@ -107,12 +111,21 @@
                   <td class="cell-sub">{{ t.sumber?.nomor_pelanggan_isp || '—' }}</td>
                   <td><span class="jenis-chip" :class="jenisClass(t.jenis_topup)">{{ t.jenis_topup }}</span></td>
                   <td class="nominal">{{ fmtRp(t.nominal) }}</td>
+                  <td>
+                    <span v-if="t.metode === 'Digiflazz'" class="status-chip" :class="statusClass(t.status_transaksi)">
+                      {{ t.status_transaksi }}
+                    </span>
+                    <span v-else class="cell-sub">Manual</span>
+                  </td>
                   <td class="ket">{{ t.keterangan || '—' }}</td>
                   <td>{{ t.user?.karyawan?.nama_lengkap || '—' }}</td>
-                  <td><button class="btn-hapus-sm" @click="deleteTopup(t.id_topup)">Hapus</button></td>
+                  <td class="nowrap">
+                    <button v-if="t.metode === 'Digiflazz' && t.status_transaksi === 'Pending'" class="btn-cek-sm" @click="cekStatus(t.id_topup)">Cek Status</button>
+                    <button class="btn-hapus-sm" @click="deleteTopup(t.id_topup)">Hapus</button>
+                  </td>
                 </tr>
                 <tr v-if="topups.length === 0">
-                  <td colspan="9" class="empty-cell">Belum ada data topup</td>
+                  <td colspan="10" class="empty-cell">Belum ada data topup</td>
                 </tr>
               </tbody>
             </table>
@@ -179,12 +192,105 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Modal Beli Digiflazz -->
+    <Teleport to="body">
+      <div v-if="showBeliModal" class="modal-overlay" @click.self="showBeliModal = false">
+        <div class="modal modal-lg">
+          <div class="modal-header">
+            <h3>⚡ Beli Pulsa/Paket Data — Digiflazz</h3>
+            <button class="modal-close" @click="showBeliModal = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-row">
+              <label>Sumber Internet / SIM (nomor tujuan) *</label>
+              <select v-model="beliForm.id_sumber">
+                <option value="">Pilih sumber internet</option>
+                <option v-for="s in simCards" :key="s.id_sumber" :value="s.id_sumber" :disabled="!s.nomor_pelanggan_isp">
+                  {{ s.vendor?.nama_vendor }} — {{ s.site?.nama_site }}
+                  {{ s.nomor_pelanggan_isp ? '(' + s.nomor_pelanggan_isp + ')' : '(nomor belum diisi)' }}
+                </option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>Cari Produk</label>
+              <input v-model="produkSearch" type="text" placeholder="Telkomsel, Indosat, 10RB, dst..." />
+            </div>
+            <div class="produk-list">
+              <div v-if="loadingProduk" class="empty-state">Memuat daftar produk...</div>
+              <div v-else-if="!produkFiltered.length" class="empty-state">Tidak ada produk cocok</div>
+              <div v-for="p in produkFiltered" :key="p.buyer_sku_code"
+                class="produk-item" :class="{ selected: beliForm.buyer_sku_code === p.buyer_sku_code }"
+                @click="beliForm.buyer_sku_code = p.buyer_sku_code">
+                <div class="produk-info">
+                  <div class="produk-name">{{ p.product_name }}</div>
+                  <div class="produk-sub">{{ p.brand }} · {{ p.category }}</div>
+                </div>
+                <div class="produk-price">{{ fmtRp(p.price) }}</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label>Keterangan</label>
+              <input v-model="beliForm.keterangan" type="text" placeholder="Opsional" />
+            </div>
+            <p v-if="beliError" class="form-error">{{ beliError }}</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-cancel" @click="showBeliModal = false">Batal</button>
+            <button class="btn-primary" :disabled="beliSubmitting || !beliForm.id_sumber || !beliForm.buyer_sku_code" @click="submitBeli">
+              {{ beliSubmitting ? 'Memproses...' : 'Beli Sekarang' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Modal Konfigurasi Digiflazz -->
+    <Teleport to="body">
+      <div v-if="showConfigModal" class="modal-overlay" @click.self="showConfigModal = false">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>⚙️ Konfigurasi Digiflazz</h3>
+            <button class="modal-close" @click="showConfigModal = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-row">
+              <label>Username Digiflazz</label>
+              <input v-model="configForm.username" type="text" placeholder="username akun Digiflazz" />
+            </div>
+            <div class="form-row">
+              <label>API Key {{ configHasKey ? '(sudah tersimpan — isi hanya jika ingin ganti)' : '' }}</label>
+              <input v-model="configForm.api_key" type="password" :placeholder="configHasKey ? '••••••••' : 'API Key Digiflazz'" />
+            </div>
+            <div class="form-row">
+              <label>Mode</label>
+              <select v-model="configForm.mode">
+                <option value="production">Production (transaksi nyata)</option>
+                <option value="development">Development (testing, tidak potong saldo asli)</option>
+              </select>
+            </div>
+            <p v-if="configError" class="form-error">{{ configError }}</p>
+            <p v-if="configMsg" class="config-msg">{{ configMsg }}</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-cancel" @click="showConfigModal = false">Tutup</button>
+            <button class="btn-primary" :disabled="configSaving" @click="submitConfig">
+              {{ configSaving ? 'Menyimpan...' : 'Simpan & Verifikasi' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+const bisaKelolaDigiflazz = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
 
 const JENIS_TOPUP = ['Data', 'Pulsa', 'Paket_Bulanan', 'Aktivasi', 'Lainnya']
 
@@ -202,6 +308,114 @@ const showModal  = ref(false)
 const submitting = ref(false)
 const formError  = ref('')
 const form = ref({ id_sumber: '' as number | '', jenis_topup: '', nominal: 0, tgl_topup: new Date().toISOString().slice(0, 10), keterangan: '' })
+
+// ─── DIGIFLAZZ ────────────────────────────────────────────────
+const digiConfigured = ref(false)
+const digiSaldo = ref<number | null>(null)
+
+const showBeliModal = ref(false)
+const produkList = ref<any[]>([])
+const produkSearch = ref('')
+const loadingProduk = ref(false)
+const beliForm = ref({ id_sumber: '' as number | '', buyer_sku_code: '', keterangan: '' })
+const beliError = ref('')
+const beliSubmitting = ref(false)
+const produkFiltered = computed(() => {
+  const q = produkSearch.value.trim().toLowerCase()
+  if (!q) return produkList.value.slice(0, 100)
+  return produkList.value.filter((p) =>
+    p.product_name?.toLowerCase().includes(q) || p.brand?.toLowerCase().includes(q),
+  ).slice(0, 100)
+})
+
+const showConfigModal = ref(false)
+const configForm = ref({ username: '', api_key: '', mode: 'production' })
+const configHasKey = ref(false)
+const configError = ref('')
+const configMsg = ref('')
+const configSaving = ref(false)
+
+async function fetchDigiStatus() {
+  try {
+    const cfg = (await api.get('/digiflazz/config')).data.data
+    digiConfigured.value = !!cfg.has_api_key
+    if (digiConfigured.value) {
+      try { digiSaldo.value = (await api.get('/digiflazz/saldo')).data.data.saldo } catch { digiSaldo.value = null }
+    }
+  } catch { digiConfigured.value = false }
+}
+
+async function openBeliModal() {
+  beliForm.value = { id_sumber: selectedSim.value?.id_sumber || '', buyer_sku_code: '', keterangan: '' }
+  beliError.value = ''
+  showBeliModal.value = true
+  loadingProduk.value = true
+  try {
+    produkList.value = (await api.get('/digiflazz/price-list')).data.data
+  } catch (e: any) {
+    beliError.value = e.response?.data?.message || 'Gagal memuat daftar produk'
+  } finally { loadingProduk.value = false }
+}
+
+async function submitBeli() {
+  beliError.value = ''
+  if (!beliForm.value.id_sumber || !beliForm.value.buyer_sku_code) return
+  beliSubmitting.value = true
+  try {
+    const r = await api.post('/digiflazz/beli', {
+      id_sumber: Number(beliForm.value.id_sumber),
+      buyer_sku_code: beliForm.value.buyer_sku_code,
+      keterangan: beliForm.value.keterangan || undefined,
+    })
+    showBeliModal.value = false
+    alert(r.data.message || 'Transaksi diproses')
+    await Promise.all([fetchTopup(), fetchSimCards(), fetchDigiStatus()])
+  } catch (e: any) {
+    beliError.value = e.response?.data?.message || 'Gagal memproses pembelian'
+  } finally { beliSubmitting.value = false }
+}
+
+async function openConfigModal() {
+  configError.value = ''; configMsg.value = ''
+  showConfigModal.value = true
+  try {
+    const cfg = (await api.get('/digiflazz/config')).data.data
+    configForm.value = { username: cfg.username || '', api_key: '', mode: cfg.mode || 'production' }
+    configHasKey.value = !!cfg.has_api_key
+  } catch {}
+}
+
+async function submitConfig() {
+  configError.value = ''; configMsg.value = ''
+  if (!configForm.value.username || !configForm.value.api_key) {
+    configError.value = 'Username dan API Key wajib diisi'; return
+  }
+  configSaving.value = true
+  try {
+    const r = await api.patch('/digiflazz/config', configForm.value)
+    configMsg.value = r.data.message
+    configForm.value.api_key = ''
+    await fetchDigiStatus()
+  } catch (e: any) {
+    configError.value = e.response?.data?.message || 'Gagal menyimpan konfigurasi'
+  } finally { configSaving.value = false }
+}
+
+async function cekStatus(id_topup: number) {
+  try {
+    const r = await api.post(`/digiflazz/topup/${id_topup}/check-status`)
+    alert(r.data.message)
+    await fetchTopup()
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal cek status')
+  }
+}
+
+function statusClass(s: string) {
+  if (s === 'Sukses') return 'green'
+  if (s === 'Gagal') return 'red'
+  return 'yellow'
+}
 
 async function fetchSimCards() {
   try {
@@ -291,7 +505,7 @@ function jenisClass(j: string) {
   return 'gray'
 }
 
-onMounted(() => Promise.all([fetchSimCards(), fetchTopup()]))
+onMounted(() => Promise.all([fetchSimCards(), fetchTopup(), fetchDigiStatus()]))
 </script>
 
 <style scoped>
@@ -328,6 +542,28 @@ onMounted(() => Promise.all([fetchSimCards(), fetchTopup()]))
 .filter-sep { font-size: 12px; color: #6b7280; }
 .btn-reset { background: none; border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 12px; font-size: 13px; cursor: pointer; }
 .btn-reset:hover { background: #f3f4f6; }
+.btn-beli { background: linear-gradient(135deg,#f59e0b,#d97706); color: #fff; border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-config { background: none; border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 10px; font-size: 13px; cursor: pointer; }
+.btn-config:hover { background: #f3f4f6; }
+.saldo-info { margin: 8px 0 0; font-size: 12px; color: #92400e; font-weight: 600; }
+
+.status-chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+.status-chip.green  { background: #dcfce7; color: #166534; }
+.status-chip.red    { background: #fef2f2; color: #dc2626; }
+.status-chip.yellow { background: #fef9c3; color: #a16207; }
+.btn-cek-sm { padding: 4px 10px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; margin-right: 6px; }
+.btn-cek-sm:hover { background: #dbeafe; }
+
+.modal-lg { width: 560px; }
+.produk-list { max-height: 280px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+.produk-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
+.produk-item:last-child { border-bottom: none; }
+.produk-item:hover { background: #f8fafc; }
+.produk-item.selected { background: #eff6ff; }
+.produk-name { font-size: 13px; font-weight: 600; color: #0f172a; }
+.produk-sub { font-size: 11px; color: #94a3b8; }
+.produk-price { font-size: 13px; font-weight: 700; color: #1d4ed8; white-space: nowrap; }
+.config-msg { font-size: 12px; color: #15803d; margin: 0; }
 
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }

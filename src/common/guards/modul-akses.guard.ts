@@ -29,6 +29,7 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   ruijie: 'ruijie',
   mekari: 'mekari',
   socialchat: 'socialchat',
+  digiflazz: 'assets', // Beli pulsa/paket via Digiflazz — bagian dari fitur SIM Topup di modul Aset
 };
 
 // admin sudah dijaga @Roles(Admin/Director) di controller-nya.

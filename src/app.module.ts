@@ -39,6 +39,7 @@ import { RcmsModule } from './modules/integrations/rcms/rcms.module';
 import { RuijieModule } from './modules/integrations/ruijie/ruijie.module';
 import { MekariModule } from './modules/integrations/mekari/mekari.module';
 import { SocialchatModule } from './modules/integrations/socialchat/socialchat.module';
+import { DigiflazzModule } from './modules/integrations/digiflazz/digiflazz.module';
 
 @Module({
   imports: [
@@ -89,6 +90,7 @@ import { SocialchatModule } from './modules/integrations/socialchat/socialchat.m
     RuijieModule,
     MekariModule,
     SocialchatModule,
+    DigiflazzModule,
   ],
   providers: [
     // Global rate-limit guard

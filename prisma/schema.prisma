@@ -791,6 +791,16 @@ model SimTopup {
   keterangan  String?  @db.VarChar(255)
   created_at  DateTime @default(now())
 
+  // Kolom pembelian real via Digiflazz — null semua kalau ini catatan manual (jenis lama)
+  metode            String    @default("Manual") @db.VarChar(20) // Manual | Digiflazz
+  buyer_sku_code    String?   @db.VarChar(50)
+  customer_no       String?   @db.VarChar(30)
+  ref_id            String?   @unique @db.VarChar(50)
+  status_transaksi  String?   @db.VarChar(20) // Pending | Sukses | Gagal
+  harga_modal       Decimal?  @db.Decimal(12, 2)
+  serial_number     String?   @db.VarChar(100)
+  provider_response String?   @db.Text
+
   sumber   SumberInternetSite? @relation(fields: [id_sumber], references: [id_sumber])
   aset_sim GudangAset?         @relation(fields: [id_aset_sim], references: [id_aset])
   site     SitePelanggan       @relation(fields: [id_site], references: [id_site])
@@ -798,6 +808,19 @@ model SimTopup {
 
   @@index([tgl_topup])
   @@map("sim_topup")
+}
+
+// Kredensial akun Digiflazz (PPOB) buat beli pulsa/paket data beneran —
+// single-row config, sama pola dgn integration_prtg_config (API key
+// terenkripsi, endpoint config terpisah dari AppSetting yg publik).
+model IntegrationDigiflazzConfig {
+  id          Int      @id @default(1)
+  username    String?  @db.VarChar(100)
+  api_key_enc String?  @db.Text
+  mode        String   @default("production") @db.VarChar(20) // production | development (testing:true di Digiflazz)
+  updated_at  DateTime @default(now()) @updatedAt
+
+  @@map("integration_digiflazz_config")
 }
 
 // ============================================================
