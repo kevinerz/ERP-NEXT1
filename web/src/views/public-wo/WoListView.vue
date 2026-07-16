@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import { fmtDateShort as fmtDate } from '@/composables/useFormat'
 
 const router = useRouter()
 
@@ -68,12 +69,14 @@ async function fetchList() {
 }
 
 async function fetchDropdowns() {
-  const [t, s] = await Promise.all([
-    api.get('/public-wo/teknisi'),
-    api.get('/public-wo/sites'),
-  ])
-  teknisis.value = t.data.data
-  sites.value    = s.data.data
+  try {
+    const [t, s] = await Promise.all([
+      api.get('/public-wo/teknisi'),
+      api.get('/public-wo/sites'),
+    ])
+    teknisis.value = t.data.data
+    sites.value    = s.data.data
+  } catch { /* dropdown filter kosong kalau gagal — tidak fatal buat halaman */ }
 }
 
 function resetFilter() {
@@ -116,10 +119,6 @@ async function submitWo() {
   }
 }
 
-function fmtDate(d: string) {
-  if (!d) return '-'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
 
 const summaryTotal = computed(() => summary.value.reduce((a, b) => a + b.count, 0))
 

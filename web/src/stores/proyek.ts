@@ -72,7 +72,7 @@ export const useProyekStore = defineStore('proyek', {
     },
 
     async fetchOne(id: number) {
-      this.loading = true
+      this.loading = true; this.error = ''
       try {
         const { data } = await api.get(`/projects/${id}`)
         this.current = data.data

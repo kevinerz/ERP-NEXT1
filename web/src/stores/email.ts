@@ -84,14 +84,24 @@ export const useEmailStore = defineStore('email', {
       finally { this.loadingMessage = false }
     },
     async setSeen(uid: number, seen: boolean) {
-      await api.patch(`/email/inbox/${uid}/read`, { seen })
-      const row = this.list.find((m) => m.uid === uid)
-      if (row) row.seen = seen
+      try {
+        await api.patch(`/email/inbox/${uid}/read`, { seen })
+        const row = this.list.find((m) => m.uid === uid)
+        if (row) row.seen = seen
+      } catch (e: any) {
+        this.error = e.response?.data?.message || 'Gagal memperbarui status email'
+        throw e
+      }
     },
     async deleteMessage(uid: number) {
-      await api.delete(`/email/inbox/${uid}`)
-      this.list = this.list.filter((m) => m.uid !== uid)
-      if (this.current?.uid === uid) this.current = null
+      try {
+        await api.delete(`/email/inbox/${uid}`)
+        this.list = this.list.filter((m) => m.uid !== uid)
+        if (this.current?.uid === uid) this.current = null
+      } catch (e: any) {
+        this.error = e.response?.data?.message || 'Gagal menghapus email'
+        throw e
+      }
     },
     async sendMail(payload: { to: string; cc?: string; bcc?: string; subject: string; html: string; in_reply_to?: string }, files?: File[]) {
       const fd = new FormData()

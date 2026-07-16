@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { fmtDateShort, fmtRupiah } from '@/composables/useFormat'
 
 const route = useRoute()
 const router = useRouter()
@@ -254,10 +255,7 @@ async function deletePic(p: any) {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-function fmtRupiah(n: number) { return 'Rp ' + (n || 0).toLocaleString('id-ID') }
+const fmtDate = fmtDateShort
 
 const selectedVendor = computed(() => vendorList.value.find((v: any) => v.id_vendor === sumberForm.value.id_vendor_isp))
 const isGsm = computed(() => {

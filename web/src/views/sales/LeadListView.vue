@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useSalesStore, type Lead } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { fmtDateShort } from '@/composables/useFormat'
 
 const router = useRouter()
 const route = useRoute()
@@ -67,9 +68,7 @@ async function handleSubmit() {
   } finally { submitting.value = false }
 }
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
+const formatDate = fmtDateShort
 
 async function hapusLead(id: number, nama: string) {
   if (!confirm(`Hapus lead "${nama}" ini?`)) return

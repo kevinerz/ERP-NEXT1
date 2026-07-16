@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useEmailStore } from '@/stores/email'
+import { fmtDateTime } from '@/composables/useFormat'
 
 const email = useEmailStore()
 
@@ -51,19 +52,20 @@ async function openMessage(uid: number) {
 
 async function toggleSeen(m: any, e: Event) {
   e.stopPropagation()
-  await email.setSeen(m.uid, !m.seen)
+  try {
+    await email.setSeen(m.uid, !m.seen)
+  } catch { /* error sudah ditampilkan lewat email.error */ }
 }
 
 async function hapusEmail(uid: number) {
   if (!confirm('Hapus email ini?')) return
-  await email.deleteMessage(uid)
-  if (selectedUid.value === uid) selectedUid.value = null
+  try {
+    await email.deleteMessage(uid)
+    if (selectedUid.value === uid) selectedUid.value = null
+  } catch { /* error sudah ditampilkan lewat email.error */ }
 }
 
-function fmtTgl(d: string | null | undefined) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
+const fmtTgl = fmtDateTime
 function fmtSize(n: number) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
@@ -104,10 +106,17 @@ function bukaBalas() {
 function handleFileInput(e: Event) {
   const input = e.target as HTMLInputElement
   if (input.files) composeFiles.value = [...composeFiles.value, ...Array.from(input.files)]
+  input.value = ''
 }
 function hapusFile(i: number) { composeFiles.value.splice(i, 1) }
 
+function tutupCompose() {
+  if (sending.value) return
+  showCompose.value = false
+}
+
 async function kirimEmail() {
+  if (sending.value) return
   if (!composeForm.value.to || !composeForm.value.subject) {
     sendError.value = 'Tujuan dan subjek wajib diisi'; return
   }
@@ -246,7 +255,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
     <div v-else class="loading">Memuat...</div>
 
     <!-- ─── MODAL COMPOSE ─── -->
-    <div v-if="showCompose" class="modal-overlay" @click.self="showCompose = false">
+    <div v-if="showCompose" class="modal-overlay" @click.self="tutupCompose">
       <div class="modal">
         <h3>✏️ Tulis Email</h3>
         <div class="field">
@@ -285,7 +294,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
         </div>
         <p v-if="sendError" class="msg err">{{ sendError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" @click="showCompose = false">Batal</button>
+          <button class="btn-cancel" :disabled="sending" @click="tutupCompose">Batal</button>
           <button class="btn-submit" @click="kirimEmail" :disabled="sending">
             {{ sending ? 'Mengirim...' : 'Kirim' }}
           </button>
@@ -368,4 +377,5 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .file-chip button { background: none; border: none; color: #1d4ed8; cursor: pointer; margin-left: 4px; font-weight: 700; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
+.btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProyekStore } from '@/stores/proyek'
 import { useMasterStore } from '@/stores/master'
+import { fmtDateShort as fmtDate } from '@/composables/useFormat'
 import api from '@/services/api'
 
 const router = useRouter()
@@ -76,9 +77,6 @@ async function hapusProyek(id: number, nomor: string) {
   }
 }
 
-function fmtDate(d?: string) {
-  return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-}
 </script>
 
 <template>

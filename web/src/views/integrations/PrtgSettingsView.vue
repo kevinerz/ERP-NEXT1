@@ -47,6 +47,7 @@ const mappingLoading = ref(false)
 const mapForm = ref({ device_name: '', id_site: 0 })
 const mapSubmitting = ref(false)
 const mapMsg = ref('')
+const hapusMappingId = ref(0)
 
 async function fetchMapping() {
   mappingLoading.value = true
@@ -77,8 +78,10 @@ async function submitMapping() {
 
 async function hapusMapping(id: number, nama: string) {
   if (!confirm(`Hapus mapping "${nama}"? Device ini akan balik ke matching otomatis (nama).`)) return
+  hapusMappingId.value = id; mapMsg.value = ''
   try { await api.delete(`/prtg/mapping/${id}`); await fetchMapping() }
-  catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus mapping') }
+  catch (e: any) { mapMsg.value = e.response?.data?.message || 'Gagal menghapus mapping' }
+  finally { hapusMappingId.value = 0 }
 }
 
 // ─── AUDIT SENSOR ─────────────────────────────────────────────
@@ -187,7 +190,7 @@ onMounted(async () => {
             <tr v-for="m in mappingList" :key="m.id_mapping">
               <td class="mono">{{ m.device_name }}</td>
               <td>[{{ m.site.kode_site }}] {{ m.site.nama_site }}</td>
-              <td><button class="btn-hapus" @click="hapusMapping(m.id_mapping, m.device_name)">Hapus</button></td>
+              <td><button class="btn-hapus" :disabled="hapusMappingId === m.id_mapping" @click="hapusMapping(m.id_mapping, m.device_name)">{{ hapusMappingId === m.id_mapping ? 'Menghapus...' : 'Hapus' }}</button></td>
             </tr>
           </tbody>
         </table>

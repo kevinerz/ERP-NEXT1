@@ -288,6 +288,7 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
+import { fmtRupiah, fmtDateShort } from '@/composables/useFormat'
 
 const auth = useAuthStore()
 const bisaKelolaDigiflazz = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
@@ -496,8 +497,8 @@ async function deleteTopup(id_topup: number) {
   }
 }
 
-function fmtRp(v: any) { return 'Rp ' + Number(v).toLocaleString('id-ID') }
-function fmtDate(d: string) { return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) }
+const fmtRp = fmtRupiah
+const fmtDate = fmtDateShort
 function jenisClass(j: string) {
   if (j === 'Data' || j === 'Paket_Bulanan') return 'blue'
   if (j === 'Pulsa') return 'green'

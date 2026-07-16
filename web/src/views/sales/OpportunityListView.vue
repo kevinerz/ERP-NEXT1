@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
 
 const router = useRouter()
 const route = useRoute()
@@ -62,12 +63,8 @@ async function hapusOpportunity(id: number, nama: string) {
   }
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
-function fmtDate(d: string) {
-  return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-}
+const fmt = fmtRupiahPenuh
+const fmtDate = fmtDateShort
 </script>
 
 <template>

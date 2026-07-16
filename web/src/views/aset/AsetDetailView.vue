@@ -5,6 +5,7 @@ import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
 import { printLabelAset } from '@/composables/usePrint'
 import api from '@/services/api'
+import { fmtDateTime, fmtDate, fmtRupiah, statusLabel } from '@/composables/useFormat'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,7 @@ const sumberList = ref<any[]>([])
 const linkSimId = ref<number | null>(null)
 const linkSimSubmitting = ref(false)
 const linkSimError = ref('')
+const simError = ref('')
 
 const editForm = ref({ nama_perangkat: '', merk: '', tipe_model: '', kondisi: '', catatan: '' })
 const mutasiForm = ref({ id_aset: id, jenis_mutasi: 'Deploy', jumlah: 1, id_site_asal: 0, id_site_tujuan: 0, id_gudang_tujuan: 0, keterangan: '' })
@@ -54,10 +56,14 @@ onMounted(async () => {
 })
 
 async function openLinkSim() {
-  linkSimId.value = null; linkSimError.value = ''
-  const r = await api.get('/master/sumber-internet?unlinked_only=true')
-  sumberList.value = r.data.data
-  showLinkSimModal.value = true
+  linkSimId.value = null; linkSimError.value = ''; simError.value = ''
+  try {
+    const r = await api.get('/master/sumber-internet?unlinked_only=true')
+    sumberList.value = r.data.data
+    showLinkSimModal.value = true
+  } catch (e: any) {
+    simError.value = e.response?.data?.message || 'Gagal memuat daftar sumber internet'
+  }
 }
 
 async function handleLinkSim() {
@@ -75,8 +81,13 @@ async function handleUnlinkSim() {
   const sumber = (a.value as any)?.sumber_internet
   if (!sumber) return
   if (!confirm(`Putuskan SIM dari ${sumber.nomor_pelanggan_isp}?`)) return
-  await api.patch(`/master/sumber-internet/${sumber.id_sumber}`, { id_aset_sim: null })
-  await aset.fetchOne(id)
+  simError.value = ''
+  try {
+    await api.patch(`/master/sumber-internet/${sumber.id_sumber}`, { id_aset_sim: null })
+    await aset.fetchOne(id)
+  } catch (e: any) {
+    simError.value = e.response?.data?.message || 'Gagal memutuskan link SIM'
+  }
 }
 
 function openEdit() {
@@ -140,16 +151,7 @@ async function handleMutasi() {
   finally { submitting.value = false }
 }
 
-function fmtDt(d: string) {
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-function fmtRupiah(n: number) {
-  return 'Rp ' + (n || 0).toLocaleString('id-ID')
-}
-function statusLabel(s: string) { return s.replace('_', ' ') }
+const fmtDt = fmtDateTime
 
 const mutasiColor: Record<string, string> = {
   Masuk: '#15803d', Deploy: '#1d4ed8', Return: '#0891b2', Transfer: '#0369a1',
@@ -232,6 +234,7 @@ const mutasiColor: Record<string, string> = {
           <button v-if="!(a as any).sumber_internet" class="btn-link-sim" @click="openLinkSim">+ Link ke Sumber Internet</button>
           <button v-else class="btn-unlink-sim" @click="handleUnlinkSim">Putuskan Link</button>
         </div>
+        <div v-if="simError" class="alert-error">{{ simError }}</div>
         <div v-if="(a as any).sumber_internet" class="sim-info">
           <div class="sim-row">
             <span class="sim-label">Nomor / ISP ID</span>

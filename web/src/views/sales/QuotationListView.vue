@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
 
 const router = useRouter()
 const sales = useSalesStore()
@@ -58,7 +59,8 @@ async function handleApprove() {
     setTimeout(() => successMsg.value = '', 3000)
     fetchData()
   } catch (e: any) {
-    successMsg.value = 'Gagal proses approval'
+    successMsg.value = e.response?.data?.message || 'Gagal proses approval'
+    setTimeout(() => successMsg.value = '', 4000)
   } finally { approveSubmitting.value = false }
 }
 
@@ -92,12 +94,8 @@ async function hapusQuotation(id: number, nomor: string) {
   }
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
-function fmtDate(d: string) {
-  return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-}
+const fmt = fmtRupiahPenuh
+const fmtDate = fmtDateShort
 </script>
 
 <template>

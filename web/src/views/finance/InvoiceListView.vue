@@ -14,6 +14,7 @@ const search = ref('')
 const filterStatus = ref('')
 const filterPeriode = ref('')
 const listError = ref('')
+const processingId = ref(0)
 
 const STATUS_LIST = ['Draft', 'Terkirim', 'Sebagian', 'Lunas', 'Jatuh_Tempo', 'Batal']
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
@@ -96,22 +97,28 @@ async function handleSubmit() {
 async function handleKirim(id: number, ev: Event) {
   ev.stopPropagation()
   if (!confirm('Kirim invoice ini? Status akan berubah menjadi Terkirim.')) return
+  processingId.value = id
   try {
     await finance.kirim(id)
     fetchData()
   } catch (err: any) {
     alert(err?.response?.data?.message ?? 'Gagal mengirim invoice')
+  } finally {
+    processingId.value = 0
   }
 }
 
 async function handleHapus(id: number, nomor: string, ev: Event) {
   ev.stopPropagation()
   if (!confirm(`Hapus invoice ${nomor}? Tindakan ini tidak dapat dibatalkan.`)) return
+  processingId.value = id
   try {
     await finance.remove(id)
     fetchData()
   } catch (err: any) {
     alert(err?.response?.data?.message ?? 'Gagal menghapus invoice')
+  } finally {
+    processingId.value = 0
   }
 }
 
@@ -212,8 +219,8 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
                 </span>
               </td>
               <td class="actions" @click.stop>
-                <button v-if="inv.status === 'Draft'" class="mini-btn kirim" @click="handleKirim(inv.id_invoice, $event)">Kirim</button>
-                <button v-if="inv.status === 'Draft'" class="mini-btn hapus" @click="handleHapus(inv.id_invoice, inv.nomor_invoice, $event)">Hapus</button>
+                <button v-if="inv.status === 'Draft'" class="mini-btn kirim" :disabled="processingId === inv.id_invoice" @click="handleKirim(inv.id_invoice, $event)">Kirim</button>
+                <button v-if="inv.status === 'Draft'" class="mini-btn hapus" :disabled="processingId === inv.id_invoice" @click="handleHapus(inv.id_invoice, inv.nomor_invoice, $event)">Hapus</button>
               </td>
             </tr>
           </tbody>
@@ -322,6 +329,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .mini-btn.kirim:hover { background: #dbeafe; }
 .mini-btn.hapus { background: #fef2f2; color: #dc2626; }
 .mini-btn.hapus:hover { background: #fee2e2; }
+.mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .pagination { display: flex; gap: 6px; padding: 14px; justify-content: center; border-top: 1px solid #f1f5f9; }
 .page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
 .page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }

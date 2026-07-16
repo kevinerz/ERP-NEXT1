@@ -5,6 +5,7 @@ import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import { printQuotation } from '@/composables/usePrint'
+import { fmtRupiahPenuh, fmtDate, fmtDateTime } from '@/composables/useFormat'
 
 const route  = useRoute()
 const router = useRouter()
@@ -53,8 +54,8 @@ async function fetchQuotation() {
   try {
     const r = await api.get(`/sales/quotation/${id}`)
     qt.value = r.data.data
-  } catch {
-    error.value = 'Quotation tidak ditemukan'
+  } catch (e: any) {
+    error.value = e?.response?.data?.message || 'Quotation tidak ditemukan'
   } finally { loading.value = false }
 }
 
@@ -138,8 +139,9 @@ async function handleApprove() {
     successMsg.value  = `Quotation ${approveForm.value.status_approval}`
     setTimeout(() => successMsg.value = '', 3000)
     await fetchQuotation()
-  } catch {
-    successMsg.value = 'Gagal proses approval'
+  } catch (e: any) {
+    successMsg.value = e?.response?.data?.message || 'Gagal proses approval'
+    setTimeout(() => successMsg.value = '', 4000)
   } finally { approveSubmit.value = false }
 }
 
@@ -182,17 +184,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; border: string }
 
 const statusStyle = computed(() => STATUS_STYLE[qt.value?.status_approval] || STATUS_STYLE['Draft'])
 
-function fmt(n: number | string) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n) || 0)
-}
-function fmtDate(d: string) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-function fmtDateTime(d: string) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
+const fmt = fmtRupiahPenuh
 
 const prospekName = computed(() => {
   const lead = qt.value?.opportunity?.lead
@@ -201,7 +193,6 @@ const prospekName = computed(() => {
     ? `${lead.nama_prospek} (${lead.nama_perusahaan})`
     : lead.nama_prospek || '—'
 })
-const kodeProspek = computed(() => null)
 </script>
 
 <template>

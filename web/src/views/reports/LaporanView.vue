@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import api from '@/services/api'
 import { exportCsv, type CsvSection } from '@/composables/useExport'
 import { printLaporan } from '@/composables/usePrint'
+import { fmtRupiah } from '@/composables/useFormat'
 
 // KPI
 const kpi = ref<any>(null)
@@ -92,10 +93,6 @@ async function loadAset() {
   asetLoading.value = true
   try { asetReport.value = (await api.get('/reports/assets')).data.data } catch {}
   finally { asetLoading.value = false }
-}
-
-function fmtRupiah(n: number) {
-  return 'Rp ' + (n || 0).toLocaleString('id-ID')
 }
 
 const periodeLabel = () => `${BULAN_LIST[filterBulan.value - 1]} ${filterTahun.value}`
@@ -263,7 +260,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
             <select v-model.number="filterBulan" @change="loadTickets(); loadNocMetrics()" class="filter-sm">
               <option v-for="(b, i) in BULAN_LIST" :key="i" :value="i+1">{{ b }}</option>
             </select>
-            <select v-model.number="filterTahun" @change="loadTickets" class="filter-sm">
+            <select v-model.number="filterTahun" @change="loadTickets(); loadNocMetrics()" class="filter-sm">
               <option v-for="y in TAHUN_LIST" :key="y" :value="y">{{ y }}</option>
             </select>
           </div>

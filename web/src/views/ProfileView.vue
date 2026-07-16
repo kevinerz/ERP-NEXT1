@@ -1,5 +1,11 @@
 <template>
   <div class="profile-page">
+    <div v-if="loading" class="loading-state">
+      <div class="spinner"></div>
+      <span>Memuat profil...</span>
+    </div>
+
+    <template v-else>
     <!-- Header Card -->
     <div class="profile-hero">
       <div class="avatar-circle">{{ initials }}</div>
@@ -17,7 +23,7 @@
       <div class="card info-card">
         <div class="card-header">
           <span class="card-title">Informasi Akun</span>
-          <button class="btn-edit" @click="editMode = !editMode">
+          <button class="btn-edit" @click="toggleEdit">
             {{ editMode ? 'Batal' : 'Edit' }}
           </button>
         </div>
@@ -145,6 +151,7 @@
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
@@ -152,6 +159,7 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useAuthStore, ALL_MODULS } from '@/stores/auth'
+import { fmtDate as formatDate, fmtDateTime as formatDateTime } from '@/composables/useFormat'
 
 const auth = useAuthStore()
 
@@ -168,6 +176,7 @@ const MODUL_LABEL: Record<string, string> = {
 
 // ─── STATE ────────────────────────────────────────────
 const profile = ref<any>(null)
+const loading = ref(true)
 const editMode = ref(false)
 const saving = ref(false)
 const profileMsg = ref('')
@@ -229,6 +238,7 @@ const canSubmitPass = computed(() =>
 
 // ─── METHODS ──────────────────────────────────────────
 async function fetchProfile() {
+  loading.value = true
   try {
     const r = await api.get('/auth/me')
     profile.value = r.data.data
@@ -236,7 +246,17 @@ async function fetchProfile() {
     form.value.no_hp = profile.value?.no_hp || ''
   } catch (e) {
     console.error('[Profile] fetchProfile error:', (e as any)?.message ?? 'unknown')
+  } finally {
+    loading.value = false
   }
+}
+
+function toggleEdit() {
+  if (editMode.value) {
+    form.value.email = profile.value?.email || ''
+    form.value.no_hp = profile.value?.no_hp || ''
+  }
+  editMode.value = !editMode.value
 }
 
 async function saveProfile() {
@@ -279,21 +299,15 @@ async function changePassword() {
   }
 }
 
-function formatDate(d?: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-
-function formatDateTime(d?: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
 onMounted(fetchProfile)
 </script>
 
 <style scoped>
 .profile-page { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+
+.loading-state { display: flex; align-items: center; gap: 12px; padding: 60px; color: #94a3b8; justify-content: center; }
+.spinner { width: 20px; height: 20px; border: 2px solid #e2e8f0; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Hero */
 .profile-hero {

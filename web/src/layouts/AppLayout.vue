@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
 import { useSettingsStore } from '@/stores/settings'
 import api from '@/services/api'
+import { fmtRelativeTime } from '@/composables/useFormat'
 
 const router = useRouter()
 const route  = useRoute()
@@ -69,12 +70,7 @@ const TIPE_ICON: Record<string, string> = {
 }
 
 function fmtTime(d: string) {
-  const diffMin = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
-  if (diffMin < 1)  return 'baru saja'
-  if (diffMin < 60) return `${diffMin}m lalu`
-  const diffH = Math.floor(diffMin / 60)
-  if (diffH < 24)   return `${diffH}j lalu`
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+  return fmtRelativeTime(d, true)
 }
 
 const allMenu = [
@@ -237,7 +233,8 @@ const initials = computed(() => {
         <div class="topbar-right">
           <!-- Notification bell -->
           <div class="notif-area">
-            <button class="tb-btn" @click.stop="toggleNotifPanel" :class="{ active: showNotifPanel }">
+            <button class="tb-btn" @click.stop="toggleNotifPanel" :class="{ active: showNotifPanel }"
+              aria-label="Notifikasi" :aria-expanded="showNotifPanel">
               <span class="tb-icon">🔔</span>
               <span v-if="notif.count > 0" class="notif-badge">{{ notif.count > 99 ? '99+' : notif.count }}</span>
             </button>
@@ -279,7 +276,8 @@ const initials = computed(() => {
 
           <!-- User menu -->
           <div class="user-area">
-            <button class="user-btn" @click.stop="toggleUserMenu" :class="{ active: showUserMenu }">
+            <button class="user-btn" @click.stop="toggleUserMenu" :class="{ active: showUserMenu }"
+              aria-label="Menu pengguna" :aria-expanded="showUserMenu">
               <div class="user-avatar">{{ initials }}</div>
               <div class="user-info">
                 <div class="user-name">{{ auth.user?.nama_lengkap }}</div>

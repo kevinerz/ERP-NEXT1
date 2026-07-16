@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { printSuratTugas, printBeritaAcara, printSuratJalan } from '@/composables/usePrint'
+import { fmtDate, fmtDateTime, fmtRupiahPenuh as fmtRp } from '@/composables/useFormat'
 
 const route  = useRoute()
 const router = useRouter()
@@ -125,6 +126,8 @@ async function advanceStatus() {
   try {
     await api.patch(`/public-wo/${id}`, { status_wo: next })
     await fetchWo()
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal update status Work Order')
   } finally {
     updatingStatus.value = false
   }
@@ -136,6 +139,8 @@ async function cancelWo() {
   try {
     await api.patch(`/public-wo/${id}`, { status_wo: 'Dibatalkan' })
     await fetchWo()
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal membatalkan Work Order')
   } finally {
     updatingStatus.value = false
   }
@@ -184,21 +189,11 @@ async function saveCatatan() {
     await api.patch(`/public-wo/${id}`, { catatan_teknisi: catatanDraft.value })
     await fetchWo()
     editingCatatan.value = false
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menyimpan catatan')
   } finally {
     savingCatatan.value = false
   }
-}
-
-function fmtDate(d: string | null) {
-  if (!d) return '-'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-function fmtDateTime(d: string | null) {
-  if (!d) return '-'
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-function fmtRp(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n)
 }
 
 onMounted(fetchWo)

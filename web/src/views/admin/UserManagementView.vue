@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
+import { fmtDateTime } from '@/composables/useFormat'
 
 interface UserRow {
   id_user: number
@@ -17,6 +18,7 @@ interface UserRow {
 const users = ref<UserRow[]>([])
 const loading = ref(true)
 const error = ref('')
+const togglingId = ref(0)
 
 // Modal edit modul akses
 const showModulModal = ref(false)
@@ -71,7 +73,7 @@ async function fetchKaryawan() {
   try {
     const r = await api.get('/hris/karyawan', { params: { limit: 200 } })
     karyawanList.value = r.data.data
-  } catch {}
+  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal memuat daftar karyawan' }
 }
 
 function openModulModal(user: UserRow) {
@@ -105,10 +107,12 @@ async function saveModuls() {
 }
 
 async function toggleAktif(user: UserRow) {
+  togglingId.value = user.id_user
   try {
     const r = await api.patch(`/admin/users/${user.id_user}/toggle-aktif`)
     user.is_aktif = r.data.data.is_aktif
   } catch (e: any) { error.value = e.response?.data?.message || 'Gagal mengubah status' }
+  finally { togglingId.value = 0 }
 }
 
 function openReset(user: UserRow) {
@@ -138,10 +142,7 @@ async function createUser() {
   finally { submitting.value = false }
 }
 
-function fmtDt(d?: string) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
+const fmtDt = fmtDateTime
 
 function modulLabel(m: string) {
   return ALL_MODULS.find((x) => x.key === m)?.label || m
@@ -201,8 +202,8 @@ function modulLabel(m: string) {
               <div class="action-row">
                 <button class="btn-action" @click="openModulModal(u)">Modul</button>
                 <button class="btn-action" @click="openReset(u)">Password</button>
-                <button :class="['btn-action', u.is_aktif ? 'btn-warn' : 'btn-ok']" @click="toggleAktif(u)">
-                  {{ u.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}
+                <button :class="['btn-action', u.is_aktif ? 'btn-warn' : 'btn-ok']" :disabled="togglingId === u.id_user" @click="toggleAktif(u)">
+                  {{ togglingId === u.id_user ? '...' : (u.is_aktif ? 'Nonaktifkan' : 'Aktifkan') }}
                 </button>
               </div>
             </td>
@@ -338,6 +339,7 @@ td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .action-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn-action { padding: 5px 10px; border: 1.5px solid #e2e8f0; background: #fff; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; color: #374151; }
 .btn-action:hover { background: #f8fafc; }
+.btn-action:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-warn { border-color: #fecaca; color: #dc2626; }
 .btn-warn:hover { background: #fef2f2; }
 .btn-ok { border-color: #bbf7d0; color: #15803d; }

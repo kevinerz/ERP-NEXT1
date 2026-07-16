@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useProyekStore } from '@/stores/proyek'
 import { printBAST } from '@/composables/usePrint'
+import { fmtDateShort as fmtDate, fmtDateTime as fmtDt } from '@/composables/useFormat'
 import api from '@/services/api'
 
 const router = useRouter()
@@ -28,6 +29,7 @@ const editWoId = ref(0)
 const editWoNomor = ref('')
 const editWoForm = ref({ status_wo: '', catatan_teknisi: '', status_pembayaran_fee: 'Belum_Dibayar' })
 const editWoSubmitting = ref(false)
+const editWoError = ref('')
 
 // Add BAST
 const showAddBast = ref(false)
@@ -149,16 +151,17 @@ function openEditWo(wo: any) {
     catatan_teknisi: wo.catatan_teknisi || '',
     status_pembayaran_fee: wo.status_pembayaran_fee,
   }
+  editWoError.value = ''
   showEditWo.value = true
 }
 
 async function handleEditWo() {
-  editWoSubmitting.value = true
+  editWoSubmitting.value = true; editWoError.value = ''
   try {
     await proyek.updateWo(editWoId.value, editWoForm.value)
     await proyek.fetchOne(id)
     showEditWo.value = false; flash('WO diperbarui')
-  } catch (e: any) { flash('Gagal update WO') }
+  } catch (e: any) { editWoError.value = e.response?.data?.message || 'Gagal update WO' }
   finally { editWoSubmitting.value = false }
 }
 
@@ -181,17 +184,12 @@ async function handleAddBast() {
 }
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
-function fmtDate(d?: string) {
-  return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-}
-function fmtDt(d: string) {
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
 </script>
 
 <template>
   <div class="page">
     <div v-if="proyek.loading && !proyek.current" class="loading-page">Memuat...</div>
+    <div v-else-if="proyek.error" class="alert-error">{{ proyek.error }}</div>
     <template v-else-if="proyek.current">
       <!-- Header -->
       <div class="page-header">
@@ -414,6 +412,7 @@ function fmtDt(d: string) {
               <textarea v-model="editWoForm.catatan_teknisi" rows="3" placeholder="Hasil pekerjaan, kendala..."></textarea>
             </div>
           </div>
+          <p v-if="editWoError" class="form-error">{{ editWoError }}</p>
           <div class="modal-actions">
             <button class="btn-cancel" @click="showEditWo = false">Batal</button>
             <button class="btn-submit" @click="handleEditWo" :disabled="editWoSubmitting">
@@ -461,6 +460,7 @@ function fmtDt(d: string) {
 <style scoped>
 .page { padding: 28px 32px; max-width: 1000px; }
 .loading-page { padding: 60px; text-align: center; color: #94a3b8; }
+.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 14px; padding: 14px 18px; margin: 20px 0; }
 .btn-back { background: none; border: none; color: #3b82f6; font-size: 13px; font-weight: 600; cursor: pointer; padding: 0; display: block; margin-bottom: 4px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }

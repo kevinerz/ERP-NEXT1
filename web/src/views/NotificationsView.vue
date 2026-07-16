@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotificationStore } from '@/stores/notification'
+import { fmtRelativeTime } from '@/composables/useFormat'
 
 const router = useRouter()
 const notif = useNotificationStore()
@@ -26,14 +27,7 @@ const TIPE_ICON: Record<string, string> = {
 }
 
 function fmtTime(d: string) {
-  const diffMin = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
-  if (diffMin < 1)  return 'baru saja'
-  if (diffMin < 60) return `${diffMin} menit lalu`
-  const diffH = Math.floor(diffMin / 60)
-  if (diffH < 24)   return `${diffH} jam lalu`
-  const diffD = Math.floor(diffH / 24)
-  if (diffD < 7)    return `${diffD} hari lalu`
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  return fmtRelativeTime(d)
 }
 </script>
 

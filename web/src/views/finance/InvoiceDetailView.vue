@@ -39,6 +39,7 @@ const canBayar = computed(() => inv.value && inv.value.status !== 'Lunas' && inv
 
 const showBayarModal = ref(false)
 const submitting = ref(false)
+const processing = ref(false)
 const formError = ref('')
 const bayarForm = ref({
   tgl_bayar: new Date().toISOString().slice(0, 10),
@@ -81,30 +82,39 @@ async function handleSyncMekari() {
 
 async function handleKirim() {
   if (!confirm('Kirim invoice ini? Status akan berubah menjadi Terkirim.')) return
+  processing.value = true
   try {
     await finance.kirim(id)
   } catch (err: any) {
     alert(err?.response?.data?.message ?? 'Gagal mengirim invoice')
+  } finally {
+    processing.value = false
   }
 }
 
 async function handleBatal() {
   if (!confirm('Batalkan invoice ini?')) return
+  processing.value = true
   try {
     await finance.batal(id)
   } catch (err: any) {
     alert(err?.response?.data?.message ?? 'Gagal membatalkan invoice')
+  } finally {
+    processing.value = false
   }
 }
 
 async function handleHapus() {
   if (!inv.value) return
   if (!confirm(`Hapus invoice ${inv.value.nomor_invoice}?`)) return
+  processing.value = true
   try {
     await finance.remove(id)
     router.push('/finance/invoice')
   } catch (err: any) {
     alert(err?.response?.data?.message ?? 'Gagal menghapus invoice')
+  } finally {
+    processing.value = false
   }
 }
 
@@ -182,9 +192,9 @@ async function handleHapusPembayaran(idPembayaran: number) {
         </div>
         <div class="header-actions">
           <button class="btn-print" @click="printInvoiceDoc(inv)">🖨 Cetak</button>
-          <button v-if="inv.status === 'Draft'" class="btn-edit" @click="handleKirim">Kirim</button>
-          <button v-if="inv.status !== 'Lunas' && inv.status !== 'Batal'" class="btn-danger" @click="handleBatal">Batal</button>
-          <button v-if="inv.status === 'Draft' && !(inv.pembayaran?.length)" class="btn-danger" @click="handleHapus">Hapus</button>
+          <button v-if="inv.status === 'Draft'" class="btn-edit" :disabled="processing" @click="handleKirim">Kirim</button>
+          <button v-if="inv.status !== 'Lunas' && inv.status !== 'Batal'" class="btn-danger" :disabled="processing" @click="handleBatal">Batal</button>
+          <button v-if="inv.status === 'Draft' && !(inv.pembayaran?.length)" class="btn-danger" :disabled="processing" @click="handleHapus">Hapus</button>
           <button
             v-if="inv.status !== 'Draft' && inv.status !== 'Batal' && !inv.mekari_uid"
             class="btn-mekari"
@@ -333,6 +343,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
 .btn-print { padding: 9px 18px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-print:hover { background: #dcfce7; }
 .btn-edit { padding: 9px 18px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-edit:disabled, .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-danger { padding: 9px 18px; background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-mekari { padding: 9px 18px; background: #eef2ff; color: #4338ca; border: 1.5px solid #c7d2fe; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-mekari:hover:not(:disabled) { background: #e0e7ff; }

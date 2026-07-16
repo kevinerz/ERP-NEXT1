@@ -47,7 +47,7 @@ export const useOperationsStore = defineStore('operations', {
     },
 
     async fetchOne(id: number) {
-      this.loading = true
+      this.loading = true; this.error = ''
       try {
         const { data } = await api.get(`/operations/${id}`)
         this.current = data.data

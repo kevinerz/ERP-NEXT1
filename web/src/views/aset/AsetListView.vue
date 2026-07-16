@@ -5,6 +5,7 @@ import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
 import { printLabelAset } from '@/composables/usePrint'
 import api from '@/services/api'
+import { statusLabel } from '@/composables/useFormat'
 
 const router = useRouter()
 const aset = useAsetStore()
@@ -151,7 +152,6 @@ async function hapusAset(id: number, nama: string) {
 function fmtRupiah(n: number) {
   return n ? 'Rp ' + n.toLocaleString('id-ID') : '—'
 }
-function statusLabel(s: string) { return s.replace('_', ' ') }
 </script>
 
 <template>

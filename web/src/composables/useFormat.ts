@@ -31,3 +31,18 @@ export function fmtDateTime(d: string | null | undefined): string {
 export function statusLabel(s: string | null | undefined): string {
   return (s || '').replace(/_/g, ' ')
 }
+
+// Waktu relatif ("5 menit lalu"). compact=true pakai singkatan ("5m lalu") buat
+// tempat sempit seperti dropdown notifikasi.
+export function fmtRelativeTime(d: string | null | undefined, compact = false): string {
+  if (!d) return '—'
+  const diffMin = Math.floor((Date.now() - new Date(d).getTime()) / 60000)
+  if (diffMin < 1) return 'baru saja'
+  if (diffMin < 60) return compact ? `${diffMin}m lalu` : `${diffMin} menit lalu`
+  const diffH = Math.floor(diffMin / 60)
+  if (diffH < 24) return compact ? `${diffH}j lalu` : `${diffH} jam lalu`
+  if (compact) return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+  const diffD = Math.floor(diffH / 24)
+  if (diffD < 7) return `${diffD} hari lalu`
+  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+}

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
+import { fmtDate as formatDate } from '@/composables/useFormat'
 
 const router = useRouter()
 const route = useRoute()
@@ -23,13 +24,6 @@ onMounted(async () => {
   await hris.fetchRoles()
   await hris.fetchOne(id)
 })
-
-const k = hris.current
-
-function formatDate(d?: string) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-}
 
 async function handleToggleStatus() {
   actionError.value = ''

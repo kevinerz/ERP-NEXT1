@@ -6,6 +6,7 @@ const logs    = ref<any[]>([])
 const meta    = ref({ total: 0, page: 1, limit: 50, total_pages: 0 })
 const users   = ref<any[]>([])
 const loading = ref(false)
+const error   = ref('')
 
 // Filter state
 const fUser    = ref('')
@@ -35,11 +36,11 @@ async function loadUsers() {
   try {
     const r = await api.get('/admin/users')
     users.value = r.data.data
-  } catch {}
+  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal memuat daftar user' }
 }
 
 async function fetchLogs() {
-  loading.value = true
+  loading.value = true; error.value = ''
   try {
     const params: any = { page: page.value, limit: 50 }
     if (fUser.value)   params.id_user   = fUser.value
@@ -52,7 +53,7 @@ async function fetchLogs() {
     const r = await api.get('/admin/logs', { params })
     logs.value  = r.data.data
     meta.value  = r.data.meta
-  } catch {}
+  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal memuat log aktivitas' }
   finally { loading.value = false }
 }
 
@@ -84,6 +85,8 @@ const hasFilter = computed(() =>
         <p class="sub">Riwayat aktivitas semua user — login, logout, dan setiap perubahan data</p>
       </div>
     </div>
+
+    <div v-if="error" class="alert-error">{{ error }}</div>
 
     <!-- Filter bar -->
     <div class="filter-card">
@@ -182,6 +185,7 @@ const hasFilter = computed(() =>
 .page-header { margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
+.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 
 /* Filter */
 .filter-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 16px 20px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }

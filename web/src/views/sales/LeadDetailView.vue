@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useMasterStore } from '@/stores/master'
+import { fmtRupiahPenuh, fmtDateShort, fmtDateTime } from '@/composables/useFormat'
 
 const router = useRouter()
 const route = useRoute()
@@ -163,15 +164,9 @@ function flash(msg: string) {
   setTimeout(() => successMsg.value = '', 3000)
 }
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
-function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-function fmtDatetime(d: string) {
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
+const fmt = fmtRupiahPenuh
+const fmtDate = fmtDateShort
+const fmtDatetime = fmtDateTime
 </script>
 
 <template>

@@ -21,6 +21,7 @@
           <span>{{ uploading ? 'Mengunggah...' : '📁 Pilih Logo' }}</span>
         </label>
         <p class="hint">Format: PNG/JPG/WebP, maks 2MB. Rekomendasi 400×120px, transparan.</p>
+        <div v-if="logoError" class="save-err">{{ logoError }}</div>
 
         <div class="divider" />
 
@@ -130,6 +131,7 @@ const saving = ref(false)
 const saved = ref(false)
 const saveError = ref('')
 const uploading = ref(false)
+const logoError = ref('')
 
 onMounted(async () => {
   await store.fetch()
@@ -158,6 +160,7 @@ async function handleLogoUpload(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   uploading.value = true
+  logoError.value = ''
   try {
     const fd = new FormData()
     fd.append('file', file)
@@ -168,7 +171,7 @@ async function handleLogoUpload(e: Event) {
     form.company_logo_url = url
     store.settings.company_logo_url = url
   } catch (err: any) {
-    alert('Gagal upload logo: ' + (err?.response?.data?.message ?? err?.message ?? 'Unknown error'))
+    logoError.value = 'Gagal upload logo: ' + (err?.response?.data?.message ?? err?.message ?? 'Unknown error')
   } finally {
     uploading.value = false
   }

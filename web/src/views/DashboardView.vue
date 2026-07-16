@@ -10,6 +10,7 @@ const auth   = useAuthStore()
 const summary  = ref<any>(null)
 const revenue  = ref<any[]>([])
 const loading  = ref(true)
+const error    = ref('')
 
 onMounted(async () => {
   try {
@@ -19,8 +20,9 @@ onMounted(async () => {
     ])
     summary.value = s.data.data
     revenue.value = r.data.data
-  } catch {}
-  finally { loading.value = false }
+  } catch (e: any) {
+    error.value = e.response?.data?.message || 'Gagal memuat data dashboard'
+  } finally { loading.value = false }
 })
 
 const kpi = computed(() => summary.value?.kpi || {})
@@ -99,6 +101,8 @@ const today = computed(() =>
       <span>Memuat data dashboard...</span>
     </div>
 
+    <div v-else-if="error" class="alert-error">{{ error }}</div>
+
     <template v-else>
 
       <!-- KPI Cards Row 1 -->
@@ -108,7 +112,7 @@ const today = computed(() =>
           <div class="kpi-body">
             <div class="kpi-label">Kontrak Aktif</div>
             <div class="kpi-value">{{ kpi.kontrak_aktif ?? '—' }}</div>
-            <div class="kpi-sub">{{ kpi.total_pelanggan }} pelanggan</div>
+            <div class="kpi-sub">{{ kpi.total_pelanggan ?? '—' }} pelanggan</div>
           </div>
         </div>
         <div class="kpi-card green" @click="router.push('/reports')">
@@ -124,7 +128,7 @@ const today = computed(() =>
           <div class="kpi-body">
             <div class="kpi-label">Tiket Aktif</div>
             <div class="kpi-value">{{ kpi.tiket_aktif ?? '—' }}</div>
-            <div class="kpi-sub">{{ kpi.tiket_open }} open · {{ kpi.tiket_in_progress }} in progress</div>
+            <div class="kpi-sub">{{ kpi.tiket_open ?? '—' }} open · {{ kpi.tiket_in_progress ?? '—' }} in progress</div>
           </div>
         </div>
         <div class="kpi-card purple" @click="router.push('/projects')">
@@ -280,6 +284,11 @@ const today = computed(() =>
 .loading-state { display: flex; align-items: center; gap: 12px; padding: 60px; color: #94a3b8; justify-content: center; }
 .spinner { width: 20px; height: 20px; border: 2px solid #e2e8f0; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.alert-error {
+  background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+  padding: 16px 20px; color: #b91c1c; font-size: 13px;
+}
 
 /* KPI grid */
 .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }

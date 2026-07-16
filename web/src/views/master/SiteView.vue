@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { fmtDateShort } from '@/composables/useFormat'
 
 const router = useRouter()
 const master = useMasterStore()
@@ -124,9 +125,7 @@ async function handleSubmit() {
 }
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
-function fmtDate(d?: string) {
-  return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-}
+const fmtDate = fmtDateShort
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Aktif: { bg: '#f0fdf4', color: '#15803d' },
   Prospek: { bg: '#eff6ff', color: '#1d4ed8' },

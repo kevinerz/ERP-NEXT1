@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useMasterStore } from '@/stores/master'
+import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
 
 const router = useRouter()
 const route = useRoute()
@@ -130,7 +131,7 @@ async function handleApprove() {
     await sales.fetchOneOpportunity(id)
     showApprove.value = false
     flash(`Quotation ${approveForm.value.status_approval}`)
-  } catch (e: any) { flash('Gagal approve') }
+  } catch (e: any) { flash(e.response?.data?.message || 'Gagal approve') }
   finally { approveSubmitting.value = false }
 }
 
@@ -228,12 +229,8 @@ async function handleBuatSite() {
 }
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
-function fmt(n: number) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
-}
-function fmtDate(d: string) {
-  return d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
-}
+const fmt = fmtRupiahPenuh
+const fmtDate = fmtDateShort
 function fmtDatetime(d: string) {
   return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }

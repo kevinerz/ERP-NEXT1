@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useOperationsStore } from '@/stores/operations'
 import { useProyekStore } from '@/stores/proyek'
 import { printLaporanTiket } from '@/composables/usePrint'
+import { fmtDateTime as fmtDt, statusLabel } from '@/composables/useFormat'
 import api from '@/services/api'
 
 const router = useRouter()
@@ -129,10 +130,6 @@ async function hapusTiket() {
     alert(e.response?.data?.message || 'Gagal menghapus tiket')
   }
 }
-function fmtDt(d?: string) {
-  return d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
-}
-function statusLabel(s: string) { return s.replace('_', ' ') }
 
 function slaInfo(t: any): { label: string; cls: string } {
   if (['Resolved', 'Closed'].includes(t.status_tiket)) {
@@ -157,6 +154,7 @@ function ageHours(d: string) {
 <template>
   <div class="page">
     <div v-if="ops.loading && !ops.current" class="loading-page">Memuat...</div>
+    <div v-else-if="ops.error" class="alert-error">{{ ops.error }}</div>
     <template v-else-if="ops.current">
       <!-- Header -->
       <div class="page-header">
@@ -411,6 +409,7 @@ function ageHours(d: string) {
 <style scoped>
 .page { padding: 28px 32px; max-width: 1100px; }
 .loading-page { padding: 60px; text-align: center; color: #94a3b8; }
+.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 14px; padding: 14px 18px; margin: 20px 0; }
 .btn-back { background: none; border: none; color: #3b82f6; font-size: 13px; font-weight: 600; cursor: pointer; padding: 0; display: block; margin-bottom: 4px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }

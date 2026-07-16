@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useOperationsStore } from '@/stores/operations'
 import { useMasterStore } from '@/stores/master'
 import { useProyekStore } from '@/stores/proyek'
+import { fmtDateTime as fmtDt, statusLabel } from '@/composables/useFormat'
 
 const router = useRouter()
 const ops = useOperationsStore()
@@ -63,10 +64,6 @@ async function handleSubmit() {
   finally { submitting.value = false }
 }
 
-function fmtDt(d: string) {
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-function statusLabel(s: string) { return s.replace('_', ' ') }
 
 // SLA badge: sisa waktu / TELAT untuk tiket aktif; ✓ untuk yang selesai
 function slaInfo(t: any): { label: string; cls: string } {
