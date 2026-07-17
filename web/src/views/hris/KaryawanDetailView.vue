@@ -37,6 +37,23 @@ async function handleToggleStatus() {
   }
 }
 
+const deleting = ref(false)
+
+async function handleDelete() {
+  if (!hris.current) return
+  if (!confirm(`Hapus karyawan "${hris.current.nama_lengkap}"? Tindakan ini tidak bisa dibatalkan.`)) return
+  actionError.value = ''
+  deleting.value = true
+  try {
+    await hris.deleteKaryawan(id)
+    router.push('/hris/karyawan')
+  } catch (e: any) {
+    actionError.value = e.response?.data?.message || 'Gagal menghapus karyawan'
+  } finally {
+    deleting.value = false
+  }
+}
+
 async function handleCreateUser() {
   actionError.value = ''
   actionLoading.value = true
@@ -124,6 +141,9 @@ async function handleToggleUserStatus() {
           @click="handleToggleStatus"
         >
           {{ hris.current.status_aktif ? 'Nonaktifkan' : 'Aktifkan' }}
+        </button>
+        <button class="btn-danger" :disabled="deleting" @click="handleDelete">
+          {{ deleting ? 'Menghapus...' : 'Hapus Karyawan' }}
         </button>
       </div>
     </div>
@@ -459,6 +479,7 @@ async function handleToggleUserStatus() {
 .btn-primary { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-secondary { background: #f1f5f9; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #1e40af; cursor: pointer; }
 .btn-danger { background: #fee2e2; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #dc2626; cursor: pointer; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-success { background: #dcfce7; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #15803d; cursor: pointer; }
 
 /* Modal */

@@ -86,6 +86,11 @@ export const useHrisStore = defineStore('hris', {
       return data.data
     },
 
+    async deleteKaryawan(id: number) {
+      await api.delete(`/hris/karyawan/${id}`)
+      this.list = this.list.filter((k) => k.id_karyawan !== id)
+    },
+
     async createUserAccount(id: number, payload: { username: string; password: string; role_ids: number[] }) {
       const { data } = await api.post(`/hris/karyawan/${id}/user`, payload)
       return data.data

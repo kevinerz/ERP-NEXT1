@@ -13,6 +13,12 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "web",
       "port": 5173
+    },
+    {
+      "name": "soperp",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "../soperp", "-l", "8082"],
+      "port": 8082
     }
   ]
 }

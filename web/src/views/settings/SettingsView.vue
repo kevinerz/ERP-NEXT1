@@ -20,7 +20,7 @@
           <input type="file" accept="image/png,image/jpeg,image/webp" @change="handleLogoUpload" hidden />
           <span>{{ uploading ? 'Mengunggah...' : '📁 Pilih Logo' }}</span>
         </label>
-        <p class="hint">Format: PNG/JPG/WebP, maks 2MB. Rekomendasi 400×120px, transparan.</p>
+        <p class="hint">Format: PNG/JPG/WebP, maks 2MB. Rekomendasi persegi 512×512px, transparan, tanpa tulisan (nama brand dirender terpisah).</p>
         <div v-if="logoError" class="save-err">{{ logoError }}</div>
 
         <div class="divider" />
