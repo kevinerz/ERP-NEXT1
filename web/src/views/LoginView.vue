@@ -62,15 +62,15 @@ async function handleLogin() {
         </g>
       </svg>
 
-      <div class="hero-content">
-        <div class="hero-brand">
-          <div class="logo-box">
-            <img v-if="cfg.settings.company_logo_url" :src="cfg.settings.company_logo_url" alt="logo" class="logo-img" />
-            <span v-else class="logo-text">{{ (cfg.settings.company_brand || 'N1').slice(0, 2).toUpperCase() }}</span>
-          </div>
-          <span class="hero-brand-name">ERP {{ cfg.settings.company_brand || 'NEXT1' }}</span>
+      <div class="hero-brand">
+        <div class="logo-box logo-box-hero">
+          <img v-if="cfg.settings.company_logo_url" :src="cfg.settings.company_logo_url" alt="logo" class="logo-img" />
+          <span v-else class="logo-text logo-text-hero">{{ (cfg.settings.company_brand || 'N1').slice(0, 2).toUpperCase() }}</span>
         </div>
+        <span class="hero-brand-name">ERP {{ cfg.settings.company_brand || 'NEXT1' }}</span>
+      </div>
 
+      <div class="hero-content">
         <h1 class="hero-title">Satu platform,<br />seluruh jaringan Anda.</h1>
         <p class="hero-sub">Kelola aset, tiket, proyek, dan pelanggan {{ cfg.settings.company_name || 'PT. Perdana Global Internet' }} dalam satu tempat.</p>
 
@@ -189,7 +189,10 @@ async function handleLogin() {
 }
 
 .hero-content { position: relative; z-index: 1; max-width: 460px; color: #fff; }
-.hero-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 48px; }
+.hero-brand {
+  position: absolute; top: 44px; left: 60px; z-index: 2;
+  display: flex; align-items: center; gap: 12px;
+}
 .hero-brand-name { font-size: 15px; font-weight: 700; letter-spacing: 0.3px; color: #e2e8f0; }
 .hero-title {
   font-size: 34px; font-weight: 800; line-height: 1.25; margin: 0 0 16px;
@@ -222,11 +225,22 @@ async function handleLogin() {
   border-radius: 16px;
   display: flex; align-items: center; justify-content: center;
   margin: 0 auto 16px;
+  padding: 8px;
   box-shadow: 0 8px 20px rgba(59,130,246,0.25);
 }
 .logo-box-mobile { display: none; }
+.logo-box-hero {
+  width: 40px; height: 40px;
+  margin: 0;
+  padding: 6px;
+  border-radius: 11px;
+  background: rgba(255,255,255,0.12);
+  backdrop-filter: blur(4px);
+  box-shadow: none;
+}
 .logo-text { color: #fff; font-size: 22px; font-weight: 800; letter-spacing: -1px; }
-.logo-img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.logo-text-hero { font-size: 15px; }
+.logo-img { width: 100%; height: 100%; object-fit: contain; }
 .login-header h1 { margin: 0; font-size: 22px; font-weight: 700; color: #0f172a; }
 .login-header p { margin: 6px 0 0; font-size: 13px; color: #64748b; }
 .login-form { display: flex; flex-direction: column; gap: 20px; }
