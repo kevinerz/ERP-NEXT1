@@ -165,6 +165,89 @@ async function handleToggleUserStatus() {
       </div>
     </div>
 
+    <!-- Data Pribadi -->
+    <div class="card">
+      <div class="section-header">
+        <h4>Data Pribadi</h4>
+      </div>
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="label">Tempat, Tanggal Lahir</span>
+          <span class="value">{{ hris.current.tempat_lahir || '—' }}, {{ formatDate(hris.current.tgl_lahir) }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Jenis Kelamin</span>
+          <span class="value">{{ hris.current.jenis_kelamin === 'L' ? 'Laki-laki' : hris.current.jenis_kelamin === 'P' ? 'Perempuan' : '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Agama</span>
+          <span class="value">{{ hris.current.agama || '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Status Pernikahan</span>
+          <span class="value">{{ hris.current.status_pernikahan || '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">No. KTP</span>
+          <span class="value mono">{{ hris.current.no_ktp || '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">No. NPWP</span>
+          <span class="value mono">{{ hris.current.no_npwp || '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Pendidikan Terakhir</span>
+          <span class="value">{{ hris.current.pendidikan_terakhir || '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Alamat (sesuai KTP)</span>
+          <span class="value">{{ hris.current.alamat_ktp || '—' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kontak Darurat -->
+    <div class="card">
+      <div class="section-header">
+        <h4>Kontak Darurat</h4>
+      </div>
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="label">Nama</span>
+          <span class="value">{{ hris.current.kontak_darurat_nama || '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">No. HP</span>
+          <span class="value">{{ hris.current.kontak_darurat_hp || '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Hubungan</span>
+          <span class="value">{{ hris.current.kontak_darurat_hubungan || '—' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rekening Bank -->
+    <div class="card">
+      <div class="section-header">
+        <h4>Rekening Bank (Payroll)</h4>
+      </div>
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="label">Nama Bank</span>
+          <span class="value">{{ hris.current.bank_nama || '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">No. Rekening</span>
+          <span class="value mono">{{ hris.current.bank_no_rekening || '—' }}</span>
+        </div>
+        <div class="info-item">
+          <span class="label">Nama Pemilik Rekening</span>
+          <span class="value">{{ hris.current.bank_atas_nama || '—' }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Akun User -->
     <div class="card">
       <div class="section-header">

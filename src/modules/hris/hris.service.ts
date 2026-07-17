@@ -93,10 +93,18 @@ export class HrisService {
     });
     if (existing) throw new ConflictException(`NIP ${dto.nip} sudah digunakan`);
 
+    if (dto.no_ktp) {
+      const ktpConflict = await this.prisma.hrisKaryawan.findUnique({
+        where: { no_ktp: dto.no_ktp },
+      });
+      if (ktpConflict) throw new ConflictException(`No. KTP ${dto.no_ktp} sudah digunakan`);
+    }
+
     return this.prisma.hrisKaryawan.create({
       data: {
         ...dto,
         tgl_bergabung: dto.tgl_bergabung ? new Date(dto.tgl_bergabung) : undefined,
+        tgl_lahir: dto.tgl_lahir ? new Date(dto.tgl_lahir) : undefined,
       },
     });
   }
@@ -111,11 +119,19 @@ export class HrisService {
       if (conflict) throw new ConflictException(`NIP ${dto.nip} sudah digunakan`);
     }
 
+    if (dto.no_ktp) {
+      const ktpConflict = await this.prisma.hrisKaryawan.findFirst({
+        where: { no_ktp: dto.no_ktp, NOT: { id_karyawan: id } },
+      });
+      if (ktpConflict) throw new ConflictException(`No. KTP ${dto.no_ktp} sudah digunakan`);
+    }
+
     return this.prisma.hrisKaryawan.update({
       where: { id_karyawan: id },
       data: {
         ...dto,
         tgl_bergabung: dto.tgl_bergabung ? new Date(dto.tgl_bergabung) : undefined,
+        tgl_lahir: dto.tgl_lahir ? new Date(dto.tgl_lahir) : undefined,
       },
     });
   }
