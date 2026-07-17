@@ -13,6 +13,8 @@ import { HrisService } from './hris.service';
 import { CreateKaryawanDto } from './dto/create-karyawan.dto';
 import { UpdateKaryawanDto } from './dto/update-karyawan.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { CreateInvitationDto } from './dto/create-invitation.dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('hris')
 export class HrisController {
@@ -103,5 +105,25 @@ export class HrisController {
   @Get('departemen')
   getDepartemen() {
     return this.hrisService.getDepartemenList();
+  }
+
+  // ─── UNDANGAN SIGN-IN MANDIRI ───────────────────────────────────
+
+  // POST /api/hris/invitations
+  @Post('invitations')
+  createInvitation(@CurrentUser() user: any, @Body() dto: CreateInvitationDto) {
+    return this.hrisService.createInvitation(user.id_user, dto);
+  }
+
+  // GET /api/hris/invitations
+  @Get('invitations')
+  listInvitations() {
+    return this.hrisService.listInvitations();
+  }
+
+  // DELETE /api/hris/invitations/:id
+  @Delete('invitations/:id')
+  revokeInvitation(@Param('id', ParseIntPipe) id: number) {
+    return this.hrisService.revokeInvitation(id);
   }
 }

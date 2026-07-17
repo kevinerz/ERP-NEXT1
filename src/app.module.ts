@@ -32,6 +32,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { EmailModule } from './modules/email/email.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 
 // Integrations
 import { PrtgModule } from './modules/integrations/prtg/prtg.module';
@@ -78,6 +79,7 @@ import { DigiflazzModule } from './modules/integrations/digiflazz/digiflazz.modu
     ContractsModule,
     NotificationsModule,
     EmailModule,
+    OnboardingModule,
     PublicWoModule,
     ReportsModule,
     AdminModule,

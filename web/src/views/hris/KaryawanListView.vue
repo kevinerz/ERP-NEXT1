@@ -44,9 +44,14 @@ onMounted(() => {
         <h2>Karyawan</h2>
         <p>Data karyawan PT. Perdana Global Internet</p>
       </div>
-      <button class="btn-primary" @click="router.push('/hris/karyawan/tambah')">
-        + Tambah Karyawan
-      </button>
+      <div class="header-actions">
+        <button class="btn-secondary" @click="router.push('/hris/undangan')">
+          🔗 Undang Karyawan Baru
+        </button>
+        <button class="btn-primary" @click="router.push('/hris/karyawan/tambah')">
+          + Tambah Karyawan
+        </button>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -139,6 +144,8 @@ onMounted(() => {
 .page-header h2 { margin: 0; font-size: 22px; color: #0f172a; }
 .page-header p { margin: 4px 0 0; font-size: 13px; color: #64748b; }
 
+.header-actions { display: flex; gap: 10px; }
+
 .btn-primary {
   background: linear-gradient(135deg, #1e40af, #3b82f6);
   color: #fff;
@@ -151,6 +158,19 @@ onMounted(() => {
   white-space: nowrap;
 }
 .btn-primary:hover { opacity: 0.9; }
+
+.btn-secondary {
+  background: #f1f5f9;
+  color: #1e40af;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-secondary:hover { background: #e2e8f0; }
 
 .filters {
   display: flex;

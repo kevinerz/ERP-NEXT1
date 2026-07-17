@@ -5,10 +5,12 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateKaryawanDto } from './dto/create-karyawan.dto';
 import { UpdateKaryawanDto } from './dto/update-karyawan.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { CreateInvitationDto } from './dto/create-invitation.dto';
 
 @Injectable()
 export class HrisService {
@@ -258,6 +260,44 @@ export class HrisService {
       'AR',
       'AP',
     ];
+  }
+
+  // ─── UNDANGAN SIGN-IN MANDIRI (karyawan baru isi data sendiri) ──
+
+  async createInvitation(createdBy: number, dto: CreateInvitationDto) {
+    const token = randomBytes(24).toString('hex');
+    const expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 hari
+
+    return this.prisma.hrisInvitation.create({
+      data: {
+        token,
+        departemen: dto.departemen,
+        jabatan: dto.jabatan,
+        expires_at,
+        created_by: createdBy,
+      },
+    });
+  }
+
+  async listInvitations() {
+    return this.prisma.hrisInvitation.findMany({
+      orderBy: { created_at: 'desc' },
+      include: {
+        admin: { select: { username: true } },
+        karyawan: { select: { nama_lengkap: true } },
+      },
+    });
+  }
+
+  async revokeInvitation(id: number) {
+    const inv = await this.prisma.hrisInvitation.findUnique({ where: { id_invitation: id } });
+    if (!inv) throw new NotFoundException('Undangan tidak ditemukan');
+    if (inv.status !== 'Pending') throw new BadRequestException('Hanya undangan berstatus Pending yang bisa dibatalkan');
+
+    return this.prisma.hrisInvitation.update({
+      where: { id_invitation: id },
+      data: { status: 'Revoked' },
+    });
   }
 
   // ─── HAPUS KARYAWAN (dengan guard pemakaian) ─────────────────

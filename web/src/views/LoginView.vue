@@ -74,6 +74,8 @@ async function handleLogin() {
         </button>
       </form>
 
+      <router-link to="/daftar" class="daftar-link">Karyawan baru? Daftar Akun Baru →</router-link>
+
       <p class="version">v{{ appVersion }}</p>
     </div>
   </div>
@@ -136,5 +138,10 @@ async function handleLogin() {
 }
 .btn-login:hover:not(:disabled) { opacity: 0.92; }
 .btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+.daftar-link {
+  display: block; text-align: center; margin-top: 20px;
+  font-size: 13px; color: #3b82f6; font-weight: 600; text-decoration: none;
+}
+.daftar-link:hover { text-decoration: underline; }
 .version { text-align: center; color: #94a3b8; font-size: 11px; margin: 24px 0 0; }
 </style>

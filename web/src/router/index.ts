@@ -10,6 +10,18 @@ const router = createRouter({
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
     },
+    {
+      path: '/onboarding/:token',
+      name: 'onboarding',
+      component: () => import('@/views/OnboardingView.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/daftar',
+      name: 'daftar',
+      component: () => import('@/views/DaftarView.vue'),
+      meta: { public: true },
+    },
 
     // Protected — semua di bawah AppLayout
     {
@@ -45,6 +57,11 @@ const router = createRouter({
           path: 'hris/karyawan/:id/edit',
           name: 'hris-edit',
           component: () => import('@/views/hris/KaryawanFormView.vue'),
+        },
+        {
+          path: 'hris/undangan',
+          name: 'hris-undangan',
+          component: () => import('@/views/hris/UndanganView.vue'),
         },
         // Master Data
         {
@@ -281,7 +298,7 @@ const router = createRouter({
 
 // Map route name → modul key
 const ROUTE_MODUL: Record<string, string> = {
-  'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris',
+  'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris', 'hris-undangan': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master', 'master-gudang': 'master',
   'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master',
   'sales-dashboard': 'sales', 'sales-lead-list': 'sales', 'sales-lead-detail': 'sales',
@@ -304,6 +321,9 @@ router.beforeEach((to) => {
 
   const loggedIn = auth.user !== null
   const isLogin = to.name === 'login'
+  const isPublic = !!to.meta.public
+
+  if (isPublic) return
 
   // Simpan tujuan asli (mis. dari scan QR label aset) supaya setelah login
   // user diarahkan ke sana, bukan selalu ke Dashboard.

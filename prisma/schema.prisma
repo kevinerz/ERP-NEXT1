@@ -68,8 +68,32 @@ model HrisKaryawan {
   projects_pm         ProjectDelivery[]
   tickets_teknisi     OperationTicket[]
   wo_teknisi          WorkOrder[]        @relation("WoTeknisiInternal")
+  invitation          HrisInvitation?
 
   @@map("hris_karyawan")
+}
+
+// Link undangan sign-in mandiri untuk karyawan baru — token dibuat oleh
+// admin/HR (tanpa isi data), dibagikan manual (WA/dll) ke calon karyawan.
+// Calon karyawan buka link publik, isi semua data sendiri; setelah submit
+// akun otomatis dibuat dengan akses terbatas (modul_akses ['pending']) —
+// admin tetap perlu review & buka akses modul yang sesuai via User Management.
+model HrisInvitation {
+  id_invitation Int       @id @default(autoincrement())
+  token         String    @unique @db.VarChar(64)
+  departemen    String?   @db.VarChar(50)
+  jabatan       String?   @db.VarChar(100)
+  status        String    @default("Pending") @db.VarChar(20)
+  expires_at    DateTime
+  used_at       DateTime?
+  id_karyawan   Int?      @unique
+  created_by    Int
+  created_at    DateTime  @default(now())
+
+  admin    CoreUser      @relation(fields: [created_by], references: [id_user])
+  karyawan HrisKaryawan? @relation(fields: [id_karyawan], references: [id_karyawan])
+
+  @@map("hris_invitations")
 }
 
 model Pelanggan {
@@ -191,6 +215,7 @@ model CoreUser {
   pengajuan_dibuat    PengajuanAset[]      @relation("PengajuanPemohon")
   pengajuan_disetujui PengajuanAset[]      @relation("PengajuanApprover")
   email_account       EmailAccount?
+  invitations_dibuat  HrisInvitation[]
 
   @@map("core_users")
 }
