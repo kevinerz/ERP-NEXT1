@@ -231,6 +231,7 @@ export class HrisService {
       'Management',
       'Sales',
       'Operasional',
+      'Teknisi',
       'Finance',
       'HRD',
       'IT_Internal',
