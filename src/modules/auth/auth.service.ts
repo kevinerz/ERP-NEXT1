@@ -183,6 +183,7 @@ export class AuthService {
         no_hp: user.karyawan.no_hp,
         email: user.karyawan.email,
         tgl_bergabung: user.karyawan.tgl_bergabung,
+        foto_url: user.karyawan.foto_url,
         last_login: user.last_login,
         roles,
         modul_akses,
@@ -206,6 +207,43 @@ export class AuthService {
     });
 
     return { data: { no_hp: karyawan.no_hp, email: karyawan.email }, message: 'Profil diperbarui' };
+  }
+
+  async uploadFoto(userId: number, buffer: Buffer, mimetype: string) {
+    const ALLOWED = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!ALLOWED.includes(mimetype))
+      throw new BadRequestException('Format foto harus PNG, JPG, atau WebP');
+    if (buffer.length > 2 * 1024 * 1024)
+      throw new BadRequestException('Ukuran foto maksimal 2MB');
+
+    const user = await this.prisma.coreUser.findUnique({
+      where: { id_user: userId },
+      select: { id_karyawan: true },
+    });
+    if (!user) throw new NotFoundException('User tidak ditemukan');
+
+    const url = `data:${mimetype};base64,${buffer.toString('base64')}`;
+    await this.prisma.hrisKaryawan.update({
+      where: { id_karyawan: user.id_karyawan },
+      data: { foto_url: url },
+    });
+
+    return { data: { foto_url: url }, message: 'Foto profil diperbarui' };
+  }
+
+  async removeFoto(userId: number) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { id_user: userId },
+      select: { id_karyawan: true },
+    });
+    if (!user) throw new NotFoundException('User tidak ditemukan');
+
+    await this.prisma.hrisKaryawan.update({
+      where: { id_karyawan: user.id_karyawan },
+      data: { foto_url: null },
+    });
+
+    return { message: 'Foto profil dihapus' };
   }
 
   async changePassword(userId: number, dto: { password_lama: string; password_baru: string; konfirmasi: string }) {

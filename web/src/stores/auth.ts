@@ -9,6 +9,7 @@ interface User {
   nama_lengkap: string
   jabatan: string
   departemen: string
+  foto_url?: string | null
   roles: string[]
   modul_akses: string[]  // kosong = akses semua (superadmin)
 }
@@ -81,6 +82,26 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
       localStorage.removeItem('user')
+    },
+
+    async uploadFoto(file: File) {
+      const fd = new FormData()
+      fd.append('file', file)
+      const { data } = await api.post('/auth/me/foto', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      if (this.user) {
+        this.user.foto_url = data.data.foto_url
+        localStorage.setItem('user', JSON.stringify(this.user))
+      }
+    },
+
+    async removeFoto() {
+      await api.delete('/auth/me/foto')
+      if (this.user) {
+        this.user.foto_url = null
+        localStorage.setItem('user', JSON.stringify(this.user))
+      }
     },
   },
 })

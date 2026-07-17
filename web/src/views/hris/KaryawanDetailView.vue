@@ -135,7 +135,8 @@ async function handleToggleUserStatus() {
     <!-- Info Karyawan -->
     <div class="card">
       <div class="card-header">
-        <div class="avatar">{{ hris.current.nama_lengkap.charAt(0).toUpperCase() }}</div>
+        <img v-if="hris.current.foto_url" :src="hris.current.foto_url" alt="" class="avatar-photo" />
+        <div v-else class="avatar">{{ hris.current.nama_lengkap.charAt(0).toUpperCase() }}</div>
         <div>
           <h3>{{ hris.current.nama_lengkap }}</h3>
           <p>{{ hris.current.jabatan }} · {{ hris.current.departemen }}</p>
@@ -417,6 +418,12 @@ async function handleToggleUserStatus() {
 
 .card-header {
   display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
+}
+.avatar-photo {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 .avatar {
   width: 56px; height: 56px;

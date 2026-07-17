@@ -278,7 +278,8 @@ const initials = computed(() => {
           <div class="user-area">
             <button class="user-btn" @click.stop="toggleUserMenu" :class="{ active: showUserMenu }"
               aria-label="Menu pengguna" :aria-expanded="showUserMenu">
-              <div class="user-avatar">{{ initials }}</div>
+              <img v-if="auth.user?.foto_url" :src="auth.user.foto_url" alt="" class="user-avatar-photo" />
+              <div v-else class="user-avatar">{{ initials }}</div>
               <div class="user-info">
                 <div class="user-name">{{ auth.user?.nama_lengkap }}</div>
                 <div class="user-role">{{ auth.user?.roles?.[0] || 'Staff' }}</div>
@@ -636,6 +637,12 @@ const initials = computed(() => {
   border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
   color: #fff; font-weight: 800; font-size: 12px;
+  flex-shrink: 0;
+}
+.user-avatar-photo {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  object-fit: cover;
   flex-shrink: 0;
 }
 .user-info { text-align: left; }

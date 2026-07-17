@@ -56,6 +56,8 @@ model HrisKaryawan {
   bank_no_rekening String? @db.VarChar(50)
   bank_atas_nama   String? @db.VarChar(150)
 
+  foto_url String? @db.LongText
+
   user                CoreUser?
   leads_pic           SalesLead[]        @relation("SalesPic")
   opportunities       SalesOpportunity[] @relation("OppSalesPic")

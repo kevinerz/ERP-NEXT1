@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Patch, Body, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Body, Req, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -62,5 +63,20 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.authService.changePassword(user.id_user, dto);
+  }
+
+  // POST /api/auth/me/foto — upload foto profil sendiri
+  @UseGuards(JwtAuthGuard)
+  @Post('me/foto')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadFoto(@CurrentUser() user: any, @UploadedFile() file: { buffer: Buffer; mimetype: string }) {
+    return this.authService.uploadFoto(user.id_user, file.buffer, file.mimetype);
+  }
+
+  // DELETE /api/auth/me/foto — hapus foto profil sendiri
+  @UseGuards(JwtAuthGuard)
+  @Delete('me/foto')
+  removeFoto(@CurrentUser() user: any) {
+    return this.authService.removeFoto(user.id_user);
   }
 }

@@ -62,8 +62,11 @@ export class HrisService {
       this.prisma.hrisKaryawan.count({ where }),
     ]);
 
+    // foto_url (base64) tidak diikutkan di daftar — cukup ada_foto boolean, bikin payload list membengkak kalau ikut semua
+    const dataRingkas = data.map(({ foto_url, ...k }) => ({ ...k, ada_foto: !!foto_url }));
+
     return {
-      data,
+      data: dataRingkas,
       meta: { total, page, limit, total_pages: Math.ceil(total / limit) },
     };
   }

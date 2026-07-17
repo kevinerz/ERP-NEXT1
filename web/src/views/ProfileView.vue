@@ -8,15 +8,24 @@
     <template v-else>
     <!-- Header Card -->
     <div class="profile-hero">
-      <div class="avatar-circle">{{ initials }}</div>
+      <div class="avatar-wrap">
+        <img v-if="profile?.foto_url" :src="profile.foto_url" alt="Foto profil" class="avatar-photo" />
+        <div v-else class="avatar-circle">{{ initials }}</div>
+        <label class="avatar-edit-btn" :class="{ disabled: fotoUploading }">
+          <input type="file" accept="image/png,image/jpeg,image/webp" hidden :disabled="fotoUploading" @change="handleFotoUpload" />
+          {{ fotoUploading ? '...' : '📷' }}
+        </label>
+      </div>
       <div class="hero-info">
         <h1>{{ profile?.nama_lengkap }}</h1>
         <p class="hero-sub">{{ profile?.jabatan }} · {{ profile?.departemen }}</p>
         <div class="role-badges">
           <span v-for="r in profile?.roles" :key="r" class="badge">{{ r }}</span>
         </div>
+        <button v-if="profile?.foto_url" class="btn-remove-foto" :disabled="fotoUploading" @click="handleFotoRemove">Hapus Foto</button>
       </div>
     </div>
+    <p v-if="fotoError" class="foto-error">{{ fotoError }}</p>
 
     <div class="profile-body">
       <!-- Kiri: Info + Edit -->
@@ -190,6 +199,9 @@ const changingPass = ref(false)
 const passMsg = ref('')
 const passMsgType = ref('success')
 
+const fotoUploading = ref(false)
+const fotoError = ref('')
+
 // ─── COMPUTED ─────────────────────────────────────────
 const initials = computed(() => {
   if (!profile.value?.nama_lengkap) return '?'
@@ -259,6 +271,38 @@ function toggleEdit() {
   editMode.value = !editMode.value
 }
 
+async function handleFotoUpload(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  fotoError.value = ''
+  fotoUploading.value = true
+  try {
+    await auth.uploadFoto(file)
+    profile.value.foto_url = auth.user?.foto_url
+  } catch (err: any) {
+    fotoError.value = err.response?.data?.message || 'Gagal mengunggah foto'
+  } finally {
+    fotoUploading.value = false
+  }
+}
+
+async function handleFotoRemove() {
+  if (!confirm('Hapus foto profil?')) return
+  fotoError.value = ''
+  fotoUploading.value = true
+  try {
+    await auth.removeFoto()
+    profile.value.foto_url = null
+  } catch (err: any) {
+    fotoError.value = err.response?.data?.message || 'Gagal menghapus foto'
+  } finally {
+    fotoUploading.value = false
+  }
+}
+
 async function saveProfile() {
   saving.value = true
   profileMsg.value = ''
@@ -319,14 +363,31 @@ onMounted(fetchProfile)
   gap: 28px;
   color: #fff;
 }
+.avatar-wrap { position: relative; flex-shrink: 0; }
 .avatar-circle {
   width: 80px; height: 80px;
   background: rgba(255,255,255,0.25);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 28px; font-weight: 700;
-  flex-shrink: 0;
 }
+.avatar-photo {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255,255,255,0.4);
+}
+.avatar-edit-btn {
+  position: absolute; bottom: -2px; right: -2px;
+  width: 26px; height: 26px;
+  background: #fff;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.avatar-edit-btn.disabled { opacity: 0.6; cursor: not-allowed; }
 .hero-info h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
 .hero-sub { margin: 0 0 10px; opacity: .85; font-size: 14px; }
 .role-badges { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -336,6 +397,18 @@ onMounted(fetchProfile)
   border-radius: 20px;
   padding: 2px 10px;
   font-size: 12px;
+}
+.btn-remove-foto {
+  background: none; border: none;
+  color: rgba(255,255,255,0.85);
+  font-size: 12px; text-decoration: underline;
+  cursor: pointer; padding: 0; margin-top: 10px;
+}
+.btn-remove-foto:disabled { opacity: 0.5; cursor: not-allowed; }
+.foto-error {
+  background: #fef2f2; border: 1px solid #fecaca;
+  color: #dc2626; border-radius: 8px;
+  padding: 10px 16px; font-size: 13px; margin: 0;
 }
 
 /* Body layout */
