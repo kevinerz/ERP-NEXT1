@@ -246,9 +246,15 @@ export class HrisService {
     return [
       'Management',
       'Sales',
+      'Pre Sales',
+      'CRM',
       'Operasional',
       'Teknisi',
+      'NOC',
+      'Helpdesk',
       'Finance',
+      'AR',
+      'AP',
       'HRD',
       'IT_Internal',
     ];
