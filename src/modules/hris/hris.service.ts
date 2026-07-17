@@ -248,15 +248,12 @@ export class HrisService {
       'Sales',
       'Pre Sales',
       'CRM',
-      'Operasional',
-      'Teknisi',
-      'NOC',
       'Helpdesk',
+      'NOC',
+      'Teknisi',
       'Finance',
       'AR',
       'AP',
-      'HRD',
-      'IT_Internal',
     ];
   }
 
