@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateInvoiceDto, UpdateInvoiceDto, CreatePembayaranDto, GenerateBulkDto,
@@ -209,20 +209,30 @@ export class FinanceService {
   // ─── PEMBAYARAN ──────────────────────────────────────────────
 
   async addPembayaran(id_invoice: number, dto: CreatePembayaranDto, userId?: number) {
-    const inv = await this.prisma.invoice.findUnique({ where: { id_invoice } });
-    if (!inv) throw new NotFoundException('Invoice tidak ditemukan');
-    if (inv.status === 'Draft') throw new BadRequestException('Invoice masih Draft — kirim dulu sebelum menerima pembayaran');
-    if (inv.status === 'Batal') throw new BadRequestException('Invoice sudah dibatalkan');
-    if (inv.status === 'Lunas') throw new BadRequestException('Invoice sudah Lunas');
+    // Cek awal (di luar transaksi) cuma untuk gagal cepat pada kasus umum
+    // (Draft/Batal/Lunas) — validasi SISA TAGIHAN yang sebenarnya wajib
+    // dibaca ulang DI DALAM transaksi (lihat di bawah), supaya dua pembayaran
+    // yang masuk bersamaan tidak sama-sama lolos cek "tidak melebihi sisa"
+    // memakai snapshot basi yang sama (lost update / bypass validasi).
+    const invCheck = await this.prisma.invoice.findUnique({ where: { id_invoice } });
+    if (!invCheck) throw new NotFoundException('Invoice tidak ditemukan');
+    if (invCheck.status === 'Draft') throw new BadRequestException('Invoice masih Draft — kirim dulu sebelum menerima pembayaran');
+    if (invCheck.status === 'Batal') throw new BadRequestException('Invoice sudah dibatalkan');
+    if (invCheck.status === 'Lunas') throw new BadRequestException('Invoice sudah Lunas');
     if (dto.jumlah <= 0) throw new BadRequestException('Jumlah pembayaran harus lebih dari 0');
 
-    const total = Number(inv.total);
-    const sudah = Number(inv.jumlah_dibayar);
-    const sisa = this.round(total - sudah);
-    if (dto.jumlah > sisa + 0.01)
-      throw new BadRequestException(`Jumlah melebihi sisa tagihan (sisa: ${sisa})`);
-
     const result = await this.prisma.$transaction(async (tx) => {
+      const inv = await tx.invoice.findUnique({ where: { id_invoice } });
+      if (!inv) throw new NotFoundException('Invoice tidak ditemukan');
+      if (inv.status === 'Batal') throw new BadRequestException('Invoice sudah dibatalkan');
+      if (inv.status === 'Lunas') throw new BadRequestException('Invoice sudah Lunas');
+
+      const total = Number(inv.total);
+      const sudah = Number(inv.jumlah_dibayar);
+      const sisa = this.round(total - sudah);
+      if (dto.jumlah > sisa + 0.01)
+        throw new BadRequestException(`Jumlah melebihi sisa tagihan (sisa: ${sisa})`);
+
       const bayar = await tx.invoicePembayaran.create({
         data: {
           id_invoice,
@@ -236,11 +246,19 @@ export class FinanceService {
       });
       const dibayarBaru = this.round(sudah + dto.jumlah);
       const statusBaru = this.computeStatus(total, dibayarBaru, inv.tgl_jatuh_tempo, inv.status);
-      const invoice = await tx.invoice.update({
-        where: { id_invoice },
+
+      // Optimistic lock: tulis hanya kalau jumlah_dibayar belum berubah sejak
+      // baris ini dibaca barusan — kalau count 0, ada pembayaran lain yang
+      // commit lebih dulu di celah waktu ini, jangan diam-diam menimpanya.
+      const updated = await tx.invoice.updateMany({
+        where: { id_invoice, jumlah_dibayar: inv.jumlah_dibayar },
         data: { jumlah_dibayar: dibayarBaru, status: statusBaru },
-        include: INVOICE_INCLUDE,
       });
+      if (updated.count === 0) {
+        throw new ConflictException('Invoice baru saja diperbarui oleh transaksi lain — coba lagi');
+      }
+
+      const invoice = await tx.invoice.findUnique({ where: { id_invoice }, include: INVOICE_INCLUDE });
       return { bayar, invoice };
     });
 

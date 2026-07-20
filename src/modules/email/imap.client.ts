@@ -70,6 +70,7 @@ interface PooledConn { client: ImapFlow; timer: NodeJS.Timeout }
 export class ImapClientService implements OnModuleDestroy {
   private readonly logger = new Logger('ImapClient');
   private pool = new Map<string, PooledConn>();
+  private connecting = new Map<string, Promise<ImapFlow>>();
   private folderCache = new Map<string, string>();
   private static readonly IDLE_TIMEOUT_MS = 4 * 60 * 1000;
 
@@ -114,7 +115,28 @@ export class ImapClientService implements OnModuleDestroy {
     }
     if (existing) this.pool.delete(key); // stale — bukan usable lagi
 
-    const client = await this.connect(creds);
+    // Beberapa request bisa datang bersamaan sebelum ada koneksi tercache
+    // (mis. buka halaman Email langsung memicu /account, /folders, /messages
+    // sekaligus) — tanpa ini, masing-masing akan connect+login IMAP sendiri
+    // secara paralel; yang kalah race tidak pernah masuk pool/timer, jadi
+    // koneksi bocor dan providernya kena beban login dobel tanpa perlu.
+    let connectPromise = this.connecting.get(key);
+    if (!connectPromise) {
+      connectPromise = this.connect(creds);
+      this.connecting.set(key, connectPromise);
+      connectPromise.finally(() => this.connecting.delete(key));
+    }
+    const client = await connectPromise;
+
+    // Request lain yang menunggu promise yang sama ini bisa saja sudah
+    // menaruh hasilnya ke pool duluan — jangan bikin entri kedua yang
+    // timer-nya jadi tidak pernah di-clear.
+    const already = this.pool.get(key);
+    if (already && already.client === client) {
+      clearTimeout(already.timer);
+      already.timer = setTimeout(() => this.evict(key, 'idle timeout'), ImapClientService.IDLE_TIMEOUT_MS);
+      return { client, key };
+    }
     const timer = setTimeout(() => this.evict(key, 'idle timeout'), ImapClientService.IDLE_TIMEOUT_MS);
     this.pool.set(key, { client, timer });
     return { client, key };

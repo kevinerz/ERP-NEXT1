@@ -51,13 +51,20 @@ export class SettingsService {
   }
 
   async updateMany(dto: Partial<Record<SettingKey, string>>) {
-    const ops = Object.entries(dto).map(([key, value]) =>
-      this.prisma.appSetting.upsert({
-        where: { key },
-        create: { key, value: value ?? '' },
-        update: { value: value ?? '' },
-      }),
-    );
+    // Saring ke SETTING_KEYS yang dikenal saja — controller memakai
+    // ValidationPipe({whitelist:false}) karena DTO ini cuma type alias (bukan
+    // class), jadi tidak ada whitelisting nyata di level HTTP; benteng
+    // terakhirnya ada di sini supaya key sembarangan tidak ikut ter-upsert.
+    const ops = SETTING_KEYS
+      .filter((key) => Object.prototype.hasOwnProperty.call(dto, key))
+      .map((key) => {
+        const value = dto[key] ?? '';
+        return this.prisma.appSetting.upsert({
+          where: { key },
+          create: { key, value },
+          update: { value },
+        });
+      });
     await this.prisma.$transaction(ops);
     return { message: 'Pengaturan disimpan' };
   }

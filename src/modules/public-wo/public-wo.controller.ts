@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Req, ParseIntPipe } from '@nestjs/common';
 import { PublicWoService } from './public-wo.service';
 import { CreateWoDto, UpdateWoDto, CreateBeritaAcaraDto } from './dto/wo.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('public-wo')
 export class PublicWoController {
@@ -38,5 +39,6 @@ export class PublicWoController {
   ) { return this.publicWoService.createBeritaAcara(id, dto, req.user?.id_user); }
 
   @Delete(':id')
+  @Roles('Admin', 'Director', 'Manager_Ops')
   remove(@Param('id', ParseIntPipe) id: number) { return this.publicWoService.remove(id); }
 }

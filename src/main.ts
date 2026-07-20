@@ -11,6 +11,17 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { ModulAksesGuard } from './common/guards/modul-akses.guard';
 import { TokenBlacklistService } from './modules/auth/token-blacklist.service';
 
+// Node mematikan seluruh proses kalau ada promise rejection yang tak tertangani
+// di mana pun (default sejak Node 15) — satu query gagal di satu tempat yang
+// lupa di-try/catch bisa menjatuhkan seluruh aplikasi. Log saja, jangan biarkan
+// itu terjadi lagi.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 

@@ -13,8 +13,11 @@ import { HrisService } from './hris.service';
 import { CreateKaryawanDto } from './dto/create-karyawan.dto';
 import { UpdateKaryawanDto } from './dto/update-karyawan.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateRolesDto } from './dto/update-roles.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { CreateInvitationDto } from './dto/create-invitation.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('hris')
 export class HrisController {
@@ -59,9 +62,13 @@ export class HrisController {
   }
 
   // ─── USER ACCOUNT ─────────────────────────────────────────────
+  // Endpoint di bawah ini bisa membuat akun, mengganti role (termasuk ke
+  // Admin), dan mereset password siapa saja — wajib dibatasi Admin/Director,
+  // tidak cukup hanya gating modul HRIS (modul_akses kosong = akses semua modul).
 
   // POST /api/hris/karyawan/:id/user
   @Post('karyawan/:id/user')
+  @Roles('Admin', 'Director')
   createUser(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: CreateUserDto,
@@ -71,26 +78,29 @@ export class HrisController {
 
   // PATCH /api/hris/karyawan/:id/user/roles
   @Patch('karyawan/:id/user/roles')
+  @Roles('Admin', 'Director')
   updateRoles(
     @Param('id', ParseIntPipe) id: number,
-    @Body('role_ids') role_ids: number[],
+    @Body() dto: UpdateRolesDto,
   ) {
-    return this.hrisService.updateUserRoles(id, role_ids);
+    return this.hrisService.updateUserRoles(id, dto.role_ids);
   }
 
   // PATCH /api/hris/karyawan/:id/user/toggle-status
   @Patch('karyawan/:id/user/toggle-status')
+  @Roles('Admin', 'Director')
   toggleUserStatus(@Param('id', ParseIntPipe) id: number) {
     return this.hrisService.toggleUserStatus(id);
   }
 
   // PATCH /api/hris/karyawan/:id/user/reset-password
   @Patch('karyawan/:id/user/reset-password')
+  @Roles('Admin', 'Director')
   resetPassword(
     @Param('id', ParseIntPipe) id: number,
-    @Body('new_password') new_password: string,
+    @Body() dto: ResetPasswordDto,
   ) {
-    return this.hrisService.resetPassword(id, new_password);
+    return this.hrisService.resetPassword(id, dto.new_password);
   }
 
   // ─── REFERENSI ────────────────────────────────────────────────

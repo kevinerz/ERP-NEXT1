@@ -177,10 +177,21 @@ export class EmailService {
     return { contentType: m[1], buffer: Buffer.from(m[2], 'base64') };
   }
 
+  /** Settings (company_name dkk) diisi lewat form admin biasa, bukan input
+   * tepercaya — kalau mengandung "<"/'"' harus lolos sebagai teks apa adanya,
+   * bukan ikut jadi HTML/atribut, di setiap email yang keluar. */
+  private escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
   /** Bungkus isi email dengan header (logo+nama perusahaan) dan footer (alamat,
    * kontak, disclaimer) otomatis — dipakai hanya saat KIRIM, bukan saat simpan
    * Draf, supaya draf yang diedit berulang kali tidak menumpuk header/footer. */
-  private buildBrandedEmail(bodyHtml: string, settings: Record<string, string>) {
+  private buildBrandedEmail(bodyHtml: string, settingsRaw: Record<string, string>) {
+    const settings = Object.fromEntries(
+      Object.entries(settingsRaw).map(([k, v]) => [k, this.escapeHtml(String(v ?? ''))]),
+    );
     const name = settings.company_name || 'Next1';
     const tagline = settings.company_tagline || '';
     const address = [settings.company_address, settings.company_city].filter(Boolean).join(', ');
@@ -189,7 +200,7 @@ export class EmailService {
       settings.company_email && `✉️ ${settings.company_email}`,
       settings.company_website && `🌐 ${settings.company_website}`,
     ].filter(Boolean);
-    const logo = this.parseLogoDataUrl(settings.company_logo_url);
+    const logo = this.parseLogoDataUrl(settingsRaw.company_logo_url);
 
     const headerRow = logo
       ? `<td style="padding:14px 16px;vertical-align:middle;width:60px;"><img src="cid:company-logo" alt="${name}" width="44" style="display:block;max-height:44px;height:auto;"/></td>

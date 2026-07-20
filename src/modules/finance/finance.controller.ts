@@ -6,6 +6,7 @@ import { FinanceService } from './finance.service';
 import {
   CreateInvoiceDto, UpdateInvoiceDto, CreatePembayaranDto, GenerateBulkDto,
 } from './dto/invoice.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('finance')
 export class FinanceController {
@@ -24,8 +25,17 @@ export class FinanceController {
     return this.svc.update(id, dto);
   }
   @Post('invoice/:id/kirim') kirim(@Param('id', ParseIntPipe) id: number) { return this.svc.kirim(id); }
-  @Post('invoice/:id/batal') batal(@Param('id', ParseIntPipe) id: number) { return this.svc.batal(id); }
-  @Delete('invoice/:id') remove(@Param('id', ParseIntPipe) id: number) { return this.svc.remove(id); }
+
+  // Batal/hapus invoice & pembayaran mengubah catatan keuangan yang sudah
+  // tercatat — dibatasi peran Finance/Admin/Director, bukan semua user yang
+  // sekadar punya akses modul finance (mis. untuk lihat laporan).
+  @Post('invoice/:id/batal')
+  @Roles('Admin', 'Director', 'Finance')
+  batal(@Param('id', ParseIntPipe) id: number) { return this.svc.batal(id); }
+
+  @Delete('invoice/:id')
+  @Roles('Admin', 'Director', 'Finance')
+  remove(@Param('id', ParseIntPipe) id: number) { return this.svc.remove(id); }
 
   @Post('invoice/:id/pembayaran')
   addPembayaran(
@@ -37,5 +47,6 @@ export class FinanceController {
   }
 
   @Delete('pembayaran/:id')
+  @Roles('Admin', 'Director', 'Finance')
   removePembayaran(@Param('id', ParseIntPipe) id: number) { return this.svc.removePembayaran(id); }
 }
