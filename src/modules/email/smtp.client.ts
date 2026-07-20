@@ -1,5 +1,10 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
+// nodemailer tidak meng-export MailComposer lewat entry utama — hanya lewat
+// submodule ini. Dipakai untuk membangun pesan mentah (RFC822) TANPA benar-benar
+// mengirim, untuk simpan salinan ke Terkirim dan untuk simpan Draf.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const MailComposer = require('nodemailer/lib/mail-composer');
 
 export interface SmtpCreds {
   email_address: string;
@@ -9,11 +14,11 @@ export interface SmtpCreds {
 }
 
 export interface SendMailInput {
-  to: string;
+  to?: string;
   cc?: string;
   bcc?: string;
-  subject: string;
-  html: string;
+  subject?: string;
+  html?: string;
   in_reply_to?: string;
   attachments?: { filename: string; content: Buffer }[];
 }
@@ -53,5 +58,25 @@ export class SmtpClientService {
     } catch (e: any) {
       throw new BadRequestException(`Gagal kirim email: ${e.message}`);
     }
+  }
+
+  /** Bangun pesan mentah RFC822 tanpa mengirim — untuk salinan Terkirim & Draf */
+  buildRaw(creds: SmtpCreds, input: SendMailInput): Promise<Buffer> {
+    const composer = new MailComposer({
+      from: creds.email_address,
+      to: input.to || undefined,
+      cc: input.cc || undefined,
+      bcc: input.bcc || undefined,
+      subject: input.subject || '(tanpa subjek)',
+      html: input.html || '',
+      inReplyTo: input.in_reply_to,
+      references: input.in_reply_to,
+      attachments: input.attachments,
+    });
+    return new Promise((resolve, reject) => {
+      composer.compile().build((err: Error | null, message: Buffer) => {
+        if (err) reject(err); else resolve(message);
+      });
+    });
   }
 }

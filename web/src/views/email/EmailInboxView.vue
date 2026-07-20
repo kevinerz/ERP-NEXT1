@@ -13,6 +13,9 @@ const sanitizedHtml = computed(() =>
   email.current?.html ? DOMPurify.sanitize(email.current.html, { ADD_ATTR: ['target'] }) : '',
 )
 
+const FOLDER_ICON: Record<string, string> = { inbox: '📥', sent: '📤', drafts: '📝', trash: '🗑️', junk: '🚫' }
+function folderIcon(key: string) { return FOLDER_ICON[key] || '📁' }
+
 // ─── CONNECT FORM ─────────────────────────────────────────────
 const connecting = ref(false)
 const connectError = ref('')
@@ -32,6 +35,7 @@ async function handleConnect() {
   connecting.value = true; connectError.value = ''
   try {
     await email.connect(form.value)
+    await email.fetchFolders()
     await loadInbox()
   } catch (e: any) { connectError.value = e.response?.data?.message || 'Gagal terhubung' }
   finally { connecting.value = false }
@@ -42,18 +46,43 @@ async function handleDisconnect() {
   await email.disconnect()
 }
 
-// ─── INBOX ────────────────────────────────────────────────────
+// ─── FOLDER & LIST ────────────────────────────────────────────
 const page = ref(1)
 const search = ref('')
 const selectedUid = ref<number | null>(null)
 
 async function loadInbox() {
-  await email.fetchInbox({ page: page.value, search: search.value || undefined })
+  await email.fetchMessages({ page: page.value, search: search.value || undefined })
 }
 function doSearch() { page.value = 1; loadInbox() }
 function goPage(p: number) { page.value = p; loadInbox() }
 
+async function pilihFolder(key: string) {
+  if (email.currentFolder === key) return
+  page.value = 1; search.value = ''
+  selectedUid.value = null
+  await email.switchFolder(key)
+}
+
+async function bukaEditDraft(uid: number) {
+  await email.fetchMessage(uid)
+  if (!email.current) return
+  editingDraftUid.value = uid
+  composeForm.value = {
+    to: email.current.to || '',
+    cc: '', bcc: '',
+    subject: email.current.subject === '(tanpa subjek)' ? '' : email.current.subject,
+    html: email.current.html || email.current.text || '',
+    in_reply_to: '',
+  }
+  composeFiles.value = []
+  showCc.value = false
+  sendError.value = ''
+  showCompose.value = true
+}
+
 async function openMessage(uid: number) {
+  if (email.currentFolder === 'drafts') { await bukaEditDraft(uid); return }
   selectedUid.value = uid
   await email.fetchMessage(uid)
 }
@@ -66,9 +95,13 @@ async function toggleSeen(m: any, e: Event) {
 }
 
 async function hapusEmail(uid: number) {
-  if (!confirm('Hapus email ini?')) return
+  const pesan = email.currentFolder === 'trash'
+    ? 'Hapus email ini secara permanen? Tidak bisa dikembalikan.'
+    : email.currentFolder === 'drafts' ? 'Hapus draf ini?' : 'Hapus email ini?'
+  if (!confirm(pesan)) return
   try {
-    await email.deleteMessage(uid)
+    if (email.currentFolder === 'drafts') await email.deleteDraft(uid)
+    else await email.deleteMessage(uid)
     if (selectedUid.value === uid) selectedUid.value = null
   } catch { /* error sudah ditampilkan lewat email.error */ }
 }
@@ -85,10 +118,13 @@ const showCompose = ref(false)
 const composeForm = ref({ to: '', cc: '', bcc: '', subject: '', html: '', in_reply_to: '' })
 const composeFiles = ref<File[]>([])
 const sending = ref(false)
+const savingDraft = ref(false)
 const sendError = ref('')
 const showCc = ref(false)
+const editingDraftUid = ref<number | null>(null)
 
 function bukaCompose() {
+  editingDraftUid.value = null
   composeForm.value = { to: '', cc: '', bcc: '', subject: '', html: '', in_reply_to: '' }
   composeFiles.value = []
   showCc.value = false
@@ -97,6 +133,7 @@ function bukaCompose() {
 }
 function bukaBalas() {
   if (!email.current) return
+  editingDraftUid.value = null
   const fromAddr = email.current.from?.match(/<(.+)>/)?.[1] || email.current.from || ''
   composeForm.value = {
     to: fromAddr,
@@ -119,26 +156,42 @@ function handleFileInput(e: Event) {
 function hapusFile(i: number) { composeFiles.value.splice(i, 1) }
 
 function tutupCompose() {
-  if (sending.value) return
+  if (sending.value || savingDraft.value) return
   showCompose.value = false
 }
 
 async function kirimEmail() {
-  if (sending.value) return
+  if (sending.value || savingDraft.value) return
   if (!composeForm.value.to || !composeForm.value.subject) {
     sendError.value = 'Tujuan dan subjek wajib diisi'; return
   }
   sending.value = true; sendError.value = ''
   try {
-    await email.sendMail(composeForm.value, composeFiles.value)
+    await email.sendMail(composeForm.value, composeFiles.value, editingDraftUid.value)
     showCompose.value = false
+    if (email.currentFolder === 'sent' || email.currentFolder === 'drafts') await loadInbox()
   } catch (e: any) { sendError.value = e.response?.data?.message || 'Gagal mengirim email' }
   finally { sending.value = false }
 }
 
+async function simpanDraf() {
+  if (sending.value || savingDraft.value) return
+  savingDraft.value = true; sendError.value = ''
+  try {
+    const newUid = await email.saveDraft(composeForm.value, composeFiles.value, editingDraftUid.value)
+    editingDraftUid.value = newUid ?? editingDraftUid.value
+    showCompose.value = false
+    if (email.currentFolder === 'drafts') await loadInbox()
+  } catch (e: any) { sendError.value = e.response?.data?.message || 'Gagal menyimpan draf' }
+  finally { savingDraft.value = false }
+}
+
 onMounted(async () => {
   await email.fetchAccount()
-  if (email.account) await loadInbox()
+  if (email.account) {
+    await email.fetchFolders()
+    await loadInbox()
+  }
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email.meta.limit)))
@@ -200,6 +253,14 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
         </div>
       </div>
 
+      <div class="folder-tabs">
+        <button v-for="f in email.folders" :key="f.key"
+          :class="['folder-tab', { active: email.currentFolder === f.key }]"
+          @click="pilihFolder(f.key)">
+          {{ folderIcon(f.key) }} {{ f.label }}
+        </button>
+      </div>
+
       <div class="filters">
         <input v-model="search" @keyup.enter="doSearch" placeholder="🔍 Cari subjek / pengirim / isi..." class="search-input" />
         <button class="btn-search" @click="doSearch">Cari</button>
@@ -209,7 +270,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 
       <div class="split">
         <div class="list-pane">
-          <div v-if="email.loading" class="loading">Memuat inbox...</div>
+          <div v-if="email.loading" class="loading">Memuat email...</div>
           <div v-else-if="!email.list.length" class="empty">Tidak ada email</div>
           <div v-else class="msg-list">
             <div v-for="m in email.list" :key="m.uid"
@@ -221,8 +282,12 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
               </div>
               <div class="msg-subject">{{ m.subject }} <span v-if="m.hasAttachments">📎</span></div>
               <div class="msg-actions">
-                <button class="link-btn" @click="toggleSeen(m, $event)">{{ m.seen ? 'Tandai belum dibaca' : 'Tandai dibaca' }}</button>
-                <button class="link-btn danger" @click.stop="hapusEmail(m.uid)">Hapus</button>
+                <button v-if="email.currentFolder !== 'drafts'" class="link-btn" @click="toggleSeen(m, $event)">
+                  {{ m.seen ? 'Tandai belum dibaca' : 'Tandai dibaca' }}
+                </button>
+                <button class="link-btn danger" @click.stop="hapusEmail(m.uid)">
+                  {{ email.currentFolder === 'trash' ? 'Hapus Permanen' : email.currentFolder === 'drafts' ? 'Hapus Draf' : 'Hapus' }}
+                </button>
               </div>
             </div>
           </div>
@@ -239,7 +304,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
           <div v-else class="msg-detail">
             <div class="detail-header">
               <h3>{{ email.current.subject }}</h3>
-              <button class="btn-primary sm" @click="bukaBalas">↩️ Balas</button>
+              <button v-if="email.currentFolder !== 'sent'" class="btn-primary sm" @click="bukaBalas">↩️ Balas</button>
             </div>
             <div class="detail-meta">
               <div><strong>Dari:</strong> {{ email.current.from }}</div>
@@ -265,7 +330,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
     <!-- ─── MODAL COMPOSE ─── -->
     <div v-if="showCompose" class="modal-overlay" @click.self="tutupCompose">
       <div class="modal">
-        <h3>✏️ Tulis Email</h3>
+        <h3>{{ editingDraftUid ? '📝 Edit Draf' : '✏️ Tulis Email' }}</h3>
         <div class="field">
           <label>Kepada</label>
           <input v-model="composeForm.to" placeholder="tujuan@email.com" />
@@ -302,8 +367,11 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
         </div>
         <p v-if="sendError" class="msg err">{{ sendError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" :disabled="sending" @click="tutupCompose">Batal</button>
-          <button class="btn-submit" @click="kirimEmail" :disabled="sending">
+          <button class="btn-cancel" :disabled="sending || savingDraft" @click="tutupCompose">Batal</button>
+          <button class="btn-draft" :disabled="sending || savingDraft" @click="simpanDraf">
+            {{ savingDraft ? 'Menyimpan...' : '📝 Simpan Draf' }}
+          </button>
+          <button class="btn-submit" @click="kirimEmail" :disabled="sending || savingDraft">
             {{ sending ? 'Mengirim...' : 'Kirim' }}
           </button>
         </div>
@@ -329,8 +397,9 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .field label { font-size: 13px; font-weight: 600; color: #374151; }
 .field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; font-family: inherit; }
 .field input:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
-.btn-submit { width: 100%; padding: 10px; margin-top: 6px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-submit { padding: 10px 18px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.connect-card .btn-submit { width: 100%; margin-top: 6px; }
 .msg { font-size: 13px; margin: 8px 0; }
 .msg.err { color: #dc2626; }
 
@@ -341,6 +410,11 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .btn-primary { padding: 10px 18px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-primary.sm { padding: 6px 14px; font-size: 13px; }
 .btn-secondary { padding: 10px 16px; background: #fff; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+.folder-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.folder-tab { padding: 8px 14px; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; }
+.folder-tab:hover { background: #f8fafc; }
+.folder-tab.active { background: #1e40af; border-color: #1e40af; color: #fff; }
 
 .filters { display: flex; gap: 8px; margin-bottom: 14px; }
 .search-input { flex: 1; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
@@ -386,4 +460,6 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-draft { padding: 9px 18px; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-weight: 600; color: #334155; cursor: pointer; }
+.btn-draft:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

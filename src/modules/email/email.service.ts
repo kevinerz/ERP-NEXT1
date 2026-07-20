@@ -1,12 +1,23 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SecretCryptoService } from '../../common/crypto/secret-crypto.service';
-import { ImapClientService } from './imap.client';
+import { ImapClientService, FolderKind } from './imap.client';
 import { SmtpClientService } from './smtp.client';
-import { ConnectEmailDto, SendEmailDto } from './dto/email.dto';
+import { ConnectEmailDto, SendEmailDto, SaveDraftDto } from './dto/email.dto';
+
+const FOLDER_KEYS: FolderKind[] = ['inbox', 'sent', 'drafts', 'trash', 'junk'];
+const FOLDER_LABELS: Record<FolderKind, string> = {
+  inbox: 'Kotak Masuk',
+  sent: 'Terkirim',
+  drafts: 'Draf',
+  trash: 'Sampah',
+  junk: 'Spam',
+};
 
 @Injectable()
 export class EmailService {
+  private readonly logger = new Logger('EmailService');
+
   constructor(
     private prisma: PrismaService,
     private crypto: SecretCryptoService,
@@ -80,66 +91,132 @@ export class EmailService {
     }
   }
 
-  async listInbox(userId: number, query: { page?: number; limit?: number; search?: string }) {
+  private imapCreds(account: { email_address: string; imap_host: string; imap_port: number }, password: string) {
+    return { email_address: account.email_address, imap_host: account.imap_host, imap_port: account.imap_port, password };
+  }
+  private smtpCreds(account: { email_address: string; smtp_host: string; smtp_port: number }, password: string) {
+    return { email_address: account.email_address, smtp_host: account.smtp_host, smtp_port: account.smtp_port, password };
+  }
+
+  private normalizeFolder(folder?: string): FolderKind {
+    const key = (folder || 'inbox') as FolderKind;
+    if (!FOLDER_KEYS.includes(key)) throw new BadRequestException(`Folder tidak dikenal: ${folder}`);
+    return key;
+  }
+
+  async listFolders(userId: number) {
     const { account, password } = await this.resolveCreds(userId);
+    const creds = this.imapCreds(account, password);
+    const data = await Promise.all(
+      FOLDER_KEYS.map(async (key) => ({ key, label: FOLDER_LABELS[key], path: await this.imap.resolveFolder(creds, key) })),
+    );
+    return { data };
+  }
+
+  async listMessages(userId: number, folder: string | undefined, query: { page?: number; limit?: number; search?: string }) {
+    const key = this.normalizeFolder(folder);
+    const { account, password } = await this.resolveCreds(userId);
+    const creds = this.imapCreds(account, password);
     const page = Number(query.page) || 1;
     const limit = Math.min(Number(query.limit) || 25, 100);
     try {
-      const result = await this.imap.listInbox(
-        { email_address: account.email_address, imap_host: account.imap_host, imap_port: account.imap_port, password },
-        { page, limit, search: query.search },
-      );
-      return result;
+      const path = await this.imap.resolveFolder(creds, key);
+      return await this.imap.listMessages(creds, path, { page, limit, search: query.search });
     } catch (e: any) {
       await this.prisma.emailAccount.update({ where: { id_user: userId }, data: { last_error: e.message } }).catch(() => {});
       throw e;
     }
   }
 
-  async getMessage(userId: number, uid: number) {
+  async getMessage(userId: number, folder: string | undefined, uid: number) {
+    const key = this.normalizeFolder(folder);
     const { account, password } = await this.resolveCreds(userId);
-    const data = await this.imap.getMessage(
-      { email_address: account.email_address, imap_host: account.imap_host, imap_port: account.imap_port, password },
-      uid,
-    );
+    const creds = this.imapCreds(account, password);
+    const path = await this.imap.resolveFolder(creds, key);
+    // Buka draf tidak perlu menandai terbaca — bukan surat masuk yang "dibaca"
+    const data = await this.imap.getMessage(creds, path, uid, key !== 'drafts');
     return { data };
   }
 
-  async getAttachment(userId: number, uid: number, partId: number) {
+  async getAttachment(userId: number, folder: string | undefined, uid: number, partId: number) {
+    const key = this.normalizeFolder(folder);
     const { account, password } = await this.resolveCreds(userId);
-    return this.imap.getAttachment(
-      { email_address: account.email_address, imap_host: account.imap_host, imap_port: account.imap_port, password },
-      uid, partId,
-    );
+    const creds = this.imapCreds(account, password);
+    const path = await this.imap.resolveFolder(creds, key);
+    return this.imap.getAttachment(creds, path, uid, partId);
   }
 
-  async setSeen(userId: number, uid: number, seen: boolean) {
+  async setSeen(userId: number, folder: string | undefined, uid: number, seen: boolean) {
+    const key = this.normalizeFolder(folder);
     const { account, password } = await this.resolveCreds(userId);
-    await this.imap.setSeen(
-      { email_address: account.email_address, imap_host: account.imap_host, imap_port: account.imap_port, password },
-      uid, seen,
-    );
+    const creds = this.imapCreds(account, password);
+    const path = await this.imap.resolveFolder(creds, key);
+    await this.imap.setSeen(creds, path, uid, seen);
     return { message: seen ? 'Ditandai dibaca' : 'Ditandai belum dibaca' };
   }
 
-  async deleteMessage(userId: number, uid: number) {
+  async deleteMessage(userId: number, folder: string | undefined, uid: number) {
+    const key = this.normalizeFolder(folder);
     const { account, password } = await this.resolveCreds(userId);
-    await this.imap.deleteMessage(
-      { email_address: account.email_address, imap_host: account.imap_host, imap_port: account.imap_port, password },
-      uid,
-    );
-    return { message: 'Email dihapus' };
+    const creds = this.imapCreds(account, password);
+    const path = await this.imap.resolveFolder(creds, key);
+    if (key === 'trash') {
+      await this.imap.expungeMessage(creds, path, uid);
+      return { message: 'Email dihapus permanen' };
+    }
+    const trashPath = await this.imap.resolveFolder(creds, 'trash');
+    await this.imap.moveMessage(creds, path, uid, trashPath);
+    return { message: 'Email dipindah ke Sampah' };
   }
 
   async sendMail(userId: number, dto: SendEmailDto, files?: { originalname: string; buffer: Buffer }[]) {
     const { account, password } = await this.resolveCreds(userId);
-    await this.smtp.sendMail(
-      { email_address: account.email_address, smtp_host: account.smtp_host, smtp_port: account.smtp_port, password },
-      {
-        to: dto.to, cc: dto.cc, bcc: dto.bcc, subject: dto.subject, html: dto.html, in_reply_to: dto.in_reply_to,
-        attachments: files?.map((f) => ({ filename: f.originalname, content: f.buffer })),
-      },
-    );
+    const smtpCreds = this.smtpCreds(account, password);
+    const input = {
+      to: dto.to, cc: dto.cc, bcc: dto.bcc, subject: dto.subject, html: dto.html, in_reply_to: dto.in_reply_to,
+      attachments: files?.map((f) => ({ filename: f.originalname, content: f.buffer })),
+    };
+    await this.smtp.sendMail(smtpCreds, input);
+
+    // Simpan salinan ke folder Terkirim — SMTP submission polos tidak otomatis
+    // menyalin ke Sent di kebanyakan provider (termasuk Hostinger), jadi harus
+    // di-APPEND manual lewat IMAP. Email SUDAH terkirim di titik ini, jadi
+    // kegagalan langkah ini tidak boleh membuat request gagal — cukup dicatat.
+    try {
+      const imapCreds = this.imapCreds(account, password);
+      const raw = await this.smtp.buildRaw(smtpCreds, input);
+      const sentPath = await this.imap.resolveFolder(imapCreds, 'sent');
+      await this.imap.appendMessage(imapCreds, sentPath, raw, ['\\Seen']);
+      if (dto.draft_uid) {
+        const draftsPath = await this.imap.resolveFolder(imapCreds, 'drafts');
+        await this.imap.expungeMessage(imapCreds, draftsPath, Number(dto.draft_uid)).catch(() => {});
+      }
+    } catch (e: any) {
+      this.logger.warn(`Gagal simpan salinan Terkirim/hapus draf untuk user ${userId}: ${e.message}`);
+    }
     return { message: 'Email terkirim' };
+  }
+
+  async saveDraft(userId: number, dto: SaveDraftDto, files?: { originalname: string; buffer: Buffer }[]) {
+    const { account, password } = await this.resolveCreds(userId);
+    const imapCreds = this.imapCreds(account, password);
+    const raw = await this.smtp.buildRaw(this.smtpCreds(account, password), {
+      to: dto.to, cc: dto.cc, bcc: dto.bcc, subject: dto.subject, html: dto.html,
+      attachments: files?.map((f) => ({ filename: f.originalname, content: f.buffer })),
+    });
+    const draftsPath = await this.imap.resolveFolder(imapCreds, 'drafts');
+    const result: any = await this.imap.appendMessage(imapCreds, draftsPath, raw, ['\\Draft']);
+    if (dto.replace_uid) {
+      await this.imap.expungeMessage(imapCreds, draftsPath, Number(dto.replace_uid)).catch(() => {});
+    }
+    return { message: 'Draf disimpan', data: { uid: result?.uid ?? null } };
+  }
+
+  async deleteDraft(userId: number, uid: number) {
+    const { account, password } = await this.resolveCreds(userId);
+    const imapCreds = this.imapCreds(account, password);
+    const draftsPath = await this.imap.resolveFolder(imapCreds, 'drafts');
+    await this.imap.expungeMessage(imapCreds, draftsPath, uid);
+    return { message: 'Draf dihapus' };
   }
 }
