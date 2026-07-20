@@ -147,6 +147,7 @@ const PAGE_TITLES: Record<string, string> = {
   "settings":             "Pengaturan Aplikasi",
   "prtg-settings":        "PRTG — Monitoring",
   "email-inbox":          "Email",
+  "changelog":            "Changelog",
 }
 
 const pageTitle = computed(() => PAGE_TITLES[route.name as string] || "ERP NEXT1")
@@ -205,11 +206,11 @@ const initials = computed(() => {
         </template>
       </nav>
 
-      <!-- Version -->
-      <div class="sidebar-version" v-if="sidebarOpen || mobileNavOpen">
+      <!-- Version — klik untuk lihat riwayat perubahan -->
+      <RouterLink to="/changelog" class="sidebar-version" v-if="sidebarOpen || mobileNavOpen" title="Lihat changelog">
         <span class="ver-text">v{{ appVersion }}</span>
         <span class="ver-hash">{{ appHash }}</span>
-      </div>
+      </RouterLink>
 
       <!-- Collapse toggle -->
       <button class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">
@@ -437,14 +438,19 @@ const initials = computed(() => {
 }
 .nav-label { white-space: nowrap; }
 
-/* Version */
+/* Version — link ke changelog */
 .sidebar-version {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 20px;
   opacity: 0.4;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
 }
+.sidebar-version:hover { opacity: 0.9; }
 .ver-text { font-size: 11px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
 .ver-hash { font-size: 10px; color: #94a3b8; font-family: monospace; }
 

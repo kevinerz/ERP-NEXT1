@@ -286,6 +286,12 @@ const router = createRouter({
           name: 'profile',
           component: () => import('@/views/ProfileView.vue'),
         },
+        // Changelog
+        {
+          path: 'changelog',
+          name: 'changelog',
+          component: () => import('@/views/ChangelogView.vue'),
+        },
         // Catch-all dalam layout
         {
           path: ':pathMatch(.*)*',
