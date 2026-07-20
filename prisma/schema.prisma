@@ -290,6 +290,7 @@ model SitePelanggan {
   jurnal_ar       IntegrationJurnalAr[]
   invoices        Invoice[]
   prtg_mapping    IntegrationPrtgMapping[]
+  ruijie_mapping  IntegrationRuijieMapping[]
 
   @@map("site_pelanggan")
 }
@@ -1005,6 +1006,11 @@ model IntegrationRcmsWebhook {
   @@map("integration_rcms_webhooks")
 }
 
+// Catatan: Ruijie Cloud tidak menyediakan webhook/callback push resmi ke
+// pihak ketiga (alarm cuma bisa dikirim ke Email/WeChat internal Ruijie) —
+// jadi tabel ini sekarang diisi oleh POLLING (RuijieService.poll(), mirip
+// PRTG), bukan menerima HTTP callback masuk. Nama tabel dipertahankan biar
+// tidak perlu migrasi rename.
 model IntegrationRuijieWebhook {
   id_webhook          Int      @id @default(autoincrement())
   ruijie_device_id    String?  @db.VarChar(100)
@@ -1019,6 +1025,35 @@ model IntegrationRuijieWebhook {
   ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
 
   @@map("integration_ruijie_webhooks")
+}
+
+// Konfigurasi koneksi Ruijie Cloud Open API. Single-row (id=1), mirip
+// IntegrationPrtgConfig. app_secret DIENKRIPSI (SecretCryptoService) —
+// beda dari passhash PRTG yang polos, di sini kita lakukan yang benar sejak awal.
+model IntegrationRuijieConfig {
+  id             Int      @id @default(1)
+  base_url       String?  @db.VarChar(255)
+  appid          String?  @db.VarChar(100)
+  app_secret_enc String?  @db.VarChar(500)
+  updated_at     DateTime @default(now()) @updatedAt
+
+  @@map("integration_ruijie_config")
+}
+
+// Mapping manual "project" Ruijie Cloud (representasi satu lokasi/site di
+// Ruijie Cloud — device APs/switch/gateway dikelompokkan per project) ↔
+// site pelanggan kita. Satu project Ruijie = satu site (site punya banyak
+// device di bawahnya, bukan mapping per-device seperti PRTG).
+model IntegrationRuijieMapping {
+  id_mapping        Int      @id @default(autoincrement())
+  ruijie_project_id String   @unique @db.VarChar(100)
+  project_name      String   @db.VarChar(150)
+  id_site           Int
+  created_at        DateTime @default(now())
+
+  site SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+
+  @@map("integration_ruijie_mapping")
 }
 
 // ============================================================
