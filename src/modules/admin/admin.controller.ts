@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Body, Param, Query, ParseIntPipe, UseGuar
 import { AdminService } from './admin.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateAdminUserDto, ResetPasswordDto } from './dto/admin.dto';
 
 @UseGuards(RolesGuard)
@@ -22,7 +23,9 @@ export class AdminController {
   }
 
   @Patch('users/:id/toggle-aktif')
-  toggleAktif(@Param('id', ParseIntPipe) id: number) { return this.svc.toggleAktif(id); }
+  toggleAktif(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
+    return this.svc.toggleAktif(id, user.id_user);
+  }
 
   @Patch('users/:id/reset-password')
   resetPassword(@Param('id', ParseIntPipe) id: number, @Body() dto: ResetPasswordDto) {

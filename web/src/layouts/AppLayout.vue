@@ -57,7 +57,8 @@ function goNotif(n: any) {
 }
 
 async function logout() {
-  try { await api.post('/auth/logout') } catch {}
+  const refresh_token = localStorage.getItem('refresh_token') || undefined
+  try { await api.post('/auth/logout', { refresh_token }) } catch {}
   notif.stopPolling()
   auth.logout()
   router.push('/login')

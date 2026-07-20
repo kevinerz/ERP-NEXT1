@@ -35,10 +35,10 @@ export class AuthController {
   // POST /api/auth/logout
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  logout(@CurrentUser() user: any, @Req() req: any) {
+  logout(@CurrentUser() user: any, @Req() req: any, @Body('refresh_token') refresh_token?: string) {
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '';
     const token = req.headers.authorization?.replace('Bearer ', '') || '';
-    return this.authService.logout(user, token, ip);
+    return this.authService.logout(user, token, ip, refresh_token);
   }
 
   // GET /api/auth/me

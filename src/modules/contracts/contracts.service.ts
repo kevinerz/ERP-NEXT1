@@ -105,6 +105,13 @@ export class ContractsService {
         });
         return { data, message: `Kontrak ${nomor_kontrak} berhasil dibuat` };
       } catch (e: any) {
+        // P2002 di sini bisa berarti dua hal: nomor_kontrak bentrok (retry aman,
+        // nomor baru akan beda) atau id_quotation sudah dipakai kontrak lain
+        // yang baru saja commit di request lain (retry TIDAK akan membantu —
+        // harus gagal jelas, bukan diam-diam mencoba lagi 5x lalu error mentah).
+        if (e.code === 'P2002' && String(e.meta?.target || '').includes('id_quotation')) {
+          throw new BadRequestException('Quotation ini baru saja dipakai untuk membuat kontrak lain — muat ulang halaman');
+        }
         if (e.code !== 'P2002' || attempt === 4) throw e;
       }
     }

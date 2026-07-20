@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
@@ -65,9 +65,33 @@ export class AdminService {
     return { data: { id_user: id, modul_akses: valid }, message: 'Hak akses modul diperbarui' };
   }
 
-  async toggleAktif(id: number) {
-    const user = await this.prisma.coreUser.findUnique({ where: { id_user: id } });
+  async toggleAktif(id: number, currentUserId?: number) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { id_user: id },
+      include: { user_roles: { include: { role: true } } },
+    });
     if (!user) throw new NotFoundException('User tidak ditemukan');
+
+    // Cegah kunci-diri-sendiri: nonaktifkan akun sendiri lewat sini, atau
+    // nonaktifkan Admin aktif terakhir yang tersisa (kalau akun Admin itu
+    // sendiri dibobol/salah pencet, masih ada Admin lain yang bisa perbaiki).
+    if (id === currentUserId) {
+      throw new BadRequestException('Tidak bisa menonaktifkan akun sendiri');
+    }
+    const isAdmin = user.user_roles.some((ur) => ur.role.nama_role === 'Admin');
+    if (user.is_aktif && isAdmin) {
+      const adminAktifLain = await this.prisma.coreUser.count({
+        where: {
+          is_aktif: true,
+          id_user: { not: id },
+          user_roles: { some: { role: { nama_role: 'Admin' } } },
+        },
+      });
+      if (adminAktifLain === 0) {
+        throw new BadRequestException('Tidak bisa menonaktifkan — ini satu-satunya akun Admin aktif yang tersisa');
+      }
+    }
+
     const updated = await this.prisma.coreUser.update({
       where: { id_user: id },
       data: { is_aktif: !user.is_aktif },

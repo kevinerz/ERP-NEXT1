@@ -711,7 +711,7 @@ model KontrakLayanan {
   id_kontrak        Int       @id @default(autoincrement())
   id_site           Int
   id_layanan        Int
-  id_quotation      Int?
+  id_quotation      Int?      @unique
   id_dokumen_legal  Int?
   nomor_kontrak     String    @unique @db.VarChar(100)
   tgl_mulai         DateTime  @db.Date

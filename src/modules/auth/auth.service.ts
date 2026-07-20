@@ -95,8 +95,8 @@ export class AuthService {
     };
   }
 
-  async logout(user: { id_user: number; username: string; nama_lengkap?: string }, token?: string, ip?: string) {
-    // Blacklist token sampai kedaluwarsa agar tidak bisa dipakai lagi setelah logout
+  async logout(user: { id_user: number; username: string; nama_lengkap?: string }, token?: string, ip?: string, refreshToken?: string) {
+    // Blacklist access token sampai kedaluwarsa agar tidak bisa dipakai lagi setelah logout
     if (token) {
       try {
         const payload: any = this.jwt.verify(token, { secret: this.config.getOrThrow<string>('JWT_SECRET') });
@@ -104,6 +104,18 @@ export class AuthService {
         if (sisaDetik > 0) this.tokenBlacklist.add(token, sisaDetik);
       } catch {
         // token tak valid/expired — tak perlu di-blacklist
+      }
+    }
+    // Refresh token juga wajib dicabut — kalau tidak, refresh token yang
+    // bocor/dicuri tetap bisa dipakai bikin access token baru sampai 7 hari
+    // meski user sudah "logout".
+    if (refreshToken) {
+      try {
+        const payload: any = this.jwt.verify(refreshToken, { secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET') });
+        const sisaDetik = payload.exp ? Math.floor(payload.exp - Date.now() / 1000) : 0;
+        if (sisaDetik > 0) this.tokenBlacklist.add(refreshToken, sisaDetik);
+      } catch {
+        // refresh token tak valid/expired — tak perlu di-blacklist
       }
     }
 
@@ -121,6 +133,9 @@ export class AuthService {
   }
 
   async refresh(dto: RefreshTokenDto) {
+    if (this.tokenBlacklist.isBlacklisted(dto.refresh_token)) {
+      throw new UnauthorizedException('Refresh token sudah tidak berlaku, silakan masuk kembali');
+    }
     try {
       const payload = this.jwt.verify<JwtPayload>(dto.refresh_token, {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),

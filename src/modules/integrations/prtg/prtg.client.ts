@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { SecretCryptoService } from '../../../common/crypto/secret-crypto.service';
 
 export interface PrtgSensor {
   objid: number;
@@ -23,12 +24,23 @@ interface PrtgCreds { base_url: string; username: string; passhash: string; sour
 export class PrtgClient {
   private readonly logger = new Logger('PrtgClient');
 
-  constructor(private config: ConfigService, private prisma: PrismaService) {}
+  constructor(private config: ConfigService, private prisma: PrismaService, private crypto: SecretCryptoService) {}
+
+  // Passhash lama (sebelum fix ini) tersimpan polos di DB — biar tidak
+  // memutus koneksi yang sudah jalan, kalau bukan ciphertext valid anggap
+  // itu nilai lama apa adanya. Simpanan BARU (lewat updateConfig) selalu terenkripsi.
+  private decryptPasshash(stored: string): string {
+    try {
+      return this.crypto.decrypt(stored);
+    } catch {
+      return stored;
+    }
+  }
 
   private async creds(): Promise<PrtgCreds> {
     const row = await this.prisma.integrationPrtgConfig.findUnique({ where: { id: 1 } }).catch(() => null);
     if (row && row.base_url && row.username && row.passhash) {
-      return { base_url: row.base_url.replace(/\/$/, ''), username: row.username, passhash: row.passhash, source: 'db' };
+      return { base_url: row.base_url.replace(/\/$/, ''), username: row.username, passhash: this.decryptPasshash(row.passhash), source: 'db' };
     }
     const base_url = (this.config.get<string>('PRTG_BASE_URL') || '').replace(/\/$/, '');
     const username = this.config.get<string>('PRTG_USERNAME') || '';

@@ -4,6 +4,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { SLA_JAM } from '../../operations/operations.service';
 import { PrtgClient, PrtgSensor } from './prtg.client';
+import { SecretCryptoService } from '../../../common/crypto/secret-crypto.service';
 
 const STATUS_TIKET_AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
 
@@ -21,6 +22,7 @@ export class PrtgService {
     private prisma: PrismaService,
     private prtg: PrtgClient,
     private notif: NotificationsService,
+    private crypto: SecretCryptoService,
   ) {}
 
   async getStatus() {
@@ -250,13 +252,13 @@ export class PrtgService {
         id: 1,
         base_url: dto.base_url || null,
         username: dto.username || null,
-        passhash: dto.passhash || null,
+        passhash: dto.passhash ? this.crypto.encrypt(dto.passhash) : null,
       },
       update: {
         base_url: dto.base_url !== undefined ? dto.base_url : undefined,
         username: dto.username !== undefined ? dto.username : undefined,
         // Passhash kosong dari form (tidak diubah user) jangan menimpa yang sudah ada
-        passhash: dto.passhash ? dto.passhash : undefined,
+        passhash: dto.passhash ? this.crypto.encrypt(dto.passhash) : undefined,
       },
     });
     return { message: 'Konfigurasi PRTG disimpan' };
