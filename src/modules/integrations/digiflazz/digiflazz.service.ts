@@ -1,12 +1,16 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SecretCryptoService } from '../../../common/crypto/secret-crypto.service';
 import { DigiflazzClient } from './digiflazz.client';
 import { ConnectDigiflazzDto, BeliDigiflazzDto } from './dto/digiflazz.dto';
 
+const DUPLIKAT_WINDOW_MS = 2 * 60 * 1000; // cegah klik ganda/retry setelah timeout ke Digiflazz
+
 @Injectable()
 export class DigiflazzService {
+  private readonly logger = new Logger(DigiflazzService.name);
+
   constructor(
     private prisma: PrismaService,
     private crypto: SecretCryptoService,
@@ -60,6 +64,24 @@ export class DigiflazzService {
     if (!sumber) throw new NotFoundException('Sumber internet (SIM) tidak ditemukan');
     if (!sumber.nomor_pelanggan_isp) throw new BadRequestException('Nomor MSISDN belum diisi di data SIM ini — lengkapi dulu di Master Site');
 
+    // Idempotency guard — cegah top-up ganda kalau user klik ulang setelah request sebelumnya timeout
+    const duplikat = await this.prisma.simTopup.findFirst({
+      where: {
+        id_sumber: dto.id_sumber,
+        buyer_sku_code: dto.buyer_sku_code,
+        metode: 'Digiflazz',
+        status_transaksi: { in: ['Sukses', 'Pending'] },
+        tgl_topup: { gte: new Date(Date.now() - DUPLIKAT_WINDOW_MS) },
+      },
+      orderBy: { tgl_topup: 'desc' },
+    });
+    if (duplikat) {
+      throw new BadRequestException(
+        `Sudah ada transaksi top-up untuk SIM ini ${duplikat.status_transaksi === 'Pending' ? 'yang masih diproses' : 'yang baru saja berhasil'} ` +
+        `(ref: ${duplikat.ref_id}). Cek status transaksi sebelum mencoba lagi.`,
+      );
+    }
+
     const ref_id = `ERP-${Date.now()}-${randomBytes(3).toString('hex')}`;
     const result = await this.client.buy(creds, {
       buyer_sku_code: dto.buyer_sku_code,
@@ -68,30 +90,46 @@ export class DigiflazzService {
     });
 
     const status_transaksi = result.status === 'Sukses' ? 'Sukses' : result.status === 'Gagal' ? 'Gagal' : 'Pending';
-    const data = await this.prisma.simTopup.create({
-      data: {
-        id_sumber: dto.id_sumber,
-        id_aset_sim: sumber.id_aset_sim,
-        id_site: sumber.id_site,
-        jenis_topup: 'Data',
-        nominal: result.price ?? 0,
-        harga_modal: result.price ?? 0,
-        tgl_topup: new Date(),
-        id_user: userId || null,
-        keterangan: dto.keterangan,
-        metode: 'Digiflazz',
-        buyer_sku_code: dto.buyer_sku_code,
-        customer_no: sumber.nomor_pelanggan_isp,
-        ref_id,
-        status_transaksi,
-        serial_number: result.sn,
-        provider_response: JSON.stringify(result),
-      },
-      include: {
-        sumber: { include: { vendor: { select: { nama_vendor: true } } } },
-        site: { select: { kode_site: true, nama_site: true } },
-      },
-    });
+
+    let data;
+    try {
+      data = await this.prisma.simTopup.create({
+        data: {
+          id_sumber: dto.id_sumber,
+          id_aset_sim: sumber.id_aset_sim,
+          id_site: sumber.id_site,
+          jenis_topup: 'Data',
+          nominal: result.price ?? 0,
+          harga_modal: result.price ?? 0,
+          tgl_topup: new Date(),
+          id_user: userId || null,
+          keterangan: dto.keterangan,
+          metode: 'Digiflazz',
+          buyer_sku_code: dto.buyer_sku_code,
+          customer_no: sumber.nomor_pelanggan_isp,
+          ref_id,
+          status_transaksi,
+          serial_number: result.sn,
+          provider_response: JSON.stringify(result),
+        },
+        include: {
+          sumber: { include: { vendor: { select: { nama_vendor: true } } } },
+          site: { select: { kode_site: true, nama_site: true } },
+        },
+      });
+    } catch (err) {
+      // Transaksi sudah dieksekusi/diproses di Digiflazz tapi gagal dicatat lokal —
+      // jangan biarkan hilang tanpa jejak, ini menyangkut uang riil.
+      this.logger.error(
+        `GAGAL SIMPAN CATATAN TOPUP setelah request ke Digiflazz — ref_id=${ref_id} status=${status_transaksi} ` +
+        `id_sumber=${dto.id_sumber} response=${JSON.stringify(result)}`,
+        (err as Error)?.stack,
+      );
+      throw new BadRequestException(
+        `Transaksi ke Digiflazz ${status_transaksi === 'Sukses' ? 'BERHASIL' : 'sudah diproses'} (ref: ${ref_id}) ` +
+        'tapi GAGAL dicatat di sistem. JANGAN mengulangi pembelian ini — hubungi admin untuk rekonsiliasi manual.',
+      );
+    }
 
     return { data, message: result.message || `Transaksi ${status_transaksi}` };
   }

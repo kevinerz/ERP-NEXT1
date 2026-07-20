@@ -565,6 +565,7 @@ model OperationTicket {
 
   @@index([status_tiket])
   @@index([status_tiket, tgl_open])
+  @@index([sla_due, sla_breached])
   @@map("operation_tickets")
 }
 
@@ -598,6 +599,7 @@ model WorkOrder {
   pengiriman   PengirimanPerangkat[]
   mutasi       GudangMutasiAset[]
 
+  @@index([status_wo, tgl_jadwal])
   @@map("work_orders")
 }
 
@@ -729,6 +731,7 @@ model KontrakLayanan {
   projects  ProjectDelivery[]
   invoices  Invoice[]
 
+  @@index([status_kontrak, tgl_berakhir])
   @@map("kontrak_layanan")
 }
 

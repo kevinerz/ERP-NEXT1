@@ -311,6 +311,7 @@ export class HrisService {
           select: {
             tickets_teknisi: true, wo_teknisi: true, projects_pm: true,
             leads_pic: true, opportunities: true, quotations: true,
+            activities: true, surveys: true,
           },
         },
       },
@@ -325,6 +326,8 @@ export class HrisService {
     if (c.leads_pic > 0) inUse.push(`${c.leads_pic} lead`);
     if (c.opportunities > 0) inUse.push(`${c.opportunities} opportunity`);
     if (c.quotations > 0) inUse.push(`${c.quotations} quotation`);
+    if (c.activities > 0) inUse.push(`${c.activities} aktivitas sales`);
+    if (c.surveys > 0) inUse.push(`${c.surveys} survey presales`);
     if (inUse.length)
       throw new BadRequestException(
         `Karyawan '${row.nama_lengkap}' tidak bisa dihapus karena masih dipakai di: ${inUse.join(', ')}. ` +

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../../modules/notifications/notifications.service';
+import { TokenBlacklistService } from '../../modules/auth/token-blacklist.service';
 
 /**
  * SchedulerService — tugas otomatis harian.
@@ -17,7 +18,17 @@ export class SchedulerService {
   constructor(
     private prisma: PrismaService,
     private notif: NotificationsService,
+    private tokenBlacklist: TokenBlacklistService,
   ) {}
+
+  // Tiap jam — buang token blacklist yang sudah kedaluwarsa (cegah Map tumbuh tanpa batas)
+  @Cron('0 * * * *')
+  cekBlacklistToken() {
+    const sebelum = this.tokenBlacklist.size;
+    this.tokenBlacklist.cleanup();
+    const sesudah = this.tokenBlacklist.size;
+    if (sebelum !== sesudah) this.logger.log(`Token blacklist dibersihkan: ${sebelum - sesudah} entri kedaluwarsa dibuang`);
+  }
 
   // Tiap hari 00:15 WIB (server diasumsikan Asia/Jakarta; kalau UTC tetap jalan harian)
   @Cron('15 0 * * *')

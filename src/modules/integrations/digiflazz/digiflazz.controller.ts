@@ -21,6 +21,8 @@ export class DigiflazzController {
   @Get('price-list')
   getPriceList(@Query('category') category?: string) { return this.svc.getPriceList(category); }
 
+  // Mengeluarkan saldo/kredit riil — dibatasi role yang sama dengan approval pengajuan aset
+  @Roles('Admin', 'Director', 'Manager_Ops')
   @Post('beli')
   beli(@Body() dto: BeliDigiflazzDto, @Req() req: any) { return this.svc.beli(dto, req.user?.id_user); }
 

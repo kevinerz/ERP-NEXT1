@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import DOMPurify from 'dompurify'
 import { useEmailStore } from '@/stores/email'
 import { fmtDateTime } from '@/composables/useFormat'
 
 const email = useEmailStore()
+
+// Body email dari IMAP adalah HTML mentah dari pengirim luar — wajib disanitasi
+// sebelum v-html, kalau tidak siapa saja yang kirim email ke inbox ini bisa
+// menyuntikkan <script> yang jalan di origin aplikasi (stored XSS).
+const sanitizedHtml = computed(() =>
+  email.current?.html ? DOMPurify.sanitize(email.current.html, { ADD_ATTR: ['target'] }) : '',
+)
 
 // ─── CONNECT FORM ─────────────────────────────────────────────
 const connecting = ref(false)
@@ -244,7 +252,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
                 📎 {{ a.filename }} <span class="text-gray">({{ fmtSize(a.size) }})</span>
               </div>
             </div>
-            <div class="detail-body" v-if="email.current.html" v-html="email.current.html"></div>
+            <div class="detail-body" v-if="email.current.html" v-html="sanitizedHtml"></div>
             <pre class="detail-body-text" v-else-if="email.current.text">{{ email.current.text }}</pre>
             <p v-else class="empty">(Email tanpa isi)</p>
           </div>

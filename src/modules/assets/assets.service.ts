@@ -201,6 +201,19 @@ export class AssetsService {
           throw new BadRequestException('Gudang tujuan tidak ditemukan / nonaktif');
       }
 
+      // Deploy: validasi site tujuan di depan (sebelumnya cuma dicek FK di akhir → 500 mentah)
+      if (dto.jenis_mutasi === 'Deploy' && dto.id_site_tujuan) {
+        const siteTujuan = await tx.sitePelanggan.findUnique({ where: { id_site: dto.id_site_tujuan } });
+        if (!siteTujuan) throw new BadRequestException('Site tujuan tidak ditemukan');
+      }
+
+      // Return ke gudang tertentu (opsional): validasi tujuan bila diisi
+      if (dto.jenis_mutasi === 'Return' && dto.id_gudang_tujuan) {
+        const gTujuanReturn = await tx.masterGudang.findUnique({ where: { id_gudang: dto.id_gudang_tujuan } });
+        if (!gTujuanReturn || !gTujuanReturn.is_aktif)
+          throw new BadRequestException('Gudang tujuan Return tidak ditemukan / nonaktif');
+      }
+
       // ── STATE MACHINE ────────────────────────────────────────
       // Serialized (1 unit ber-serial): status yang berpindah.
       // Non-serialized (stok): jumlah stok yang berpindah, status tetap Di_Gudang.

@@ -14,7 +14,10 @@ function downloadBlob(content: BlobPart, filename: string, mime: string) {
 
 function escapeCell(v: any): string {
   if (v === null || v === undefined) return ''
-  const s = String(v)
+  let s = String(v)
+  // Cegah CSV/formula injection — Excel/LibreOffice mengeksekusi cell yang diawali
+  // =, +, -, @ sebagai formula. Prefix kutip agar dibaca sebagai teks literal.
+  if (/^[=+\-@]/.test(s)) s = `'${s}`
   // Bungkus dengan quote bila mengandung koma, kutip, atau newline
   if (/[",\n;]/.test(s)) return `"${s.replace(/"/g, '""')}"`
   return s

@@ -550,34 +550,38 @@ export class MasterService {
 
   // Perangkat
   async createPerangkat(dto: CreatePerangkatDto) {
-    const data = await this.prisma.perangkatSite.create({
-      data: {
-        ...dto,
-        status_perangkat: dto.status_perangkat || 'Aktif',
-        tgl_pasang: dto.tgl_pasang ? new Date(dto.tgl_pasang) : undefined,
-      },
-      include: {
-        aset: { select: { kode_aset: true, nama_perangkat: true } },
-        site: { select: { kode_site: true, nama_site: true } },
-      },
-    });
-
-    // Update status aset → Terpasang dan catat mutasi Deploy
-    if (dto.id_aset) {
-      await this.prisma.gudangAset.update({
-        where: { id_aset: dto.id_aset },
-        data: { status_aset: 'Terpasang', id_site: dto.id_site },
-      });
-      await this.prisma.gudangMutasiAset.create({
+    const data = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.perangkatSite.create({
         data: {
-          id_aset: dto.id_aset,
-          jenis_mutasi: 'Deploy',
-          jumlah: 1,
-          id_site_tujuan: dto.id_site,
-          keterangan: `Deploy ke site via Site Detail`,
+          ...dto,
+          status_perangkat: dto.status_perangkat || 'Aktif',
+          tgl_pasang: dto.tgl_pasang ? new Date(dto.tgl_pasang) : undefined,
+        },
+        include: {
+          aset: { select: { kode_aset: true, nama_perangkat: true } },
+          site: { select: { kode_site: true, nama_site: true } },
         },
       });
-    }
+
+      // Update status aset → Terpasang dan catat mutasi Deploy
+      if (dto.id_aset) {
+        await tx.gudangAset.update({
+          where: { id_aset: dto.id_aset },
+          data: { status_aset: 'Terpasang', id_site: dto.id_site },
+        });
+        await tx.gudangMutasiAset.create({
+          data: {
+            id_aset: dto.id_aset,
+            jenis_mutasi: 'Deploy',
+            jumlah: 1,
+            id_site_tujuan: dto.id_site,
+            keterangan: `Deploy ke site via Site Detail`,
+          },
+        });
+      }
+
+      return created;
+    });
 
     const aset = (data as any).aset;
     const site = (data as any).site;
@@ -605,32 +609,36 @@ export class MasterService {
   }
 
   async deletePerangkat(id: number) {
-    const perangkat = await this.prisma.perangkatSite.findUnique({
-      where: { id_perangkat: id },
-      include: {
-        aset: { select: { kode_aset: true, nama_perangkat: true } },
-        site: { select: { nama_site: true } },
-      },
-    });
-
-    await this.prisma.perangkatSite.delete({ where: { id_perangkat: id } });
-
-    // Kembalikan status aset → Di_Gudang dan catat mutasi Return
-    if (perangkat?.id_aset) {
-      await this.prisma.gudangAset.update({
-        where: { id_aset: perangkat.id_aset },
-        data: { status_aset: 'Di_Gudang', id_site: null },
-      });
-      await this.prisma.gudangMutasiAset.create({
-        data: {
-          id_aset: perangkat.id_aset,
-          jenis_mutasi: 'Return',
-          jumlah: 1,
-          id_site_asal: perangkat.id_site,
-          keterangan: `Return dari site — perangkat dilepas`,
+    const perangkat = await this.prisma.$transaction(async (tx) => {
+      const found = await tx.perangkatSite.findUnique({
+        where: { id_perangkat: id },
+        include: {
+          aset: { select: { kode_aset: true, nama_perangkat: true } },
+          site: { select: { nama_site: true } },
         },
       });
-    }
+
+      await tx.perangkatSite.delete({ where: { id_perangkat: id } });
+
+      // Kembalikan status aset → Di_Gudang dan catat mutasi Return
+      if (found?.id_aset) {
+        await tx.gudangAset.update({
+          where: { id_aset: found.id_aset },
+          data: { status_aset: 'Di_Gudang', id_site: null },
+        });
+        await tx.gudangMutasiAset.create({
+          data: {
+            id_aset: found.id_aset,
+            jenis_mutasi: 'Return',
+            jumlah: 1,
+            id_site_asal: found.id_site,
+            keterangan: `Return dari site — perangkat dilepas`,
+          },
+        });
+      }
+
+      return found;
+    });
 
     const aset = (perangkat as any)?.aset;
     const site = (perangkat as any)?.site;

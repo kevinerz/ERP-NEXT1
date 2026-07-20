@@ -12,7 +12,7 @@ export class SecretCryptoService {
   private readonly key: Buffer;
 
   constructor(config: ConfigService) {
-    const base = config.get<string>('JWT_SECRET') || 'insecure-dev-fallback';
+    const base = config.getOrThrow<string>('JWT_SECRET');
     this.key = createHash('sha256').update(`${base}:secret-crypto`).digest();
   }
 

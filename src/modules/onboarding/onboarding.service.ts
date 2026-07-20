@@ -23,7 +23,7 @@ export class OnboardingService {
     private hris: HrisService,
     config: ConfigService,
   ) {
-    this.hmacKey = config.get<string>('JWT_SECRET') || 'insecure-dev-fallback';
+    this.hmacKey = config.getOrThrow<string>('JWT_SECRET');
   }
 
   private async getValidInvitation(token: string) {

@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify'
 import { useSettingsStore } from '@/stores/settings'
 import QRCode from 'qrcode'
 
@@ -20,11 +21,19 @@ function getCompany() {
   }
 }
 
+// Field freeform (catatan, deskripsi tugas, dll.) diselipkan mentah ke template
+// HTML di bawah — tanpa sanitasi, isi field itu bisa membawa <script>/onerror
+// yang jalan saat dokumen dibuka untuk di-print (stored XSS lintas-user).
+// WHOLE_DOCUMENT: true supaya <style>/<head> dari template tetap utuh.
+function sanitizeFullDocument(html: string): string {
+  return DOMPurify.sanitize(html, { WHOLE_DOCUMENT: true, ADD_TAGS: ['style'], FORCE_BODY: true })
+}
+
 export function printDocument(html: string) {
   const win = window.open('', '_blank', 'width=900,height=1000,scrollbars=yes')
   if (!win) { alert('Pop-up diblokir browser. Izinkan pop-up untuk halaman ini.'); return }
   win.document.open()
-  win.document.write(html)
+  win.document.write(sanitizeFullDocument(html))
   win.document.close()
   win.onload = () => { win.focus(); win.print() }
 }
@@ -824,6 +833,6 @@ export async function printLabelAset(asetList: any[]) {
   </body></html>`
 
   win.document.open()
-  win.document.write(html)
+  win.document.write(sanitizeFullDocument(html))
   win.document.close()
 }
