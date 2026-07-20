@@ -20,7 +20,7 @@ export interface SendMailInput {
   subject?: string;
   html?: string;
   in_reply_to?: string;
-  attachments?: { filename: string; content: Buffer }[];
+  attachments?: { filename: string; content: Buffer; cid?: string; contentType?: string }[];
 }
 
 @Injectable()
