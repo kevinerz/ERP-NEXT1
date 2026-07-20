@@ -179,6 +179,11 @@ const router = createRouter({
           component: () => import('@/views/integrations/PrtgSettingsView.vue'),
         },
         {
+          path: 'integrations/uptime-kuma',
+          name: 'uptime-kuma-settings',
+          component: () => import('@/views/integrations/UptimeKumaSettingsView.vue'),
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('@/views/settings/SettingsView.vue'),
@@ -316,6 +321,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'stok-opname-list': 'assets', 'stok-opname-detail': 'assets',
   'pengajuan-aset-list': 'assets', 'pengajuan-aset-detail': 'assets',
   'prtg-settings': 'prtg',
+  'uptime-kuma-settings': 'uptime-kuma',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'laporan': 'reports',
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',

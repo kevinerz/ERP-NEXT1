@@ -93,6 +93,7 @@ const adminMenu = [
   { label: 'Users',        emoji: '⚙️', to: '/admin/users'  },
   { label: 'Activity Log', emoji: '📝', to: '/admin/logs'   },
   { label: 'PRTG',         emoji: '📡', to: '/integrations/prtg' },
+  { label: 'Uptime Kuma',  emoji: '🟢', to: '/integrations/uptime-kuma' },
   { label: 'Pengaturan',   emoji: '🔩', to: '/settings'     },
 ]
 
@@ -146,6 +147,7 @@ const PAGE_TITLES: Record<string, string> = {
   "profile":              "Profil Saya",
   "settings":             "Pengaturan Aplikasi",
   "prtg-settings":        "PRTG — Monitoring",
+  "uptime-kuma-settings": "Uptime Kuma — Monitoring",
   "email-inbox":          "Email",
   "changelog":            "Changelog",
 }

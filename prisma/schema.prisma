@@ -289,7 +289,8 @@ model SitePelanggan {
   topup           SimTopup[]
   jurnal_ar       IntegrationJurnalAr[]
   invoices        Invoice[]
-  prtg_mapping    IntegrationPrtgMapping[]
+  prtg_mapping       IntegrationPrtgMapping[]
+  uptimekuma_mapping IntegrationUptimeKumaMapping[]
 
   @@map("site_pelanggan")
 }
@@ -559,9 +560,10 @@ model OperationTicket {
   work_orders     WorkOrder[]
   logs            OperationTicketLog[]
   rca             OperationRca?
-  prtg_webhooks   IntegrationPrtgWebhook[]
-  rcms_webhooks   IntegrationRcmsWebhook[]
-  ruijie_webhooks IntegrationRuijieWebhook[]
+  prtg_webhooks       IntegrationPrtgWebhook[]
+  rcms_webhooks       IntegrationRcmsWebhook[]
+  ruijie_webhooks     IntegrationRuijieWebhook[]
+  uptimekuma_webhooks IntegrationUptimeKumaWebhook[]
 
   @@index([status_tiket])
   @@index([status_tiket, tgl_open])
@@ -1019,6 +1021,53 @@ model IntegrationRuijieWebhook {
   ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
 
   @@map("integration_ruijie_webhooks")
+}
+
+// ── UPTIME KUMA ──────────────────────────────────────────────
+// Beda dari PRTG/RCMS/Ruijie: Uptime Kuma self-hosted & punya webhook
+// notification bawaan, jadi ini WEBHOOK RECEIVER asli (bukan polling).
+// Otentikasi pakai token rahasia di path URL (Uptime Kuma sendiri tidak
+// punya mekanisme signature/HMAC) — lihat UptimeKumaService.
+
+// Single-row (id=1). webhook_token dibuat sistem (bukan diisi user),
+// ditampilkan sekali di UI untuk disalin ke URL webhook Uptime Kuma.
+model IntegrationUptimeKumaConfig {
+  id               Int      @id @default(1)
+  base_url         String?  @db.VarChar(255) // buat fitur audit (opsional) — panggil status-page API publik
+  status_page_slug String?  @db.VarChar(150)
+  webhook_token    String?  @db.VarChar(100)
+  updated_at       DateTime @default(now()) @updatedAt
+
+  @@map("integration_uptimekuma_config")
+}
+
+// Mapping manual monitor Uptime Kuma ↔ site pelanggan. Satu monitor = satu
+// site (beda dari Ruijie yg per-project — Uptime Kuma monitor granularitasnya
+// sudah per-host/per-site).
+model IntegrationUptimeKumaMapping {
+  id_mapping   Int      @id @default(autoincrement())
+  monitor_id   String   @unique @db.VarChar(50)
+  monitor_name String   @db.VarChar(150)
+  id_site      Int
+  created_at   DateTime @default(now())
+
+  site SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+
+  @@map("integration_uptimekuma_mapping")
+}
+
+model IntegrationUptimeKumaWebhook {
+  id_webhook          Int      @id @default(autoincrement())
+  monitor_id          String?  @db.VarChar(50)
+  monitor_name        String?  @db.VarChar(150)
+  status_monitor      String?  @db.VarChar(20) // up / down
+  pesan_raw           String?  @db.Text
+  id_ticket_terbentuk Int?
+  diterima_pada       DateTime @default(now())
+
+  ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
+
+  @@map("integration_uptimekuma_webhooks")
 }
 
 // ============================================================

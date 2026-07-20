@@ -41,6 +41,7 @@ import { RuijieModule } from './modules/integrations/ruijie/ruijie.module';
 import { MekariModule } from './modules/integrations/mekari/mekari.module';
 import { SocialchatModule } from './modules/integrations/socialchat/socialchat.module';
 import { DigiflazzModule } from './modules/integrations/digiflazz/digiflazz.module';
+import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.module';
 
 @Module({
   imports: [
@@ -93,6 +94,7 @@ import { DigiflazzModule } from './modules/integrations/digiflazz/digiflazz.modu
     MekariModule,
     SocialchatModule,
     DigiflazzModule,
+    UptimeKumaModule,
   ],
   providers: [
     // Global rate-limit guard
