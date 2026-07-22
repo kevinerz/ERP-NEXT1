@@ -27,13 +27,44 @@ export class PrtgService {
 
   async getStatus() {
     const info = await this.prtg.statusInfo();
+    const is_aktif = await this.isEnabled();
     return {
       data: {
         ...info,
-        pesan: info.configured
-          ? `Polling aktif tiap 5 menit (kredensial dari ${info.source === 'db' ? 'Pengaturan PRTG' : 'env server'})`
-          : 'Isi kredensial PRTG lewat Pengaturan PRTG (atau PRTG_BASE_URL/USERNAME/PASSHASH di server)',
+        is_aktif,
+        pesan: !is_aktif
+          ? 'Polling PRTG DIJEDA — tidak ada pengecekan otomatis sampai diaktifkan lagi'
+          : info.configured
+            ? `Polling aktif tiap 5 menit (kredensial dari ${info.source === 'db' ? 'Pengaturan PRTG' : 'env server'})`
+            : 'Isi kredensial PRTG lewat Pengaturan PRTG (atau PRTG_BASE_URL/USERNAME/PASSHASH di server)',
       },
+    };
+  }
+
+  /** Polling aktif? Default true kalau row config belum ada. Fail-safe: kalau
+   * query error (mis. kolom is_aktif belum di-migrate), anggap aktif — jangan
+   * sampai melempar di dalam cron dan menjatuhkan proses. */
+  async isEnabled(): Promise<boolean> {
+    try {
+      const row = await this.prisma.integrationPrtgConfig.findUnique({ where: { id: 1 } });
+      return row?.is_aktif ?? true;
+    } catch (e: any) {
+      this.logger.warn(`Cek status aktif PRTG gagal (anggap aktif): ${e.message}`);
+      return true;
+    }
+  }
+
+  /** Aktif/jeda polling — dipanggil dari tombol toggle di UI. */
+  async setAktif(aktif: boolean) {
+    await this.prisma.integrationPrtgConfig.upsert({
+      where: { id: 1 },
+      create: { id: 1, is_aktif: aktif },
+      update: { is_aktif: aktif },
+    });
+    this.logger.log(`Polling PRTG di-${aktif ? 'AKTIFKAN' : 'JEDA'}`);
+    return {
+      data: { is_aktif: aktif },
+      message: aktif ? 'Polling PRTG diaktifkan' : 'Polling PRTG dijeda — hemat resource',
     };
   }
 
@@ -79,6 +110,8 @@ export class PrtgService {
 
   @Cron('*/5 * * * *')
   async poll() {
+    // Jeda manual (tombol nonaktif) — berhenti sebelum sentuh API/DB apa pun.
+    if (!(await this.isEnabled())) return { data: null, message: 'Polling PRTG sedang dijeda' };
     if (!(await this.prtg.isConfigured())) return;
     let downSensors: PrtgSensor[];
     try {

@@ -15,6 +15,20 @@ async function fetchStatus() {
   try { status.value = (await api.get('/prtg/status')).data.data } catch {}
 }
 
+const toggling = ref(false)
+async function toggleAktif() {
+  if (!status.value || toggling.value) return
+  const mauAktif = !status.value.is_aktif
+  if (!mauAktif && !confirm('Jeda polling PRTG? Tidak ada pengecekan otomatis (tiket auto) sampai diaktifkan lagi.')) return
+  toggling.value = true
+  try {
+    await api.patch('/prtg/toggle', { aktif: mauAktif })
+    await fetchStatus()
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal mengubah status polling')
+  } finally { toggling.value = false }
+}
+
 // ─── KONEKSI ──────────────────────────────────────────────────
 const configForm = ref({ base_url: '', username: '', passhash: '' })
 const configHasPasshash = ref(false)
@@ -137,8 +151,12 @@ onMounted(async () => {
     </div>
 
     <div class="status-bar" v-if="status">
-      <span class="status-dot" :class="status.configured ? 'ok' : 'off'"></span>
+      <span class="status-dot" :class="(status.is_aktif && status.configured) ? 'ok' : 'off'"></span>
       <span>{{ status.pesan }}</span>
+      <button v-if="bisaKelolaKoneksi" class="toggle-btn" :class="{ paused: !status.is_aktif }"
+        :disabled="toggling" @click="toggleAktif">
+        {{ toggling ? '...' : (status.is_aktif ? '⏸ Jeda Polling' : '▶ Aktifkan Polling') }}
+      </button>
     </div>
 
     <div class="tabs">
@@ -276,6 +294,9 @@ onMounted(async () => {
 .status-dot { width: 8px; height: 8px; border-radius: 50%; }
 .status-dot.ok { background: #22c55e; }
 .status-dot.off { background: #ef4444; }
+.toggle-btn { margin-left: auto; padding: 6px 14px; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; background: #fef2f2; color: #dc2626; }
+.toggle-btn.paused { background: #f0fdf4; color: #15803d; }
+.toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1.5px solid #e2e8f0; }
 .tab { padding: 10px 16px; background: none; border: none; border-bottom: 2px solid transparent; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }

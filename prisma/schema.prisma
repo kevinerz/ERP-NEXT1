@@ -970,6 +970,7 @@ model IntegrationPrtgConfig {
   base_url   String?  @db.VarChar(255)
   username   String?  @db.VarChar(100)
   passhash   String?  @db.VarChar(100)
+  is_aktif   Boolean  @default(true) // false = polling 5-menit dijeda (hemat resource)
   updated_at DateTime @default(now()) @updatedAt
 
   @@map("integration_prtg_config")

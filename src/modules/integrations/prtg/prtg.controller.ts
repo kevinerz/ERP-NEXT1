@@ -16,6 +16,11 @@ export class PrtgController {
   @Post('poll')
   poll() { return this.prtgService.poll(); }
 
+  // Aktif/jeda polling — Admin/Director
+  @Roles('Admin', 'Director')
+  @Patch('toggle')
+  toggle(@Body() dto: { aktif: boolean }) { return this.prtgService.setAktif(!!dto.aktif); }
+
   // ─── KONFIGURASI (Admin/Director — menyentuh kredensial) ────────
 
   @Roles('Admin', 'Director')
