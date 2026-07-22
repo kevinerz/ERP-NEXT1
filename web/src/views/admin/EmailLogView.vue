@@ -101,7 +101,14 @@ async function sendTest() {
     testOk.value = r.data.message || 'Email test terkirim'
     await Promise.all([fetchStats(), fetchLogs()])
   } catch (e: any) {
-    testErr.value = e.response?.data?.message || 'Gagal mengirim email test'
+    const res = e.response
+    if (!res) {
+      testErr.value = `Tidak ada respons dari server (${e.message || 'network error'}). Kemungkinan koneksi SMTP timeout / deploy belum selesai.`
+    } else {
+      const m = res.data?.message
+      const msg = Array.isArray(m) ? m.join(', ') : (m || (typeof res.data === 'string' ? res.data.slice(0, 200) : 'tanpa detail'))
+      testErr.value = `Gagal (HTTP ${res.status}): ${msg}`
+    }
   } finally { sending.value = false }
 }
 </script>

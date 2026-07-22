@@ -34,6 +34,12 @@ export class SmtpClientService {
       port: creds.smtp_port,
       secure: creds.smtp_port === 465,
       auth: { user: creds.email_address, pass: creds.password },
+      // Timeout eksplisit — di shared hosting koneksi SMTP keluar bisa
+      // menggantung; tanpa ini request bisa hang sampai proxy balas 502/504.
+      // Lebih baik gagal cepat dengan pesan jelas.
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
     });
   }
 
