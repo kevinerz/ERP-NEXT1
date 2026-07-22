@@ -73,6 +73,37 @@ function fmtTime(d: string) {
 const hasFilter = computed(() =>
   fStatus.value || fModul.value || fDari.value || fSampai.value || fSearch.value,
 )
+
+// ─── Test kirim ──────────────────────────────────────────────
+const showTest    = ref(false)
+const testTo      = ref('')
+const testSubject = ref('')
+const testMessage = ref('')
+const sending     = ref(false)
+const testOk      = ref('')
+const testErr     = ref('')
+
+function openTest() {
+  testTo.value = ''; testSubject.value = ''; testMessage.value = ''
+  testOk.value = ''; testErr.value = ''
+  showTest.value = true
+}
+
+async function sendTest() {
+  if (!testTo.value.trim()) { testErr.value = 'Isi alamat email tujuan'; return }
+  sending.value = true; testOk.value = ''; testErr.value = ''
+  try {
+    const r = await api.post('/mailer/test', {
+      to: testTo.value.trim(),
+      subject: testSubject.value.trim() || undefined,
+      message: testMessage.value.trim() || undefined,
+    })
+    testOk.value = r.data.message || 'Email test terkirim'
+    await Promise.all([fetchStats(), fetchLogs()])
+  } catch (e: any) {
+    testErr.value = e.response?.data?.message || 'Gagal mengirim email test'
+  } finally { sending.value = false }
+}
 </script>
 
 <template>
@@ -82,7 +113,10 @@ const hasFilter = computed(() =>
         <h2>Email Log</h2>
         <p class="sub">Riwayat semua email keluar dari sistem (noreply) — onboarding, broadcast, notifikasi</p>
       </div>
-      <button class="btn-refresh" @click="refresh">↻ Muat ulang</button>
+      <div class="header-actions">
+        <button class="btn-test" @click="openTest">✉️ Kirim Test</button>
+        <button class="btn-refresh" @click="refresh">↻ Muat ulang</button>
+      </div>
     </div>
 
     <div v-if="error" class="alert-error">{{ error }}</div>
@@ -184,6 +218,37 @@ const hasFilter = computed(() =>
         dari {{ meta.total.toLocaleString('id-ID') }} log
       </div>
     </div>
+
+    <!-- Modal test kirim -->
+    <div v-if="showTest" class="modal-overlay" @click.self="showTest = false">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3>Kirim Email Test</h3>
+          <button class="modal-x" @click="showTest = false">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-hint">Email dikirim dari akun noreply sistem, lengkap dengan header &amp; footer brand.</p>
+
+          <label class="fld-label">Email tujuan *</label>
+          <input v-model="testTo" type="email" placeholder="nama@contoh.com" class="fld" @keyup.enter="sendTest" />
+
+          <label class="fld-label">Subjek <span class="opt">(opsional)</span></label>
+          <input v-model="testSubject" placeholder="Test Email — ERP Next1" class="fld" />
+
+          <label class="fld-label">Pesan <span class="opt">(opsional)</span></label>
+          <textarea v-model="testMessage" rows="3" placeholder="Pesan default akan dipakai bila dikosongkan" class="fld"></textarea>
+
+          <div v-if="testOk" class="msg-ok">✓ {{ testOk }}</div>
+          <div v-if="testErr" class="msg-err">{{ testErr }}</div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn-cancel" @click="showTest = false">Tutup</button>
+          <button class="btn-send" :disabled="sending" @click="sendTest">
+            {{ sending ? 'Mengirim...' : 'Kirim' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -192,8 +257,30 @@ const hasFilter = computed(() =>
 .page-header { margin-bottom: 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
+.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .btn-refresh { padding: 8px 14px; background: #f1f5f9; color: #334155; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-refresh:hover { background: #e2e8f0; }
+.btn-test { padding: 8px 14px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 16px; }
+.modal-card { background: #fff; border-radius: 14px; width: 100%; max-width: 460px; box-shadow: 0 20px 50px rgba(0,0,0,0.25); overflow: hidden; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #f1f5f9; }
+.modal-head h3 { margin: 0; font-size: 16px; color: #0f172a; }
+.modal-x { background: none; border: none; font-size: 24px; color: #94a3b8; cursor: pointer; line-height: 1; }
+.modal-x:hover { color: #374151; }
+.modal-body { padding: 18px 20px; }
+.modal-hint { margin: 0 0 14px; font-size: 12px; color: #64748b; }
+.fld-label { display: block; font-size: 12px; font-weight: 600; color: #334155; margin: 10px 0 4px; }
+.fld-label .opt { color: #94a3b8; font-weight: 400; }
+.fld { width: 100%; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; outline: none; box-sizing: border-box; font-family: inherit; }
+.fld:focus { border-color: #3b82f6; }
+.msg-ok { margin-top: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; font-size: 13px; padding: 9px 12px; border-radius: 8px; }
+.msg-err { margin-top: 12px; background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; font-size: 13px; padding: 9px 12px; border-radius: 8px; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid #f1f5f9; }
+.btn-cancel { padding: 8px 16px; background: #f1f5f9; color: #334155; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-send { padding: 8px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-send:disabled { opacity: 0.6; cursor: not-allowed; }
 .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 .alert-warn { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; color: #a16207; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 

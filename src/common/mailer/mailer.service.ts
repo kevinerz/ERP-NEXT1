@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -196,6 +196,30 @@ export class MailerService {
     }
     this.logger.log(`Broadcast ${batch_id}: ${sent}/${targets.length} terkirim, ${failed.length} gagal`);
     return { batch_id, total: targets.length, sent, failed };
+  }
+
+  /** Kirim email percobaan (dari dashboard Email Log) — untuk cek konfigurasi
+   * SMTP & tampilan branding. Body di-escape karena berasal dari input admin. */
+  async sendTest(dto: { to: string; subject?: string; message?: string }) {
+    if (!this.isConfigured()) {
+      throw new BadRequestException('Mailer belum dikonfigurasi — set MAIL_HOST, MAIL_USER, dan MAIL_PASSWORD di .env server');
+    }
+    const subject = dto.subject?.trim() || 'Test Email — ERP Next1';
+    const pesan = dto.message?.trim()
+      || 'Ini email percobaan dari sistem ERP Next1. Jika email ini sampai dengan header dan footer yang benar, konfigurasi pengiriman sudah beres.';
+    const body = this.escapeHtml(pesan).replace(/\n/g, '<br/>');
+    await this.send({
+      to: dto.to,
+      subject,
+      modul: 'test',
+      html: `<p>${body}</p>`,
+    });
+    return { data: { to: dto.to }, message: `Email test terkirim ke ${dto.to}` };
+  }
+
+  private escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   // ─── Query untuk dashboard ────────────────────────────────────
