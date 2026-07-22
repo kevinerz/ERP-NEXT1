@@ -174,6 +174,11 @@ const router = createRouter({
           component: () => import('@/views/admin/ActivityLogView.vue'),
         },
         {
+          path: 'admin/email-log',
+          name: 'admin-email-log',
+          component: () => import('@/views/admin/EmailLogView.vue'),
+        },
+        {
           path: 'integrations/prtg',
           name: 'prtg-settings',
           component: () => import('@/views/integrations/PrtgSettingsView.vue'),
@@ -347,7 +352,7 @@ router.beforeEach((to) => {
     const modul = ROUTE_MODUL[to.name as string]
     if (modul && !auth.canAccess(modul)) return '/dashboard'
     // halaman admin hanya Admin / Director
-    if ((to.name === 'admin-users' || to.name === 'admin-logs') && !auth.hasRole('Admin') && !auth.hasRole('Director')) return '/dashboard'
+    if ((to.name === 'admin-users' || to.name === 'admin-logs' || to.name === 'admin-email-log') && !auth.hasRole('Admin') && !auth.hasRole('Director')) return '/dashboard'
   }
 })
 

@@ -14,6 +14,7 @@ import { DocumentNumberModule } from './common/document-number/document-number.m
 import { AuditModule } from './common/audit/audit.module';
 import { LogModule } from './common/log/log.module';
 import { SchedulerModule } from './common/scheduler/scheduler.module';
+import { MailerModule } from './common/mailer/mailer.module';
 import { LogInterceptor } from './common/log/log.interceptor';
 
 // Modules
@@ -68,6 +69,7 @@ import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.m
     AuditModule,
     LogModule,
     SchedulerModule,
+    MailerModule, // @Global — MailerService (noreply) tersedia di semua modul
 
     // Business modules
     AuthModule,

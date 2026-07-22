@@ -1118,6 +1118,24 @@ model AppSetting {
   @@map("app_settings")
 }
 
+// Riwayat semua email keluar dari MailerService (noreply) — untuk dashboard
+// pantau kirim. Status 'sent' = diterima server SMTP (bukan jaminan sampai).
+model EmailLog {
+  id_email_log Int      @id @default(autoincrement())
+  to_address   String   @db.VarChar(255)
+  subject      String   @db.VarChar(255)
+  modul        String?  @db.VarChar(50) // sumber: onboarding, broadcast, manual, dll
+  status       String   @db.VarChar(20) // sent | failed
+  error        String?  @db.Text
+  batch_id     String?  @db.VarChar(40) // pengelompokan satu run broadcast
+  created_at   DateTime @default(now())
+
+  @@index([created_at])
+  @@index([status])
+  @@index([batch_id])
+  @@map("email_logs")
+}
+
 // ============================================================
 // LAYER 11 — FINANCE / INVOICE
 // ============================================================

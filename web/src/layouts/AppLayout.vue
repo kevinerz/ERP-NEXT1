@@ -93,6 +93,7 @@ const allMenu = [
 const adminMenu = [
   { label: 'Users',        emoji: '⚙️', to: '/admin/users'  },
   { label: 'Activity Log', emoji: '📝', to: '/admin/logs'   },
+  { label: 'Email Log',    emoji: '📤', to: '/admin/email-log' },
   { label: 'PRTG',         emoji: '📡', to: '/integrations/prtg' },
   { label: 'Uptime Kuma',  emoji: '🟢', to: '/integrations/uptime-kuma' },
   { label: 'Pengaturan',   emoji: '🔩', to: '/settings'     },
@@ -144,6 +145,7 @@ const PAGE_TITLES: Record<string, string> = {
   laporan:                "Laporan",
   "admin-users":          "Admin — Manajemen User",
   "admin-logs":           "Admin — Activity Log",
+  "admin-email-log":      "Admin — Email Log",
   "notifications":        "Notifikasi",
   "profile":              "Profil Saya",
   "settings":             "Pengaturan Aplikasi",

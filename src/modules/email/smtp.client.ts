@@ -11,6 +11,9 @@ export interface SmtpCreds {
   smtp_host: string;
   smtp_port: number;
   password: string;
+  /** Nama tampilan pengirim opsional → header From jadi "Nama <alamat>".
+   * Auth SMTP tetap pakai email_address polos. */
+  from_name?: string;
 }
 
 export interface SendMailInput {
@@ -42,10 +45,14 @@ export class SmtpClientService {
     }
   }
 
+  private fromHeader(creds: SmtpCreds): string {
+    return creds.from_name ? `"${creds.from_name}" <${creds.email_address}>` : creds.email_address;
+  }
+
   async sendMail(creds: SmtpCreds, input: SendMailInput) {
     try {
       await this.transporter(creds).sendMail({
-        from: creds.email_address,
+        from: this.fromHeader(creds),
         to: input.to,
         cc: input.cc || undefined,
         bcc: input.bcc || undefined,
@@ -63,7 +70,7 @@ export class SmtpClientService {
   /** Bangun pesan mentah RFC822 tanpa mengirim — untuk salinan Terkirim & Draf */
   buildRaw(creds: SmtpCreds, input: SendMailInput): Promise<Buffer> {
     const composer = new MailComposer({
-      from: creds.email_address,
+      from: this.fromHeader(creds),
       to: input.to || undefined,
       cc: input.cc || undefined,
       bcc: input.bcc || undefined,

@@ -3,8 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomBytes, createHmac } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
-import { SmtpClientService } from '../email/smtp.client';
-import { SecretCryptoService } from '../../common/crypto/secret-crypto.service';
+import { MailerService } from '../../common/mailer/mailer.service';
 import { HrisService } from '../hris/hris.service';
 import { SubmitOnboardingDto } from './dto/submit-onboarding.dto';
 
@@ -18,8 +17,7 @@ export class OnboardingService {
 
   constructor(
     private prisma: PrismaService,
-    private smtp: SmtpClientService,
-    private crypto: SecretCryptoService,
+    private mailer: MailerService,
     private hris: HrisService,
     config: ConfigService,
   ) {
@@ -70,7 +68,7 @@ export class OnboardingService {
       data: { status: 'Used', used_at: new Date(), id_karyawan: karyawan.id_karyawan },
     });
 
-    const email_sent = await this.sendCredentialEmail(inv.created_by, dto.email, dto.nama_lengkap, username, password);
+    const email_sent = await this.sendCredentialEmail(dto.email, dto.nama_lengkap, username, password);
     return this.buildSubmitResponse(username, password, email_sent);
   }
 
@@ -113,10 +111,7 @@ export class OnboardingService {
 
     const { username, password } = await this.createKaryawanAndUser(dto, foto);
 
-    const admin = await this.prisma.coreUser.findUnique({ where: { username: 'admin' } });
-    const email_sent = admin
-      ? await this.sendCredentialEmail(admin.id_user, dto.email, dto.nama_lengkap, username, password)
-      : false;
+    const email_sent = await this.sendCredentialEmail(dto.email, dto.nama_lengkap, username, password);
 
     return this.buildSubmitResponse(username, password, email_sent);
   }
@@ -225,35 +220,29 @@ export class OnboardingService {
   }
 
   private async sendCredentialEmail(
-    adminUserId: number,
     to: string,
     namaLengkap: string,
     username: string,
     password: string,
   ): Promise<boolean> {
+    // Dikirim dari akun noreply sistem (MailerService), bukan lagi bergantung
+    // pada EmailAccount admin. Header/footer brand ditambahkan otomatis.
+    if (!this.mailer.isConfigured()) {
+      this.logger.warn('Mailer noreply belum dikonfigurasi (MAIL_* di .env) — kredensial ditampilkan di layar sebagai fallback');
+      return false;
+    }
     try {
-      const account = await this.prisma.emailAccount.findUnique({ where: { id_user: adminUserId } });
-      if (!account || !account.is_aktif) return false;
-
-      const plainPassword = this.crypto.decrypt(account.password_enc);
-      await this.smtp.sendMail(
-        {
-          email_address: account.email_address,
-          smtp_host: account.smtp_host,
-          smtp_port: account.smtp_port,
-          password: plainPassword,
-        },
-        {
-          to,
-          subject: 'Akun ERP Next1 Anda',
-          html: `
-            <p>Halo ${namaLengkap},</p>
-            <p>Akun ERP Next1 Anda telah dibuat. Berikut detail login Anda:</p>
-            <p><b>Username:</b> ${username}<br/><b>Password:</b> ${password}</p>
-            <p>Segera login dan ganti password Anda melalui menu Profil.</p>
-          `,
-        },
-      );
+      await this.mailer.send({
+        to,
+        modul: 'onboarding',
+        subject: 'Akun ERP Next1 Anda',
+        html: `
+          <p>Halo ${namaLengkap},</p>
+          <p>Akun ERP Next1 Anda telah dibuat. Berikut detail login Anda:</p>
+          <p><b>Username:</b> ${username}<br/><b>Password:</b> ${password}</p>
+          <p>Segera login dan ganti password Anda melalui menu Profil.</p>
+        `,
+      });
       return true;
     } catch (e: any) {
       this.logger.error(`Gagal kirim email kredensial ke ${to}: ${e.message}`, e.stack);
