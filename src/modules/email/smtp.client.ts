@@ -14,6 +14,8 @@ export interface SmtpCreds {
   /** Nama tampilan pengirim opsional → header From jadi "Nama <alamat>".
    * Auth SMTP tetap pakai email_address polos. */
   from_name?: string;
+  /** Paksa SSL/TLS. Kalau undefined, ditentukan dari port (465 = SSL). */
+  secure?: boolean;
 }
 
 export interface SendMailInput {
@@ -32,7 +34,7 @@ export class SmtpClientService {
     return nodemailer.createTransport({
       host: creds.smtp_host,
       port: creds.smtp_port,
-      secure: creds.smtp_port === 465,
+      secure: creds.secure ?? creds.smtp_port === 465,
       auth: { user: creds.email_address, pass: creds.password },
       // Timeout eksplisit — di shared hosting koneksi SMTP keluar bisa
       // menggantung; tanpa ini request bisa hang sampai proxy balas 502/504.

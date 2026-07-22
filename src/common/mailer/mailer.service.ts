@@ -60,6 +60,7 @@ export class MailerService {
   private readonly user: string;
   private readonly password: string;
   private readonly fromName: string;
+  private readonly secure?: boolean;
 
   constructor(
     config: ConfigService,
@@ -72,7 +73,25 @@ export class MailerService {
     this.port = Number(config.get<string>('MAIL_PORT')) || 465;
     this.user = config.get<string>('MAIL_USER') || '';
     this.password = config.get<string>('MAIL_PASSWORD') || '';
-    this.fromName = config.get<string>('MAIL_FROM_NAME') || '';
+
+    // Nama tampilan: dukung MAIL_FROM_NAME (nama saja) ATAU MAIL_FROM
+    // ("Nama <alamat>" — ambil bagian namanya).
+    const fromName = config.get<string>('MAIL_FROM_NAME');
+    const fromFull = config.get<string>('MAIL_FROM');
+    this.fromName = (fromName || this.parseFromName(fromFull) || '').trim();
+
+    // MAIL_SECURE opsional ('true'/'false'); default ikut port (465 = SSL).
+    const secureRaw = config.get<string>('MAIL_SECURE');
+    this.secure = secureRaw === undefined || secureRaw === ''
+      ? undefined
+      : secureRaw.toLowerCase() === 'true';
+  }
+
+  /** "ERP NEXT1 <noreply@x.id>" → "ERP NEXT1"; kalau tanpa <>, pakai apa adanya. */
+  private parseFromName(from?: string): string {
+    if (!from) return '';
+    const m = /^(.*?)\s*<[^>]+>\s*$/.exec(from.trim());
+    return (m ? m[1] : from).trim();
   }
 
   /** true kalau kredensial noreply sudah lengkap di .env */
@@ -87,6 +106,7 @@ export class MailerService {
       smtp_port: this.port,
       password: this.password,
       from_name: this.fromName || undefined,
+      secure: this.secure,
     };
   }
 
