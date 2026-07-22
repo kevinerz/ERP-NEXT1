@@ -32,7 +32,7 @@ onMounted(async () => {
 
 async function fetchStats() {
   try {
-    const r = await api.get('/mailer/logs/stats')
+    const r = await api.get('/mailer/logs/stats', { timeout: 12000 })
     stats.value = r.data.data
   } catch (e: any) { /* stats opsional, jangan blok halaman */ }
 }
@@ -47,7 +47,7 @@ async function fetchLogs() {
     if (fSampai.value) params.tgl_sampai = fSampai.value
     if (fSearch.value) params.search    = fSearch.value
 
-    const r = await api.get('/mailer/logs', { params })
+    const r = await api.get('/mailer/logs', { params, timeout: 12000 })
     logs.value = r.data.data
     meta.value = r.data.meta
   } catch (e: any) { error.value = e.response?.data?.message || 'Gagal memuat log email' }

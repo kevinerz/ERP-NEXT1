@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -244,6 +244,24 @@ export class MailerService {
 
   // ─── Query untuk dashboard ────────────────────────────────────
 
+  /** Batasi waktu query — kalau DB lambat/tak terjangkau, gagal cepat dengan
+   * 503 yang jelas daripada menggantung sampai proxy balas 408. Query yang
+   * telanjur jalan di DB dibiarkan selesai sendiri (tidak apa-apa). */
+  private async withTimeout<T>(p: Promise<T>, ms = 8000): Promise<T> {
+    let timer: NodeJS.Timeout;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new ServiceUnavailableException('Database lambat merespons — coba lagi sebentar')),
+        ms,
+      );
+    });
+    try {
+      return await Promise.race([p, timeout]);
+    } finally {
+      clearTimeout(timer!);
+    }
+  }
+
   async listLogs(query: {
     status?: string;
     modul?: string;
@@ -278,21 +296,23 @@ export class MailerService {
       }
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total] = await this.withTimeout(Promise.all([
       this.prisma.emailLog.findMany({ where, orderBy: { created_at: 'desc' }, skip, take: limit }),
       this.prisma.emailLog.count({ where }),
-    ]);
+    ]));
     return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
   }
 
   async stats() {
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [total, sent, failed, last24h] = await Promise.all([
-      this.prisma.emailLog.count(),
-      this.prisma.emailLog.count({ where: { status: 'sent' } }),
-      this.prisma.emailLog.count({ where: { status: 'failed' } }),
+    // 2 query saja (bukan 4): groupBy status untuk total/sent/failed sekaligus.
+    const [byStatus, last24h] = await this.withTimeout(Promise.all([
+      this.prisma.emailLog.groupBy({ by: ['status'], _count: { _all: true } }),
       this.prisma.emailLog.count({ where: { created_at: { gte: since24h } } }),
-    ]);
+    ]));
+    const sent = byStatus.find((g) => g.status === 'sent')?._count._all ?? 0;
+    const failed = byStatus.find((g) => g.status === 'failed')?._count._all ?? 0;
+    const total = byStatus.reduce((a, g) => a + g._count._all, 0);
     return { data: { total, sent, failed, last24h, configured: this.isConfigured() } };
   }
 }
