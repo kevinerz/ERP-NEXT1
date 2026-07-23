@@ -17,26 +17,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    // Prisma Rust panic ("PANIC: timer has gone away") = query engine mati
-    // PERMANEN; tanpa restart, SEMUA request berikutnya 500 terus. Balas 503
-    // lalu keluar agar Hostinger me-restart proses dengan engine segar.
-    const isPrismaPanic =
-      (exception as any)?.name === 'PrismaClientRustPanicError' ||
-      (exception instanceof Error && /PANIC:|timer has gone away/i.test(exception.message));
-    if (isPrismaPanic) {
-      this.logger.error('Prisma Rust panic terdeteksi — proses akan restart untuk pulihkan engine DB');
-      response.status(HttpStatus.SERVICE_UNAVAILABLE).json({
-        success: false,
-        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
-        timestamp: new Date().toISOString(),
-        path: request.url,
-        message: 'Server sedang memulihkan koneksi database — coba lagi beberapa detik',
-      });
-      // Beri jeda singkat agar response sempat terkirim sebelum proses keluar.
-      setTimeout(() => process.exit(1), 200);
-      return;
-    }
-
     const status =
       exception instanceof HttpException
         ? exception.getStatus()
