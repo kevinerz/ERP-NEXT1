@@ -367,26 +367,47 @@ export class PrtgService {
     if (!(await this.prtg.isConfigured())) return { data: [] };
     const sensors = await this.prtg.getAllSensors();
 
+    // Muat sites & mapping SEKALI SAJA, lalu cocokkan di memori. Versi lama
+    // menembak ~3 query DB PER device (±2.150 device = ribuan query serentak,
+    // + findMany 1000 site berulang) → connection pool & memori habis → app
+    // down. Sekarang cukup 2 query total.
+    const [sites, mappings] = await Promise.all([
+      this.prisma.sitePelanggan.findMany({ select: { id_site: true, kode_site: true, nama_site: true } }),
+      this.prisma.integrationPrtgMapping.findMany({
+        select: { device_name: true, site: { select: { id_site: true, kode_site: true, nama_site: true } } },
+      }),
+    ]);
+    const mapByDevice = new Map(mappings.map((m) => [m.device_name, m.site]));
+    const sitesLower = sites.map((s) => ({ ...s, lower: s.nama_site.toLowerCase() }));
+
+    // Matching di memori: mapping manual dulu, lalu substring nama (dua arah).
+    const matchSite = (device: string): { site: any; manual: boolean } => {
+      const mapped = mapByDevice.get(device);
+      if (mapped) return { site: mapped, manual: true };
+      const dl = device.trim().toLowerCase();
+      if (!dl) return { site: null, manual: false };
+      const fwd = sitesLower.find((s) => s.lower.includes(dl));   // nama_site memuat device
+      const hit = fwd ?? sitesLower.find((s) => dl.includes(s.lower)); // device memuat nama_site
+      return { site: hit ?? null, manual: false };
+    };
+
     const byDevice = new Map<string, PrtgSensor[]>();
     for (const s of sensors) {
       if (!byDevice.has(s.device)) byDevice.set(s.device, []);
       byDevice.get(s.device)!.push(s);
     }
 
-    const data = await Promise.all(
-      Array.from(byDevice.entries()).map(async ([device, list]) => {
-        const site = await this.cariSite(device);
-        const mapping = await this.prisma.integrationPrtgMapping.findUnique({ where: { device_name: device } });
-        return {
-          device_name: device,
-          jumlah_sensor: list.length,
-          ada_down: list.some((s) => ['5', '14', 'Down', 'Down Partial'].includes(String(s.status_raw ?? s.status))),
-          matched: !!site,
-          site: site || null,
-          mapped_manual: !!mapping,
-        };
-      }),
-    );
+    const data = Array.from(byDevice.entries()).map(([device, list]) => {
+      const { site, manual } = matchSite(device);
+      return {
+        device_name: device,
+        jumlah_sensor: list.length,
+        ada_down: list.some((s) => ['5', '14', 'Down', 'Down Partial'].includes(String(s.status_raw ?? s.status))),
+        matched: !!site,
+        site: site ? { id_site: site.id_site, kode_site: site.kode_site, nama_site: site.nama_site } : null,
+        mapped_manual: manual,
+      };
+    });
     data.sort((a, b) => a.device_name.localeCompare(b.device_name));
     return { data };
   }
