@@ -12,8 +12,8 @@ function buildDatasourceUrl(): string | undefined {
   if (!url) return undefined;
   const defaults: Record<string, string> = {
     connection_limit: '5',
-    connect_timeout: '15',
-    pool_timeout: '20',
+    connect_timeout: '10',
+    pool_timeout: '10',
   };
   try {
     const u = new URL(url);
@@ -29,7 +29,9 @@ function buildDatasourceUrl(): string | undefined {
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('Prisma');
-  private static readonly QUERY_TIMEOUT_MS = 12000;
+  // Sengaja pendek: Node harus MEMBALAS (walau error) sebelum ambang 408 proxy.
+  // Query normal jauh di bawah ini; kalau tembus 8 dtk berarti DB memang bermasalah.
+  private static readonly QUERY_TIMEOUT_MS = 8000;
 
   constructor() {
     const datasourceUrl = buildDatasourceUrl();
