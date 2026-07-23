@@ -3,8 +3,13 @@
 // Database: MariaDB 11.8
 
 generator client {
-  provider   = "prisma-client-js"
-  engineType = "library"
+  provider      = "prisma-client-js"
+  // engine "binary" (proses terpisah) — bukan "library" (in-process). Hostinger
+  // Node hosting membekukan proses Node saat idle; engine library (Rust in-proc)
+  // panic "timer has gone away" saat proses dibangunkan dan mati permanen.
+  // Engine binary jauh lebih tahan terhadap suspend/resume platform ini.
+  engineType    = "binary"
+  binaryTargets = ["native", "debian-openssl-1.1.x"]
 }
 
 datasource db {
