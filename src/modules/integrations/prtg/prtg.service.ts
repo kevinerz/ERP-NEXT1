@@ -110,6 +110,11 @@ export class PrtgService {
 
   @Cron('*/5 * * * *')
   async poll() {
+    // PAUSE TOTAL: polling PRTG MATI kecuali env PRTG_POLL_ENABLED=true.
+    // Dicek DULUAN sebelum menyentuh DB/API — jadi saat DB/resource bermasalah,
+    // cron ini benar-benar tidak melakukan apa pun (nol query, nol fetch).
+    // Aktifkan lagi: set PRTG_POLL_ENABLED=true di .env server + restart.
+    if (process.env.PRTG_POLL_ENABLED !== 'true') return { data: null, message: 'Polling PRTG dimatikan (PRTG_POLL_ENABLED != true)' };
     // Jeda manual (tombol nonaktif) — berhenti sebelum sentuh API/DB apa pun.
     if (!(await this.isEnabled())) return { data: null, message: 'Polling PRTG sedang dijeda' };
     if (!(await this.prtg.isConfigured())) return;
