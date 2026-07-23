@@ -15,6 +15,7 @@ import { AuditModule } from './common/audit/audit.module';
 import { LogModule } from './common/log/log.module';
 import { SchedulerModule } from './common/scheduler/scheduler.module';
 import { MailerModule } from './common/mailer/mailer.module';
+import { HealthController } from './common/health/health.controller';
 import { LogInterceptor } from './common/log/log.interceptor';
 
 // Modules
@@ -98,6 +99,7 @@ import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.m
     DigiflazzModule,
     UptimeKumaModule,
   ],
+  controllers: [HealthController],
   providers: [
     // Global rate-limit guard
     { provide: APP_GUARD, useClass: ThrottlerGuard },
