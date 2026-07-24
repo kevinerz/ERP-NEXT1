@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import DOMPurify from 'dompurify'
 import { useEmailStore } from '@/stores/email'
 import { fmtDateTime } from '@/composables/useFormat'
+import api from '@/services/api'
 
 const email = useEmailStore()
 
@@ -123,6 +124,43 @@ const sendError = ref('')
 const showCc = ref(false)
 const editingDraftUid = ref<number | null>(null)
 
+// ─── EDITOR RICH TEXT + KONTAK HRIS ──────────────────────────
+const editorRef = ref<HTMLElement | null>(null)
+const showEmoji = ref(false)
+const contacts = ref<{ nama_lengkap: string; email: string }[]>([])
+const EMOJIS = ['😀','😊','🙏','👍','✅','❗','📌','📎','📧','📞','🔴','🟢','⚠️','💰','📈','🎉','🚀','🗓️']
+
+async function loadContacts() {
+  if (contacts.value.length) return
+  try { contacts.value = (await api.get('/email/contacts')).data.data } catch { /* opsional */ }
+}
+
+function onEditorInput() {
+  composeForm.value.html = editorRef.value?.innerHTML || ''
+}
+function exec(cmd: string, val?: string) {
+  document.execCommand(cmd, false, val)
+  editorRef.value?.focus()
+  onEditorInput()
+}
+function addLink() {
+  const url = prompt('Masukkan URL (mis. https://contoh.com)')
+  if (url) exec('createLink', url)
+}
+function insertEmoji(em: string) {
+  editorRef.value?.focus()
+  document.execCommand('insertText', false, em)
+  onEditorInput()
+  showEmoji.value = false
+}
+
+// Saat modal compose dibuka: muat kontak + isi editor dari composeForm.html
+watch(showCompose, (open) => {
+  if (!open) { showEmoji.value = false; return }
+  loadContacts()
+  nextTick(() => { if (editorRef.value) editorRef.value.innerHTML = composeForm.value.html || '' })
+})
+
 function bukaCompose() {
   editingDraftUid.value = null
   composeForm.value = { to: '', cc: '', bcc: '', subject: '', html: '', in_reply_to: '' }
@@ -160,41 +198,16 @@ function tutupCompose() {
   showCompose.value = false
 }
 
-// Ubah teks polos dari textarea menjadi HTML: baris baru -> <br>, bullet
-// (* / -) -> list. HTML mengabaikan newline, jadi tanpa ini semua ambruk jadi
-// satu paragraf. Kalau isinya SUDAH HTML (mis. balasan dgn kutipan), biarkan.
-function bodyToHtml(raw: string): string {
-  const s = raw ?? ''
-  if (/<(br|hr|p|div|blockquote|ul|ol|li|table|h[1-6])[\s/>]/i.test(s)) return s
-  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const lines = s.replace(/\r\n/g, '\n').split('\n')
-  let html = ''
-  let inList = false
-  for (const line of lines) {
-    const m = /^(\s*)[*-]\s+(.*)$/.exec(line)
-    if (m) {
-      if (!inList) { html += '<ul style="margin:6px 0;padding-left:22px;">'; inList = true }
-      const indent = Math.floor(m[1].replace(/\t/g, '  ').length / 2)
-      const pad = indent > 0 ? ` style="margin-left:${indent * 18}px;"` : ''
-      html += `<li${pad}>${esc(m[2])}</li>`
-    } else {
-      if (inList) { html += '</ul>'; inList = false }
-      html += line.trim() === '' ? '<br>' : `${esc(line)}<br>`
-    }
-  }
-  if (inList) html += '</ul>'
-  return html
-}
-
 async function kirimEmail() {
   if (sending.value || savingDraft.value) return
   if (!composeForm.value.to || !composeForm.value.subject) {
     sendError.value = 'Tujuan dan subjek wajib diisi'; return
   }
+  // Editor rich text (contenteditable) sudah menghasilkan HTML — kirim apa adanya.
+  onEditorInput()
   sending.value = true; sendError.value = ''
   try {
-    const payload = { ...composeForm.value, html: bodyToHtml(composeForm.value.html) }
-    await email.sendMail(payload, composeFiles.value, editingDraftUid.value)
+    await email.sendMail(composeForm.value, composeFiles.value, editingDraftUid.value)
     showCompose.value = false
     if (email.currentFolder === 'sent' || email.currentFolder === 'drafts') await loadInbox()
   } catch (e: any) { sendError.value = e.response?.data?.message || 'Gagal mengirim email' }
@@ -203,6 +216,7 @@ async function kirimEmail() {
 
 async function simpanDraf() {
   if (sending.value || savingDraft.value) return
+  onEditorInput()
   savingDraft.value = true; sendError.value = ''
   try {
     const newUid = await email.saveDraft(composeForm.value, composeFiles.value, editingDraftUid.value)
@@ -358,19 +372,24 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
     <div v-if="showCompose" class="modal-overlay" @click.self="tutupCompose">
       <div class="modal">
         <h3>{{ editingDraftUid ? '📝 Edit Draf' : '✏️ Tulis Email' }}</h3>
+        <!-- Daftar kontak karyawan untuk autocomplete penerima -->
+        <datalist id="hris-contacts">
+          <option v-for="c in contacts" :key="c.email" :value="c.email">{{ c.nama_lengkap }}</option>
+        </datalist>
         <div class="field">
           <label>Kepada</label>
-          <input v-model="composeForm.to" placeholder="tujuan@email.com" />
+          <input v-model="composeForm.to" list="hris-contacts" placeholder="Ketik nama/email atau pilih dari daftar" />
+          <small class="hint">Beberapa penerima: pisahkan dengan koma</small>
         </div>
         <button v-if="!showCc" class="link-btn" @click="showCc = true">+ Cc/Bcc</button>
         <template v-else>
           <div class="field">
             <label>Cc</label>
-            <input v-model="composeForm.cc" placeholder="cc@email.com" />
+            <input v-model="composeForm.cc" list="hris-contacts" placeholder="cc@email.com" />
           </div>
           <div class="field">
             <label>Bcc</label>
-            <input v-model="composeForm.bcc" placeholder="bcc@email.com" />
+            <input v-model="composeForm.bcc" list="hris-contacts" placeholder="bcc@email.com" />
           </div>
         </template>
         <div class="field">
@@ -379,7 +398,24 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
         </div>
         <div class="field">
           <label>Isi</label>
-          <textarea v-model="composeForm.html" rows="8" placeholder="Tulis pesan..."></textarea>
+          <div class="editor-toolbar">
+            <button type="button" @mousedown.prevent="exec('bold')" title="Tebal"><b>B</b></button>
+            <button type="button" @mousedown.prevent="exec('italic')" title="Miring"><i>I</i></button>
+            <button type="button" @mousedown.prevent="exec('underline')" title="Garis bawah"><u>U</u></button>
+            <span class="tb-sep"></span>
+            <button type="button" @mousedown.prevent="exec('insertUnorderedList')" title="Daftar bullet">•</button>
+            <button type="button" @mousedown.prevent="exec('insertOrderedList')" title="Daftar nomor">1.</button>
+            <button type="button" @mousedown.prevent="addLink()" title="Sisip tautan">🔗</button>
+            <span class="tb-sep"></span>
+            <div class="emoji-wrap">
+              <button type="button" @mousedown.prevent="showEmoji = !showEmoji" title="Emoji">😊</button>
+              <div v-if="showEmoji" class="emoji-pop">
+                <button type="button" v-for="em in EMOJIS" :key="em" @mousedown.prevent="insertEmoji(em)">{{ em }}</button>
+              </div>
+            </div>
+          </div>
+          <div ref="editorRef" class="editor" contenteditable="true" @input="onEditorInput"
+               data-placeholder="Tulis pesan… bisa tebal, miring, list, tautan, emoji"></div>
         </div>
         <div class="field">
           <label class="upload-label">
@@ -424,6 +460,22 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .field label { font-size: 13px; font-weight: 600; color: #374151; }
 .field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; font-family: inherit; }
 .field input:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
+.hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+/* Editor rich text */
+.editor-toolbar { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; border: 1.5px solid #e2e8f0; border-bottom: none; border-radius: 8px 8px 0 0; background: #f8fafc; padding: 4px 6px; }
+.editor-toolbar button { min-width: 30px; height: 30px; border: none; background: none; border-radius: 6px; cursor: pointer; font-size: 14px; color: #334155; display: inline-flex; align-items: center; justify-content: center; }
+.editor-toolbar button:hover { background: #e2e8f0; }
+.tb-sep { width: 1px; height: 20px; background: #e2e8f0; margin: 0 4px; }
+.emoji-wrap { position: relative; }
+.emoji-pop { position: absolute; bottom: calc(100% + 4px); left: 0; z-index: 20; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.14); padding: 6px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; width: 232px; }
+.emoji-pop button { font-size: 18px; width: 34px; height: 34px; border: none; background: none; border-radius: 6px; cursor: pointer; }
+.emoji-pop button:hover { background: #f1f5f9; }
+.editor { min-height: 180px; max-height: 320px; overflow-y: auto; border: 1.5px solid #e2e8f0; border-radius: 0 0 8px 8px; padding: 10px 12px; font-size: 14px; line-height: 1.6; color: #0f172a; outline: none; background: #fff; }
+.editor:focus { border-color: #3b82f6; }
+.editor:empty::before { content: attr(data-placeholder); color: #94a3b8; }
+.editor ul, .editor ol { margin: 6px 0; padding-left: 22px; }
+.editor a { color: #1d4ed8; }
 .btn-submit { padding: 10px 18px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 .connect-card .btn-submit { width: 100%; margin-top: 6px; }

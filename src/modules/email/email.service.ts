@@ -29,6 +29,16 @@ export class EmailService {
     private branding: MailBrandingService,
   ) {}
 
+  /** Kontak karyawan (nama + email) untuk dropdown penerima di compose. */
+  async listContacts() {
+    const rows = await this.prisma.hrisKaryawan.findMany({
+      where: { email: { not: null } },
+      select: { nama_lengkap: true, email: true },
+      orderBy: { nama_lengkap: 'asc' },
+    });
+    return { data: rows.filter((r) => r.email && r.email.trim()) };
+  }
+
   async getAccount(userId: number) {
     const row = await this.prisma.emailAccount.findUnique({ where: { id_user: userId } });
     if (!row) return { data: null };

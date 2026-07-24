@@ -31,6 +31,10 @@ export class EmailController {
   @Get('folders')
   listFolders(@Req() req: any) { return this.svc.listFolders(req.user.id_user); }
 
+  // Daftar kontak (karyawan) untuk dropdown penerima
+  @Get('contacts')
+  listContacts() { return this.svc.listContacts(); }
+
   // ─── PESAN (Kotak Masuk / Terkirim / Draf / Sampah / Spam) ────
 
   @Get('messages')
