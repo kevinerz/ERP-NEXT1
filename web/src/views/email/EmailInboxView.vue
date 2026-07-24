@@ -160,6 +160,32 @@ function tutupCompose() {
   showCompose.value = false
 }
 
+// Ubah teks polos dari textarea menjadi HTML: baris baru -> <br>, bullet
+// (* / -) -> list. HTML mengabaikan newline, jadi tanpa ini semua ambruk jadi
+// satu paragraf. Kalau isinya SUDAH HTML (mis. balasan dgn kutipan), biarkan.
+function bodyToHtml(raw: string): string {
+  const s = raw ?? ''
+  if (/<(br|hr|p|div|blockquote|ul|ol|li|table|h[1-6])[\s/>]/i.test(s)) return s
+  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const lines = s.replace(/\r\n/g, '\n').split('\n')
+  let html = ''
+  let inList = false
+  for (const line of lines) {
+    const m = /^(\s*)[*-]\s+(.*)$/.exec(line)
+    if (m) {
+      if (!inList) { html += '<ul style="margin:6px 0;padding-left:22px;">'; inList = true }
+      const indent = Math.floor(m[1].replace(/\t/g, '  ').length / 2)
+      const pad = indent > 0 ? ` style="margin-left:${indent * 18}px;"` : ''
+      html += `<li${pad}>${esc(m[2])}</li>`
+    } else {
+      if (inList) { html += '</ul>'; inList = false }
+      html += line.trim() === '' ? '<br>' : `${esc(line)}<br>`
+    }
+  }
+  if (inList) html += '</ul>'
+  return html
+}
+
 async function kirimEmail() {
   if (sending.value || savingDraft.value) return
   if (!composeForm.value.to || !composeForm.value.subject) {
@@ -167,7 +193,8 @@ async function kirimEmail() {
   }
   sending.value = true; sendError.value = ''
   try {
-    await email.sendMail(composeForm.value, composeFiles.value, editingDraftUid.value)
+    const payload = { ...composeForm.value, html: bodyToHtml(composeForm.value.html) }
+    await email.sendMail(payload, composeFiles.value, editingDraftUid.value)
     showCompose.value = false
     if (email.currentFolder === 'sent' || email.currentFolder === 'drafts') await loadInbox()
   } catch (e: any) { sendError.value = e.response?.data?.message || 'Gagal mengirim email' }
