@@ -210,7 +210,7 @@ function slaInfo(t: any): { label: string; cls: string } {
               <option value="WhatsApp">WhatsApp</option>
               <option value="Telepon">Telepon</option>
               <option value="PRTG">PRTG</option>
-              <option value="RCMS">RCMS</option>
+
             </select>
           </div>
           <div class="field full">

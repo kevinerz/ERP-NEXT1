@@ -369,12 +369,6 @@ export class MasterService {
       await tx.integrationPrtgWebhook.updateMany({
         where: { ticket: { id_site: id } }, data: { id_ticket_terbentuk: null },
       });
-      await tx.integrationRcmsWebhook.updateMany({
-        where: { ticket: { id_site: id } }, data: { id_ticket_terbentuk: null },
-      });
-      await tx.integrationRuijieWebhook.updateMany({
-        where: { ticket: { id_site: id } }, data: { id_ticket_terbentuk: null },
-      });
 
       // Anak-anak WO & Tiket & Project
       await tx.workOrder.deleteMany({ where: { id_site: id } });

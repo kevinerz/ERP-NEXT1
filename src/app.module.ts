@@ -38,10 +38,7 @@ import { OnboardingModule } from './modules/onboarding/onboarding.module';
 
 // Integrations
 import { PrtgModule } from './modules/integrations/prtg/prtg.module';
-import { RcmsModule } from './modules/integrations/rcms/rcms.module';
-import { RuijieModule } from './modules/integrations/ruijie/ruijie.module';
 import { MekariModule } from './modules/integrations/mekari/mekari.module';
-import { SocialchatModule } from './modules/integrations/socialchat/socialchat.module';
 import { DigiflazzModule } from './modules/integrations/digiflazz/digiflazz.module';
 import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.module';
 
@@ -92,10 +89,7 @@ import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.m
 
     // Integrations
     PrtgModule,
-    RcmsModule,
-    RuijieModule,
     MekariModule,
-    SocialchatModule,
     DigiflazzModule,
     UptimeKumaModule,
   ],

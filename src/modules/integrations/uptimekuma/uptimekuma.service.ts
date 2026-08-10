@@ -12,7 +12,7 @@ const HB_DOWN = 0;
 const HB_UP = 1;
 
 /**
- * UptimeKumaService — beda dari PRTG/Ruijie: Uptime Kuma self-hosted &
+ * UptimeKumaService — Uptime Kuma self-hosted &
  * punya notifikasi Webhook bawaan yang POST ke URL kita tiap monitor
  * berubah status (up/down). Jadi ini WEBHOOK RECEIVER asli (event-driven),
  * bukan polling — lebih ringan & real-time dibanding integrasi lain di app ini.

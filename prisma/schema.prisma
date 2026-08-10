@@ -338,8 +338,7 @@ model PerangkatSite {
   serial_number    String?   @db.VarChar(100)
   ip_address       String?   @db.VarChar(45)
   mac_address      String?   @db.VarChar(20)
-  ruijie_device_id String?   @db.VarChar(100)
-  rcms_device_id   String?   @db.VarChar(100)
+
   tgl_pasang       DateTime? @db.Date
   status_perangkat String    @default("Aktif") @db.VarChar(20)
   catatan          String?   @db.Text
@@ -541,7 +540,7 @@ model OperationTicket {
   id_perangkat               Int?
   id_teknisi_pic             Int?
   sumber_tiket               String    @default("Internal") @db.VarChar(30)
-  socialchat_conversation_id String?   @db.VarChar(100)
+
   judul_tiket                String    @db.VarChar(255)
   deskripsi_masalah          String?   @db.Text
   prioritas                  String    @default("Medium") @db.VarChar(20)
@@ -561,8 +560,6 @@ model OperationTicket {
   logs            OperationTicketLog[]
   rca             OperationRca?
   prtg_webhooks       IntegrationPrtgWebhook[]
-  rcms_webhooks       IntegrationRcmsWebhook[]
-  ruijie_webhooks     IntegrationRuijieWebhook[]
   uptimekuma_webhooks IntegrationUptimeKumaWebhook[]
 
   @@index([status_tiket])
@@ -990,42 +987,8 @@ model IntegrationPrtgMapping {
   @@map("integration_prtg_mapping")
 }
 
-model IntegrationRcmsWebhook {
-  id_webhook          Int      @id @default(autoincrement())
-  rcms_device_id      String?  @db.VarChar(100)
-  imei_device         String?  @db.VarChar(20)
-  status_device       String?  @db.VarChar(20)
-  network_type        String?  @db.VarChar(10)
-  signal_strength     String?  @db.VarChar(20)
-  sim1_status         String?  @db.VarChar(50)
-  sim2_status         String?  @db.VarChar(50)
-  pesan_raw           String?  @db.Text
-  id_ticket_terbentuk Int?
-  diterima_pada       DateTime @default(now())
-
-  ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
-
-  @@map("integration_rcms_webhooks")
-}
-
-model IntegrationRuijieWebhook {
-  id_webhook          Int      @id @default(autoincrement())
-  ruijie_device_id    String?  @db.VarChar(100)
-  device_mac          String?  @db.VarChar(20)
-  device_type         String?  @db.VarChar(20)
-  status_device       String?  @db.VarChar(20)
-  jenis_alert         String?  @db.VarChar(100)
-  pesan_raw           String?  @db.Text
-  id_ticket_terbentuk Int?
-  diterima_pada       DateTime @default(now())
-
-  ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
-
-  @@map("integration_ruijie_webhooks")
-}
-
 // ── UPTIME KUMA ──────────────────────────────────────────────
-// Beda dari PRTG/RCMS/Ruijie: Uptime Kuma self-hosted & punya webhook
+// Uptime Kuma self-hosted & punya webhook
 // notification bawaan, jadi ini WEBHOOK RECEIVER asli (bukan polling).
 // Otentikasi pakai token rahasia di path URL (Uptime Kuma sendiri tidak
 // punya mekanisme signature/HMAC) — lihat UptimeKumaService.

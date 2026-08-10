@@ -19,10 +19,7 @@ const ALL_MODULS = [
   'public-wo',
   // Integrations
   'prtg',
-  'rcms',
-  'ruijie',
   'mekari',
-  'socialchat',
 ];
 
 @Injectable()

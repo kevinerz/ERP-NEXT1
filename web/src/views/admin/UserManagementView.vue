@@ -49,10 +49,7 @@ const ALL_MODULS: { key: string; label: string; icon: string }[] = [
   { key: 'notifications', label: 'Notifikasi', icon: '🔔' },
   { key: 'public-wo',  label: 'Public WO',    icon: '🌐' },
   { key: 'prtg',       label: 'PRTG',         icon: '📡' },
-  { key: 'rcms',       label: 'RCMS',         icon: '🛰️' },
-  { key: 'ruijie',     label: 'Ruijie',       icon: '📶' },
   { key: 'mekari',     label: 'Mekari',       icon: '💳' },
-  { key: 'socialchat', label: 'SocialChat',   icon: '💬' },
 ]
 
 onMounted(() => {
