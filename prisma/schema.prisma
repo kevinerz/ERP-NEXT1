@@ -352,18 +352,38 @@ model PerangkatSite {
 }
 
 model PicSite {
-  id_pic     Int      @id @default(autoincrement())
-  id_site    Int
-  nama_pic   String   @db.VarChar(150)
-  jabatan    String?  @db.VarChar(100)
-  no_kontak  String?  @db.VarChar(20)
-  email      String?  @db.VarChar(150)
-  is_utama   Boolean  @default(false)
-  created_at DateTime @default(now())
+  id_pic                 Int       @id @default(autoincrement())
+  id_site                Int
+  nama_pic               String    @db.VarChar(150)
+  jabatan                String?   @db.VarChar(100)
+  no_kontak              String?   @db.VarChar(20)
+  email                  String?   @db.VarChar(150)
+  is_utama               Boolean   @default(false)
+  tempat_lahir           String?   @db.VarChar(100)
+  tgl_lahir              DateTime? @db.Date
+  media_komunikasi       String?   @db.VarChar(30)
+  rencana_tambah_layanan String?   @db.VarChar(50)
+  catatan_update         String?   @db.Text
+  tgl_update_data        DateTime?
+  created_at             DateTime  @default(now())
 
-  site SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+  site    SitePelanggan  @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+  history CrmPicLog[]
 
   @@map("pic_site")
+}
+
+model CrmPicLog {
+  id_log        Int      @id @default(autoincrement())
+  id_pic        Int
+  sumber        String   @default("Manual") @db.VarChar(30)
+  data_snapshot String   @db.Text
+  catatan       String?  @db.Text
+  created_at    DateTime @default(now())
+
+  pic PicSite @relation(fields: [id_pic], references: [id_pic], onDelete: Cascade)
+
+  @@map("crm_pic_logs")
 }
 
 model SumberInternetSite {

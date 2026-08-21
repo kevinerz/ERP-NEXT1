@@ -25,6 +25,7 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   reports: 'reports',
   'public-wo': 'public-wo',
   prtg: 'prtg',
+  crm: 'crm',
   'uptime-kuma': 'uptime-kuma',
   mekari: 'mekari',
   digiflazz: 'assets', // Beli pulsa/paket via Digiflazz — bagian dari fitur SIM Topup di modul Aset

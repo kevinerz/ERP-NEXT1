@@ -6,7 +6,7 @@ import {
 const ALL_MODULS = [
   'hris', 'master', 'sales', 'projects', 'operations', 'assets', 'contracts',
   'finance', 'reports', 'notifications', 'public-wo',
-  'prtg', 'mekari',
+  'crm', 'prtg', 'mekari',
 ];
 
 export class CreateAdminUserDto {

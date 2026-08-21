@@ -18,6 +18,7 @@ const ALL_MODULS = [
   'notifications',
   'public-wo',
   // Integrations
+  'crm',
   'prtg',
   'mekari',
 ];

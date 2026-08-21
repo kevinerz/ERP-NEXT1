@@ -37,6 +37,7 @@ import { EmailModule } from './modules/email/email.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 
 // Integrations
+import { CrmModule } from './modules/crm/crm.module';
 import { PrtgModule } from './modules/integrations/prtg/prtg.module';
 import { MekariModule } from './modules/integrations/mekari/mekari.module';
 import { DigiflazzModule } from './modules/integrations/digiflazz/digiflazz.module';
@@ -86,6 +87,8 @@ import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.m
     AdminModule,
     SettingsModule,
     FinanceModule,
+
+    CrmModule,
 
     // Integrations
     PrtgModule,
