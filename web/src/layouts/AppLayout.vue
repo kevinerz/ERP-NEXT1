@@ -80,6 +80,7 @@ const allMenu = [
   { label: 'HRIS',         icon: '▪', emoji: '👤', to: '/hris/karyawan', modul: 'hris' },
   { label: 'Master Data',  icon: '▪', emoji: '📦', to: '/master',         modul: 'master' },
   { label: 'Sales',        icon: '▪', emoji: '💼', to: '/sales',          modul: 'sales' },
+  { label: 'CRM',          icon: '▪', emoji: '🤝', to: '/crm/pic',         modul: 'crm' },
   { label: 'Proyek',       icon: '▪', emoji: '📋', to: '/projects',       modul: 'projects' },
   { label: 'Operasional',  icon: '▪', emoji: '🔧', to: '/operations',     modul: 'operations' },
   { label: 'Work Order',   icon: '▪', emoji: '🗂️', to: '/public-wo',     modul: 'public-wo' },

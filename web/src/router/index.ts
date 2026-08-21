@@ -104,6 +104,17 @@ const router = createRouter({
           name: 'master-site-detail',
           component: () => import('@/views/master/SiteDetailView.vue'),
         },
+        // CRM
+        {
+          path: 'crm/pic',
+          name: 'crm-pic-list',
+          component: () => import('@/views/crm/CrmPicView.vue'),
+        },
+        {
+          path: 'crm/pic/:id',
+          name: 'crm-pic-detail',
+          component: () => import('@/views/crm/CrmPicDetailView.vue'),
+        },
         // Sales
         {
           path: 'sales',
