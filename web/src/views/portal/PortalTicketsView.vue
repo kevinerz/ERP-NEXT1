@@ -140,10 +140,12 @@ function fmtDatetime(d: string | null) {
           <div class="logs-title">Riwayat Update ({{ selected.logs.length }})</div>
           <div v-for="log in selected.logs" :key="log.id_log" class="log-item">
             <div class="log-meta">
-              <span class="log-user">{{ log.nama_user || 'Tim NEXT ONE' }}</span>
+              <span class="log-user">
+                {{ log.status_dari && log.status_ke ? `${log.status_dari} → ${log.status_ke}` : 'Update' }}
+              </span>
               <span class="log-time">{{ fmtDatetime(log.created_at) }}</span>
             </div>
-            <div class="log-msg">{{ log.pesan }}</div>
+            <div class="log-msg" v-if="log.catatan">{{ log.catatan }}</div>
           </div>
         </div>
       </div>

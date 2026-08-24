@@ -55,38 +55,33 @@ export class PortalService {
       where: { id_pelanggan },
       orderBy: { nama_site: 'asc' },
       include: {
-        layanan: { select: { nama_layanan: true, kode_layanan: true } },
-        perangkat: {
-          select: { nama_perangkat: true, tipe_perangkat: true, ip_address: true, status_perangkat: true },
-        },
-        tickets: {
-          where: { status_tiket: { in: ['Open', 'In_Progress'] } },
-          select: { id_ticket: true, status_tiket: true },
-        },
-        prtg_mapping: { select: { sensor_id: true, sensor_name: true, status: true, last_status_change: true }, take: 1 },
-        uptimekuma_mapping: { select: { monitor_id: true, monitor_name: true, status: true, last_status_change: true }, take: 1 },
+        layanan:    { select: { nama_layanan: true, kode_layanan: true } },
+        perangkat:  { select: { nama_perangkat: true, tipe_perangkat: true, ip_address: true, status_perangkat: true } },
+        tickets:    { where: { status_tiket: { in: ['Open', 'In_Progress'] } }, select: { id_ticket: true } },
+        prtg_mapping:       { select: { device_name: true }, take: 1 },
+        uptimekuma_mapping: { select: { monitor_id: true, monitor_name: true }, take: 1 },
       },
     });
 
-    return sites.map(s => ({
-      id_site:       s.id_site,
-      kode_site:     s.kode_site,
-      nama_site:     s.nama_site,
-      alamat:        s.alamat_lengkap,
-      kota:          s.kota,
-      provinsi:      s.provinsi,
-      status_site:   s.status_site,
-      tgl_aktif:     s.tgl_aktif,
-      layanan:       s.layanan,
-      tiket_aktif:   s.tickets.length,
-      perangkat:     s.perangkat,
-      monitoring: this.resolveMonitorStatus(s.prtg_mapping[0] ?? null, s.uptimekuma_mapping[0] ?? null),
+    return sites.map((s: any) => ({
+      id_site:     s.id_site,
+      kode_site:   s.kode_site,
+      nama_site:   s.nama_site,
+      alamat:      s.alamat_lengkap,
+      kota:        s.kota,
+      provinsi:    s.provinsi,
+      status_site: s.status_site,
+      tgl_aktif:   s.tgl_aktif,
+      layanan:     s.layanan,
+      tiket_aktif: s.tickets.length,
+      perangkat:   s.perangkat,
+      monitoring:  this.resolveMonitorStatus(s.prtg_mapping[0] ?? null, s.uptimekuma_mapping[0] ?? null),
     }));
   }
 
   private resolveMonitorStatus(prtg: any, uptime: any) {
-    if (prtg) return { sumber: 'PRTG', status: prtg.status, sensor: prtg.sensor_name, last_change: prtg.last_status_change };
-    if (uptime) return { sumber: 'UptimeKuma', status: uptime.status, sensor: uptime.monitor_name, last_change: uptime.last_status_change };
+    if (uptime) return { sumber: 'UptimeKuma', status: null, sensor: uptime.monitor_name };
+    if (prtg)   return { sumber: 'PRTG',       status: null, sensor: prtg.device_name };
     return null;
   }
 
@@ -109,26 +104,26 @@ export class PortalService {
         take: limit,
         include: {
           site: { select: { nama_site: true, kode_site: true } },
-          logs: { orderBy: { created_at: 'desc' }, take: 1, select: { pesan: true, created_at: true } },
+          logs: { orderBy: { created_at: 'desc' }, take: 1, select: { catatan: true, created_at: true } },
         },
       }),
       this.prisma.operationTicket.count({ where }),
     ]);
 
     return {
-      data: data.map(t => ({
-        id_ticket:     t.id_ticket,
-        nomor_tiket:   t.nomor_tiket,
-        judul:         t.judul_tiket,
-        deskripsi:     t.deskripsi_masalah,
-        status:        t.status_tiket,
-        prioritas:     t.prioritas,
-        tgl_open:      t.tgl_open,
-        tgl_resolved:  t.tgl_resolved,
-        tgl_closed:    t.tgl_closed,
-        sla_due:       t.sla_due,
-        sla_breached:  t.sla_breached,
-        site:          t.site,
+      data: (data as any[]).map(t => ({
+        id_ticket:       t.id_ticket,
+        nomor_tiket:     t.nomor_tiket,
+        judul:           t.judul_tiket,
+        deskripsi:       t.deskripsi_masalah,
+        status:          t.status_tiket,
+        prioritas:       t.prioritas,
+        tgl_open:        t.tgl_open,
+        tgl_resolved:    t.tgl_resolved,
+        tgl_closed:      t.tgl_closed,
+        sla_due:         t.sla_due,
+        sla_breached:    t.sla_breached,
+        site:            t.site,
         update_terakhir: t.logs[0] ?? null,
       })),
       meta: { total, page, limit, total_pages: Math.ceil(total / limit) },
@@ -140,7 +135,10 @@ export class PortalService {
       where: { id_ticket, site: { id_pelanggan } },
       include: {
         site: { select: { nama_site: true, kode_site: true } },
-        logs: { orderBy: { created_at: 'desc' }, select: { id_log: true, pesan: true, created_at: true, nama_user: true } },
+        logs: {
+          orderBy: { created_at: 'desc' },
+          select: { id_log: true, catatan: true, status_dari: true, status_ke: true, created_at: true },
+        },
       },
     });
     if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
