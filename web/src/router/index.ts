@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { usePortalAuthStore } from '@/stores/portalAuth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -21,6 +22,24 @@ const router = createRouter({
       name: 'daftar',
       component: () => import('@/views/DaftarView.vue'),
       meta: { public: true },
+    },
+
+    // Portal Pelanggan — layout terpisah, auth terpisah
+    {
+      path: '/portal/login',
+      name: 'portal-login',
+      component: () => import('@/views/portal/PortalLoginView.vue'),
+      meta: { portalPublic: true },
+    },
+    {
+      path: '/portal',
+      component: () => import('@/layouts/PortalLayout.vue'),
+      meta: { portal: true },
+      children: [
+        { path: '', redirect: '/portal/dashboard' },
+        { path: 'dashboard', name: 'portal-dashboard', component: () => import('@/views/portal/PortalDashboardView.vue') },
+        { path: 'tickets',   name: 'portal-tickets',   component: () => import('@/views/portal/PortalTicketsView.vue') },
+      ],
     },
 
     // Protected — semua di bawah AppLayout
@@ -178,6 +197,11 @@ const router = createRouter({
           path: 'admin/users',
           name: 'admin-users',
           component: () => import('@/views/admin/UserManagementView.vue'),
+        },
+        {
+          path: 'admin/portal-users',
+          name: 'admin-portal-users',
+          component: () => import('@/views/admin/PortalUsersView.vue'),
         },
         {
           path: 'admin/logs',
@@ -344,6 +368,15 @@ const ROUTE_MODUL: Record<string, string> = {
 }
 
 router.beforeEach((to) => {
+  // ── Portal pelanggan — guard terpisah ─────────────────────
+  if (to.meta.portalPublic) return
+  if (to.meta.portal) {
+    const portalAuth = usePortalAuthStore()
+    if (!portalAuth.user) portalAuth.init()
+    if (!portalAuth.isLoggedIn) return '/portal/login'
+    return
+  }
+
   const auth = useAuthStore()
   if (!auth.user) auth.init()
 
@@ -363,7 +396,8 @@ router.beforeEach((to) => {
     const modul = ROUTE_MODUL[to.name as string]
     if (modul && !auth.canAccess(modul)) return '/dashboard'
     // halaman admin hanya Admin / Director
-    if ((to.name === 'admin-users' || to.name === 'admin-logs' || to.name === 'admin-email-log') && !auth.hasRole('Admin') && !auth.hasRole('Director')) return '/dashboard'
+    const adminPages = ['admin-users', 'admin-logs', 'admin-email-log', 'admin-portal-users']
+    if (adminPages.includes(to.name as string) && !auth.hasRole('Admin') && !auth.hasRole('Director') && !auth.hasRole('Manager_Ops')) return '/dashboard'
   }
 })
 

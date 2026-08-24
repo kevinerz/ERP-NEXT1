@@ -111,9 +111,25 @@ model Pelanggan {
   mekari_customer_uid String?  @db.VarChar(100)
   created_at          DateTime @default(now())
 
-  sites SitePelanggan[]
+  sites          SitePelanggan[]
+  customer_users CustomerUser[]
 
   @@map("pelanggan")
+}
+
+model CustomerUser {
+  id_user       Int       @id @default(autoincrement())
+  id_pelanggan  Int
+  email         String    @unique @db.VarChar(150)
+  password_hash String    @db.VarChar(255)
+  nama          String?   @db.VarChar(150)
+  is_aktif      Boolean   @default(true)
+  last_login    DateTime?
+  created_at    DateTime  @default(now())
+
+  pelanggan Pelanggan @relation(fields: [id_pelanggan], references: [id_pelanggan], onDelete: Cascade)
+
+  @@map("customer_users")
 }
 
 model MasterLayanan {

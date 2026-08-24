@@ -93,6 +93,7 @@ const allMenu = [
 
 const adminMenu = [
   { label: 'Users',        emoji: '⚙️', to: '/admin/users'  },
+  { label: 'Portal Akun', emoji: '🌐', to: '/admin/portal-users' },
   { label: 'Activity Log', emoji: '📝', to: '/admin/logs'   },
   { label: 'Email Log',    emoji: '📤', to: '/admin/email-log' },
   { label: 'PRTG',         emoji: '📡', to: '/integrations/prtg' },
