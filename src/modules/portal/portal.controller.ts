@@ -1,7 +1,8 @@
 import {
   Controller, Post, Get, Patch, Delete, Body, Param, Query,
-  UseGuards, Req, ParseIntPipe, HttpCode,
+  UseGuards, Req, ParseIntPipe, HttpCode, Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { PortalService } from './portal.service';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -54,6 +55,47 @@ export class PortalController {
   async getTicketDetail(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
     const data = await this.service.getTicketDetail(req.user.id_pelanggan, id);
     return { success: true, data };
+  }
+
+  // ── Sensor Ping & Traffic (customer) ─────────────────────
+
+  @Get('sites/:siteId/sensors')
+  @UseGuards(AuthGuard('customer-jwt'))
+  async getSiteSensors(@Req() req: any, @Param('siteId', ParseIntPipe) siteId: number) {
+    const data = await this.service.getSiteSensorsForPortal(req.user.id_pelanggan, siteId);
+    return { success: true, ...data };
+  }
+
+  @Get('sites/:siteId/sensor/:objid/history')
+  @UseGuards(AuthGuard('customer-jwt'))
+  async getSensorHistory(
+    @Req() req: any,
+    @Param('siteId', ParseIntPipe) siteId: number,
+    @Param('objid', ParseIntPipe) objid: number,
+    @Query('hours') hours?: string,
+  ) {
+    const data = await this.service.getSensorHistoryForPortal(req.user.id_pelanggan, siteId, objid, hours ? Number(hours) : 24);
+    return { success: true, ...data };
+  }
+
+  @Get('sites/:siteId/sensor/:objid/graph.png')
+  @UseGuards(AuthGuard('customer-jwt'))
+  async getSensorGraph(
+    @Req() req: any,
+    @Param('siteId', ParseIntPipe) siteId: number,
+    @Param('objid', ParseIntPipe) objid: number,
+    @Query('graphid') graphid?: string,
+    @Query('hours') hours?: string,
+    @Res() res?: Response,
+  ) {
+    const { buffer, contentType } = await this.service.getSensorGraphForPortal(
+      req.user.id_pelanggan, siteId, objid,
+      graphid ? Number(graphid) : 0,
+      hours ? Number(hours) : 24,
+    );
+    res!.setHeader('Content-Type', contentType);
+    res!.setHeader('Cache-Control', 'public, max-age=300');
+    res!.send(buffer);
   }
 
   // ── Admin endpoints (internal staff) ────────────────────

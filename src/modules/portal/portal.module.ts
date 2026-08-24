@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
+import { PrtgModule } from '../integrations/prtg/prtg.module';
 import { PortalService } from './portal.service';
 import { PortalController } from './portal.controller';
 import { CustomerJwtStrategy } from './customer-jwt.strategy';
@@ -12,7 +13,8 @@ import { CustomerJwtStrategy } from './customer-jwt.strategy';
   imports: [
     PrismaModule,
     PassportModule,
-    AuthModule,   // menyediakan JwtAuthGuard + TokenBlacklistService untuk admin endpoints
+    AuthModule,
+    PrtgModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PrtgService } from '../integrations/prtg/prtg.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -8,6 +9,7 @@ export class PortalService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
+    private prtg: PrtgService,
   ) {}
 
   // ── Auth ──────────────────────────────────────────────────
@@ -143,6 +145,27 @@ export class PortalService {
     });
     if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
     return ticket;
+  }
+
+  // ── Sensor Ping & Traffic per Site (portal customer) ─────
+
+  async getSiteSensorsForPortal(id_pelanggan: number, id_site: number) {
+    // Pastikan site memang milik pelanggan ini
+    const site = await this.prisma.sitePelanggan.findFirst({ where: { id_site, id_pelanggan } });
+    if (!site) throw new NotFoundException('Site tidak ditemukan');
+    return this.prtg.getSiteSensors(id_site);
+  }
+
+  async getSensorHistoryForPortal(id_pelanggan: number, id_site: number, objid: number, hours = 24) {
+    const site = await this.prisma.sitePelanggan.findFirst({ where: { id_site, id_pelanggan } });
+    if (!site) throw new NotFoundException('Site tidak ditemukan');
+    return this.prtg.getSensorHistory(objid, hours);
+  }
+
+  async getSensorGraphForPortal(id_pelanggan: number, id_site: number, objid: number, graphid = 0, hours = 24) {
+    const site = await this.prisma.sitePelanggan.findFirst({ where: { id_site, id_pelanggan } });
+    if (!site) throw new NotFoundException('Site tidak ditemukan');
+    return this.prtg.getSensorGraph(objid, graphid, hours);
   }
 
   // ── Admin: kelola customer users ─────────────────────────

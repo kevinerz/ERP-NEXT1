@@ -10,12 +10,88 @@ const router = useRouter()
 const sites   = ref<any[]>([])
 const loading = ref(true)
 
+// Sensor expand state
+const expandedSite  = ref<number | null>(null)
+const expandedSensor = ref<number | null>(null)
+const sensorData     = ref<{ device_name: string; ping: any[]; ether: any[] } | null>(null)
+const sensorLoading  = ref(false)
+const histData       = ref<any[]>([])
+const histLoading    = ref(false)
+const graphHours     = ref(24)
+
 onMounted(async () => {
   try {
     const res = await portalApi.get('/portal/sites')
     sites.value = res.data.data
   } finally { loading.value = false }
 })
+
+async function toggleSensors(id_site: number) {
+  if (expandedSite.value === id_site) {
+    expandedSite.value = null; sensorData.value = null; expandedSensor.value = null; histData.value = []
+    return
+  }
+  expandedSite.value = id_site; sensorLoading.value = true; sensorData.value = null; expandedSensor.value = null
+  try {
+    const r = await portalApi.get(`/portal/sites/${id_site}/sensors`)
+    sensorData.value = r.data.data
+  } catch {} finally { sensorLoading.value = false }
+}
+
+async function toggleSensorHistory(id_site: number, objid: number) {
+  if (expandedSensor.value === objid) { expandedSensor.value = null; histData.value = []; return }
+  expandedSensor.value = objid; histLoading.value = true; histData.value = []
+  try {
+    const r = await portalApi.get(`/portal/sites/${id_site}/sensor/${objid}/history`, { params: { hours: graphHours.value } })
+    histData.value = r.data.data
+  } catch {} finally { histLoading.value = false }
+}
+
+function graphImgUrl(id_site: number, objid: number, graphid = 0) {
+  const token = localStorage.getItem('portal_token') || ''
+  // Gambar graph diambil via portalApi (butuh token di header, tidak bisa langsung img src)
+  // Gunakan blob approach — fetch dengan axios lalu object URL
+  return `/api/portal/sites/${id_site}/sensor/${objid}/graph.png?graphid=${graphid}&hours=${graphHours.value}`
+}
+
+const graphBlobUrls = ref<Record<string, string>>({})
+
+async function loadGraphBlob(id_site: number, objid: number, graphid = 0) {
+  const key = `${id_site}_${objid}_${graphid}`
+  if (graphBlobUrls.value[key]) return
+  try {
+    const r = await portalApi.get(`/portal/sites/${id_site}/sensor/${objid}/graph.png`, {
+      params: { graphid, hours: graphHours.value },
+      responseType: 'blob',
+    })
+    graphBlobUrls.value[key] = URL.createObjectURL(r.data)
+  } catch {}
+}
+
+function buildSparkline(points: any[], key: string, color: string, w = 500, h = 60): string {
+  const vals = points.map(p => {
+    const v = p[key]
+    return typeof v === 'number' ? v : parseFloat(String(v).replace(/[^\d.,-]/g, '').replace(',', '.')) || null
+  }).filter(v => v !== null) as number[]
+  if (vals.length < 2) return ''
+  const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1
+  const xs = vals.map((_, i) => (i / (vals.length - 1)) * w)
+  const ys = vals.map(v => h - ((v - min) / range) * (h - 6) - 3)
+  const d    = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ')
+  const area = `M${xs[0].toFixed(1)},${h} ` + xs.map((x, i) => `L${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ') + ` L${xs[xs.length-1].toFixed(1)},${h} Z`
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:${h}px">
+    <path d="${area}" fill="${color}" opacity="0.12"/>
+    <path d="${d}" stroke="${color}" stroke-width="1.5" fill="none"/>
+  </svg>`
+}
+
+function lastVal(points: any[], key: string) {
+  for (let i = points.length - 1; i >= 0; i--) {
+    const v = points[i][key]
+    if (v !== null && v !== undefined && v !== '') return v
+  }
+  return null
+}
 
 function statusMonitor(s: any) {
   if (!s.monitoring) return { label: 'Tidak Dipantau', cls: 'mon-none' }
@@ -114,8 +190,85 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
         </div>
         <div class="no-perangkat" v-else>Tidak ada data perangkat</div>
 
-        <!-- Aktif sejak -->
-        <div class="site-footer">Aktif sejak {{ fmtDate(site.tgl_aktif) }}</div>
+        <!-- Aktif sejak + tombol sensor -->
+        <div class="site-footer">
+          <span>Aktif sejak {{ fmtDate(site.tgl_aktif) }}</span>
+          <button class="btn-sensor" @click="toggleSensors(site.id_site)">
+            {{ expandedSite === site.id_site ? '▲ Sembunyikan' : '📈 Ping & Traffic' }}
+          </button>
+        </div>
+
+        <!-- Sensor Panel -->
+        <div v-if="expandedSite === site.id_site" class="sensor-panel">
+          <div v-if="sensorLoading" class="sensor-loading">Memuat sensor...</div>
+          <div v-else-if="!sensorData" class="sensor-empty">Tidak ada data sensor</div>
+          <template v-else>
+            <p class="sensor-device">Device: <strong>{{ sensorData.device_name }}</strong></p>
+
+            <!-- Pilih rentang -->
+            <div class="sensor-hours">
+              <span>Rentang:</span>
+              <button v-for="h in [6,24,48,168]" :key="h" :class="['hour-btn', {active: graphHours === h}]"
+                @click="graphHours = h; expandedSensor = null; histData = []">
+                {{ h < 48 ? h+'j' : (h/24)+'h' }}
+              </button>
+            </div>
+
+            <!-- Ping -->
+            <div v-if="sensorData.ping.length" class="sensor-group">
+              <div class="sensor-group-title">🏓 Ping</div>
+              <div v-for="s in sensorData.ping" :key="s.objid" class="sensor-item">
+                <div class="sensor-row" @click="toggleSensorHistory(site.id_site, s.objid); loadGraphBlob(site.id_site, s.objid, 0)">
+                  <span class="s-name">{{ s.sensor }}</span>
+                  <span :class="['s-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
+                  <span class="s-chevron">{{ expandedSensor === s.objid ? '▲' : '▼' }}</span>
+                </div>
+                <div v-if="expandedSensor === s.objid" class="sensor-hist">
+                  <div v-if="histLoading" class="sensor-loading">Memuat...</div>
+                  <template v-else-if="histData.length">
+                    <img v-if="graphBlobUrls[`${site.id_site}_${s.objid}_0`]"
+                      :src="graphBlobUrls[`${site.id_site}_${s.objid}_0`]" class="graph-img" />
+                    <div v-for="key in Object.keys(histData[0]).filter(k => k !== 'datetime' && k !== 'coverage')" :key="key" class="spark-row">
+                      <span class="spark-label">{{ key }}</span>
+                      <span class="spark-val">{{ lastVal(histData, key) ?? '—' }}</span>
+                      <div class="spark-chart" v-html="buildSparkline(histData, key, '#3b82f6')"></div>
+                    </div>
+                  </template>
+                  <p v-else class="sensor-empty">Tidak ada data</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Traffic / Ether -->
+            <div v-if="sensorData.ether.length" class="sensor-group">
+              <div class="sensor-group-title">📊 Traffic</div>
+              <div v-for="s in sensorData.ether" :key="s.objid" class="sensor-item">
+                <div class="sensor-row" @click="toggleSensorHistory(site.id_site, s.objid); loadGraphBlob(site.id_site, s.objid, 1)">
+                  <span class="s-name">{{ s.sensor }}</span>
+                  <span :class="['s-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
+                  <span class="s-chevron">{{ expandedSensor === s.objid ? '▲' : '▼' }}</span>
+                </div>
+                <div v-if="expandedSensor === s.objid" class="sensor-hist">
+                  <div v-if="histLoading" class="sensor-loading">Memuat...</div>
+                  <template v-else-if="histData.length">
+                    <img v-if="graphBlobUrls[`${site.id_site}_${s.objid}_1`]"
+                      :src="graphBlobUrls[`${site.id_site}_${s.objid}_1`]" class="graph-img" />
+                    <div v-for="key in Object.keys(histData[0]).filter(k => k !== 'datetime' && k !== 'coverage')" :key="key" class="spark-row">
+                      <span class="spark-label">{{ key }}</span>
+                      <span class="spark-val">{{ lastVal(histData, key) ?? '—' }}</span>
+                      <div class="spark-chart" v-html="buildSparkline(histData, key, '#10b981')"></div>
+                    </div>
+                  </template>
+                  <p v-else class="sensor-empty">Tidak ada data</p>
+                </div>
+              </div>
+            </div>
+
+            <p v-if="!sensorData.ping.length && !sensorData.ether.length" class="sensor-empty">
+              Tidak ada sensor ping/traffic terpantau untuk site ini
+            </p>
+          </template>
+        </div>
       </div>
     </div>
 
@@ -185,5 +338,31 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
 .perangkat-more { font-size: 11px; color: #94a3b8; padding-top: 4px; }
 .no-perangkat   { font-size: 12px; color: #94a3b8; font-style: italic; }
 
-.site-footer { font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 10px; }
+.site-footer { font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 10px; display: flex; justify-content: space-between; align-items: center; }
+.btn-sensor { padding: 4px 10px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-sensor:hover { background: #dbeafe; }
+
+.sensor-panel { border-top: 1px solid #f1f5f9; padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.sensor-device { margin: 0; font-size: 12px; color: #64748b; }
+.sensor-hours  { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
+.hour-btn { padding: 3px 8px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; color: #374151; }
+.hour-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
+.sensor-loading { font-size: 12px; color: #94a3b8; text-align: center; padding: 8px; }
+.sensor-empty   { font-size: 12px; color: #94a3b8; text-align: center; padding: 8px; }
+.sensor-group { display: flex; flex-direction: column; gap: 0; }
+.sensor-group-title { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.sensor-item { border-top: 1px solid #f8fafc; }
+.sensor-row  { display: flex; align-items: center; gap: 8px; padding: 8px 4px; cursor: pointer; }
+.sensor-row:hover { background: #f8fafc; border-radius: 6px; }
+.s-name    { flex: 1; font-size: 13px; font-weight: 600; color: #0f172a; }
+.s-status  { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 8px; }
+.st-up     { background: #f0fdf4; color: #15803d; }
+.st-down   { background: #fef2f2; color: #dc2626; }
+.s-chevron { font-size: 11px; color: #94a3b8; }
+.sensor-hist { padding: 8px 4px 12px; display: flex; flex-direction: column; gap: 8px; }
+.graph-img   { width: 100%; border-radius: 6px; border: 1px solid #e2e8f0; }
+.spark-row   { display: grid; grid-template-columns: 1fr 70px; grid-template-rows: auto auto; gap: 2px 8px; }
+.spark-label { font-size: 11px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spark-val   { font-size: 11px; font-weight: 700; color: #0f172a; font-family: monospace; text-align: right; }
+.spark-chart { grid-column: 1 / -1; overflow: hidden; border-radius: 4px; }
 </style>
