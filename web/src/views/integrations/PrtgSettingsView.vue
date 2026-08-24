@@ -144,9 +144,7 @@ const graphHours   = ref(24)
 const graphSensors = ref<{ device_name: string; ping: any[]; ether: any[]; other: any[] } | null>(null)
 const graphLoading = ref(false)
 const graphError   = ref('')
-const openSensorId = ref<number | null>(null)   // sensor yang historynya sedang di-expand
-const sensorHistory = ref<any[]>([])
-const histLoading  = ref(false)
+const openSensorId = ref<number | null>(null)
 
 async function fetchGraphSensors() {
   if (!graphSiteId.value) return
@@ -160,13 +158,22 @@ async function fetchGraphSensors() {
   finally { graphLoading.value = false }
 }
 
+const graphBlobUrls2 = ref<Record<string, string>>({})
+const graphBlobLoading2 = ref<Record<string, boolean>>({})
+
 async function openSensorHistory(objid: number) {
   if (openSensorId.value === objid) { openSensorId.value = null; return }
-  openSensorId.value = objid; histLoading.value = true; sensorHistory.value = []
+  openSensorId.value = objid
+  const key = `${objid}_${graphHours.value}`
+  if (graphBlobUrls2.value[key] || graphBlobLoading2.value[key]) return
+  graphBlobLoading2.value[key] = true
   try {
-    const r = await api.get(`/prtg/sensor/${objid}/history`, { params: { hours: graphHours.value } })
-    sensorHistory.value = r.data.data
-  } catch {} finally { histLoading.value = false }
+    const r = await api.get(`/prtg/sensor/${objid}/graph.png`, {
+      params: { hours: graphHours.value },
+      responseType: 'blob',
+    })
+    graphBlobUrls2.value[key] = URL.createObjectURL(r.data)
+  } catch {} finally { delete graphBlobLoading2.value[key] }
 }
 
 const isPing = (name: string) => /ping|icmp/i.test(name)
@@ -392,23 +399,11 @@ onMounted(async () => {
             </div>
 
             <div v-if="openSensorId === s.objid" class="sensor-detail">
-              <div v-if="histLoading" class="loading" style="padding:12px">Memuat history...</div>
-              <template v-if="!histLoading && sensorHistory.length">
-                <div class="graph-wrap">
-                  <p class="graph-label">PRTG Graph — {{ graphHours }} jam terakhir</p>
-                  <img :src="graphImgUrl(s.objid)" :key="`${s.objid}-${graphHours}`" class="prtg-graph-img"
-                    @error="(e: any) => e.target.style.display='none'" />
-                </div>
-                <div class="sparkline-wrap">
-                  <p class="graph-label">Data historis ({{ sensorHistory.length }} titik)</p>
-                  <div v-for="key in Object.keys(sensorHistory[0]).filter(k => k !== 'datetime' && k !== 'coverage')" :key="key" class="spark-row">
-                    <span class="spark-label">{{ key }}</span>
-                    <span class="spark-last">{{ lastVal(sensorHistory, key) ?? '—' }}</span>
-                    <div class="spark-chart" v-html="buildSparkline(sensorHistory, key, isPing(s.sensor) ? '#3b82f6' : '#10b981')"></div>
-                  </div>
-                </div>
-              </template>
-              <p v-if="!histLoading && !sensorHistory.length" class="empty" style="padding:12px">Tidak ada data history</p>
+              <p class="graph-label">PRTG Graph — {{ graphHours }} jam terakhir</p>
+              <div v-if="graphBlobLoading2[`${s.objid}_${graphHours}`]" class="loading" style="padding:12px">Memuat graph...</div>
+              <img v-else-if="graphBlobUrls2[`${s.objid}_${graphHours}`]"
+                :src="graphBlobUrls2[`${s.objid}_${graphHours}`]" class="prtg-graph-img" />
+              <p v-else class="empty" style="padding:12px">Graph tidak tersedia</p>
             </div>
           </div>
         </div>
