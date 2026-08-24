@@ -52,6 +52,7 @@ async function openModal(id_site: number, objid: number, name: string) {
 }
 
 async function fetchModalGraph(id_site: number, objid: number, hours: number) {
+  console.log('[modal] fetchGraph', { id_site, objid, hours })
   if (modalGraphUrl.value) { URL.revokeObjectURL(modalGraphUrl.value); modalGraphUrl.value = null }
   modalGraphLoading.value = true
   try {
@@ -65,6 +66,7 @@ async function fetchModalGraph(id_site: number, objid: number, hours: number) {
 }
 
 async function modalChangeHours(h: number) {
+  console.log('[modal] changeHours', h, 'sensor=', modalSensor.value)
   modalHours.value = h
   if (modalSensor.value) await fetchModalGraph(modalSensor.value.id_site, modalSensor.value.objid, h)
 }
