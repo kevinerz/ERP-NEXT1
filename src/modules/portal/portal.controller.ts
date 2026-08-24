@@ -6,7 +6,8 @@ import { AuthGuard } from '@nestjs/passport';
 import { PortalService } from './portal.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { JwtAuthGuard } from '../../common/guards/jwt.guard';  // class name is JwtAuthGuard
+import { JwtAuthGuard } from '../../common/guards/jwt.guard';
+import { Public } from '../../common/decorators/public.decorator';
 
 // Guard untuk customer (portal JWT)
 const CustomerGuard = () => UseGuards(AuthGuard('customer-jwt'));
@@ -19,6 +20,7 @@ export class PortalController {
   constructor(private service: PortalService) {}
 
   // ── Public: login portal ─────────────────────────────────
+  @Public()
   @Post('auth/login')
   @HttpCode(200)
   async login(@Body() body: { email: string; password: string }) {
