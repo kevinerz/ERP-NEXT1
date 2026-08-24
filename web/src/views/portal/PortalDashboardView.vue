@@ -37,12 +37,22 @@ async function toggleSensors(id_site: number) {
   } catch {} finally { sensorLoading.value = false }
 }
 
-const graphBlobUrls = ref<Record<string, string>>({})
+const histData         = ref<any[]>([])
+const graphBlobUrls    = ref<Record<string, string>>({})
 const graphBlobLoading = ref<Record<string, boolean>>({})
+
+// Modal popup
+const modalSensor = ref<{ id_site: number; objid: number; name: string } | null>(null)
 
 async function toggleSensor(id_site: number, objid: number) {
   if (expandedSensor.value === objid) { expandedSensor.value = null; return }
   expandedSensor.value = objid
+  await loadGraphBlob(id_site, objid)
+}
+
+async function openModal(id_site: number, objid: number, name: string) {
+  modalSensor.value = { id_site, objid, name }
+  // Load semua rentang waktu supaya bisa switch di modal
   await loadGraphBlob(id_site, objid)
 }
 
@@ -57,6 +67,11 @@ async function loadGraphBlob(id_site: number, objid: number, graphid = 0) {
     })
     graphBlobUrls.value[key] = URL.createObjectURL(r.data)
   } catch {} finally { delete graphBlobLoading.value[key] }
+}
+
+async function modalChangeHours(h: number) {
+  graphHours.value = h
+  if (modalSensor.value) await loadGraphBlob(modalSensor.value.id_site, modalSensor.value.objid)
 }
 
 
@@ -183,18 +198,11 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
 
             <!-- Semua sensor dynamic dari PRTG -->
             <div v-if="sensorData.sensors?.length" class="sensor-group">
-              <div v-for="s in sensorData.sensors" :key="s.objid" class="sensor-item">
-                <div class="sensor-row" @click="toggleSensor(site.id_site, s.objid)">
-                  <span class="s-name">{{ s.sensor }}</span>
-                  <span :class="['s-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
-                  <span class="s-chevron">{{ expandedSensor === s.objid ? '▲' : '▼' }}</span>
-                </div>
-                <div v-if="expandedSensor === s.objid" class="sensor-hist">
-                  <div v-if="graphBlobLoading[`${site.id_site}_${s.objid}_0_${graphHours}`]" class="sensor-loading">Memuat graph...</div>
-                  <img v-else-if="graphBlobUrls[`${site.id_site}_${s.objid}_0_${graphHours}`]"
-                    :src="graphBlobUrls[`${site.id_site}_${s.objid}_0_${graphHours}`]" class="graph-img" />
-                  <p v-else class="sensor-empty">Graph tidak tersedia</p>
-                </div>
+              <div v-for="s in sensorData.sensors" :key="s.objid" class="sensor-item"
+                @click="openModal(site.id_site, s.objid, s.sensor)">
+                <span class="s-name">{{ s.sensor }}</span>
+                <span :class="['s-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
+                <span class="s-graph-hint">📈 lihat graph</span>
               </div>
             </div>
             <p v-else class="sensor-empty">Tidak ada sensor terpantau untuk site ini di PRTG</p>
@@ -205,6 +213,40 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
 
     <div v-if="!loading && !sites.length" class="empty">Tidak ada site terdaftar untuk akun ini.</div>
   </div>
+
+  <!-- Modal Graph -->
+  <Teleport to="body">
+    <div v-if="modalSensor" class="graph-modal-overlay" @click.self="modalSensor = null">
+      <div class="graph-modal">
+        <div class="graph-modal-header">
+          <div>
+            <div class="graph-modal-title">{{ modalSensor.name }}</div>
+            <div class="graph-modal-sub">Sensor ID: {{ modalSensor.objid }}</div>
+          </div>
+          <button class="graph-modal-close" @click="modalSensor = null">✕</button>
+        </div>
+
+        <div class="graph-modal-hours">
+          <button v-for="h in [6, 24, 48, 168]" :key="h"
+            :class="['hour-btn', { active: graphHours === h }]"
+            @click="modalChangeHours(h)">
+            {{ h < 48 ? h + ' jam' : (h / 24) + ' hari' }}
+          </button>
+        </div>
+
+        <div class="graph-modal-body">
+          <div v-if="graphBlobLoading[`${modalSensor.id_site}_${modalSensor.objid}_0_${graphHours}`]"
+            class="graph-modal-loading">Memuat graph dari PRTG...</div>
+          <div v-else-if="graphBlobUrls[`${modalSensor.id_site}_${modalSensor.objid}_0_${graphHours}`]"
+            class="graph-dark-wrap">
+            <img :src="graphBlobUrls[`${modalSensor.id_site}_${modalSensor.objid}_0_${graphHours}`]"
+              class="graph-modal-img" />
+          </div>
+          <div v-else class="graph-modal-loading">Graph tidak tersedia untuk sensor ini</div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -280,16 +322,25 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
 .hour-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 .sensor-loading { font-size: 12px; color: #94a3b8; text-align: center; padding: 8px; }
 .sensor-empty   { font-size: 12px; color: #94a3b8; text-align: center; padding: 8px; }
-.sensor-group { display: flex; flex-direction: column; gap: 0; }
-.sensor-group-title { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-.sensor-item { border-top: 1px solid #f8fafc; }
-.sensor-row  { display: flex; align-items: center; gap: 8px; padding: 8px 4px; cursor: pointer; }
-.sensor-row:hover { background: #f8fafc; border-radius: 6px; }
-.s-name    { flex: 1; font-size: 13px; font-weight: 600; color: #0f172a; }
-.s-status  { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 8px; }
-.st-up     { background: #f0fdf4; color: #15803d; }
-.st-down   { background: #fef2f2; color: #dc2626; }
-.s-chevron { font-size: 11px; color: #94a3b8; }
-.sensor-hist { padding: 8px 4px 12px; display: flex; flex-direction: column; gap: 8px; }
-.graph-img   { width: 100%; border-radius: 6px; border: 1px solid #e2e8f0; }
+.sensor-group { display: flex; flex-direction: column; }
+.sensor-item  { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-top: 1px solid #f1f5f9; cursor: pointer; border-radius: 8px; transition: background 0.1s; }
+.sensor-item:first-child { border-top: none; }
+.sensor-item:hover { background: #f0f9ff; }
+.s-name       { flex: 1; font-size: 13px; font-weight: 600; color: #0f172a; }
+.s-status     { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 8px; flex-shrink: 0; }
+.st-up        { background: #dcfce7; color: #15803d; }
+.st-down      { background: #fee2e2; color: #dc2626; }
+.s-graph-hint { font-size: 11px; color: #3b82f6; font-weight: 600; flex-shrink: 0; }
+.graph-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.graph-modal         { background: #1e293b; border-radius: 16px; width: 100%; max-width: 860px; box-shadow: 0 25px 80px rgba(0,0,0,0.5); overflow: hidden; }
+.graph-modal-header  { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 24px 14px; border-bottom: 1px solid #334155; }
+.graph-modal-title   { font-size: 18px; font-weight: 800; color: #f1f5f9; }
+.graph-modal-sub     { font-size: 12px; color: #64748b; margin-top: 2px; }
+.graph-modal-close   { background: #334155; border: none; border-radius: 8px; color: #94a3b8; font-size: 14px; padding: 6px 10px; cursor: pointer; flex-shrink: 0; }
+.graph-modal-close:hover { background: #475569; color: #f1f5f9; }
+.graph-modal-hours   { display: flex; gap: 8px; padding: 12px 24px; border-bottom: 1px solid #334155; }
+.graph-modal-body    { padding: 20px 24px 24px; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+.graph-dark-wrap     { width: 100%; background: #0f172a; border-radius: 10px; padding: 12px; }
+.graph-modal-img     { width: 100%; display: block; border-radius: 6px; }
+.graph-modal-loading { color: #64748b; font-size: 14px; text-align: center; padding: 40px; }
 </style>
