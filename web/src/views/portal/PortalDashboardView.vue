@@ -105,8 +105,8 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
         <!-- Perangkat utama -->
         <div class="perangkat-list" v-if="site.perangkat?.length">
           <div v-for="(p, i) in site.perangkat.slice(0, 3)" :key="i" class="perangkat-item">
-            <span class="p-type">{{ p.tipe_perangkat }}</span>
-            <span class="p-name">{{ p.nama_perangkat }}</span>
+            <span class="p-type">{{ p.jenis_perangkat }}</span>
+            <span class="p-name">{{ [p.merk, p.tipe_model].filter(Boolean).join(' ') || '—' }}</span>
             <span v-if="p.ip_address" class="p-ip">{{ p.ip_address }}</span>
             <span :class="['p-status', p.status_perangkat === 'Aktif' ? 'p-aktif' : 'p-na']">{{ p.status_perangkat }}</span>
           </div>

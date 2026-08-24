@@ -6,7 +6,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { PortalService } from './portal.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt.guard';  // class name is JwtAuthGuard
 
 // Guard untuk customer (portal JWT)
 const CustomerGuard = () => UseGuards(AuthGuard('customer-jwt'));

@@ -56,7 +56,7 @@ export class PortalService {
       orderBy: { nama_site: 'asc' },
       include: {
         layanan:    { select: { nama_layanan: true, kode_layanan: true } },
-        perangkat:  { select: { nama_perangkat: true, tipe_perangkat: true, ip_address: true, status_perangkat: true } },
+        perangkat:  { select: { jenis_perangkat: true, merk: true, tipe_model: true, ip_address: true, status_perangkat: true } },
         tickets:    { where: { status_tiket: { in: ['Open', 'In_Progress'] } }, select: { id_ticket: true } },
         prtg_mapping:       { select: { device_name: true }, take: 1 },
         uptimekuma_mapping: { select: { monitor_id: true, monitor_name: true }, take: 1 },
