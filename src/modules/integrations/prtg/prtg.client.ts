@@ -141,14 +141,14 @@ export class PrtgClient {
     const url   = await this.authedUrl(
       `/chart.png?type=graph&graphid=${graphid}&id=${objid}&sdate=${fmt(start)}&edate=${fmt(now)}&width=${width}&height=${height}&chartlabels=1`,
     );
-    this.logger.debug(`PRTG chart: objid=${objid} hours=${hours} graphid=${graphid}`);
+    this.logger.log(`PRTG chart req: objid=${objid} hours=${hours} graphid=${graphid}`);
     const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       this.logger.error(`PRTG chart error: status=${res.status} objid=${objid} hours=${hours}`);
       throw new Error(`PRTG API error ${res.status}`);
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    this.logger.debug(`PRTG chart ok: objid=${objid} hours=${hours} size=${buf.length}`);
+    this.logger.log(`PRTG chart ok: objid=${objid} hours=${hours} size=${buf.length}`);
     return { buffer: buf, contentType: res.headers.get('content-type') || 'image/png' };
   }
 }
