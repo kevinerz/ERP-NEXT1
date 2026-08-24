@@ -37,41 +37,36 @@ async function toggleSensors(id_site: number) {
   } catch {} finally { sensorLoading.value = false }
 }
 
-const histData         = ref<any[]>([])
-const graphBlobUrls    = ref<Record<string, string>>({})
-const graphBlobLoading = ref<Record<string, boolean>>({})
+const histData = ref<any[]>([])
 
 // Modal popup
-const modalSensor = ref<{ id_site: number; objid: number; name: string } | null>(null)
-
-async function toggleSensor(id_site: number, objid: number) {
-  if (expandedSensor.value === objid) { expandedSensor.value = null; return }
-  expandedSensor.value = objid
-  await loadGraphBlob(id_site, objid)
-}
+const modalSensor      = ref<{ id_site: number; objid: number; name: string } | null>(null)
+const modalGraphUrl    = ref<string | null>(null)
+const modalGraphLoading = ref(false)
+const modalHours       = ref(24)
 
 async function openModal(id_site: number, objid: number, name: string) {
-  modalSensor.value = { id_site, objid, name }
-  // Load semua rentang waktu supaya bisa switch di modal
-  await loadGraphBlob(id_site, objid)
+  modalSensor.value   = { id_site, objid, name }
+  modalHours.value    = graphHours.value
+  await fetchModalGraph(id_site, objid, modalHours.value)
 }
 
-async function loadGraphBlob(id_site: number, objid: number, graphid = 0) {
-  const key = `${id_site}_${objid}_${graphid}_${graphHours.value}`
-  if (graphBlobUrls.value[key] || graphBlobLoading.value[key]) return
-  graphBlobLoading.value[key] = true
+async function fetchModalGraph(id_site: number, objid: number, hours: number) {
+  if (modalGraphUrl.value) { URL.revokeObjectURL(modalGraphUrl.value); modalGraphUrl.value = null }
+  modalGraphLoading.value = true
   try {
     const r = await portalApi.get(`/portal/sites/${id_site}/sensor/${objid}/graph.png`, {
-      params: { graphid, hours: graphHours.value },
+      params: { graphid: 0, hours },
       responseType: 'blob',
     })
-    graphBlobUrls.value[key] = URL.createObjectURL(r.data)
-  } catch {} finally { delete graphBlobLoading.value[key] }
+    modalGraphUrl.value = URL.createObjectURL(r.data)
+  } catch { modalGraphUrl.value = null }
+  finally { modalGraphLoading.value = false }
 }
 
 async function modalChangeHours(h: number) {
-  graphHours.value = h
-  if (modalSensor.value) await loadGraphBlob(modalSensor.value.id_site, modalSensor.value.objid)
+  modalHours.value = h
+  if (modalSensor.value) await fetchModalGraph(modalSensor.value.id_site, modalSensor.value.objid, h)
 }
 
 
@@ -228,19 +223,16 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
 
         <div class="graph-modal-hours">
           <button v-for="h in [6, 24, 48, 168]" :key="h"
-            :class="['hour-btn', { active: graphHours === h }]"
+            :class="['hour-btn', { active: modalHours === h }]"
             @click="modalChangeHours(h)">
             {{ h < 48 ? h + ' jam' : (h / 24) + ' hari' }}
           </button>
         </div>
 
         <div class="graph-modal-body">
-          <div v-if="graphBlobLoading[`${modalSensor.id_site}_${modalSensor.objid}_0_${graphHours}`]"
-            class="graph-modal-loading">Memuat graph dari PRTG...</div>
-          <div v-else-if="graphBlobUrls[`${modalSensor.id_site}_${modalSensor.objid}_0_${graphHours}`]"
-            class="graph-dark-wrap">
-            <img :src="graphBlobUrls[`${modalSensor.id_site}_${modalSensor.objid}_0_${graphHours}`]"
-              class="graph-modal-img" />
+          <div v-if="modalGraphLoading" class="graph-modal-loading">Memuat graph dari PRTG...</div>
+          <div v-else-if="modalGraphUrl" class="graph-dark-wrap">
+            <img :src="modalGraphUrl" class="graph-modal-img" />
           </div>
           <div v-else class="graph-modal-loading">Graph tidak tersedia untuk sensor ini</div>
         </div>
