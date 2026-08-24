@@ -60,7 +60,7 @@ async function fetchModalGraph(id_site: number, objid: number, hours: number) {
       responseType: 'blob',
     })
     modalGraphUrl.value = URL.createObjectURL(r.data)
-  } catch { modalGraphUrl.value = null }
+  } catch (e) { console.error('[modal graph]', e); modalGraphUrl.value = null }
   finally { modalGraphLoading.value = false }
 }
 

@@ -134,21 +134,21 @@ export class PrtgClient {
   }
 
   // Proxy graph image PRTG (menghindari CORS & auth di frontend)
-  // graphstyling: 9 warna ARGB hex dipisah '-' (bg, grid, border, text, ch1..5)
-  // Tema terang supaya text terlihat jelas
-  private static readonly LIGHT_THEME =
-    'ffffffff-fff5f5f5-ffe8e8e8-ff333333-ff1a73e8-ffcc2222-ff16a34a-ffd97706-ff7c3aed';
-
   async getGraphImageBuffer(objid: number, graphid = 0, width = 900, height = 300, hours = 24): Promise<{ buffer: Buffer; contentType: string }> {
     const now   = new Date();
     const start = new Date(now.getTime() - hours * 3_600_000);
     const fmt   = (d: Date) => d.toISOString().replace('T', '-').substring(0, 19).replace(/:/g, '-');
     const url   = await this.authedUrl(
-      `/chart.png?type=graph&graphid=${graphid}&id=${objid}&sdate=${fmt(start)}&edate=${fmt(now)}&width=${width}&height=${height}&chartlabels=1&graphstyling=${PrtgClient.LIGHT_THEME}`,
+      `/chart.png?type=graph&graphid=${graphid}&id=${objid}&sdate=${fmt(start)}&edate=${fmt(now)}&width=${width}&height=${height}&chartlabels=1`,
     );
+    this.logger.debug(`PRTG chart: objid=${objid} hours=${hours} graphid=${graphid}`);
     const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
+    if (!res.ok) {
+      this.logger.error(`PRTG chart error: status=${res.status} objid=${objid} hours=${hours}`);
+      throw new Error(`PRTG API error ${res.status}`);
+    }
     const buf = Buffer.from(await res.arrayBuffer());
+    this.logger.debug(`PRTG chart ok: objid=${objid} hours=${hours} size=${buf.length}`);
     return { buffer: buf, contentType: res.headers.get('content-type') || 'image/png' };
   }
 }
