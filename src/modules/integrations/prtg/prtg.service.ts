@@ -373,18 +373,16 @@ export class PrtgService {
   private isEther = (name: string) => /traffic|ether|bandwidth|bps|byte|in\/out|interface/i.test(name);
 
   async getSiteSensors(id_site: number) {
-    if (!(await this.prtg.isConfigured())) return { data: { ping: [], ether: [] } };
+    if (!(await this.prtg.isConfigured())) return { data: { device_name: null, sensors: [] } };
 
     const mapping = await this.prisma.integrationPrtgMapping.findFirst({ where: { id_site } });
-    if (!mapping) return { data: { ping: [], ether: [] } };
+    if (!mapping) return { data: { device_name: null, sensors: [] } };
 
     const sensors = await this.prtg.getSensorsByDevice(mapping.device_name);
     return {
       data: {
         device_name: mapping.device_name,
-        ping:  sensors.filter(s => this.isPing(s.sensor)),
-        ether: sensors.filter(s => this.isEther(s.sensor)),
-        other: sensors.filter(s => !this.isPing(s.sensor) && !this.isEther(s.sensor)),
+        sensors,   // semua sensor apa adanya dari PRTG, tidak difilter
       },
     };
   }

@@ -153,7 +153,9 @@ async function fetchGraphSensors() {
   graphLoading.value = true; graphError.value = ''; graphSensors.value = null
   try {
     const r = await api.get(`/prtg/site/${graphSiteId.value}/sensors`)
-    graphSensors.value = r.data.data
+    // Normalise: backend sekarang return { device_name, sensors[] }
+    const d = r.data.data
+    graphSensors.value = d
   } catch (e: any) { graphError.value = e.response?.data?.message || 'Gagal memuat sensor' }
   finally { graphLoading.value = false }
 }
@@ -166,6 +168,8 @@ async function openSensorHistory(objid: number) {
     sensorHistory.value = r.data.data
   } catch {} finally { histLoading.value = false }
 }
+
+const isPing = (name: string) => /ping|icmp/i.test(name)
 
 // Base URL API untuk src gambar graph (token ikut cookie/auth header)
 function graphImgUrl(objid: number, graphid = 0) {
@@ -374,12 +378,13 @@ onMounted(async () => {
       </div>
 
       <template v-if="graphSensors">
-        <p class="hint" style="margin:0">Device: <strong>{{ graphSensors.device_name }}</strong></p>
+        <p class="hint" style="margin:0">
+          Device: <strong>{{ graphSensors.device_name }}</strong>
+          — {{ graphSensors.sensors?.length ?? 0 }} sensor
+        </p>
 
-        <!-- PING SENSORS -->
-        <div class="card" v-if="graphSensors.ping.length">
-          <h3>🏓 Ping Sensors ({{ graphSensors.ping.length }})</h3>
-          <div v-for="s in graphSensors.ping" :key="s.objid" class="sensor-block">
+        <div class="card" v-if="graphSensors.sensors?.length">
+          <div v-for="s in graphSensors.sensors" :key="s.objid" class="sensor-block">
             <div class="sensor-row" @click="openSensorHistory(s.objid)">
               <span class="sensor-name">{{ s.sensor }}</span>
               <span :class="['sensor-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
@@ -389,19 +394,17 @@ onMounted(async () => {
             <div v-if="openSensorId === s.objid" class="sensor-detail">
               <div v-if="histLoading" class="loading" style="padding:12px">Memuat history...</div>
               <template v-if="!histLoading && sensorHistory.length">
-                <!-- PRTG Graph Image (diutamakan jika ada) -->
                 <div class="graph-wrap">
                   <p class="graph-label">PRTG Graph — {{ graphHours }} jam terakhir</p>
-                  <img :src="graphImgUrl(s.objid)" :key="s.objid" class="prtg-graph-img"
+                  <img :src="graphImgUrl(s.objid)" :key="`${s.objid}-${graphHours}`" class="prtg-graph-img"
                     @error="(e: any) => e.target.style.display='none'" />
                 </div>
-                <!-- Sparkline dari historicdata (fallback / tambahan) -->
-                <div class="sparkline-wrap" v-if="sensorHistory.length">
-                  <p class="graph-label">Sparkline data ({{ sensorHistory.length }} titik)</p>
+                <div class="sparkline-wrap">
+                  <p class="graph-label">Data historis ({{ sensorHistory.length }} titik)</p>
                   <div v-for="key in Object.keys(sensorHistory[0]).filter(k => k !== 'datetime' && k !== 'coverage')" :key="key" class="spark-row">
                     <span class="spark-label">{{ key }}</span>
                     <span class="spark-last">{{ lastVal(sensorHistory, key) ?? '—' }}</span>
-                    <div class="spark-chart" v-html="buildSparkline(sensorHistory, key, '#3b82f6')"></div>
+                    <div class="spark-chart" v-html="buildSparkline(sensorHistory, key, isPing(s.sensor) ? '#3b82f6' : '#10b981')"></div>
                   </div>
                 </div>
               </template>
@@ -410,42 +413,7 @@ onMounted(async () => {
           </div>
         </div>
         <div class="card" v-else>
-          <p class="empty">Tidak ada ping sensor untuk device ini</p>
-        </div>
-
-        <!-- ETHER / TRAFFIC SENSORS -->
-        <div class="card" v-if="graphSensors.ether.length">
-          <h3>📊 Traffic / Ether Sensors ({{ graphSensors.ether.length }})</h3>
-          <div v-for="s in graphSensors.ether" :key="s.objid" class="sensor-block">
-            <div class="sensor-row" @click="openSensorHistory(s.objid)">
-              <span class="sensor-name">{{ s.sensor }}</span>
-              <span :class="['sensor-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
-              <span class="sensor-toggle">{{ openSensorId === s.objid ? '▲' : '▼' }}</span>
-            </div>
-
-            <div v-if="openSensorId === s.objid" class="sensor-detail">
-              <div v-if="histLoading" class="loading" style="padding:12px">Memuat history...</div>
-              <template v-if="!histLoading && sensorHistory.length">
-                <div class="graph-wrap">
-                  <p class="graph-label">PRTG Graph — {{ graphHours }} jam terakhir</p>
-                  <img :src="graphImgUrl(s.objid, 1)" :key="s.objid" class="prtg-graph-img"
-                    @error="(e: any) => e.target.style.display='none'" />
-                </div>
-                <div class="sparkline-wrap" v-if="sensorHistory.length">
-                  <p class="graph-label">Sparkline data ({{ sensorHistory.length }} titik)</p>
-                  <div v-for="key in Object.keys(sensorHistory[0]).filter(k => k !== 'datetime' && k !== 'coverage')" :key="key" class="spark-row">
-                    <span class="spark-label">{{ key }}</span>
-                    <span class="spark-last">{{ lastVal(sensorHistory, key) ?? '—' }}</span>
-                    <div class="spark-chart" v-html="buildSparkline(sensorHistory, key, '#10b981')"></div>
-                  </div>
-                </div>
-              </template>
-              <p v-if="!histLoading && !sensorHistory.length" class="empty" style="padding:12px">Tidak ada data history</p>
-            </div>
-          </div>
-        </div>
-        <div class="card" v-else-if="!graphSensors.ping.length">
-          <p class="empty">Tidak ada traffic sensor untuk device ini</p>
+          <p class="empty">Tidak ada sensor ditemukan untuk device ini di PRTG</p>
         </div>
       </template>
     </div>

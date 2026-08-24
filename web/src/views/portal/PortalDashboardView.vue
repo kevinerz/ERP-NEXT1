@@ -34,6 +34,7 @@ async function toggleSensors(id_site: number) {
   expandedSite.value = id_site; sensorLoading.value = true; sensorData.value = null; expandedSensor.value = null
   try {
     const r = await portalApi.get(`/portal/sites/${id_site}/sensors`)
+    // { device_name, sensors[] } — semua sensor apa adanya dari PRTG
     sensorData.value = r.data.data
   } catch {} finally { sensorLoading.value = false }
 }
@@ -203,7 +204,7 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
           <div v-if="sensorLoading" class="sensor-loading">Memuat sensor...</div>
           <div v-else-if="!sensorData" class="sensor-empty">Tidak ada data sensor</div>
           <template v-else>
-            <p class="sensor-device">Device: <strong>{{ sensorData.device_name }}</strong></p>
+            <p class="sensor-device">Device: <strong>{{ sensorData.device_name }}</strong> · {{ sensorData.sensors?.length ?? 0 }} sensor</p>
 
             <!-- Pilih rentang -->
             <div class="sensor-hours">
@@ -214,11 +215,10 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
               </button>
             </div>
 
-            <!-- Ping -->
-            <div v-if="sensorData.ping.length" class="sensor-group">
-              <div class="sensor-group-title">🏓 Ping</div>
-              <div v-for="s in sensorData.ping" :key="s.objid" class="sensor-item">
-                <div class="sensor-row" @click="toggleSensorHistory(site.id_site, s.objid); loadGraphBlob(site.id_site, s.objid, 0)">
+            <!-- Semua sensor dynamic dari PRTG -->
+            <div v-if="sensorData.sensors?.length" class="sensor-group">
+              <div v-for="s in sensorData.sensors" :key="s.objid" class="sensor-item">
+                <div class="sensor-row" @click="toggleSensorHistory(site.id_site, s.objid); loadGraphBlob(site.id_site, s.objid)">
                   <span class="s-name">{{ s.sensor }}</span>
                   <span :class="['s-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
                   <span class="s-chevron">{{ expandedSensor === s.objid ? '▲' : '▼' }}</span>
@@ -234,39 +234,11 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
                       <div class="spark-chart" v-html="buildSparkline(histData, key, '#3b82f6')"></div>
                     </div>
                   </template>
-                  <p v-else class="sensor-empty">Tidak ada data</p>
+                  <p v-else class="sensor-empty">Tidak ada data history</p>
                 </div>
               </div>
             </div>
-
-            <!-- Traffic / Ether -->
-            <div v-if="sensorData.ether.length" class="sensor-group">
-              <div class="sensor-group-title">📊 Traffic</div>
-              <div v-for="s in sensorData.ether" :key="s.objid" class="sensor-item">
-                <div class="sensor-row" @click="toggleSensorHistory(site.id_site, s.objid); loadGraphBlob(site.id_site, s.objid, 1)">
-                  <span class="s-name">{{ s.sensor }}</span>
-                  <span :class="['s-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
-                  <span class="s-chevron">{{ expandedSensor === s.objid ? '▲' : '▼' }}</span>
-                </div>
-                <div v-if="expandedSensor === s.objid" class="sensor-hist">
-                  <div v-if="histLoading" class="sensor-loading">Memuat...</div>
-                  <template v-else-if="histData.length">
-                    <img v-if="graphBlobUrls[`${site.id_site}_${s.objid}_1`]"
-                      :src="graphBlobUrls[`${site.id_site}_${s.objid}_1`]" class="graph-img" />
-                    <div v-for="key in Object.keys(histData[0]).filter(k => k !== 'datetime' && k !== 'coverage')" :key="key" class="spark-row">
-                      <span class="spark-label">{{ key }}</span>
-                      <span class="spark-val">{{ lastVal(histData, key) ?? '—' }}</span>
-                      <div class="spark-chart" v-html="buildSparkline(histData, key, '#10b981')"></div>
-                    </div>
-                  </template>
-                  <p v-else class="sensor-empty">Tidak ada data</p>
-                </div>
-              </div>
-            </div>
-
-            <p v-if="!sensorData.ping.length && !sensorData.ether.length" class="sensor-empty">
-              Tidak ada sensor ping/traffic terpantau untuk site ini
-            </p>
+            <p v-else class="sensor-empty">Tidak ada sensor terpantau untuk site ini di PRTG</p>
           </template>
         </div>
       </div>
