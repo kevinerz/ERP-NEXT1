@@ -332,15 +332,17 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
 .st-down      { background: #fee2e2; color: #dc2626; }
 .s-graph-hint { font-size: 11px; color: #3b82f6; font-weight: 600; flex-shrink: 0; }
 .graph-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 20px; }
-.graph-modal         { background: #1e293b; border-radius: 16px; width: 100%; max-width: 860px; box-shadow: 0 25px 80px rgba(0,0,0,0.5); overflow: hidden; }
-.graph-modal-header  { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 24px 14px; border-bottom: 1px solid #334155; }
-.graph-modal-title   { font-size: 18px; font-weight: 800; color: #f1f5f9; }
+.graph-modal         { background: #ffffff; border-radius: 16px; width: 100%; max-width: 900px; box-shadow: 0 25px 80px rgba(0,0,0,0.35); overflow: hidden; }
+.graph-modal-header  { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 24px 14px; border-bottom: 1px solid #e2e8f0; }
+.graph-modal-title   { font-size: 18px; font-weight: 800; color: #0f172a; }
 .graph-modal-sub     { font-size: 12px; color: #64748b; margin-top: 2px; }
-.graph-modal-close   { background: #334155; border: none; border-radius: 8px; color: #94a3b8; font-size: 14px; padding: 6px 10px; cursor: pointer; flex-shrink: 0; }
-.graph-modal-close:hover { background: #475569; color: #f1f5f9; }
-.graph-modal-hours   { display: flex; gap: 8px; padding: 12px 24px; border-bottom: 1px solid #334155; }
-.graph-modal-body    { padding: 20px 24px 24px; min-height: 200px; display: flex; align-items: center; justify-content: center; }
-.graph-dark-wrap     { width: 100%; background: #0f172a; border-radius: 10px; padding: 12px; }
+.graph-modal-close   { background: #f1f5f9; border: none; border-radius: 8px; color: #475569; font-size: 14px; padding: 6px 10px; cursor: pointer; flex-shrink: 0; }
+.graph-modal-close:hover { background: #e2e8f0; color: #0f172a; }
+.graph-modal-hours   { display: flex; gap: 8px; padding: 12px 24px; border-bottom: 1px solid #e2e8f0; }
+.hour-btn            { padding: 5px 14px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: #64748b; }
+.hour-btn.active     { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.graph-modal-body    { padding: 16px 24px 24px; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+.graph-dark-wrap     { width: 100%; background: #f8fafc; border-radius: 10px; padding: 8px; border: 1px solid #e2e8f0; }
 .graph-modal-img     { width: 100%; display: block; border-radius: 6px; }
-.graph-modal-loading { color: #64748b; font-size: 14px; text-align: center; padding: 40px; }
+.graph-modal-loading { color: #94a3b8; font-size: 14px; text-align: center; padding: 40px; }
 </style>

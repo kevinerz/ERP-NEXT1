@@ -134,12 +134,17 @@ export class PrtgClient {
   }
 
   // Proxy graph image PRTG (menghindari CORS & auth di frontend)
-  async getGraphImageBuffer(objid: number, graphid = 0, width = 900, height = 250, hours = 24): Promise<{ buffer: Buffer; contentType: string }> {
+  // graphstyling: 9 warna ARGB hex dipisah '-' (bg, grid, border, text, ch1..5)
+  // Tema terang supaya text terlihat jelas
+  private static readonly LIGHT_THEME =
+    'ffffffff-fff5f5f5-ffe8e8e8-ff333333-ff1a73e8-ffcc2222-ff16a34a-ffd97706-ff7c3aed';
+
+  async getGraphImageBuffer(objid: number, graphid = 0, width = 900, height = 300, hours = 24): Promise<{ buffer: Buffer; contentType: string }> {
     const now   = new Date();
     const start = new Date(now.getTime() - hours * 3_600_000);
     const fmt   = (d: Date) => d.toISOString().replace('T', '-').substring(0, 19).replace(/:/g, '-');
     const url   = await this.authedUrl(
-      `/chart.png?type=graph&graphid=${graphid}&id=${objid}&sdate=${fmt(start)}&edate=${fmt(now)}&width=${width}&height=${height}&chartlabels=1`,
+      `/chart.png?type=graph&graphid=${graphid}&id=${objid}&sdate=${fmt(start)}&edate=${fmt(now)}&width=${width}&height=${height}&chartlabels=1&graphstyling=${PrtgClient.LIGHT_THEME}`,
     );
     const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
