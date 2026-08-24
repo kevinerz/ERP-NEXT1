@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, ParseIntPipe, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { PrtgService } from './prtg.service';
 import { Roles } from '../../../common/decorators/roles.decorator';
 
@@ -53,4 +54,37 @@ export class PrtgController {
 
   @Get('devices')
   getDeviceOverview() { return this.prtgService.getDeviceOverview(); }
+
+  // ─── PING & ETHER PER SITE ────────────────────────────────────────
+
+  @Get('site/:id/sensors')
+  getSiteSensors(@Param('id', ParseIntPipe) id: number) {
+    return this.prtgService.getSiteSensors(id);
+  }
+
+  @Get('sensor/:id/channels')
+  getSensorChannels(@Param('id', ParseIntPipe) id: number) {
+    return this.prtgService.getSensorChannels(id);
+  }
+
+  @Get('sensor/:id/history')
+  getSensorHistory(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('hours') hours?: string,
+  ) {
+    return this.prtgService.getSensorHistory(id, hours ? Number(hours) : 24);
+  }
+
+  @Get('sensor/:id/graph.png')
+  async getSensorGraph(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('graphid') graphid?: string,
+    @Query('hours')   hours?: string,
+    @Res() res?: Response,
+  ) {
+    const { buffer, contentType } = await this.prtgService.getSensorGraph(id, graphid ? Number(graphid) : 0, hours ? Number(hours) : 24);
+    res!.setHeader('Content-Type', contentType);
+    res!.setHeader('Cache-Control', 'public, max-age=300');
+    res!.send(buffer);
+  }
 }

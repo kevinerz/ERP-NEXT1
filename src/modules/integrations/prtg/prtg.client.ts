@@ -12,6 +12,17 @@ export interface PrtgSensor {
   message_raw?: string;
 }
 
+export interface PrtgChannel {
+  name: string;
+  lastvalue: string;
+  lastvalue_raw: number;
+}
+
+export interface PrtgHistoryPoint {
+  datetime: string;
+  [channel: string]: string | number;
+}
+
 interface PrtgCreds { base_url: string; username: string; passhash: string; source: 'db' | 'env' | 'none' }
 
 /**
@@ -86,5 +97,53 @@ export class PrtgClient {
     if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
     const json: any = await res.json();
     return (json.sensors ?? []) as PrtgSensor[];
+  }
+
+  // Sensor untuk 1 device spesifik (filter by device name exact)
+  async getSensorsByDevice(deviceName: string): Promise<PrtgSensor[]> {
+    const url = await this.authedUrl(
+      `/api/table.json?content=sensors&columns=objid,sensor,device,status,message&filter_device=${encodeURIComponent(deviceName)}&count=200`,
+    );
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
+    const json: any = await res.json();
+    return (json.sensors ?? []) as PrtgSensor[];
+  }
+
+  // Channel values saat ini untuk 1 sensor (ping time, packet loss, traffic in/out, dll)
+  async getSensorChannels(objid: number): Promise<PrtgChannel[]> {
+    const url = await this.authedUrl(`/api/table.json?content=channels&columns=name,lastvalue,lastvalue_raw&id=${objid}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
+    const json: any = await res.json();
+    return (json.channels ?? []) as PrtgChannel[];
+  }
+
+  // Data historis sensor untuk charting (avgSecs: 0=raw, 300=5min, 3600=1jam)
+  async getSensorHistory(objid: number, hours = 24, avgSecs = 300): Promise<PrtgHistoryPoint[]> {
+    const now   = new Date();
+    const start = new Date(now.getTime() - hours * 3_600_000);
+    const fmt   = (d: Date) => d.toISOString().replace('T', '-').substring(0, 19).replace(/:/g, '-');
+    const url   = await this.authedUrl(
+      `/api/historicdata.json?id=${objid}&avg=${avgSecs}&sdate=${fmt(start)}&edate=${fmt(now)}&usecaption=1&count=5000`,
+    );
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
+    const json: any = await res.json();
+    return (json.histdata ?? []) as PrtgHistoryPoint[];
+  }
+
+  // Proxy graph image PRTG (menghindari CORS & auth di frontend)
+  async getGraphImageBuffer(objid: number, graphid = 0, width = 900, height = 250, hours = 24): Promise<{ buffer: Buffer; contentType: string }> {
+    const now   = new Date();
+    const start = new Date(now.getTime() - hours * 3_600_000);
+    const fmt   = (d: Date) => d.toISOString().replace('T', '-').substring(0, 19).replace(/:/g, '-');
+    const url   = await this.authedUrl(
+      `/chart.png?type=graph&graphid=${graphid}&id=${objid}&sdate=${fmt(start)}&edate=${fmt(now)}&width=${width}&height=${height}&chartlabels=1`,
+    );
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    return { buffer: buf, contentType: res.headers.get('content-type') || 'image/png' };
   }
 }

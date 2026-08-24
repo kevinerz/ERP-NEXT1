@@ -366,6 +366,46 @@ export class PrtgService {
     return { message: 'Mapping dihapus' };
   }
 
+  // ─── SENSOR PING & ETHER PER SITE ──────────────────────────────
+
+  // Keyword untuk detect jenis sensor
+  private isPing  = (name: string) => /ping|icmp/i.test(name);
+  private isEther = (name: string) => /traffic|ether|bandwidth|bps|byte|in\/out|interface/i.test(name);
+
+  async getSiteSensors(id_site: number) {
+    if (!(await this.prtg.isConfigured())) return { data: { ping: [], ether: [] } };
+
+    const mapping = await this.prisma.integrationPrtgMapping.findFirst({ where: { id_site } });
+    if (!mapping) return { data: { ping: [], ether: [] } };
+
+    const sensors = await this.prtg.getSensorsByDevice(mapping.device_name);
+    return {
+      data: {
+        device_name: mapping.device_name,
+        ping:  sensors.filter(s => this.isPing(s.sensor)),
+        ether: sensors.filter(s => this.isEther(s.sensor)),
+        other: sensors.filter(s => !this.isPing(s.sensor) && !this.isEther(s.sensor)),
+      },
+    };
+  }
+
+  async getSensorChannels(objid: number) {
+    if (!(await this.prtg.isConfigured())) return { data: [] };
+    const channels = await this.prtg.getSensorChannels(objid);
+    return { data: channels };
+  }
+
+  async getSensorHistory(objid: number, hours = 24) {
+    if (!(await this.prtg.isConfigured())) return { data: [] };
+    const avgSecs = hours <= 6 ? 60 : hours <= 48 ? 300 : 3600;
+    const data = await this.prtg.getSensorHistory(objid, hours, avgSecs);
+    return { data };
+  }
+
+  async getSensorGraph(objid: number, graphid = 0, hours = 24): Promise<{ buffer: Buffer; contentType: string }> {
+    return this.prtg.getGraphImageBuffer(objid, graphid, 900, 250, hours);
+  }
+
   // ─── AUDIT DAFTAR SENSOR/DEVICE ─────────────────────────────────
 
   async getDeviceOverview() {

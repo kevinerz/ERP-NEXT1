@@ -7,7 +7,7 @@ import api from '@/services/api'
 const proyek = useProyekStore()
 const auth = useAuthStore()
 const bisaKelolaKoneksi = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
-const tab = ref<'koneksi' | 'mapping' | 'audit'>('mapping')
+const tab = ref<'koneksi' | 'mapping' | 'audit' | 'graph'>('mapping')
 
 // ─── STATUS ───────────────────────────────────────────────────
 const status = ref<any>(null)
@@ -138,6 +138,67 @@ function mapDariAudit(deviceName: string) {
   mapForm.value.device_name = deviceName
 }
 
+// ─── GRAPH PING & ETHER ───────────────────────────────────────
+const graphSiteId  = ref<number | null>(null)
+const graphHours   = ref(24)
+const graphSensors = ref<{ device_name: string; ping: any[]; ether: any[]; other: any[] } | null>(null)
+const graphLoading = ref(false)
+const graphError   = ref('')
+const openSensorId = ref<number | null>(null)   // sensor yang historynya sedang di-expand
+const sensorHistory = ref<any[]>([])
+const histLoading  = ref(false)
+
+async function fetchGraphSensors() {
+  if (!graphSiteId.value) return
+  graphLoading.value = true; graphError.value = ''; graphSensors.value = null
+  try {
+    const r = await api.get(`/prtg/site/${graphSiteId.value}/sensors`)
+    graphSensors.value = r.data.data
+  } catch (e: any) { graphError.value = e.response?.data?.message || 'Gagal memuat sensor' }
+  finally { graphLoading.value = false }
+}
+
+async function openSensorHistory(objid: number) {
+  if (openSensorId.value === objid) { openSensorId.value = null; return }
+  openSensorId.value = objid; histLoading.value = true; sensorHistory.value = []
+  try {
+    const r = await api.get(`/prtg/sensor/${objid}/history`, { params: { hours: graphHours.value } })
+    sensorHistory.value = r.data.data
+  } catch {} finally { histLoading.value = false }
+}
+
+// Base URL API untuk src gambar graph (token ikut cookie/auth header)
+function graphImgUrl(objid: number, graphid = 0) {
+  return `/api/prtg/sensor/${objid}/graph.png?graphid=${graphid}&hours=${graphHours.value}&t=${Date.now()}`
+}
+
+// Simple SVG line chart dari data historis PRTG
+function buildSparkline(points: any[], key: string, color: string, w = 600, h = 80): string {
+  const vals = points.map(p => {
+    const v = p[key]
+    return typeof v === 'number' ? v : parseFloat(String(v).replace(/[^\d.,-]/g, '').replace(',', '.')) || null
+  }).filter(v => v !== null) as number[]
+  if (vals.length < 2) return ''
+  const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1
+  const xs = vals.map((_, i) => (i / (vals.length - 1)) * w)
+  const ys = vals.map(v => h - ((v - min) / range) * (h - 6) - 3)
+  const d = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ')
+  const area = `M${xs[0].toFixed(1)},${h} ` + xs.map((x, i) => `L${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ') + ` L${xs[xs.length-1].toFixed(1)},${h} Z`
+  return `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:${h}px">
+    <path d="${area}" fill="${color}" opacity="0.15"/>
+    <path d="${d}" stroke="${color}" stroke-width="1.5" fill="none"/>
+  </svg>`
+}
+
+// Ambil nilai numerik channel terakhir dari histdata
+function lastVal(points: any[], key: string) {
+  for (let i = points.length - 1; i >= 0; i--) {
+    const v = points[i][key]
+    if (v !== null && v !== undefined && v !== '') return v
+  }
+  return null
+}
+
 onMounted(async () => {
   await Promise.all([fetchStatus(), fetchConfig(), fetchMapping(), proyek.fetchSiteList()])
 })
@@ -162,6 +223,7 @@ onMounted(async () => {
     <div class="tabs">
       <button :class="['tab', { active: tab === 'mapping' }]" @click="tab = 'mapping'">🔗 Mapping Device → Site</button>
       <button :class="['tab', { active: tab === 'audit' }]" @click="tab = 'audit'; fetchDevices()">🔍 Audit Sensor</button>
+      <button :class="['tab', { active: tab === 'graph' }]" @click="tab = 'graph'">📈 Ping & Traffic</button>
       <button v-if="bisaKelolaKoneksi" :class="['tab', { active: tab === 'koneksi' }]" @click="tab = 'koneksi'">⚙️ Koneksi</button>
     </div>
 
@@ -282,6 +344,111 @@ onMounted(async () => {
         <p v-if="configMsg" class="msg">{{ configMsg }}</p>
       </div>
     </div>
+
+    <!-- ─── TAB: PING & TRAFFIC GRAPH ─── -->
+    <div v-if="tab === 'graph'" class="tab-content">
+      <div class="card">
+        <div class="graph-toolbar">
+          <div class="field" style="min-width:260px;margin:0">
+            <label>Pilih Site</label>
+            <select v-model="graphSiteId" @change="fetchGraphSensors()">
+              <option :value="null" disabled>-- pilih site --</option>
+              <option v-for="s in proyek.siteList" :key="s.id_site" :value="s.id_site">
+                {{ s.nama_site }} ({{ s.kode_site }})
+              </option>
+            </select>
+          </div>
+          <div class="field" style="min-width:160px;margin:0">
+            <label>Rentang Waktu</label>
+            <select v-model="graphHours" @change="graphSiteId && fetchGraphSensors()">
+              <option :value="6">6 jam</option>
+              <option :value="24">24 jam</option>
+              <option :value="48">48 jam</option>
+              <option :value="168">7 hari</option>
+            </select>
+          </div>
+        </div>
+        <div v-if="graphLoading" class="loading">Memuat sensor...</div>
+        <div v-if="graphError" class="msg err">{{ graphError }}</div>
+        <div v-if="!graphSiteId && !graphLoading" class="empty">Pilih site untuk melihat data Ping & Traffic</div>
+      </div>
+
+      <template v-if="graphSensors">
+        <p class="hint" style="margin:0">Device: <strong>{{ graphSensors.device_name }}</strong></p>
+
+        <!-- PING SENSORS -->
+        <div class="card" v-if="graphSensors.ping.length">
+          <h3>🏓 Ping Sensors ({{ graphSensors.ping.length }})</h3>
+          <div v-for="s in graphSensors.ping" :key="s.objid" class="sensor-block">
+            <div class="sensor-row" @click="openSensorHistory(s.objid)">
+              <span class="sensor-name">{{ s.sensor }}</span>
+              <span :class="['sensor-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
+              <span class="sensor-toggle">{{ openSensorId === s.objid ? '▲' : '▼' }}</span>
+            </div>
+
+            <div v-if="openSensorId === s.objid" class="sensor-detail">
+              <div v-if="histLoading" class="loading" style="padding:12px">Memuat history...</div>
+              <template v-if="!histLoading && sensorHistory.length">
+                <!-- PRTG Graph Image (diutamakan jika ada) -->
+                <div class="graph-wrap">
+                  <p class="graph-label">PRTG Graph — {{ graphHours }} jam terakhir</p>
+                  <img :src="graphImgUrl(s.objid)" :key="s.objid" class="prtg-graph-img"
+                    @error="(e: any) => e.target.style.display='none'" />
+                </div>
+                <!-- Sparkline dari historicdata (fallback / tambahan) -->
+                <div class="sparkline-wrap" v-if="sensorHistory.length">
+                  <p class="graph-label">Sparkline data ({{ sensorHistory.length }} titik)</p>
+                  <div v-for="key in Object.keys(sensorHistory[0]).filter(k => k !== 'datetime' && k !== 'coverage')" :key="key" class="spark-row">
+                    <span class="spark-label">{{ key }}</span>
+                    <span class="spark-last">{{ lastVal(sensorHistory, key) ?? '—' }}</span>
+                    <div class="spark-chart" v-html="buildSparkline(sensorHistory, key, '#3b82f6')"></div>
+                  </div>
+                </div>
+              </template>
+              <p v-if="!histLoading && !sensorHistory.length" class="empty" style="padding:12px">Tidak ada data history</p>
+            </div>
+          </div>
+        </div>
+        <div class="card" v-else>
+          <p class="empty">Tidak ada ping sensor untuk device ini</p>
+        </div>
+
+        <!-- ETHER / TRAFFIC SENSORS -->
+        <div class="card" v-if="graphSensors.ether.length">
+          <h3>📊 Traffic / Ether Sensors ({{ graphSensors.ether.length }})</h3>
+          <div v-for="s in graphSensors.ether" :key="s.objid" class="sensor-block">
+            <div class="sensor-row" @click="openSensorHistory(s.objid)">
+              <span class="sensor-name">{{ s.sensor }}</span>
+              <span :class="['sensor-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
+              <span class="sensor-toggle">{{ openSensorId === s.objid ? '▲' : '▼' }}</span>
+            </div>
+
+            <div v-if="openSensorId === s.objid" class="sensor-detail">
+              <div v-if="histLoading" class="loading" style="padding:12px">Memuat history...</div>
+              <template v-if="!histLoading && sensorHistory.length">
+                <div class="graph-wrap">
+                  <p class="graph-label">PRTG Graph — {{ graphHours }} jam terakhir</p>
+                  <img :src="graphImgUrl(s.objid, 1)" :key="s.objid" class="prtg-graph-img"
+                    @error="(e: any) => e.target.style.display='none'" />
+                </div>
+                <div class="sparkline-wrap" v-if="sensorHistory.length">
+                  <p class="graph-label">Sparkline data ({{ sensorHistory.length }} titik)</p>
+                  <div v-for="key in Object.keys(sensorHistory[0]).filter(k => k !== 'datetime' && k !== 'coverage')" :key="key" class="spark-row">
+                    <span class="spark-label">{{ key }}</span>
+                    <span class="spark-last">{{ lastVal(sensorHistory, key) ?? '—' }}</span>
+                    <div class="spark-chart" v-html="buildSparkline(sensorHistory, key, '#10b981')"></div>
+                  </div>
+                </div>
+              </template>
+              <p v-if="!histLoading && !sensorHistory.length" class="empty" style="padding:12px">Tidak ada data history</p>
+            </div>
+          </div>
+        </div>
+        <div class="card" v-else-if="!graphSensors.ping.length">
+          <p class="empty">Tidak ada traffic sensor untuk device ini</p>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -351,4 +518,28 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .badge-auto { background: #eff6ff; color: #1d4ed8; }
 .badge-manual { background: #f0fdf4; color: #15803d; }
 .badge-none { background: #fef2f2; color: #dc2626; }
+
+/* ─── Graph tab ─── */
+.graph-toolbar { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 4px; }
+
+.sensor-block { border-top: 1px solid #f1f5f9; }
+.sensor-block:first-of-type { border-top: none; }
+.sensor-row { display: flex; align-items: center; gap: 10px; padding: 12px 4px; cursor: pointer; }
+.sensor-row:hover { background: #f8fafc; border-radius: 6px; }
+.sensor-name { flex: 1; font-size: 14px; font-weight: 600; color: #0f172a; }
+.sensor-status { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+.st-up   { background: #f0fdf4; color: #15803d; }
+.st-down { background: #fef2f2; color: #dc2626; }
+.sensor-toggle { color: #94a3b8; font-size: 12px; }
+
+.sensor-detail { padding: 0 4px 16px; }
+.graph-wrap { margin-bottom: 14px; }
+.graph-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin: 0 0 6px; }
+.prtg-graph-img { width: 100%; border-radius: 8px; border: 1px solid #e2e8f0; }
+
+.sparkline-wrap { display: flex; flex-direction: column; gap: 8px; }
+.spark-row { display: grid; grid-template-columns: 180px 80px 1fr; align-items: center; gap: 8px; }
+.spark-label { font-size: 12px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spark-last  { font-size: 12px; font-weight: 700; color: #0f172a; font-family: monospace; text-align: right; }
+.spark-chart { overflow: hidden; border-radius: 4px; }
 </style>
