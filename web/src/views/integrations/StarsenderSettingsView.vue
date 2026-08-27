@@ -20,6 +20,7 @@ const testPhone = ref('')
 type InternalGroup = { id: number; group_id: string; nama_group: string; is_active: boolean }
 const internalGroups = ref<InternalGroup[]>([])
 const igLoading = ref(false)
+const igLoadError = ref('')
 const igForm = ref({ group_id: '', nama_group: '' })
 const igAdding = ref(false)
 const igError = ref('')
@@ -30,6 +31,7 @@ const igEditForm = ref({ group_id: '', nama_group: '' })
 type PelangganRow = { id_pelanggan: number; nama_pelanggan: string; wa_group_id: string | null; nama_grup: string | null }
 const pelangganRows = ref<PelangganRow[]>([])
 const pgLoading = ref(false)
+const pgLoadError = ref('')
 const pgEditId = ref<number | null>(null)
 const pgEditForm = ref({ wa_group_id: '', nama_grup: '' })
 const pgSearch = ref('')
@@ -52,18 +54,22 @@ async function load() {
 }
 
 async function loadInternalGroups() {
-  igLoading.value = true
+  igLoading.value = true; igLoadError.value = ''
   try {
     const r = await api.get('/starsender/internal-groups')
-    internalGroups.value = r.data
+    internalGroups.value = Array.isArray(r.data) ? r.data : (r.data?.data ?? [])
+  } catch (e: any) {
+    igLoadError.value = e.response?.data?.message || `Error ${e.response?.status ?? ''}: gagal memuat grup`
   } finally { igLoading.value = false }
 }
 
 async function loadPelangganGroups() {
-  pgLoading.value = true
+  pgLoading.value = true; pgLoadError.value = ''
   try {
     const r = await api.get('/starsender/pelanggan-groups')
-    pelangganRows.value = r.data
+    pelangganRows.value = Array.isArray(r.data) ? r.data : (r.data?.data ?? [])
+  } catch (e: any) {
+    pgLoadError.value = e.response?.data?.message || `Error ${e.response?.status ?? ''}: gagal memuat data pelanggan`
   } finally { pgLoading.value = false }
 }
 
@@ -238,6 +244,7 @@ async function saveEditPg(id: number) {
         </p>
 
         <div v-if="igLoading" class="loading">Memuat...</div>
+        <div v-else-if="igLoadError" class="load-error">⚠️ {{ igLoadError }}<br><small>Coba logout → login ulang jika masalah akses.</small></div>
         <template v-else>
           <table v-if="internalGroups.length" class="tbl">
             <thead>
@@ -298,6 +305,8 @@ async function saveEditPg(id: number) {
         <input v-model="pgSearch" type="text" placeholder="Cari pelanggan..." class="search-input" />
 
         <div v-if="pgLoading" class="loading">Memuat...</div>
+        <div v-else-if="pgLoadError" class="load-error">⚠️ {{ pgLoadError }}<br><small>Coba logout → login ulang jika masalah akses.</small></div>
+        <div v-else-if="!pelangganRows.length" class="empty">Tidak ada data pelanggan.</div>
         <table v-else class="tbl">
           <thead>
             <tr><th>Pelanggan</th><th>Nama Grup</th><th>Group ID</th><th></th></tr>
@@ -426,4 +435,5 @@ async function saveEditPg(id: number) {
 
 code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
 .ig-error { margin-top: 8px; padding: 7px 12px; background: #fef2f2; color: #dc2626; border-radius: 7px; font-size: 12px; }
+.load-error { padding: 14px 16px; background: #fef2f2; color: #dc2626; border-radius: 8px; font-size: 13px; margin-top: 8px; line-height: 1.6; }
 </style>
