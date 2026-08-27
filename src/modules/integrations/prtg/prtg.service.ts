@@ -229,6 +229,24 @@ export class PrtgService {
       }).catch(() => {});
       const deviceName = devices[0] ?? '';
       this.wa.notifMonitorUp({ sumber: 'PRTG', nama: deviceName }).catch(() => {});
+
+      // WA notif ke grup pelanggan — device kembali UP
+      this.prisma.operationTicket.findUnique({
+        where: { id_ticket: ticket.id_ticket },
+        select: { nomor_tiket: true, judul_tiket: true, id_site: true, site: { select: { nama_site: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } } } },
+      }).then((t) => {
+        if (!t?.site) return;
+        this.wa.notifTiketUpdate({
+          nomor_tiket: t.nomor_tiket,
+          judul: t.judul_tiket,
+          status_dari: ticket.status_tiket ?? 'Open',
+          status_ke: 'Resolved',
+          nama_site: t.site.nama_site,
+          nama_pelanggan: t.site.pelanggan?.nama_pelanggan ?? '',
+          id_pelanggan: t.site.id_pelanggan,
+          no_hp_customer: t.site.pelanggan?.no_hp_pic_utama,
+        });
+      }).catch(() => {});
     }
 
     // ── 3. Device UP tanpa tiket (site tak dikenali) — bersihkan penanda ──
