@@ -22,6 +22,7 @@ const internalGroups = ref<InternalGroup[]>([])
 const igLoading = ref(false)
 const igForm = ref({ group_id: '', nama_group: '' })
 const igAdding = ref(false)
+const igError = ref('')
 const igEditId = ref<number | null>(null)
 const igEditForm = ref({ group_id: '', nama_group: '' })
 
@@ -68,8 +69,8 @@ async function loadPelangganGroups() {
 
 function switchTab(t: Tab) {
   tab.value = t
-  if (t === 'internal-groups' && !internalGroups.value.length) loadInternalGroups()
-  if (t === 'pelanggan-groups' && !pelangganRows.value.length) loadPelangganGroups()
+  if (t === 'internal-groups') loadInternalGroups()
+  if (t === 'pelanggan-groups') loadPelangganGroups()
 }
 
 // Config actions
@@ -101,11 +102,13 @@ async function test() {
 // Internal group actions
 async function addInternalGroup() {
   if (!igForm.value.group_id || !igForm.value.nama_group) return
-  igAdding.value = true
+  igAdding.value = true; igError.value = ''
   try {
     await api.post('/starsender/internal-groups', igForm.value)
     igForm.value = { group_id: '', nama_group: '' }
     await loadInternalGroups()
+  } catch (e: any) {
+    igError.value = e.response?.data?.message || 'Gagal menyimpan grup'
   } finally { igAdding.value = false }
 }
 
@@ -280,6 +283,7 @@ async function saveEditPg(id: number) {
                 {{ igAdding ? '...' : '+ Tambah' }}
               </button>
             </div>
+            <div v-if="igError" class="ig-error">⚠️ {{ igError }}</div>
           </div>
         </template>
       </div>
@@ -421,4 +425,5 @@ async function saveEditPg(id: number) {
 .search-input:focus { border-color: #3b82f6; }
 
 code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+.ig-error { margin-top: 8px; padding: 7px 12px; background: #fef2f2; color: #dc2626; border-radius: 7px; font-size: 12px; }
 </style>
