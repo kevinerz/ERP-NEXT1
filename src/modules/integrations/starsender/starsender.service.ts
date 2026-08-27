@@ -40,12 +40,12 @@ export class StarsenderService {
 
   async getStaffPhones(): Promise<string[]> {
     const users = await this.prisma.coreUser.findMany({
-      where: { is_aktif: true, no_hp: { not: null } },
-      select: { no_hp: true, modul_akses: true },
+      where: { is_aktif: true },
+      select: { modul_akses: true, karyawan: { select: { no_hp: true } } },
     });
     return users
       .filter((u) => {
-        if (!u.no_hp) return false;
+        if (!u.karyawan?.no_hp) return false;
         if (!u.modul_akses) return true; // superadmin
         try {
           const akses: string[] = JSON.parse(u.modul_akses);
@@ -54,7 +54,7 @@ export class StarsenderService {
           return u.modul_akses.split(',').map((s) => s.trim()).includes('operations');
         }
       })
-      .map((u) => u.no_hp!);
+      .map((u) => u.karyawan!.no_hp!);
   }
 
   // ── Notifikasi Tiket ─────────────────────────────────────────────
