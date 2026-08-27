@@ -291,6 +291,23 @@ export class PrtgService {
       deskripsi: `${nomor} — ${info.sensor} (${prioritas})`,
       url: `/operations/${ticket.id_ticket}`,
     }).catch(() => {});
+
+    // WA notif ke grup pelanggan (ambil id_pelanggan dari site)
+    this.prisma.sitePelanggan.findUnique({
+      where: { id_site: site.id_site },
+      select: { id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } },
+    }).then((sp) => {
+      if (!sp) return;
+      this.wa.notifTiketBaru({
+        nomor_tiket: nomor,
+        judul: `[PRTG] ${info.device} — ${info.sensor} DOWN`,
+        nama_site: site.nama_site,
+        nama_pelanggan: sp.pelanggan?.nama_pelanggan ?? '',
+        id_pelanggan: sp.id_pelanggan,
+        no_hp_customer: sp.pelanggan?.no_hp_pic_utama,
+      });
+    }).catch(() => {});
+
     return ticket;
   }
 
