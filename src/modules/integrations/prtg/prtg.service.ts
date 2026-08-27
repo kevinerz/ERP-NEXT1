@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { StarsenderService } from '../starsender/starsender.service';
 import { SLA_JAM } from '../../operations/operations.service';
 import { PrtgClient, PrtgSensor } from './prtg.client';
 import { SecretCryptoService } from '../../../common/crypto/secret-crypto.service';
@@ -10,9 +11,8 @@ const STATUS_TIKET_AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
 
 /**
  * PrtgService — polling PRTG tiap 5 menit:
- * - Sensor Down → auto-buat tiket (mapping device PRTG ↔ nama site)
- * - Sensor kembali Up → tiket PRTG auto-Resolved + log
- * Dedup: 1 sensor down = 1 tiket aktif (via integration_prtg_webhooks).
+ * - Sensor Down → auto-buat tiket (1 tiket per device, dedup by device)
+ * - Sensor kembali Up → tiket PRTG auto-Resolved + log + WA notif UP
  */
 @Injectable()
 export class PrtgService {
@@ -22,6 +22,7 @@ export class PrtgService {
     private prisma: PrismaService,
     private prtg: PrtgClient,
     private notif: NotificationsService,
+    private wa: StarsenderService,
     private crypto: SecretCryptoService,
   ) {}
 
@@ -128,85 +129,112 @@ export class PrtgService {
 
     const hasil = { tiket_dibuat: 0, dilewati: 0, auto_resolved: 0, tanpa_site: 0 };
 
-    // ── 1. Sensor DOWN → buat tiket (sekali per sensor-down aktif) ──
-    for (const s of downSensors) {
-      const sensorId = String(s.objid);
-      // Sudah ada entri aktif untuk sensor ini?
-      const existing = await this.prisma.integrationPrtgWebhook.findFirst({
-        where: {
-          prtg_sensor_id: sensorId,
-          OR: [
-            { ticket: { status_tiket: { in: STATUS_TIKET_AKTIF } } },
-            // entri tanpa tiket (site tak dikenal) — jangan spam, tahan 24 jam
-            { id_ticket_terbentuk: null, diterima_pada: { gte: new Date(Date.now() - 24 * 3600_000) } },
-          ],
-        },
-      });
-      if (existing) { hasil.dilewati++; continue; }
+    // ── 1. Group sensor DOWN per device — 1 device = 1 tiket ──────────
+    // Kumpulkan semua sensor ID yang sudah ada entri aktif (tiket aktif atau
+    // tanpa-tiket dalam 24 jam) agar kita tidak re-query per sensor.
+    const activeEntries = await this.prisma.integrationPrtgWebhook.findMany({
+      where: {
+        OR: [
+          { ticket: { status_tiket: { in: STATUS_TIKET_AKTIF } } },
+          { id_ticket_terbentuk: null, diterima_pada: { gte: new Date(Date.now() - 24 * 3600_000) } },
+        ],
+      },
+      select: { prtg_sensor_id: true, prtg_device_name: true, id_ticket_terbentuk: true },
+    });
+    const activeDevices = new Set(activeEntries.map((e) => e.prtg_device_name));
 
-      const site = await this.cariSite(s.device);
+    // Group sensor yang benar-benar baru (device-nya belum ada entri aktif)
+    const byDevice = new Map<string, PrtgSensor[]>();
+    for (const s of downSensors) {
+      if (activeDevices.has(s.device)) { hasil.dilewati++; continue; }
+      const arr = byDevice.get(s.device) ?? [];
+      arr.push(s);
+      byDevice.set(s.device, arr);
+    }
+
+    for (const [device, sensors] of byDevice) {
+      const site = await this.cariSite(device);
       let ticketId: number | null = null;
 
       if (site) {
+        const sensorNames = sensors.map((s) => s.sensor).join(', ');
         const ticket = await this.buatTiketPrtg(
-          { sensorId, device: s.device, sensor: s.sensor, message: s.message_raw },
+          { sensorId: String(sensors[0].objid), device, sensor: sensorNames, message: sensors[0].message_raw },
           site,
         );
         ticketId = ticket.id_ticket;
         hasil.tiket_dibuat++;
+        this.wa.notifMonitorDown({
+          sumber: 'PRTG', nama: device, nama_site: site.nama_site,
+          msg: sensorNames,
+        }).catch(() => {});
       } else {
         hasil.tanpa_site++;
         this.notif.notifyForModul('operations', {
           tipe: 'tiket_baru',
-          judul: `🔴 [PRTG] ${s.device} DOWN — site tidak dikenali`,
-          deskripsi: `${s.sensor}: tidak cocok dgn nama site manapun, buat tiket manual`,
+          judul: `🔴 [PRTG] ${device} DOWN — site tidak dikenali`,
+          deskripsi: `${sensors.map(s => s.sensor).join(', ')}: tidak cocok dgn nama site, buat tiket manual`,
           url: '/operations',
+        }).catch(() => {});
+        this.wa.notifMonitorDown({
+          sumber: 'PRTG', nama: device,
+          msg: sensors.map(s => s.sensor).join(', '),
         }).catch(() => {});
       }
 
-      await this.prisma.integrationPrtgWebhook.create({
-        data: {
-          prtg_sensor_id: sensorId,
-          prtg_device_name: s.device,
-          prtg_sensor_name: s.sensor,
-          status_sensor: s.status,
-          pesan_alert: s.message_raw,
-          id_ticket_terbentuk: ticketId,
-        },
-      });
+      // Buat 1 baris webhook per sensor (semua menunjuk tiket yang sama)
+      for (const s of sensors) {
+        await this.prisma.integrationPrtgWebhook.create({
+          data: {
+            prtg_sensor_id: String(s.objid),
+            prtg_device_name: device,
+            prtg_sensor_name: s.sensor,
+            status_sensor: s.status,
+            pesan_alert: s.message_raw,
+            id_ticket_terbentuk: ticketId,
+          },
+        });
+      }
     }
 
-    // ── 2. Sensor sudah UP → auto-resolve tiket PRTG yang masih aktif ──
-    const downIds = new Set(downSensors.map((s) => String(s.objid)));
+    // ── 2. Device kembali UP → resolve tiket saat SEMUA sensornya UP ──
+    const downDevices = new Set(downSensors.map((s) => s.device));
     const aktifPrtg = await this.prisma.integrationPrtgWebhook.findMany({
       where: { ticket: { status_tiket: { in: STATUS_TIKET_AKTIF }, sumber_tiket: 'PRTG' } },
       include: { ticket: { select: { id_ticket: true, nomor_tiket: true, status_tiket: true } } },
     });
+    // Group by tiket — resolve hanya kalau semua sensornya sudah UP
+    const tiketSensors = new Map<number, { ticket: typeof aktifPrtg[0]['ticket']; devices: string[]; allUp: boolean }>();
     for (const w of aktifPrtg) {
-      if (!w.prtg_sensor_id || downIds.has(w.prtg_sensor_id) || !w.ticket) continue;
+      if (!w.ticket) continue;
+      const entry = tiketSensors.get(w.ticket.id_ticket) ?? { ticket: w.ticket, devices: [], allUp: true };
+      entry.devices.push(w.prtg_device_name ?? '');
+      if (w.prtg_sensor_id && downDevices.has(w.prtg_device_name ?? '')) entry.allUp = false;
+      tiketSensors.set(w.ticket.id_ticket, entry);
+    }
+    for (const { ticket, devices, allUp } of tiketSensors.values()) {
+      if (!allUp) continue;
       await this.prisma.operationTicket.update({
-        where: { id_ticket: w.ticket.id_ticket },
+        where: { id_ticket: ticket.id_ticket },
         data: { status_tiket: 'Resolved', tgl_resolved: new Date() },
       });
       await this.prisma.operationTicketLog.create({
         data: {
-          id_ticket: w.ticket.id_ticket,
-          status_dari: w.ticket.status_tiket,
+          id_ticket: ticket.id_ticket,
+          status_dari: ticket.status_tiket,
           status_ke: 'Resolved',
-          catatan: `Sensor PRTG #${w.prtg_sensor_id} kembali UP — auto-resolved`,
+          catatan: `Device PRTG kembali UP — auto-resolved`,
         },
       });
       hasil.auto_resolved++;
-      // Bersihkan notif DOWN yang belum dibaca — sudah tidak relevan, jangan numpuk.
-      // Tidak kirim notif UP terpisah; kronologi tetap tercatat di log tiket.
       await this.prisma.notification.deleteMany({
-        where: { is_read: false, url: `/operations/${w.ticket.id_ticket}` },
+        where: { is_read: false, url: `/operations/${ticket.id_ticket}` },
       }).catch(() => {});
+      const deviceName = devices[0] ?? '';
+      this.wa.notifMonitorUp({ sumber: 'PRTG', nama: deviceName }).catch(() => {});
     }
 
-    // ── 3. Sensor UP untuk device tanpa site (tak ada tiket) ──
-    // Hapus penanda + notif 'site tidak dikenali' yang belum dibaca,
-    // supaya kalau down lagi nanti bisa alert ulang.
+    // ── 3. Device UP tanpa tiket (site tak dikenali) — bersihkan penanda ──
     const tanpaTiket = await this.prisma.integrationPrtgWebhook.findMany({
       where: {
         id_ticket_terbentuk: null,
@@ -214,7 +242,7 @@ export class PrtgService {
       },
     });
     for (const w of tanpaTiket) {
-      if (!w.prtg_sensor_id || downIds.has(w.prtg_sensor_id)) continue;
+      if (!w.prtg_sensor_id || downDevices.has(w.prtg_device_name ?? '')) continue;
       await this.prisma.notification.deleteMany({
         where: { is_read: false, judul: { contains: `[PRTG] ${w.prtg_device_name} DOWN` } },
       }).catch(() => {});
