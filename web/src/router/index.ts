@@ -224,6 +224,11 @@ const router = createRouter({
           component: () => import('@/views/integrations/UptimeKumaSettingsView.vue'),
         },
         {
+          path: 'integrations/starsender',
+          name: 'starsender-settings',
+          component: () => import('@/views/integrations/StarsenderSettingsView.vue'),
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('@/views/settings/SettingsView.vue'),
@@ -362,6 +367,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'pengajuan-aset-list': 'assets', 'pengajuan-aset-detail': 'assets',
   'prtg-settings': 'prtg',
   'uptime-kuma-settings': 'uptime-kuma',
+  'starsender-settings': 'starsender',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'laporan': 'reports',
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',

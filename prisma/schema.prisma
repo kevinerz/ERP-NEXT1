@@ -1023,6 +1023,16 @@ model IntegrationPrtgMapping {
   @@map("integration_prtg_mapping")
 }
 
+// Konfigurasi StarSender — WA gateway untuk notifikasi tiket & monitoring
+model IntegrationStarsenderConfig {
+  id         Int      @id @default(1)
+  api_key    String?  @db.Text
+  is_active  Boolean  @default(false)
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("integration_starsender_config")
+}
+
 // ── UPTIME KUMA ──────────────────────────────────────────────
 // Uptime Kuma self-hosted & punya webhook
 // notification bawaan, jadi ini WEBHOOK RECEIVER asli (bukan polling).

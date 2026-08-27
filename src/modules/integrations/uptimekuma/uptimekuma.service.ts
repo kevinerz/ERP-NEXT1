@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nest
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { StarsenderService } from '../starsender/starsender.service';
 import { SLA_JAM } from '../../operations/operations.service';
 
 const STATUS_TIKET_AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
@@ -28,6 +29,7 @@ export class UptimeKumaService {
   constructor(
     private prisma: PrismaService,
     private notif: NotificationsService,
+    private wa: StarsenderService,
   ) {}
 
   async getStatus() {
@@ -135,6 +137,12 @@ export class UptimeKumaService {
       }).catch(() => {});
     }
 
+    // WA alert ke staff internal
+    this.wa.notifMonitorDown({
+      sumber: 'UptimeKuma', nama: monitorName,
+      nama_site: site?.nama_site, msg,
+    }).catch(() => {});
+
     await this.prisma.integrationUptimeKumaWebhook.create({
       data: {
         monitor_id: monitorId,
@@ -168,6 +176,9 @@ export class UptimeKumaService {
         where: { is_read: false, url: `/operations/${aktif.ticket.id_ticket}` },
       }).catch(() => {});
     }
+
+    // WA alert UP ke staff internal
+    this.wa.notifMonitorUp({ sumber: 'UptimeKuma', nama: monitorName }).catch(() => {});
 
     // Bersihkan penanda "pending tanpa tiket" (site tak dikenali) untuk monitor ini
     await this.prisma.integrationUptimeKumaWebhook.deleteMany({

@@ -43,6 +43,7 @@ import { PrtgModule } from './modules/integrations/prtg/prtg.module';
 import { MekariModule } from './modules/integrations/mekari/mekari.module';
 import { DigiflazzModule } from './modules/integrations/digiflazz/digiflazz.module';
 import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.module';
+import { StarsenderModule } from './modules/integrations/starsender/starsender.module';
 
 @Module({
   imports: [
@@ -97,6 +98,7 @@ import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.m
     MekariModule,
     DigiflazzModule,
     UptimeKumaModule,
+    StarsenderModule,
   ],
   controllers: [HealthController],
   providers: [

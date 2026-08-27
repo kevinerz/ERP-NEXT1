@@ -98,6 +98,7 @@ const adminMenu = [
   { label: 'Email Log',    emoji: '📤', to: '/admin/email-log' },
   { label: 'PRTG',         emoji: '📡', to: '/integrations/prtg' },
   { label: 'Uptime Kuma',  emoji: '🟢', to: '/integrations/uptime-kuma' },
+  { label: 'StarSender WA', emoji: '💬', to: '/integrations/starsender' },
   { label: 'Pengaturan',   emoji: '🔩', to: '/settings'     },
 ]
 
@@ -153,6 +154,7 @@ const PAGE_TITLES: Record<string, string> = {
   "settings":             "Pengaturan Aplikasi",
   "prtg-settings":        "PRTG — Monitoring",
   "uptime-kuma-settings": "Uptime Kuma — Monitoring",
+  "starsender-settings":  "StarSender — WhatsApp",
   "email-inbox":          "Email",
   "changelog":            "Changelog",
 }

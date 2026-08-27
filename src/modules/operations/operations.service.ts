@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StarsenderService } from '../integrations/starsender/starsender.service';
 import { CreateTicketDto, UpdateTicketDto, AddLogDto } from './dto/ticket.dto';
 
 const TICKET_INCLUDE = {
@@ -54,6 +55,7 @@ export class OperationsService {
   constructor(
     private prisma: PrismaService,
     private notifService: NotificationsService,
+    private wa: StarsenderService,
   ) {}
 
   // ─── TIKET ────────────────────────────────────────────────────
@@ -148,6 +150,20 @@ export class OperationsService {
           url: `/operations/${data.id_ticket}`,
         }).catch(() => {});
 
+        // WA notifikasi tiket baru
+        this.prisma.sitePelanggan.findUnique({
+          where: { id_site: dto.id_site },
+          select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } },
+        }).then((site) => {
+          if (!site) return;
+          this.wa.notifTiketBaru({
+            nomor_tiket, judul: dto.judul_tiket,
+            nama_site: site.nama_site,
+            nama_pelanggan: site.pelanggan?.nama_pelanggan ?? '',
+            no_hp_customer: site.pelanggan?.no_hp_pic_utama,
+          });
+        }).catch(() => {});
+
         return { data, message: `Tiket ${nomor_tiket} dibuat` };
       } catch (e: any) {
         if (e.code !== 'P2002' || attempt === 4) throw e;
@@ -197,6 +213,22 @@ export class OperationsService {
         judul: `Status Tiket: ${ticket.status_tiket} → ${dto.status_tiket}`,
         deskripsi: ticket.nomor_tiket,
         url: `/operations/${id}`,
+      }).catch(() => {});
+
+      // WA notifikasi update status
+      this.prisma.sitePelanggan.findUnique({
+        where: { id_site: ticket.id_site },
+        select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } },
+      }).then((site) => {
+        this.wa.notifTiketUpdate({
+          nomor_tiket: ticket.nomor_tiket,
+          judul: ticket.judul_tiket,
+          status_dari: ticket.status_tiket ?? '',
+          status_ke: dto.status_tiket!,
+          nama_site: site?.nama_site ?? '',
+          nama_pelanggan: site?.pelanggan?.nama_pelanggan ?? '',
+          no_hp_customer: site?.pelanggan?.no_hp_pic_utama,
+        });
       }).catch(() => {});
     }
 
