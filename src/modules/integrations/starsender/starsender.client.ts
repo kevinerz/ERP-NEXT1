@@ -33,10 +33,10 @@ export class StarsenderClient {
       const res = await fetch('https://api.starsender.online/api/send', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: apiKey,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ to: normalized, message, messageType: 'text' }),
+        body: JSON.stringify({ to: normalized, body: message, messageType: 'text' }),
         signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
