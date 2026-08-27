@@ -108,6 +108,7 @@ model Pelanggan {
   no_hp_pic_utama     String?  @db.VarChar(20)
   has_grup            Boolean  @default(false)
   nama_grup           String?  @db.VarChar(150)
+  wa_group_id         String?  @db.VarChar(100)
   mekari_customer_uid String?  @db.VarChar(100)
   created_at          DateTime @default(now())
 
@@ -1031,6 +1032,16 @@ model IntegrationStarsenderConfig {
   updated_at DateTime @default(now()) @updatedAt
 
   @@map("integration_starsender_config")
+}
+
+model StarsenderInternalGroup {
+  id         Int      @id @default(autoincrement())
+  group_id   String   @db.VarChar(100)
+  nama_group String   @db.VarChar(200)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+
+  @@map("starsender_internal_group")
 }
 
 // ── UPTIME KUMA ──────────────────────────────────────────────

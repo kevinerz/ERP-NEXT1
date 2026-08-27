@@ -153,13 +153,14 @@ export class OperationsService {
         // WA notifikasi tiket baru
         this.prisma.sitePelanggan.findUnique({
           where: { id_site: dto.id_site },
-          select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } },
+          select: { nama_site: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } },
         }).then((site) => {
           if (!site) return;
           this.wa.notifTiketBaru({
             nomor_tiket, judul: dto.judul_tiket,
             nama_site: site.nama_site,
             nama_pelanggan: site.pelanggan?.nama_pelanggan ?? '',
+            id_pelanggan: site.id_pelanggan,
             no_hp_customer: site.pelanggan?.no_hp_pic_utama,
           });
         }).catch(() => {});
@@ -218,7 +219,7 @@ export class OperationsService {
       // WA notifikasi update status
       this.prisma.sitePelanggan.findUnique({
         where: { id_site: ticket.id_site },
-        select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } },
+        select: { nama_site: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } },
       }).then((site) => {
         this.wa.notifTiketUpdate({
           nomor_tiket: ticket.nomor_tiket,
@@ -227,6 +228,7 @@ export class OperationsService {
           status_ke: dto.status_tiket!,
           nama_site: site?.nama_site ?? '',
           nama_pelanggan: site?.pelanggan?.nama_pelanggan ?? '',
+          id_pelanggan: site?.id_pelanggan,
           no_hp_customer: site?.pelanggan?.no_hp_pic_utama,
         });
       }).catch(() => {});

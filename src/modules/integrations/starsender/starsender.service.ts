@@ -36,7 +36,43 @@ export class StarsenderService {
     return { message: `Pesan test berhasil dikirim ke ${phone}` };
   }
 
-  // ── Helper: ambil nomor WA staff internal (akses operations) ──
+  // ── Internal Groups ──────────────────────────────────────────────
+
+  async getInternalGroups() {
+    return this.prisma.starsenderInternalGroup.findMany({ orderBy: { id: 'asc' } });
+  }
+
+  async addInternalGroup(dto: { group_id: string; nama_group: string }) {
+    return this.prisma.starsenderInternalGroup.create({ data: dto });
+  }
+
+  async updateInternalGroup(id: number, dto: { group_id?: string; nama_group?: string; is_active?: boolean }) {
+    return this.prisma.starsenderInternalGroup.update({ where: { id }, data: dto });
+  }
+
+  async deleteInternalGroup(id: number) {
+    return this.prisma.starsenderInternalGroup.delete({ where: { id } });
+  }
+
+  // ── Pelanggan WA Group ───────────────────────────────────────────
+
+  async getPelangganGroups() {
+    return this.prisma.pelanggan.findMany({
+      select: { id_pelanggan: true, nama_pelanggan: true, wa_group_id: true, nama_grup: true },
+      orderBy: { nama_pelanggan: 'asc' },
+    });
+  }
+
+  async updatePelangganGroup(id_pelanggan: number, dto: { wa_group_id?: string | null; nama_grup?: string | null }) {
+    return this.prisma.pelanggan.update({ where: { id_pelanggan }, data: dto });
+  }
+
+  // ── Helper: ambil target internal (grup aktif + individual staff fallback) ──
+
+  private async getInternalGroupIds(): Promise<string[]> {
+    const groups = await this.prisma.starsenderInternalGroup.findMany({ where: { is_active: true } });
+    return groups.map((g) => g.group_id);
+  }
 
   async getStaffPhones(): Promise<string[]> {
     const users = await this.prisma.coreUser.findMany({
@@ -46,7 +82,7 @@ export class StarsenderService {
     return users
       .filter((u) => {
         if (!u.karyawan?.no_hp) return false;
-        if (!u.modul_akses) return true; // superadmin
+        if (!u.modul_akses) return true;
         try {
           const akses: string[] = JSON.parse(u.modul_akses);
           return akses.includes('operations');
@@ -57,72 +93,101 @@ export class StarsenderService {
       .map((u) => u.karyawan!.no_hp!);
   }
 
+  private async sendToInternal(pesan: string) {
+    const groupIds = await this.getInternalGroupIds();
+    if (groupIds.length) {
+      this.client.sendMany(groupIds, pesan).catch(() => {});
+    } else {
+      // fallback ke individual phone jika tidak ada grup internal
+      const phones = await this.getStaffPhones();
+      if (phones.length) this.client.sendMany(phones, pesan).catch(() => {});
+    }
+  }
+
   // ── Notifikasi Tiket ─────────────────────────────────────────────
 
-  async notifTiketBaru(params: { nomor_tiket: string; judul: string; nama_site: string; nama_pelanggan: string; no_hp_customer?: string | null }) {
-    const { nomor_tiket, judul, nama_site, nama_pelanggan, no_hp_customer } = params;
+  async notifTiketBaru(params: {
+    nomor_tiket: string; judul: string; nama_site: string;
+    nama_pelanggan: string; id_pelanggan?: number; no_hp_customer?: string | null;
+  }) {
+    const { nomor_tiket, judul, nama_site, nama_pelanggan, id_pelanggan, no_hp_customer } = params;
 
-    // Ke customer
-    if (no_hp_customer) {
+    // Ke customer — grup pelanggan (prioritas) atau no_hp_pic_utama
+    if (id_pelanggan) {
+      const pel = await this.prisma.pelanggan.findUnique({
+        where: { id_pelanggan },
+        select: { wa_group_id: true },
+      });
+      if (pel?.wa_group_id) {
+        const pesan = `🎫 *Tiket Baru*\n*${nomor_tiket}*\n📌 ${judul}\n📍 Site: ${nama_site}\n\nTim kami akan segera menindaklanjuti. Terima kasih.`;
+        this.client.send(pel.wa_group_id, pesan).catch(() => {});
+      } else if (no_hp_customer) {
+        const pesan = `Halo ${nama_pelanggan},\n\nTiket Anda telah dibuat:\n📋 *${nomor_tiket}*\n📌 ${judul}\n📍 Site: ${nama_site}\n\nTim kami akan segera menindaklanjuti. Terima kasih.`;
+        this.client.send(no_hp_customer, pesan).catch(() => {});
+      }
+    } else if (no_hp_customer) {
       const pesan = `Halo ${nama_pelanggan},\n\nTiket Anda telah dibuat:\n📋 *${nomor_tiket}*\n📌 ${judul}\n📍 Site: ${nama_site}\n\nTim kami akan segera menindaklanjuti. Terima kasih.`;
       this.client.send(no_hp_customer, pesan).catch(() => {});
     }
 
-    // Ke staff internal
-    const staffPhones = await this.getStaffPhones();
-    if (staffPhones.length) {
-      const pesan = `🎫 *Tiket Baru*\n${nomor_tiket} — ${judul}\nSite: ${nama_site} (${nama_pelanggan})`;
-      this.client.sendMany(staffPhones, pesan).catch(() => {});
-    }
+    // Ke internal
+    const pesan = `🎫 *Tiket Baru*\n${nomor_tiket} — ${judul}\nSite: ${nama_site} (${nama_pelanggan})`;
+    await this.sendToInternal(pesan);
   }
 
-  async notifTiketUpdate(params: { nomor_tiket: string; judul: string; status_dari: string; status_ke: string; nama_site: string; nama_pelanggan: string; no_hp_customer?: string | null }) {
-    const { nomor_tiket, judul, status_dari, status_ke, nama_site, nama_pelanggan, no_hp_customer } = params;
+  async notifTiketUpdate(params: {
+    nomor_tiket: string; judul: string; status_dari: string; status_ke: string;
+    nama_site: string; nama_pelanggan: string; id_pelanggan?: number; no_hp_customer?: string | null;
+  }) {
+    const { nomor_tiket, judul, status_dari, status_ke, nama_site, nama_pelanggan, id_pelanggan, no_hp_customer } = params;
 
     const emojiStatus: Record<string, string> = {
       In_Progress: '🔧', Resolved: '✅', Closed: '🔒', Pending_Customer: '⏳', Open: '🔴',
     };
     const emoji = emojiStatus[status_ke] ?? '📋';
 
-    // Ke customer — hanya untuk status yang relevan bagi mereka
     const statusCustomer = ['In_Progress', 'Resolved', 'Closed', 'Pending_Customer'];
-    if (no_hp_customer && statusCustomer.includes(status_ke)) {
+    if (statusCustomer.includes(status_ke)) {
       const label: Record<string, string> = {
         In_Progress: 'sedang dikerjakan', Resolved: 'telah diselesaikan',
         Closed: 'telah ditutup', Pending_Customer: 'menunggu respons Anda',
       };
-      const pesan = `${emoji} Halo ${nama_pelanggan},\n\nTiket *${nomor_tiket}* ${label[status_ke] ?? `diupdate ke ${status_ke}`}.\n📌 ${judul}\n📍 Site: ${nama_site}`;
-      this.client.send(no_hp_customer, pesan).catch(() => {});
+      const pesanCustomer = `${emoji} *Update Tiket*\n*${nomor_tiket}* ${label[status_ke] ?? `diupdate ke ${status_ke}`}\n📌 ${judul}\n📍 Site: ${nama_site}`;
+
+      if (id_pelanggan) {
+        const pel = await this.prisma.pelanggan.findUnique({
+          where: { id_pelanggan },
+          select: { wa_group_id: true },
+        });
+        if (pel?.wa_group_id) {
+          this.client.send(pel.wa_group_id, pesanCustomer).catch(() => {});
+        } else if (no_hp_customer) {
+          this.client.send(no_hp_customer, pesanCustomer).catch(() => {});
+        }
+      } else if (no_hp_customer) {
+        this.client.send(no_hp_customer, pesanCustomer).catch(() => {});
+      }
     }
 
-    // Ke staff internal
-    const staffPhones = await this.getStaffPhones();
-    if (staffPhones.length) {
-      const pesan = `${emoji} *Status Tiket*\n${nomor_tiket}: ${status_dari} → ${status_ke}\n${judul}\nSite: ${nama_site}`;
-      this.client.sendMany(staffPhones, pesan).catch(() => {});
-    }
+    // Ke internal
+    const pesan = `${emoji} *Status Tiket*\n${nomor_tiket}: ${status_dari} → ${status_ke}\n${judul}\nSite: ${nama_site}`;
+    await this.sendToInternal(pesan);
   }
 
-  // ── Notifikasi Monitoring Down ───────────────────────────────────
+  // ── Notifikasi Monitoring ────────────────────────────────────────
 
   async notifMonitorDown(params: { sumber: string; nama: string; nama_site?: string; msg?: string }) {
     const { sumber, nama, nama_site, msg } = params;
-    const staffPhones = await this.getStaffPhones();
-    if (!staffPhones.length) return;
-
     const lokasi = nama_site ? `\n📍 Site: ${nama_site}` : '';
     const detail = msg ? `\nInfo: ${msg}` : '';
     const pesan = `🔴 *Alert Monitoring DOWN*\n🌐 ${sumber}: ${nama}${lokasi}${detail}`;
-    this.client.sendMany(staffPhones, pesan).catch(() => {});
+    await this.sendToInternal(pesan);
   }
 
   async notifMonitorUp(params: { sumber: string; nama: string; nama_site?: string }) {
     const { sumber, nama, nama_site } = params;
-    const staffPhones = await this.getStaffPhones();
-    if (!staffPhones.length) return;
-
     const lokasi = nama_site ? ` | Site: ${nama_site}` : '';
     const pesan = `✅ *Monitor Kembali UP*\n🌐 ${sumber}: ${nama}${lokasi}`;
-    this.client.sendMany(staffPhones, pesan).catch(() => {});
+    await this.sendToInternal(pesan);
   }
 }
