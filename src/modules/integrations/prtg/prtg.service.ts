@@ -176,10 +176,7 @@ export class PrtgService {
           deskripsi: `${sensors.map(s => s.sensor).join(', ')}: tidak cocok dgn nama site, buat tiket manual`,
           url: '/operations',
         }).catch(() => {});
-        this.wa.notifMonitorDown({
-          sumber: 'PRTG', nama: device,
-          msg: sensors.map(s => s.sensor).join(', '),
-        }).catch(() => {});
+        // tidak kirim WA untuk device yang belum di-mapping ke site
       }
 
       // Buat 1 baris webhook per sensor (semua menunjuk tiket yang sama)
