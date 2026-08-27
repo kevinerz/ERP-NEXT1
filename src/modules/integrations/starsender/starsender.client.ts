@@ -36,7 +36,7 @@ export class StarsenderClient {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ phone: normalized, message, messageType: 'text' }),
+        body: JSON.stringify({ to: normalized, message, messageType: 'text' }),
         signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
@@ -58,7 +58,11 @@ export class StarsenderClient {
   }
 
   private normalizePhone(raw: string): string | null {
-    const digits = raw.replace(/\D/g, '');
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    // Group ID WhatsApp (format: 120363...@g.us) — kirim apa adanya
+    if (trimmed.includes('@')) return trimmed;
+    const digits = trimmed.replace(/\D/g, '');
     if (!digits) return null;
     if (digits.startsWith('628')) return digits;
     if (digits.startsWith('08')) return '62' + digits.slice(1);
