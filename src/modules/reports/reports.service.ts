@@ -270,10 +270,8 @@ export class ReportsService {
       'Juli','Agustus','September','Oktober','November','Desember'];
     const periode = mode === 'year' ? `${tahun}` : `${BULAN_LABEL[bulan - 1]} ${tahun}`;
 
-    const isFoLayanan = (l: { kode_layanan: string; nama_layanan: string }) =>
-      l.kode_layanan.includes('FO') ||
-      l.nama_layanan.toLowerCase().includes('fiber') ||
-      l.nama_layanan.toLowerCase().includes('fo');
+    const slaPct = (l: { sla_target_pct: any } | null | undefined): number =>
+      l ? Number(l.sla_target_pct) : 95;
 
     const compliance = (total: number, breach: number): number =>
       total === 0 ? 100.0 : Math.round(((total - breach) / total) * 1000) / 10;
@@ -286,11 +284,11 @@ export class ReportsService {
       },
     });
 
-    // Summary
+    // Summary — "FO" = semua layanan dengan target >= 99%
     const total_tiket = tickets.length;
     const total_resolved = tickets.filter(t => t.status_tiket === 'Resolved' || t.status_tiket === 'Closed').length;
     const total_breach = tickets.filter(t => t.sla_breached).length;
-    const fo_tickets = tickets.filter(t => t.site?.layanan && isFoLayanan(t.site.layanan));
+    const fo_tickets = tickets.filter(t => slaPct(t.site?.layanan) >= 99);
     const fo_breach = fo_tickets.filter(t => t.sla_breached).length;
     const resolved_with_time = tickets.filter(t => t.tgl_resolved);
     const avg_mttr_menit = resolved_with_time.length > 0
@@ -315,7 +313,7 @@ export class ReportsService {
       });
       const mTotal = mTickets.length;
       const mBreach = mTickets.filter(t => t.sla_breached).length;
-      const mFo = mTickets.filter(t => t.site?.layanan && isFoLayanan(t.site.layanan));
+      const mFo = mTickets.filter(t => slaPct(t.site?.layanan) >= 99);
       const mFoTotal = mFo.length;
       const mFoBreach = mFo.filter(t => t.sla_breached).length;
 
@@ -330,10 +328,10 @@ export class ReportsService {
       });
     }
 
-    // Per pelanggan
+    // Per pelanggan — target = target tertinggi dari layanan yg dipakai pelanggan tsb
     const pelangganMap = new Map<number, {
       id_pelanggan: number; nama_pelanggan: string; kode_pelanggan: string;
-      total_tiket: number; breach: number; has_fo: boolean;
+      total_tiket: number; breach: number; max_target: number;
     }>();
     for (const t of tickets) {
       const p = t.site?.pelanggan;
@@ -345,16 +343,17 @@ export class ReportsService {
           id_pelanggan: id,
           nama_pelanggan: p.nama_pelanggan,
           kode_pelanggan: p.kode_pelanggan,
-          total_tiket: 0, breach: 0, has_fo: false,
+          total_tiket: 0, breach: 0, max_target: 95,
         });
       }
       const entry = pelangganMap.get(id)!;
       entry.total_tiket++;
       if (t.sla_breached) entry.breach++;
-      if (l && isFoLayanan(l)) entry.has_fo = true;
+      const tp = slaPct(l);
+      if (tp > entry.max_target) entry.max_target = tp;
     }
     const per_pelanggan = Array.from(pelangganMap.values()).map(p => {
-      const target_pct = p.has_fo ? 99 : 95;
+      const target_pct = p.max_target;
       const compliance_pct = compliance(p.total_tiket, p.breach);
       return {
         id_pelanggan: p.id_pelanggan,
@@ -368,10 +367,10 @@ export class ReportsService {
       };
     }).sort((a, b) => a.compliance_pct - b.compliance_pct);
 
-    // Per layanan
+    // Per layanan — target dari sla_target_pct di DB
     const layananMap = new Map<number, {
       id_layanan: number; kode_layanan: string; nama_layanan: string;
-      is_fo: boolean; total_tiket: number; breach: number;
+      target_pct: number; total_tiket: number; breach: number;
     }>();
     for (const t of tickets) {
       const l = t.site?.layanan;
@@ -382,7 +381,7 @@ export class ReportsService {
           id_layanan: id,
           kode_layanan: l.kode_layanan,
           nama_layanan: l.nama_layanan,
-          is_fo: isFoLayanan(l),
+          target_pct: slaPct(l),
           total_tiket: 0, breach: 0,
         });
       }
@@ -391,13 +390,16 @@ export class ReportsService {
       if (t.sla_breached) entry.breach++;
     }
     const per_layanan = Array.from(layananMap.values()).map(l => {
-      const target_pct = l.is_fo ? 99 : 95;
       const compliance_pct = compliance(l.total_tiket, l.breach);
       return {
-        ...l,
-        target_pct,
+        id_layanan: l.id_layanan,
+        kode_layanan: l.kode_layanan,
+        nama_layanan: l.nama_layanan,
+        target_pct: l.target_pct,
+        total_tiket: l.total_tiket,
+        breach: l.breach,
         compliance_pct,
-        status: (compliance_pct >= target_pct ? 'OK' : 'BREACH') as 'OK' | 'BREACH',
+        status: (compliance_pct >= l.target_pct ? 'OK' : 'BREACH') as 'OK' | 'BREACH',
       };
     }).sort((a, b) => a.compliance_pct - b.compliance_pct);
 

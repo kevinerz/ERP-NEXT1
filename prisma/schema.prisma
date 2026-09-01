@@ -138,6 +138,7 @@ model MasterLayanan {
   kode_layanan       String  @unique @db.VarChar(20)
   nama_layanan       String  @db.VarChar(100)
   deskripsi          String? @db.Text
+  sla_target_pct     Decimal @default(95.00) @db.Decimal(5, 2)
   is_managed         Boolean @default(true)
   is_aktif           Boolean @default(true)
   mekari_product_uid String? @db.VarChar(100)

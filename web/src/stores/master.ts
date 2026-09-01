@@ -6,6 +6,7 @@ export interface Layanan {
   kode_layanan: string
   nama_layanan: string
   deskripsi?: string
+  sla_target_pct: number
   is_managed: boolean
   is_aktif: boolean
 }

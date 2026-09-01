@@ -1,4 +1,4 @@
-import { IsString, IsBoolean, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsBoolean, IsOptional, IsNumber, MaxLength, Min, Max } from 'class-validator';
 
 export class CreateLayananDto {
   @IsString()
@@ -12,6 +12,12 @@ export class CreateLayananDto {
   @IsOptional()
   @IsString()
   deskripsi?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  sla_target_pct?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -31,6 +37,12 @@ export class UpdateLayananDto {
   @IsOptional()
   @IsString()
   deskripsi?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  sla_target_pct?: number;
 
   @IsOptional()
   @IsBoolean()

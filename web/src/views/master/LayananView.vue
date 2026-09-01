@@ -12,7 +12,7 @@ const filterAktif = ref('')
 const showModal = ref(false)
 const isEdit = ref(false)
 const editId = ref<number | null>(null)
-const form = ref({ kode_layanan: '', nama_layanan: '', deskripsi: '', is_managed: true, is_aktif: true })
+const form = ref({ kode_layanan: '', nama_layanan: '', deskripsi: '', sla_target_pct: 95, is_managed: true, is_aktif: true })
 const submitting = ref(false)
 const formError = ref('')
 const successMsg = ref('')
@@ -29,7 +29,7 @@ function doSearch() {
 function openAdd() {
   isEdit.value = false
   editId.value = null
-  form.value = { kode_layanan: '', nama_layanan: '', deskripsi: '', is_managed: true, is_aktif: true }
+  form.value = { kode_layanan: '', nama_layanan: '', deskripsi: '', sla_target_pct: 95, is_managed: true, is_aktif: true }
   formError.value = ''
   showModal.value = true
 }
@@ -41,6 +41,7 @@ function openEdit(l: Layanan) {
     kode_layanan: l.kode_layanan,
     nama_layanan: l.nama_layanan,
     deskripsi: l.deskripsi || '',
+    sla_target_pct: Number(l.sla_target_pct) || 95,
     is_managed: l.is_managed,
     is_aktif: l.is_aktif,
   }
@@ -130,6 +131,7 @@ async function hapusLayanan(layanan: Layanan) {
             <th style="width:100px">Kode</th>
             <th>Nama Layanan</th>
             <th>Deskripsi</th>
+            <th style="width:90px">Target SLA</th>
             <th style="width:120px">Tipe</th>
             <th style="width:110px">Status</th>
             <th style="width:180px">Aksi</th>
@@ -149,6 +151,7 @@ async function hapusLayanan(layanan: Layanan) {
             <td><span class="kode-badge">{{ l.kode_layanan }}</span></td>
             <td class="fw600">{{ l.nama_layanan }}</td>
             <td class="text-gray">{{ l.deskripsi || '—' }}</td>
+            <td><span class="sla-badge">{{ Number(l.sla_target_pct).toFixed(1) }}%</span></td>
             <td>
               <span :class="l.is_managed ? 'badge-managed' : 'badge-unmanaged'">
                 {{ l.is_managed ? 'Managed' : 'Unmanaged' }}
@@ -191,6 +194,10 @@ async function hapusLayanan(layanan: Layanan) {
         <div class="field">
           <label>Deskripsi</label>
           <textarea v-model="form.deskripsi" rows="3" placeholder="Opsional"></textarea>
+        </div>
+        <div class="field">
+          <label>Target SLA (%)</label>
+          <input v-model.number="form.sla_target_pct" type="number" min="0" max="100" step="0.1" placeholder="Contoh: 95, 99, 99.5" />
         </div>
         <div class="field-row">
           <div class="field">
@@ -266,6 +273,7 @@ td { padding: 13px 16px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .text-gray { color: #64748b; }
 
 .kode-badge { background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+.sla-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .badge-managed { background: #f0f9ff; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; border: 1px solid #bae6fd; }
 .badge-unmanaged { background: #f8fafc; color: #64748b; padding: 3px 10px; border-radius: 12px; font-size: 12px; border: 1px solid #e2e8f0; }
 .badge-aktif { background: #dcfce7; color: #15803d; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
