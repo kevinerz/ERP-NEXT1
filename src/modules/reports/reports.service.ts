@@ -134,6 +134,225 @@ export class ReportsService {
     };
   }
 
+  // ─── LAPORAN BULANAN SLA PER PELANGGAN ───────────────────────
+
+  async getLaporanBulanan(query: { pelanggan_id: number; bulan: number; tahun: number }) {
+    const now = new Date();
+    const pelangganId = Number(query.pelanggan_id);
+    const bulan = Number(query.bulan);
+    const tahun = Number(query.tahun);
+
+    const start = new Date(tahun, bulan - 1, 1);
+    const end = new Date(tahun, bulan, 0, 23, 59, 59, 999);
+
+    const daysInMonth = new Date(tahun, bulan, 0).getDate();
+    const total_menit_bulan = daysInMonth * 24 * 60;
+
+    const BULAN_LABEL = ['Januari','Februari','Maret','April','Mei','Juni',
+      'Juli','Agustus','September','Oktober','November','Desember'];
+    const bulanStr = BULAN_LABEL[bulan - 1];
+
+    const durasi_str = (menit: number): string => {
+      const m = Math.max(0, Math.round(menit));
+      if (m < 60) return `${m}m`;
+      const j = Math.floor(m / 60);
+      return `${j}j ${m % 60}m`;
+    };
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    const pelanggan = await this.prisma.pelanggan.findUnique({
+      where: { id_pelanggan: pelangganId },
+      select: { nama_pelanggan: true, kode_pelanggan: true, nama_pic_utama: true },
+    });
+
+    if (!pelanggan) throw new Error('Pelanggan tidak ditemukan');
+
+    const sites = await this.prisma.sitePelanggan.findMany({
+      where: { id_pelanggan: pelangganId },
+      include: { layanan: true },
+    });
+
+    const siteIds = sites.map(s => s.id_site);
+
+    const tickets = await this.prisma.operationTicket.findMany({
+      where: {
+        id_site: { in: siteIds },
+        tgl_open: { gte: start, lte: end },
+      },
+      include: { site: { include: { layanan: true } } },
+      orderBy: { tgl_open: 'asc' },
+    });
+
+    // Per-site downtime aggregation
+    const siteDataMap = new Map<number, {
+      id_site: number; nama_site: string; kode_site: string;
+      kode_layanan: string; nama_layanan: string; target_sla: number;
+      downtime_menit: number; ticket_count: number;
+    }>();
+
+    for (const s of sites) {
+      siteDataMap.set(s.id_site, {
+        id_site: s.id_site,
+        nama_site: s.nama_site,
+        kode_site: s.kode_site,
+        kode_layanan: s.layanan?.kode_layanan ?? '—',
+        nama_layanan: s.layanan?.nama_layanan ?? '—',
+        target_sla: Number(s.layanan?.sla_target_pct ?? 95),
+        downtime_menit: 0,
+        ticket_count: 0,
+      });
+    }
+
+    for (const t of tickets) {
+      const sd = siteDataMap.get(t.id_site);
+      if (!sd) continue;
+      const resolved = t.tgl_resolved ?? now;
+      sd.downtime_menit += Math.round((resolved.getTime() - t.tgl_open.getTime()) / 60000);
+      sd.ticket_count++;
+    }
+
+    const sitesResult = Array.from(siteDataMap.values()).map(s => {
+      const uptime_pct = Math.round(Math.max(0, Math.min(100,
+        (1 - s.downtime_menit / total_menit_bulan) * 100)) * 1000) / 1000;
+      return {
+        id_site: s.id_site,
+        nama_site: s.nama_site,
+        kode_site: s.kode_site,
+        kode_layanan: s.kode_layanan,
+        nama_layanan: s.nama_layanan,
+        target_sla: s.target_sla,
+        downtime_menit: s.downtime_menit,
+        durasi_str: durasi_str(s.downtime_menit),
+        uptime_pct,
+        sla_ok: uptime_pct >= s.target_sla,
+        _ticket_count: s.ticket_count,
+      };
+    });
+
+    const site_memenuhi_sla = sitesResult.filter(s => s.sla_ok).length;
+    const site_tanpa_gangguan = sitesResult.filter(s => s._ticket_count === 0).length;
+    const rata_rata_uptime = sitesResult.length > 0
+      ? Math.round(sitesResult.reduce((sum, s) => sum + s.uptime_pct, 0) / sitesResult.length * 1000) / 1000
+      : 100;
+
+    const resolved_tickets = tickets.filter(t => t.tgl_resolved);
+    const avg_mttr_menit = resolved_tickets.length > 0
+      ? Math.round(resolved_tickets.reduce((sum, t) =>
+          sum + (t.tgl_resolved!.getTime() - t.tgl_open.getTime()) / 60000, 0) / resolved_tickets.length)
+      : 0;
+
+    // Per segmen (layanan)
+    const segmenMap = new Map<number, {
+      kode_layanan: string; nama_layanan: string; target_sla: number;
+      siteList: typeof sitesResult;
+    }>();
+
+    for (const s of sites) {
+      const layId = s.id_layanan;
+      if (!segmenMap.has(layId)) {
+        segmenMap.set(layId, {
+          kode_layanan: s.layanan?.kode_layanan ?? '—',
+          nama_layanan: s.layanan?.nama_layanan ?? '—',
+          target_sla: Number(s.layanan?.sla_target_pct ?? 95),
+          siteList: [],
+        });
+      }
+      const sr = sitesResult.find(r => r.id_site === s.id_site);
+      if (sr) segmenMap.get(layId)!.siteList.push(sr);
+    }
+
+    const per_segmen = Array.from(segmenMap.values()).map(seg => {
+      const memenuhi = seg.siteList.filter(s => s.sla_ok).length;
+      const rata_uptime = seg.siteList.length > 0
+        ? seg.siteList.reduce((sum, s) => sum + s.uptime_pct, 0) / seg.siteList.length : 100;
+      const rata_downtime = seg.siteList.length > 0
+        ? seg.siteList.reduce((sum, s) => sum + s.downtime_menit, 0) / seg.siteList.length : 0;
+      return {
+        kode_layanan: seg.kode_layanan,
+        nama_layanan: seg.nama_layanan,
+        jumlah_site: seg.siteList.length,
+        target_sla: seg.target_sla,
+        rata_rata_uptime: Math.round(rata_uptime * 1000) / 1000,
+        rata_rata_downtime_menit: Math.round(rata_downtime),
+        memenuhi_sla: memenuhi,
+        belum_memenuhi: seg.siteList.length - memenuhi,
+        status: (rata_uptime >= seg.target_sla ? 'TERCAPAI' : 'PERLU_PERHATIAN') as 'TERCAPAI' | 'PERLU_PERHATIAN',
+      };
+    });
+
+    // Top 10 by frequency / duration
+    const siteTicketMap = new Map<number, { nama_site: string; kode_layanan: string; durations: number[] }>();
+    for (const t of tickets) {
+      const sd = siteDataMap.get(t.id_site);
+      if (!sd) continue;
+      if (!siteTicketMap.has(t.id_site)) {
+        siteTicketMap.set(t.id_site, { nama_site: sd.nama_site, kode_layanan: sd.kode_layanan, durations: [] });
+      }
+      const resolved = t.tgl_resolved ?? now;
+      siteTicketMap.get(t.id_site)!.durations.push(
+        Math.round((resolved.getTime() - t.tgl_open.getTime()) / 60000));
+    }
+
+    const siteTicketArr = Array.from(siteTicketMap.values()).map(v => {
+      const total = v.durations.reduce((s, d) => s + d, 0);
+      return {
+        nama_site: v.nama_site,
+        kode_layanan: v.kode_layanan,
+        jumlah_tiket: v.durations.length,
+        total_durasi_menit: total,
+        rata_durasi_menit: v.durations.length > 0 ? Math.round(total / v.durations.length) : 0,
+      };
+    });
+
+    const top10_frekuensi = [...siteTicketArr]
+      .sort((a, b) => b.jumlah_tiket - a.jumlah_tiket).slice(0, 10)
+      .map(s => ({ ...s, durasi_str: durasi_str(s.total_durasi_menit) }));
+
+    const top10_durasi = [...siteTicketArr]
+      .sort((a, b) => b.total_durasi_menit - a.total_durasi_menit).slice(0, 10)
+      .map(s => ({ ...s, durasi_str: durasi_str(s.total_durasi_menit) }));
+
+    const ticketsResult = tickets.map(t => {
+      const durasi_menit = t.tgl_resolved
+        ? Math.round((t.tgl_resolved.getTime() - t.tgl_open.getTime()) / 60000)
+        : Math.round((now.getTime() - t.tgl_open.getTime()) / 60000);
+      return {
+        nomor_tiket: t.nomor_tiket,
+        status_tiket: t.status_tiket,
+        tgl_open: t.tgl_open,
+        tgl_resolved: t.tgl_resolved,
+        nama_site: t.site?.nama_site ?? '—',
+        kode_layanan: t.site?.layanan?.kode_layanan ?? '—',
+        judul_tiket: t.judul_tiket,
+        durasi_menit,
+        durasi_str: durasi_str(durasi_menit),
+      };
+    });
+
+    const lastDay = daysInMonth;
+
+    return {
+      pelanggan,
+      periode: `${bulanStr} ${tahun}`,
+      periode_range: `${pad(1)}–${pad(lastDay)} ${bulanStr} ${tahun}`,
+      generated_at: now,
+      summary: {
+        total_site: sitesResult.length,
+        site_memenuhi_sla,
+        site_tanpa_gangguan,
+        rata_rata_uptime,
+        total_tiket: tickets.length,
+        avg_mttr_menit,
+      },
+      per_segmen,
+      sites: sitesResult.map(({ _ticket_count: _, ...rest }) => rest),
+      top10_frekuensi,
+      top10_durasi,
+      tickets: ticketsResult,
+    };
+  }
+
   // ─── LAPORAN ASET ─────────────────────────────────────────────
 
   async getAsetReport() {

@@ -43,6 +43,14 @@ const router = createRouter({
       ],
     },
 
+    // Standalone print views — no AppLayout, no sidebar
+    {
+      path: '/reports/laporan-bulanan/print',
+      name: 'laporan-bulanan-print',
+      component: () => import('@/views/reports/LaporanBulananPrintView.vue'),
+      meta: { public: false },
+    },
+
     // Protected — semua di bawah AppLayout
     {
       path: '/',

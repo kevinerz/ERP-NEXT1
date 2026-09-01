@@ -25,4 +25,7 @@ export class ReportsController {
 
   @Get('sla')
   getSla(@Query() q: any) { return this.svc.getSlaReport(q); }
+
+  @Get('laporan-bulanan')
+  getLaporanBulanan(@Query() q: any) { return this.svc.getLaporanBulanan(q); }
 }

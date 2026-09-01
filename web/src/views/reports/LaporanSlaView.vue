@@ -8,6 +8,38 @@ const BULAN_LIST = [
 ]
 const TAHUN_LIST = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i)
 
+// ── Laporan Bulanan modal ────────────────────────────────────────
+const showLaporanModal = ref(false)
+const laporanPelangganId = ref('')
+const laporanBulan = ref(new Date().getMonth() + 1)
+const laporanTahun = ref(new Date().getFullYear())
+const pelangganList = ref<any[]>([])
+const pelangganLoading = ref(false)
+
+async function openLaporanModal() {
+  showLaporanModal.value = true
+  if (pelangganList.value.length === 0) {
+    pelangganLoading.value = true
+    try {
+      const res = await api.get('/master/pelanggan')
+      pelangganList.value = res.data.data ?? res.data ?? []
+    } catch (e) {
+      console.error('Gagal memuat pelanggan', e)
+    } finally {
+      pelangganLoading.value = false
+    }
+  }
+}
+
+function bukaLaporan() {
+  if (!laporanPelangganId.value) return
+  window.open(
+    `/reports/laporan-bulanan/print?pelanggan_id=${laporanPelangganId.value}&bulan=${laporanBulan.value}&tahun=${laporanTahun.value}`,
+    '_blank'
+  )
+  showLaporanModal.value = false
+}
+
 const filterBulan = ref(new Date().getMonth() + 1)
 const filterTahun = ref(new Date().getFullYear())
 const modeTahun = ref(false)
@@ -150,6 +182,47 @@ function exportCsv() {
           </button>
         </div>
         <button class="btn-export" @click="exportCsv" :disabled="!data || loading">⬇ Export CSV</button>
+        <button class="btn-laporan" @click="openLaporanModal">📄 Laporan Bulanan</button>
+      </div>
+    </div>
+
+    <!-- Laporan Bulanan Modal -->
+    <div v-if="showLaporanModal" class="modal-overlay" @click.self="showLaporanModal = false">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Buat Laporan Bulanan</h3>
+          <button class="modal-close" @click="showLaporanModal = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label">Pelanggan</label>
+          <select v-model="laporanPelangganId" class="form-select" :disabled="pelangganLoading">
+            <option value="">{{ pelangganLoading ? 'Memuat...' : '— Pilih Pelanggan —' }}</option>
+            <option v-for="p in pelangganList" :key="p.id_pelanggan" :value="p.id_pelanggan">
+              {{ p.kode_pelanggan }} — {{ p.nama_pelanggan }}
+            </option>
+          </select>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Bulan</label>
+              <select v-model.number="laporanBulan" class="form-select">
+                <option v-for="(b, i) in BULAN_LIST" :key="i" :value="i + 1">{{ b }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Tahun</label>
+              <select v-model.number="laporanTahun" class="form-select">
+                <option v-for="y in TAHUN_LIST" :key="y" :value="y">{{ y }}</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-cancel" @click="showLaporanModal = false">Batal</button>
+          <button class="btn-open-laporan" :disabled="!laporanPelangganId" @click="bukaLaporan">
+            Buka Laporan
+          </button>
+        </div>
       </div>
     </div>
 
@@ -377,6 +450,28 @@ function exportCsv() {
 .btn-export { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid #a7f3d0; background: #ecfdf5; color: #15803d; transition: background 0.15s; }
 .btn-export:hover:not(:disabled) { background: #d1fae5; }
 .btn-export:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-laporan { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid #fed7aa; background: #fff7ed; color: #c2410c; transition: background 0.15s; }
+.btn-laporan:hover { background: #ffedd5; }
+
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+.modal-box { background: #fff; border-radius: 14px; width: 420px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,0.18); overflow: hidden; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 14px; border-bottom: 1px solid #e2e8f0; }
+.modal-header h3 { font-size: 16px; font-weight: 700; color: #0f172a; }
+.modal-close { background: none; border: none; font-size: 16px; cursor: pointer; color: #64748b; line-height: 1; padding: 2px; }
+.modal-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+.form-label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 5px; }
+.form-select { width: 100%; padding: 8px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; outline: none; background: #fff; }
+.form-select:focus { border-color: #93c5fd; }
+.form-select:disabled { opacity: 0.6; }
+.form-row { display: flex; gap: 12px; }
+.form-group { flex: 1; }
+.modal-footer { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 22px 18px; border-top: 1px solid #e2e8f0; }
+.btn-cancel { padding: 8px 18px; border-radius: 8px; border: 1.5px solid #e2e8f0; background: #fff; color: #475569; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-cancel:hover { background: #f8fafc; }
+.btn-open-laporan { padding: 8px 22px; border-radius: 8px; border: none; background: #0f2540; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+.btn-open-laporan:hover:not(:disabled) { background: #1e3a5f; }
+.btn-open-laporan:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* KPI Cards */
 .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
