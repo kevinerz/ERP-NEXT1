@@ -15,7 +15,7 @@ const expandedSite   = ref<number | null>(null)
 const expandedSensor = ref<number | null>(null)
 const sensorData     = ref<{ device_name: string; sensors: any[] } | null>(null)
 const sensorLoading  = ref(false)
-const graphHours     = ref(24)
+const graphHours     = ref(0)
 
 onMounted(async () => {
   try {
@@ -47,8 +47,8 @@ const modalHours       = ref(0)
 
 async function openModal(id_site: number, objid: number, name: string) {
   modalSensor.value   = { id_site, objid, name }
-  modalHours.value    = 0
-  await fetchModalGraph(id_site, objid, 0)
+  modalHours.value    = graphHours.value
+  await fetchModalGraph(id_site, objid, graphHours.value)
 }
 
 async function fetchModalGraph(id_site: number, objid: number, graphid: number) {
@@ -185,9 +185,10 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
             <!-- Pilih rentang -->
             <div class="sensor-hours">
               <span>Rentang:</span>
-              <button v-for="h in [6,24,48,168]" :key="h" :class="['hour-btn', {active: graphHours === h}]"
-                @click="graphHours = h; expandedSensor = null; histData = []">
-                {{ h < 48 ? h+'j' : (h/24)+'h' }}
+              <button v-for="[gid, lbl] in [[0,'Live'],[1,'48j'],[2,'30h'],[3,'365h']]" :key="(gid as number)"
+                :class="['hour-btn', {active: graphHours === (gid as number)}]"
+                @click="graphHours = (gid as number); expandedSensor = null; histData = []">
+                {{ lbl }}
               </button>
             </div>
 
