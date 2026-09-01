@@ -465,8 +465,8 @@ export class PrtgService {
     return { data };
   }
 
-  async getSensorGraph(objid: number, graphid = 0, hours = 24): Promise<{ buffer: Buffer; contentType: string }> {
-    return this.prtg.getGraphImageBuffer(objid, graphid, 900, 250, hours);
+  async getSensorGraph(objid: number, graphid = 0): Promise<{ buffer: Buffer; contentType: string }> {
+    return this.prtg.getGraphImageBuffer(objid, graphid, 900, 250);
   }
 
   // ─── AUDIT DAFTAR SENSOR/DEVICE ─────────────────────────────────

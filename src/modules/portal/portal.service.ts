@@ -162,10 +162,10 @@ export class PortalService {
     return this.prtg.getSensorHistory(objid, hours);
   }
 
-  async getSensorGraphForPortal(id_pelanggan: number, id_site: number, objid: number, graphid = 0, hours = 24) {
+  async getSensorGraphForPortal(id_pelanggan: number, id_site: number, objid: number, graphid = 0) {
     const site = await this.prisma.sitePelanggan.findFirst({ where: { id_site, id_pelanggan } });
     if (!site) throw new NotFoundException('Site tidak ditemukan');
-    return this.prtg.getSensorGraph(objid, graphid, hours);
+    return this.prtg.getSensorGraph(objid, graphid);
   }
 
   // ── Admin: kelola customer users ─────────────────────────

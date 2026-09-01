@@ -148,21 +148,19 @@ export class PrtgClient {
   }
 
   // Proxy graph image PRTG (menghindari CORS & auth di frontend)
-  async getGraphImageBuffer(objid: number, graphid = 0, width = 900, height = 300, hours = 24): Promise<{ buffer: Buffer; contentType: string }> {
-    const now   = new Date();
-    const start = new Date(now.getTime() - hours * 3_600_000);
-    const fmt   = (d: Date) => d.toISOString().replace('T', '-').substring(0, 19).replace(/:/g, '-');
-    const url   = await this.authedUrl(
-      `/chart.png?type=graph&graphid=${graphid}&id=${objid}&sdate=${fmt(start)}&edate=${fmt(now)}&width=${width}&height=${height}&chartlabels=1`,
+  // graphid: 0=live, 1=48 jam, 2=30 hari, 3=365 hari
+  async getGraphImageBuffer(objid: number, graphid = 0, width = 900, height = 300): Promise<{ buffer: Buffer; contentType: string }> {
+    const url = await this.authedUrl(
+      `/chart.png?type=graph&graphid=${graphid}&id=${objid}&width=${width}&height=${height}&chartlabels=1`,
     );
-    this.logger.log(`PRTG chart req: objid=${objid} hours=${hours} graphid=${graphid}`);
+    this.logger.log(`PRTG chart req: objid=${objid} graphid=${graphid}`);
     const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
-      this.logger.error(`PRTG chart error: status=${res.status} objid=${objid} hours=${hours}`);
+      this.logger.error(`PRTG chart error: status=${res.status} objid=${objid} graphid=${graphid}`);
       throw new Error(`PRTG API error ${res.status}`);
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    this.logger.log(`PRTG chart ok: objid=${objid} hours=${hours} size=${buf.length}`);
+    this.logger.log(`PRTG chart ok: objid=${objid} graphid=${graphid} size=${buf.length}`);
     return { buffer: buf, contentType: res.headers.get('content-type') || 'image/png' };
   }
 }

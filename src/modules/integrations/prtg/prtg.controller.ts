@@ -79,12 +79,11 @@ export class PrtgController {
   async getSensorGraph(
     @Param('id', ParseIntPipe) id: number,
     @Query('graphid') graphid?: string,
-    @Query('hours')   hours?: string,
     @Res() res?: Response,
   ) {
-    const { buffer, contentType } = await this.prtgService.getSensorGraph(id, graphid ? Number(graphid) : 0, hours ? Number(hours) : 24);
+    const { buffer, contentType } = await this.prtgService.getSensorGraph(id, graphid ? Number(graphid) : 0);
     res!.setHeader('Content-Type', contentType);
-    res!.setHeader('Cache-Control', 'public, max-age=300');
+    res!.setHeader('Cache-Control', 'public, max-age=60');
     res!.send(buffer);
   }
 }

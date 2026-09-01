@@ -43,20 +43,20 @@ const histData = ref<any[]>([])
 const modalSensor      = ref<{ id_site: number; objid: number; name: string } | null>(null)
 const modalGraphUrl    = ref<string | null>(null)
 const modalGraphLoading = ref(false)
-const modalHours       = ref(24)
+const modalHours       = ref(0)
 
 async function openModal(id_site: number, objid: number, name: string) {
   modalSensor.value   = { id_site, objid, name }
-  modalHours.value    = graphHours.value
-  await fetchModalGraph(id_site, objid, modalHours.value)
+  modalHours.value    = 0
+  await fetchModalGraph(id_site, objid, 0)
 }
 
-async function fetchModalGraph(id_site: number, objid: number, hours: number) {
+async function fetchModalGraph(id_site: number, objid: number, graphid: number) {
   if (modalGraphUrl.value) { URL.revokeObjectURL(modalGraphUrl.value); modalGraphUrl.value = null }
   modalGraphLoading.value = true
   try {
     const r = await portalApi.get(`/portal/sites/${id_site}/sensor/${objid}/graph.png`, {
-      params: { graphid: 0, hours },
+      params: { graphid },
       responseType: 'blob',
     })
     modalGraphUrl.value = URL.createObjectURL(r.data)
@@ -222,10 +222,10 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
         </div>
 
         <div class="graph-modal-hours">
-          <button v-for="h in [6, 24, 48, 168]" :key="h"
-            :class="['hour-btn', { active: modalHours === h }]"
-            @click="modalChangeHours(h)">
-            {{ h < 48 ? h + ' jam' : (h / 24) + ' hari' }}
+          <button v-for="[gid, label] in [[0,'Live'],[1,'48 jam'],[2,'30 hari'],[3,'365 hari']]" :key="gid"
+            :class="['hour-btn', { active: modalHours === gid }]"
+            @click="modalChangeHours(gid as number)">
+            {{ label }}
           </button>
         </div>
 

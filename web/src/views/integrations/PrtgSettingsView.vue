@@ -140,7 +140,7 @@ function mapDariAudit(deviceName: string) {
 
 // ─── GRAPH PING & ETHER ───────────────────────────────────────
 const graphSiteId  = ref<number | null>(null)
-const graphHours   = ref(24)
+const graphHours   = ref(0)  // graphid: 0=live, 1=48jam, 2=30hari, 3=365hari
 const graphSensors = ref<{ device_name: string; ping: any[]; ether: any[]; other: any[] } | null>(null)
 const graphLoading = ref(false)
 const graphError   = ref('')
@@ -158,30 +158,34 @@ async function fetchGraphSensors() {
   finally { graphLoading.value = false }
 }
 
-const graphBlobUrls2 = ref<Record<string, string>>({})
-const graphBlobLoading2 = ref<Record<string, boolean>>({})
+const graphBlobUrl     = ref<string | null>(null)
+const graphBlobLoading = ref(false)
 
 async function openSensorHistory(objid: number) {
-  if (openSensorId.value === objid) { openSensorId.value = null; return }
+  if (openSensorId.value === objid) {
+    if (graphBlobUrl.value) { URL.revokeObjectURL(graphBlobUrl.value); graphBlobUrl.value = null }
+    openSensorId.value = null; return
+  }
   openSensorId.value = objid
-  await fetchSensorBlob(objid)
+  await loadGraph()
 }
 
-async function fetchSensorBlob(objid: number) {
-  const key = `${objid}_${graphHours.value}`
-  if (graphBlobUrls2.value[key] || graphBlobLoading2.value[key]) return
-  graphBlobLoading2.value[key] = true
+async function loadGraph() {
+  if (!openSensorId.value) return
+  if (graphBlobUrl.value) { URL.revokeObjectURL(graphBlobUrl.value); graphBlobUrl.value = null }
+  graphBlobLoading.value = true
   try {
-    const r = await api.get(`/prtg/sensor/${objid}/graph.png`, {
-      params: { hours: graphHours.value },
+    const r = await api.get(`/prtg/sensor/${openSensorId.value}/graph.png`, {
+      params: { graphid: graphHours.value },
       responseType: 'blob',
     })
-    graphBlobUrls2.value[key] = URL.createObjectURL(r.data)
-  } catch {} finally { delete graphBlobLoading2.value[key] }
+    graphBlobUrl.value = URL.createObjectURL(r.data)
+  } catch {}
+  finally { graphBlobLoading.value = false }
 }
 
 async function onGraphHoursChange() {
-  if (openSensorId.value) await fetchSensorBlob(openSensorId.value)
+  if (openSensorId.value) await loadGraph()
 }
 
 const isPing = (name: string) => /ping|icmp/i.test(name)
@@ -380,10 +384,10 @@ onMounted(async () => {
           <div class="field" style="min-width:160px;margin:0">
             <label>Rentang Waktu</label>
             <select v-model="graphHours" @change="onGraphHoursChange()">
-              <option :value="6">6 jam</option>
-              <option :value="24">24 jam</option>
-              <option :value="48">48 jam</option>
-              <option :value="168">7 hari</option>
+              <option :value="0">Live</option>
+              <option :value="1">48 jam</option>
+              <option :value="2">30 hari</option>
+              <option :value="3">365 hari</option>
             </select>
           </div>
         </div>
@@ -407,10 +411,9 @@ onMounted(async () => {
             </div>
 
             <div v-if="openSensorId === s.objid" class="sensor-detail">
-              <p class="graph-label">PRTG Graph — {{ graphHours }} jam terakhir</p>
-              <div v-if="graphBlobLoading2[`${s.objid}_${graphHours}`]" class="loading" style="padding:12px">Memuat graph...</div>
-              <img v-else-if="graphBlobUrls2[`${s.objid}_${graphHours}`]"
-                :src="graphBlobUrls2[`${s.objid}_${graphHours}`]" class="prtg-graph-img" />
+              <p class="graph-label">PRTG Graph — {{ graphHours < 48 ? graphHours + ' jam' : (graphHours / 24) + ' hari' }} terakhir</p>
+              <div v-if="graphBlobLoading" class="loading" style="padding:12px">Memuat graph...</div>
+              <img v-else-if="graphBlobUrl" :src="graphBlobUrl" class="prtg-graph-img" />
               <p v-else class="empty" style="padding:12px">Graph tidak tersedia</p>
             </div>
           </div>

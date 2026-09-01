@@ -91,10 +91,9 @@ export class PortalController {
     const { buffer, contentType } = await this.service.getSensorGraphForPortal(
       req.user.id_pelanggan, siteId, objid,
       graphid ? Number(graphid) : 0,
-      hours ? Number(hours) : 24,
     );
     res!.setHeader('Content-Type', contentType);
-    res!.setHeader('Cache-Control', 'public, max-age=300');
+    res!.setHeader('Cache-Control', 'public, max-age=60');
     res!.send(buffer);
   }
 
