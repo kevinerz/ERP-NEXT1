@@ -411,7 +411,7 @@ onMounted(async () => {
             </div>
 
             <div v-if="openSensorId === s.objid" class="sensor-detail">
-              <p class="graph-label">PRTG Graph — {{ graphHours < 48 ? graphHours + ' jam' : (graphHours / 24) + ' hari' }} terakhir</p>
+              <p class="graph-label">PRTG Graph — {{ ['Live','48 jam','30 hari','365 hari'][graphHours] ?? 'Live' }}</p>
               <div v-if="graphBlobLoading" class="loading" style="padding:12px">Memuat graph...</div>
               <img v-else-if="graphBlobUrl" :src="graphBlobUrl" class="prtg-graph-img" />
               <p v-else class="empty" style="padding:12px">Graph tidak tersedia</p>
