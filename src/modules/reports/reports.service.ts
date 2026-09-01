@@ -276,13 +276,20 @@ export class ReportsService {
     const compliance = (total: number, breach: number): number =>
       total === 0 ? 100.0 : Math.round(((total - breach) / total) * 1000) / 10;
 
-    // Fetch all tickets in period
-    const tickets = await this.prisma.operationTicket.findMany({
-      where: { tgl_open: { gte: start, lte: end } },
-      include: {
-        site: { include: { pelanggan: true, layanan: true } },
-      },
-    });
+    // Fetch tickets in period + semua pelanggan & layanan aktif (untuk tampilkan 100% meski 0 tiket)
+    const [tickets, activeSites, activeLayanan] = await Promise.all([
+      this.prisma.operationTicket.findMany({
+        where: { tgl_open: { gte: start, lte: end } },
+        include: { site: { include: { pelanggan: true, layanan: true } } },
+      }),
+      this.prisma.sitePelanggan.findMany({
+        where: { status_site: { in: ['Aktif', 'aktif'] } },
+        include: { pelanggan: true, layanan: true },
+      }),
+      this.prisma.masterLayanan.findMany({
+        where: { is_aktif: true },
+      }),
+    ]);
 
     // Summary — "FO" = semua layanan dengan target >= 99%
     const total_tiket = tickets.length;
@@ -328,11 +335,29 @@ export class ReportsService {
       });
     }
 
-    // Per pelanggan — target = target tertinggi dari layanan yg dipakai pelanggan tsb
+    // Per pelanggan — seed dari semua pelanggan aktif, merge tiket
     const pelangganMap = new Map<number, {
       id_pelanggan: number; nama_pelanggan: string; kode_pelanggan: string;
       total_tiket: number; breach: number; max_target: number;
     }>();
+    // Seed: semua pelanggan dengan site aktif
+    for (const s of activeSites) {
+      const p = s.pelanggan;
+      const id = p.id_pelanggan;
+      if (!pelangganMap.has(id)) {
+        pelangganMap.set(id, {
+          id_pelanggan: id,
+          nama_pelanggan: p.nama_pelanggan,
+          kode_pelanggan: p.kode_pelanggan,
+          total_tiket: 0, breach: 0, max_target: slaPct(s.layanan),
+        });
+      } else {
+        const e = pelangganMap.get(id)!;
+        const tp = slaPct(s.layanan);
+        if (tp > e.max_target) e.max_target = tp;
+      }
+    }
+    // Merge tiket
     for (const t of tickets) {
       const p = t.site?.pelanggan;
       const l = t.site?.layanan;
@@ -343,7 +368,7 @@ export class ReportsService {
           id_pelanggan: id,
           nama_pelanggan: p.nama_pelanggan,
           kode_pelanggan: p.kode_pelanggan,
-          total_tiket: 0, breach: 0, max_target: 95,
+          total_tiket: 0, breach: 0, max_target: slaPct(l),
         });
       }
       const entry = pelangganMap.get(id)!;
@@ -367,25 +392,25 @@ export class ReportsService {
       };
     }).sort((a, b) => a.compliance_pct - b.compliance_pct);
 
-    // Per layanan — target dari sla_target_pct di DB
+    // Per layanan — seed dari semua layanan aktif, merge tiket
     const layananMap = new Map<number, {
       id_layanan: number; kode_layanan: string; nama_layanan: string;
       target_pct: number; total_tiket: number; breach: number;
     }>();
+    for (const l of activeLayanan) {
+      layananMap.set(l.id_layanan, {
+        id_layanan: l.id_layanan,
+        kode_layanan: l.kode_layanan,
+        nama_layanan: l.nama_layanan,
+        target_pct: slaPct(l),
+        total_tiket: 0, breach: 0,
+      });
+    }
     for (const t of tickets) {
       const l = t.site?.layanan;
       if (!l) continue;
-      const id = l.id_layanan;
-      if (!layananMap.has(id)) {
-        layananMap.set(id, {
-          id_layanan: id,
-          kode_layanan: l.kode_layanan,
-          nama_layanan: l.nama_layanan,
-          target_pct: slaPct(l),
-          total_tiket: 0, breach: 0,
-        });
-      }
-      const entry = layananMap.get(id)!;
+      const entry = layananMap.get(l.id_layanan);
+      if (!entry) continue;
       entry.total_tiket++;
       if (t.sla_breached) entry.breach++;
     }
