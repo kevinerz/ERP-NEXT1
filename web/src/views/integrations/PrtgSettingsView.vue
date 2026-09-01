@@ -164,6 +164,10 @@ const graphBlobLoading2 = ref<Record<string, boolean>>({})
 async function openSensorHistory(objid: number) {
   if (openSensorId.value === objid) { openSensorId.value = null; return }
   openSensorId.value = objid
+  await fetchSensorBlob(objid)
+}
+
+async function fetchSensorBlob(objid: number) {
   const key = `${objid}_${graphHours.value}`
   if (graphBlobUrls2.value[key] || graphBlobLoading2.value[key]) return
   graphBlobLoading2.value[key] = true
@@ -174,6 +178,10 @@ async function openSensorHistory(objid: number) {
     })
     graphBlobUrls2.value[key] = URL.createObjectURL(r.data)
   } catch {} finally { delete graphBlobLoading2.value[key] }
+}
+
+async function onGraphHoursChange() {
+  if (openSensorId.value) await fetchSensorBlob(openSensorId.value)
 }
 
 const isPing = (name: string) => /ping|icmp/i.test(name)
@@ -371,7 +379,7 @@ onMounted(async () => {
           </div>
           <div class="field" style="min-width:160px;margin:0">
             <label>Rentang Waktu</label>
-            <select v-model="graphHours" @change="graphSiteId && fetchGraphSensors()">
+            <select v-model="graphHours" @change="onGraphHoursChange()">
               <option :value="6">6 jam</option>
               <option :value="24">24 jam</option>
               <option :value="48">48 jam</option>

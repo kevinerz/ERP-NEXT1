@@ -164,6 +164,10 @@ export class PrtgService {
         );
         ticketId = ticket.id_ticket;
         hasil.tiket_dibuat++;
+        // Acknowledge alarm di PRTG — semua sensor device ini, fire-and-forget
+        for (const s of sensors) {
+          this.prtg.acknowledgeAlarm(s.objid, `Tiket ${ticket.nomor_tiket} dibuat oleh sistem ERP`).catch(() => {});
+        }
         this.wa.notifMonitorDown({
           sumber: 'PRTG', nama: device, nama_site: site.nama_site,
           msg: sensorNames,
@@ -410,6 +414,7 @@ export class PrtgService {
         site,
       );
       await this.prisma.integrationPrtgWebhook.update({ where: { id_webhook: pending.id_webhook }, data: { id_ticket_terbentuk: ticket.id_ticket } });
+      this.prtg.acknowledgeAlarm(Number(pending.prtg_sensor_id), `Tiket ${ticket.nomor_tiket} dibuat oleh sistem ERP`).catch(() => {});
       await this.prisma.notification.deleteMany({
         where: { is_read: false, judul: { contains: `[PRTG] ${dto.device_name} DOWN` } },
       }).catch(() => {});

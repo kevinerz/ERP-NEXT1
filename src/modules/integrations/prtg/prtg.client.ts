@@ -133,6 +133,20 @@ export class PrtgClient {
     return (json.histdata ?? []) as PrtgHistoryPoint[];
   }
 
+  // Acknowledge alarm sensor di PRTG — dipanggil setelah tiket ERP dibuat
+  async acknowledgeAlarm(sensorId: number, ackmsg: string): Promise<void> {
+    try {
+      const url = await this.authedUrl(
+        `/api/acknowledgealarm.htm?id=${sensorId}&ackmsg=${encodeURIComponent(ackmsg)}`,
+      );
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) this.logger.warn(`PRTG ack alarm gagal sensor ${sensorId}: HTTP ${res.status}`);
+      else this.logger.log(`PRTG alarm acknowledged: sensor ${sensorId}`);
+    } catch (e: any) {
+      this.logger.warn(`PRTG ack alarm error sensor ${sensorId}: ${e.message}`);
+    }
+  }
+
   // Proxy graph image PRTG (menghindari CORS & auth di frontend)
   async getGraphImageBuffer(objid: number, graphid = 0, width = 900, height = 300, hours = 24): Promise<{ buffer: Buffer; contentType: string }> {
     const now   = new Date();
