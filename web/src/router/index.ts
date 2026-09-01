@@ -239,6 +239,11 @@ const router = createRouter({
           name: 'laporan',
           component: () => import('@/views/reports/LaporanView.vue'),
         },
+        {
+          path: 'reports/sla',
+          name: 'laporan-sla',
+          component: () => import('@/views/reports/LaporanSlaView.vue'),
+        },
         // Kontrak
         {
           path: 'contracts',

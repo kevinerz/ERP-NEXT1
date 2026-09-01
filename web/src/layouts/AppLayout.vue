@@ -89,6 +89,7 @@ const allMenu = [
   { label: 'Kontrak',      icon: '▪', emoji: '📄', to: '/contracts',      modul: 'contracts' },
   { label: 'Finance',      icon: '▪', emoji: '💰', to: '/finance',        modul: 'finance' },
   { label: 'Laporan',      icon: '▪', emoji: '📈', to: '/reports',        modul: 'reports' },
+  { label: 'Laporan SLA',  icon: '▪', emoji: '📉', to: '/reports/sla',    modul: 'reports' },
 ]
 
 const adminMenu = [
@@ -146,6 +147,7 @@ const PAGE_TITLES: Record<string, string> = {
   "invoice-detail":       "Finance — Detail Invoice",
   "kontrak-detail":       "Kontrak — Detail",
   laporan:                "Laporan",
+  "laporan-sla":          "Laporan SLA",
   "admin-users":          "Admin — Manajemen User",
   "admin-logs":           "Admin — Activity Log",
   "admin-email-log":      "Admin — Email Log",

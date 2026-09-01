@@ -249,4 +249,204 @@ export class ReportsService {
 
   // ─── LAPORAN PELANGGAN ────────────────────────────────────────
 
+  // ─── LAPORAN SLA ──────────────────────────────────────────────
+
+  async getSlaReport(query: { bulan?: number; tahun?: number; mode?: string }) {
+    const now = new Date();
+    const tahun = Number(query.tahun) || now.getFullYear();
+    const bulan = Number(query.bulan) || now.getMonth() + 1;
+    const mode: 'month' | 'year' = query.mode === 'year' ? 'year' : 'month';
+
+    let start: Date, end: Date;
+    if (mode === 'year') {
+      start = new Date(tahun, 0, 1);
+      end = new Date(tahun, 11, 31, 23, 59, 59);
+    } else {
+      start = new Date(tahun, bulan - 1, 1);
+      end = new Date(tahun, bulan, 0, 23, 59, 59);
+    }
+
+    const BULAN_LABEL = ['Januari','Februari','Maret','April','Mei','Juni',
+      'Juli','Agustus','September','Oktober','November','Desember'];
+    const periode = mode === 'year' ? `${tahun}` : `${BULAN_LABEL[bulan - 1]} ${tahun}`;
+
+    const isFoLayanan = (l: { kode_layanan: string; nama_layanan: string }) =>
+      l.kode_layanan.includes('FO') ||
+      l.nama_layanan.toLowerCase().includes('fiber') ||
+      l.nama_layanan.toLowerCase().includes('fo');
+
+    const compliance = (total: number, breach: number): number =>
+      total === 0 ? 100.0 : Math.round(((total - breach) / total) * 1000) / 10;
+
+    // Fetch all tickets in period
+    const tickets = await this.prisma.operationTicket.findMany({
+      where: { tgl_open: { gte: start, lte: end } },
+      include: {
+        site: { include: { pelanggan: true, layanan: true } },
+      },
+    });
+
+    // Summary
+    const total_tiket = tickets.length;
+    const total_resolved = tickets.filter(t => t.status_tiket === 'Resolved' || t.status_tiket === 'Closed').length;
+    const total_breach = tickets.filter(t => t.sla_breached).length;
+    const fo_tickets = tickets.filter(t => t.site?.layanan && isFoLayanan(t.site.layanan));
+    const fo_breach = fo_tickets.filter(t => t.sla_breached).length;
+    const resolved_with_time = tickets.filter(t => t.tgl_resolved);
+    const avg_mttr_menit = resolved_with_time.length > 0
+      ? Math.round(resolved_with_time.reduce((sum, t) =>
+          sum + (t.tgl_resolved!.getTime() - t.tgl_open.getTime()) / 60000, 0) / resolved_with_time.length)
+      : 0;
+
+    // Trend: last 12 months (always, ignoring mode)
+    const trend: Array<{
+      bulan: string; total: number; breach: number; compliance_pct: number;
+      fo_total: number; fo_breach: number; fo_compliance_pct: number;
+    }> = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mStart = new Date(d.getFullYear(), d.getMonth(), 1);
+      const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
+      const label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
+
+      const mTickets = await this.prisma.operationTicket.findMany({
+        where: { tgl_open: { gte: mStart, lte: mEnd } },
+        include: { site: { include: { layanan: true } } },
+      });
+      const mTotal = mTickets.length;
+      const mBreach = mTickets.filter(t => t.sla_breached).length;
+      const mFo = mTickets.filter(t => t.site?.layanan && isFoLayanan(t.site.layanan));
+      const mFoTotal = mFo.length;
+      const mFoBreach = mFo.filter(t => t.sla_breached).length;
+
+      trend.push({
+        bulan: label,
+        total: mTotal,
+        breach: mBreach,
+        compliance_pct: compliance(mTotal, mBreach),
+        fo_total: mFoTotal,
+        fo_breach: mFoBreach,
+        fo_compliance_pct: compliance(mFoTotal, mFoBreach),
+      });
+    }
+
+    // Per pelanggan
+    const pelangganMap = new Map<number, {
+      id_pelanggan: number; nama_pelanggan: string; kode_pelanggan: string;
+      total_tiket: number; breach: number; has_fo: boolean;
+    }>();
+    for (const t of tickets) {
+      const p = t.site?.pelanggan;
+      const l = t.site?.layanan;
+      if (!p) continue;
+      const id = p.id_pelanggan;
+      if (!pelangganMap.has(id)) {
+        pelangganMap.set(id, {
+          id_pelanggan: id,
+          nama_pelanggan: p.nama_pelanggan,
+          kode_pelanggan: p.kode_pelanggan,
+          total_tiket: 0, breach: 0, has_fo: false,
+        });
+      }
+      const entry = pelangganMap.get(id)!;
+      entry.total_tiket++;
+      if (t.sla_breached) entry.breach++;
+      if (l && isFoLayanan(l)) entry.has_fo = true;
+    }
+    const per_pelanggan = Array.from(pelangganMap.values()).map(p => {
+      const target_pct = p.has_fo ? 99 : 95;
+      const compliance_pct = compliance(p.total_tiket, p.breach);
+      return {
+        id_pelanggan: p.id_pelanggan,
+        nama_pelanggan: p.nama_pelanggan,
+        kode_pelanggan: p.kode_pelanggan,
+        total_tiket: p.total_tiket,
+        breach: p.breach,
+        compliance_pct,
+        target_pct,
+        status: (compliance_pct >= target_pct ? 'OK' : 'BREACH') as 'OK' | 'BREACH',
+      };
+    }).sort((a, b) => a.compliance_pct - b.compliance_pct);
+
+    // Per layanan
+    const layananMap = new Map<number, {
+      id_layanan: number; kode_layanan: string; nama_layanan: string;
+      is_fo: boolean; total_tiket: number; breach: number;
+    }>();
+    for (const t of tickets) {
+      const l = t.site?.layanan;
+      if (!l) continue;
+      const id = l.id_layanan;
+      if (!layananMap.has(id)) {
+        layananMap.set(id, {
+          id_layanan: id,
+          kode_layanan: l.kode_layanan,
+          nama_layanan: l.nama_layanan,
+          is_fo: isFoLayanan(l),
+          total_tiket: 0, breach: 0,
+        });
+      }
+      const entry = layananMap.get(id)!;
+      entry.total_tiket++;
+      if (t.sla_breached) entry.breach++;
+    }
+    const per_layanan = Array.from(layananMap.values()).map(l => {
+      const target_pct = l.is_fo ? 99 : 95;
+      const compliance_pct = compliance(l.total_tiket, l.breach);
+      return {
+        ...l,
+        target_pct,
+        compliance_pct,
+        status: (compliance_pct >= target_pct ? 'OK' : 'BREACH') as 'OK' | 'BREACH',
+      };
+    }).sort((a, b) => a.compliance_pct - b.compliance_pct);
+
+    // Breach detail: sla_breached tickets in period
+    const breachTickets = await this.prisma.operationTicket.findMany({
+      where: { tgl_open: { gte: start, lte: end }, sla_breached: true },
+      include: { site: { include: { pelanggan: true, layanan: true } } },
+      take: 100,
+    });
+    const breach_detail = breachTickets.map(t => {
+      const terlambat_menit = t.sla_due
+        ? Math.round(((t.tgl_resolved ?? now).getTime() - t.sla_due.getTime()) / 60000)
+        : 0;
+      return {
+        id_ticket: t.id_ticket,
+        nomor_tiket: t.nomor_tiket,
+        judul_tiket: t.judul_tiket,
+        prioritas: t.prioritas,
+        nama_pelanggan: t.site?.pelanggan?.nama_pelanggan ?? '—',
+        nama_site: t.site?.nama_site ?? '—',
+        kode_layanan: t.site?.layanan?.kode_layanan ?? '—',
+        tgl_open: t.tgl_open,
+        sla_due: t.sla_due,
+        tgl_resolved: t.tgl_resolved,
+        terlambat_menit,
+        status_tiket: t.status_tiket,
+      };
+    }).sort((a, b) => b.terlambat_menit - a.terlambat_menit);
+
+    return {
+      data: {
+        periode,
+        mode,
+        target_umum: 95,
+        target_fo: 99,
+        summary: {
+          total_tiket,
+          total_resolved,
+          total_breach,
+          compliance_pct: compliance(total_tiket, total_breach),
+          compliance_fo_pct: compliance(fo_tickets.length, fo_breach),
+          avg_mttr_menit,
+        },
+        trend,
+        per_pelanggan,
+        per_layanan,
+        breach_detail,
+      },
+    };
+  }
+
 }
