@@ -97,6 +97,13 @@ export class PortalController {
     res!.send(buffer);
   }
 
+  @Get('sla')
+  @UseGuards(AuthGuard('customer-jwt'))
+  async getSla(@Req() req: any, @Query() q: any) {
+    const data = await this.service.getSlaForPortal(req.user.id_pelanggan, q);
+    return { success: true, data };
+  }
+
   // ── Admin endpoints (internal staff) ────────────────────
   @Get('admin/users')
   @AdminGuard()

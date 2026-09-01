@@ -36,6 +36,9 @@ function logout() {
         <RouterLink to="/portal/tickets" class="nav-item" active-class="active">
           <span class="nav-icon">🎫</span> Tiket Support
         </RouterLink>
+        <RouterLink to="/portal/sla" class="nav-item" active-class="active">
+          <span class="nav-icon">📊</span> Laporan SLA
+        </RouterLink>
       </nav>
       <main class="portal-main">
         <RouterView />

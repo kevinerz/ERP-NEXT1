@@ -39,6 +39,7 @@ const router = createRouter({
         { path: '', redirect: '/portal/dashboard' },
         { path: 'dashboard', name: 'portal-dashboard', component: () => import('@/views/portal/PortalDashboardView.vue') },
         { path: 'tickets',   name: 'portal-tickets',   component: () => import('@/views/portal/PortalTicketsView.vue') },
+        { path: 'sla',       name: 'portal-sla',       component: () => import('@/views/portal/PortalSlaView.vue') },
       ],
     },
 

@@ -168,6 +168,166 @@ export class PortalService {
     return this.prtg.getSensorGraph(objid, graphid);
   }
 
+  // ── SLA Portal ────────────────────────────────────────────
+
+  async getSlaForPortal(id_pelanggan: number, query: { bulan?: number; tahun?: number; mode?: string }) {
+    const now   = new Date();
+    const tahun = Number(query.tahun) || now.getFullYear();
+    const bulan = Number(query.bulan) || (now.getMonth() + 1);
+    const mode  = query.mode;
+
+    // Date range
+    let start: Date, end: Date, periodeLabel: string;
+    if (mode === 'year') {
+      start = new Date(tahun, 0, 1);
+      end   = new Date(tahun, 11, 31, 23, 59, 59, 999);
+      periodeLabel = `Tahun ${tahun}`;
+    } else {
+      start = new Date(tahun, bulan - 1, 1);
+      end   = new Date(tahun, bulan, 0, 23, 59, 59, 999);
+      const BULAN_IDN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+      periodeLabel = `${BULAN_IDN[bulan - 1]} ${tahun}`;
+    }
+
+    // Get all sites for this pelanggan including layanan
+    const sites = await this.prisma.sitePelanggan.findMany({
+      where: { id_pelanggan },
+      include: { layanan: true },
+    });
+    const siteIds = sites.map((s: any) => s.id_site);
+
+    // Compute max target_pct from all layanan
+    let maxTargetPct = 99.0;
+    for (const s of sites as any[]) {
+      if (s.layanan?.sla_target_pct != null) {
+        const v = Number(s.layanan.sla_target_pct);
+        if (v > maxTargetPct) maxTargetPct = v;
+      }
+    }
+
+    // Build a map siteId → site info
+    const siteMap: Record<number, any> = {};
+    for (const s of sites as any[]) {
+      siteMap[s.id_site] = s;
+    }
+
+    // Fetch tickets in range
+    const tickets = await this.prisma.operationTicket.findMany({
+      where: {
+        id_site: { in: siteIds },
+        tgl_open: { gte: start, lte: end },
+      },
+      select: {
+        id_site:      true,
+        nomor_tiket:  true,
+        judul_tiket:  true,
+        prioritas:    true,
+        status_tiket: true,
+        tgl_open:     true,
+        tgl_resolved: true,
+        sla_due:      true,
+        sla_breached: true,
+      },
+    });
+
+    // Summary
+    const total_tiket   = tickets.length;
+    const total_breach  = (tickets as any[]).filter(t => t.sla_breached).length;
+    const compliance_pct = total_tiket === 0 ? 100.0 : Number(((total_tiket - total_breach) / total_tiket * 100).toFixed(2));
+
+    // MTTR: only resolved tickets
+    const resolvedTickets = (tickets as any[]).filter(t => t.tgl_resolved && t.tgl_open);
+    const avg_mttr_menit = resolvedTickets.length === 0 ? 0 : Math.round(
+      resolvedTickets.reduce((sum: number, t: any) => {
+        return sum + (new Date(t.tgl_resolved).getTime() - new Date(t.tgl_open).getTime()) / 60000;
+      }, 0) / resolvedTickets.length,
+    );
+
+    // Per-site calculation — seed all sites
+    const perSiteMap: Record<number, { total: number; breach: number }> = {};
+    for (const s of sites as any[]) perSiteMap[s.id_site] = { total: 0, breach: 0 };
+    for (const t of tickets as any[]) {
+      perSiteMap[t.id_site].total++;
+      if (t.sla_breached) perSiteMap[t.id_site].breach++;
+    }
+    const per_site = sites.map((s: any) => {
+      const { total, breach } = perSiteMap[s.id_site];
+      const comp = total === 0 ? 100.0 : Number(((total - breach) / total * 100).toFixed(2));
+      const tgt  = s.layanan?.sla_target_pct != null ? Number(s.layanan.sla_target_pct) : maxTargetPct;
+      return {
+        id_site:        s.id_site,
+        nama_site:      s.nama_site,
+        kode_site:      s.kode_site,
+        kode_layanan:   s.layanan?.kode_layanan ?? '',
+        nama_layanan:   s.layanan?.nama_layanan ?? '',
+        target_pct:     tgt,
+        total_tiket:    total,
+        breach,
+        compliance_pct: comp,
+        status:         comp >= tgt ? 'OK' : 'BREACH',
+      };
+    });
+
+    // Trend: last 6 months always
+    const BULAN_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    const trend: any[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d     = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const tYear = d.getFullYear();
+      const tMon  = d.getMonth(); // 0-based
+      const tStart = new Date(tYear, tMon, 1);
+      const tEnd   = new Date(tYear, tMon + 1, 0, 23, 59, 59, 999);
+      const monthTickets = await this.prisma.operationTicket.findMany({
+        where: { id_site: { in: siteIds }, tgl_open: { gte: tStart, lte: tEnd } },
+        select: { sla_breached: true },
+      });
+      const mTotal  = monthTickets.length;
+      const mBreach = (monthTickets as any[]).filter(t => t.sla_breached).length;
+      const mComp   = mTotal === 0 ? 100.0 : Number(((mTotal - mBreach) / mTotal * 100).toFixed(2));
+      trend.push({
+        bulan:          `${BULAN_SHORT[tMon]} ${String(tYear).slice(2)}`,
+        total:          mTotal,
+        breach:         mBreach,
+        compliance_pct: mComp,
+        target_pct:     maxTargetPct,
+      });
+    }
+
+    // Breach detail: last 20 breached tickets in period
+    const breachedTickets = (tickets as any[])
+      .filter(t => t.sla_breached)
+      .sort((a, b) => new Date(b.tgl_open).getTime() - new Date(a.tgl_open).getTime())
+      .slice(0, 20);
+
+    const nowMs = Date.now();
+    const breach_detail = breachedTickets.map(t => {
+      const slaMs    = t.sla_due ? new Date(t.sla_due).getTime() : null;
+      const resolvedMs = t.tgl_resolved ? new Date(t.tgl_resolved).getTime() : nowMs;
+      const terlambat_menit = slaMs ? Math.max(0, Math.round((resolvedMs - slaMs) / 60000)) : 0;
+      return {
+        nomor_tiket:    t.nomor_tiket,
+        judul_tiket:    t.judul_tiket,
+        prioritas:      t.prioritas,
+        nama_site:      siteMap[t.id_site]?.nama_site ?? '',
+        kode_layanan:   siteMap[t.id_site]?.layanan?.kode_layanan ?? '',
+        tgl_open:       t.tgl_open,
+        sla_due:        t.sla_due,
+        tgl_resolved:   t.tgl_resolved,
+        terlambat_menit,
+        status_tiket:   t.status_tiket,
+      };
+    });
+
+    return {
+      periode:  periodeLabel,
+      summary:  { total_tiket, total_breach, compliance_pct, avg_mttr_menit },
+      target_pct: maxTargetPct,
+      per_site,
+      trend,
+      breach_detail,
+    };
+  }
+
   // ── Admin: kelola customer users ─────────────────────────
 
   private safeSelect = {
