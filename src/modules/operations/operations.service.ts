@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StarsenderService } from '../integrations/starsender/starsender.service';
@@ -53,6 +53,8 @@ function hitungSlaDue(prioritas: string, dariWaktu: Date): Date {
 
 @Injectable()
 export class OperationsService {
+  private readonly logger = new Logger(OperationsService.name);
+
   constructor(
     private prisma: PrismaService,
     private notifService: NotificationsService,
@@ -238,16 +240,18 @@ export class OperationsService {
 
     // FCM push ke teknisi baru jika id_teknisi_pic berubah
     const prevTeknisi = (ticket as any).id_teknisi_pic;
-    const newTeknisi = (dto as any).id_teknisi_pic;
+    const newTeknisi = Number((dto as any).id_teknisi_pic);
+    this.logger.log(`FCM check: prevTeknisi=${prevTeknisi} newTeknisi=${newTeknisi}`);
     if (newTeknisi && newTeknisi !== prevTeknisi) {
       this.prisma.coreUser.findFirst({
         where: { id_karyawan: newTeknisi },
         select: { fcm_token: true },
       }).then((u) => {
+        this.logger.log(`FCM user found: ${!!u}, has_token: ${!!u?.fcm_token}`);
         if (u?.fcm_token) {
-          this.fcm.sendTicketAssigned(u.fcm_token, ticket.nomor_tiket, ticket.judul_tiket, ticket.prioritas, id);
+          return this.fcm.sendTicketAssigned(u.fcm_token, ticket.nomor_tiket, ticket.judul_tiket, ticket.prioritas, id);
         }
-      }).catch(() => {});
+      }).catch((e) => { this.logger.error('FCM send error: ' + e.message); });
     }
 
     return { data, message: 'Tiket diperbarui' };
