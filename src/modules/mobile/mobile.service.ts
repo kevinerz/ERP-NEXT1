@@ -291,10 +291,7 @@ export class MobileService {
       where: { id_ticket },
       orderBy: { created_at: 'asc' },
     });
-    return {
-      data: fotos.map(f => ({ ...f, url: `/uploads/tickets/${id_ticket}/${f.filename}` })),
-      message: 'OK',
-    };
+    return fotos.map(f => ({ ...f, url: `/uploads/tickets/${id_ticket}/${f.filename}` }));
   }
 
   async getSuratTugas(id_karyawan: number, id_ticket: number) {

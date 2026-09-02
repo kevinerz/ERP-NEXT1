@@ -368,7 +368,8 @@ async function load() {
       api.get(`/mobile/tickets/${route.params.id}/fotos`),
     ])
     ticket.value = tr.data.data ?? tr.data
-    allFotos.value = fr.data.data ?? fr.data
+    const rawFotos = fr.data.data ?? fr.data
+    allFotos.value = Array.isArray(rawFotos) ? rawFotos : (rawFotos.data ?? [])
   } catch { /* silent */ } finally { loading.value = false }
 }
 
@@ -415,7 +416,8 @@ async function takePhoto(stage: string) {
 
 async function loadFotos() {
   const r = await api.get(`/mobile/tickets/${ticket.value.id_ticket}/fotos`)
-  allFotos.value = r.data.data ?? r.data
+  const rawF = r.data.data ?? r.data
+  allFotos.value = Array.isArray(rawF) ? rawF : (rawF.data ?? [])
 }
 
 function openResolveModal() { catatanResolusi.value = ''; resolveModalOpen.value = true }
