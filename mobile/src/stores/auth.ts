@@ -16,10 +16,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(username: string, password: string) {
     const { data } = await api.post('/mobile/auth/login', { username, password })
-    token.value = data.token
-    user.value = data.user
-    localStorage.setItem('mobile_token', data.token)
-    localStorage.setItem('mobile_user', JSON.stringify(data.user))
+    const payload = data.data ?? data
+    token.value = payload.token
+    user.value = payload.user
+    localStorage.setItem('mobile_token', payload.token)
+    localStorage.setItem('mobile_user', JSON.stringify(payload.user))
   }
 
   function logout() {

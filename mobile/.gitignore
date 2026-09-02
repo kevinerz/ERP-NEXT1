@@ -1,0 +1,22 @@
+# Build output
+dist/
+node_modules/
+
+# TypeScript compiled output (auto-generated, jangan di-commit)
+src/**/*.js
+src/**/*.vue.js
+
+# Android build artifacts
+android/app/build/
+android/.gradle/
+android/build/
+android/capacitor-cordova-android-plugins/build/
+android/capacitor-cordova-android-plugins/.gradle/
+
+# Gradle wrapper binary (binary file besar)
+android/gradle/wrapper/gradle-wrapper.jar
+
+# Local config
+android/local.properties
+.env
+.env.local
