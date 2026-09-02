@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useOperationsStore } from '@/stores/operations'
 import { useProyekStore } from '@/stores/proyek'
 import { printLaporanTiket } from '@/composables/usePrint'
 import { fmtDateTime as fmtDt, statusLabel } from '@/composables/useFormat'
 import api from '@/services/api'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+
+// Fix default icon paths broken by Vite bundling
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+delete (L.Icon.Default.prototype as any)._getIconUrl
+L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow })
 
 const router = useRouter()
 const route = useRoute()
@@ -28,6 +37,95 @@ const woSubmitting = ref(false)
 const woError = ref('')
 
 const successMsg = ref('')
+
+// ── MAP ──────────────────────────────────────────────────────
+const mapContainer = ref<HTMLDivElement | null>(null)
+let mapInstance: L.Map | null = null
+let teknisiMarker: L.Marker | null = null
+let siteMarker: L.Marker | null = null
+let polyline: L.Polyline | null = null
+const teknisiLokasi = ref<{ nama_lengkap: string; latitude: number; longitude: number; updated_at: string } | null>(null)
+let lokasiInterval: ReturnType<typeof setInterval> | null = null
+
+const iconTeknisi = L.divIcon({
+  html: `<div style="background:#16a34a;width:14px;height:14px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px #16a34a,0 2px 6px rgba(0,0,0,0.3)"></div>`,
+  className: '',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+})
+const iconSite = L.divIcon({
+  html: `<div style="background:#3b82f6;width:14px;height:14px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px #3b82f6,0 2px 6px rgba(0,0,0,0.3)"></div>`,
+  className: '',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+})
+
+async function fetchTeknisiLokasi() {
+  if (!ops.current?.teknisi) return
+  try {
+    const { data } = await api.get('/mobile/lokasi/all')
+    const list: any[] = data.data ?? data
+    const match = list.find((l: any) => l.id_karyawan === ops.current!.teknisi!.id_karyawan)
+    if (match) {
+      teknisiLokasi.value = { ...match, ...match.karyawan }
+      updateTeknisiMarker(match.latitude, match.longitude)
+    }
+  } catch { /* silent */ }
+}
+
+function initMap() {
+  if (!mapContainer.value || mapInstance) return
+  const site = ops.current?.site
+  const siteLatLng = parseSiteLatLng(site?.koordinat_gps)
+  const center = siteLatLng ?? [-6.2, 106.8]
+
+  mapInstance = L.map(mapContainer.value, { zoomControl: true, scrollWheelZoom: true }).setView(center, 13)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19,
+  }).addTo(mapInstance)
+
+  if (siteLatLng) {
+    siteMarker = L.marker(siteLatLng, { icon: iconSite })
+      .addTo(mapInstance)
+      .bindPopup(`<b>${site?.nama_site}</b><br>${site?.kota || ''}`)
+  }
+}
+
+function parseSiteLatLng(koordinat?: string): [number, number] | null {
+  if (!koordinat) return null
+  const parts = koordinat.split(',').map(s => parseFloat(s.trim()))
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return [parts[0], parts[1]]
+  return null
+}
+
+function updateTeknisiMarker(lat: number, lng: number) {
+  if (!mapInstance) return
+  const latlng: L.LatLngExpression = [lat, lng]
+  if (teknisiMarker) {
+    teknisiMarker.setLatLng(latlng)
+  } else {
+    teknisiMarker = L.marker(latlng, { icon: iconTeknisi })
+      .addTo(mapInstance)
+      .bindPopup(`<b>${ops.current?.teknisi?.nama_lengkap}</b><br>Lokasi Teknisi`)
+  }
+
+  // Garis dari teknisi ke site
+  const siteLatLng = parseSiteLatLng(ops.current?.site?.koordinat_gps)
+  if (siteLatLng) {
+    if (polyline) polyline.setLatLngs([latlng, siteLatLng])
+    else polyline = L.polyline([latlng, siteLatLng], { color: '#16a34a', weight: 2, dashArray: '6 4', opacity: 0.6 }).addTo(mapInstance)
+    mapInstance.fitBounds(L.latLngBounds([latlng, siteLatLng]).pad(0.2))
+  } else {
+    mapInstance.setView(latlng, 14)
+  }
+}
+
+function destroyMap() {
+  if (lokasiInterval) clearInterval(lokasiInterval)
+  if (mapInstance) { mapInstance.remove(); mapInstance = null }
+  teknisiMarker = null; siteMarker = null; polyline = null
+}
 
 const STATUS_LIST = ['Open', 'In_Progress', 'Pending_Customer', 'Resolved', 'Closed']
 const PRIORITAS_LIST = ['Low', 'Medium', 'High', 'Critical']
@@ -53,7 +151,13 @@ onMounted(async () => {
     ops.fetchTeknisiList(),
     proyek.fetchSiteList(),
   ])
+  await nextTick()
+  initMap()
+  await fetchTeknisiLokasi()
+  lokasiInterval = setInterval(fetchTeknisiLokasi, 15000)
 })
+
+onUnmounted(destroyMap)
 
 function openEdit() {
   const t = ops.current!
@@ -216,6 +320,31 @@ function ageHours(d: string) {
 
       <div v-if="ops.current.deskripsi_masalah" class="deskripsi-box">
         <strong>Deskripsi:</strong> {{ ops.current.deskripsi_masalah }}
+      </div>
+
+      <!-- Peta Lokasi -->
+      <div class="map-card">
+        <div class="map-header">
+          <div class="map-title">
+            <span class="map-title-icon">📍</span> Lokasi Real-time
+          </div>
+          <div class="map-legend">
+            <span class="legend-item"><span class="dot green"></span> Teknisi</span>
+            <span class="legend-item"><span class="dot blue"></span> Site</span>
+            <span v-if="teknisiLokasi" class="map-lastseen">
+              Update: {{ fmtDt(teknisiLokasi.updated_at) }}
+            </span>
+            <span v-else-if="ops.current.teknisi" class="map-nodata">Belum ada data GPS teknisi</span>
+            <span v-else class="map-nodata">Belum ada teknisi</span>
+          </div>
+        </div>
+        <div ref="mapContainer" class="map-container" />
+        <div v-if="ops.current.site?.koordinat_gps" class="map-footer">
+          <a :href="`https://maps.google.com/?q=${ops.current.site.koordinat_gps}`" target="_blank" class="map-link">
+            🗺 Buka di Google Maps
+          </a>
+          <span class="map-coords">{{ ops.current.site.koordinat_gps }}</span>
+        </div>
       </div>
 
       <div class="two-col">
@@ -495,4 +624,22 @@ function ageHours(d: string) {
 .rel-arrow { color: #94a3b8; font-size: 16px; }
 
 @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+/* MAP */
+.map-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); margin-bottom: 16px; overflow: hidden; }
+.map-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px 10px; }
+.map-title { font-size: 13px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px; }
+.map-title-icon { font-size: 16px; }
+.map-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #64748b; }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot.green { background: #16a34a; }
+.dot.blue  { background: #3b82f6; }
+.map-lastseen { font-size: 11px; color: #64748b; }
+.map-nodata { font-size: 11px; color: #94a3b8; font-style: italic; }
+.map-container { height: 320px; width: 100%; }
+.map-footer { display: flex; align-items: center; gap: 14px; padding: 10px 18px; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+.map-link { font-size: 12px; color: #3b82f6; text-decoration: none; font-weight: 600; }
+.map-link:hover { text-decoration: underline; }
+.map-coords { font-size: 11px; color: #94a3b8; font-family: monospace; }
 </style>
