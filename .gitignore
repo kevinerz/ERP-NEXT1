@@ -29,3 +29,8 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Firebase credentials — jangan pernah commit ke git
+firebase-service-account.json
+mobile/google-services.json
+mobile/android/app/google-services.json

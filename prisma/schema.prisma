@@ -69,6 +69,7 @@ model HrisKaryawan {
   tickets_teknisi     OperationTicket[]
   wo_teknisi          WorkOrder[]        @relation("WoTeknisiInternal")
   invitation          HrisInvitation?
+  lokasi              TeknisiLokasi?
 
   @@map("hris_karyawan")
 }
@@ -222,6 +223,8 @@ model CoreUser {
   last_login    DateTime?
   created_at    DateTime  @default(now())
 
+  fcm_token           String?              @db.VarChar(255)
+
   karyawan            HrisKaryawan         @relation(fields: [id_karyawan], references: [id_karyawan])
   user_roles          CoreUserRole[]
   mutasi              GudangMutasiAset[]
@@ -271,6 +274,20 @@ model CoreUserRole {
 
   @@unique([id_user, id_role])
   @@map("core_user_roles")
+}
+
+model TeknisiLokasi {
+  id_lokasi   Int      @id @default(autoincrement())
+  id_karyawan Int
+  latitude    Decimal  @db.Decimal(10, 7)
+  longitude   Decimal  @db.Decimal(10, 7)
+  akurasi     Float?
+  updated_at  DateTime @default(now()) @updatedAt
+
+  karyawan    HrisKaryawan @relation(fields: [id_karyawan], references: [id_karyawan], onDelete: Cascade)
+
+  @@unique([id_karyawan])
+  @@map("teknisi_lokasi")
 }
 
 // ============================================================

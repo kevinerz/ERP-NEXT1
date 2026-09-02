@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StarsenderService } from '../integrations/starsender/starsender.service';
+import { FcmService } from '../mobile/fcm.service';
 import { CreateTicketDto, UpdateTicketDto, AddLogDto } from './dto/ticket.dto';
 
 const TICKET_INCLUDE = {
@@ -56,6 +57,7 @@ export class OperationsService {
     private prisma: PrismaService,
     private notifService: NotificationsService,
     private wa: StarsenderService,
+    private fcm: FcmService,
   ) {}
 
   // ─── TIKET ────────────────────────────────────────────────────
@@ -231,6 +233,20 @@ export class OperationsService {
           id_pelanggan: site?.id_pelanggan,
           no_hp_customer: site?.pelanggan?.no_hp_pic_utama,
         });
+      }).catch(() => {});
+    }
+
+    // FCM push ke teknisi baru jika id_teknisi_pic berubah
+    const prevTeknisi = (ticket as any).id_teknisi_pic;
+    const newTeknisi = (dto as any).id_teknisi_pic;
+    if (newTeknisi && newTeknisi !== prevTeknisi) {
+      this.prisma.coreUser.findFirst({
+        where: { id_karyawan: newTeknisi },
+        select: { fcm_token: true },
+      }).then((u) => {
+        if (u?.fcm_token) {
+          this.fcm.sendTicketAssigned(u.fcm_token, ticket.nomor_tiket, ticket.judul_tiket, ticket.prioritas, id);
+        }
       }).catch(() => {});
     }
 
