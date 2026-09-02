@@ -16,6 +16,7 @@ export class OperationsController {
 
   @Get()    findAll(@Query() q: any)                         { return this.operationsService.findAll(q); }
   @Get(':id') findOne(@Param('id', ParseIntPipe) id: number) { return this.operationsService.findOne(id); }
+  @Get(':id/fotos') getFotos(@Param('id', ParseIntPipe) id: number) { return this.operationsService.getFotos(id); }
 
   @Post()   create(@Body() dto: CreateTicketDto, @Req() req: any) {
     return this.operationsService.create(dto, req.user?.id_user);

@@ -38,6 +38,20 @@ const woError = ref('')
 
 const successMsg = ref('')
 
+// ── FOTOS ────────────────────────────────────────────────────
+const fotos = ref<any[]>([])
+const previewUrl = ref('')
+
+async function fetchFotos() {
+  try {
+    const { data } = await api.get(`/operations/${id}/fotos`)
+    fotos.value = data.data ?? data
+  } catch { /* silent */ }
+}
+
+function fotosOf(stage: string) { return fotos.value.filter(f => f.stage === stage) }
+function stageLabel(s: string) { return s === 'before' ? 'Sebelum Pekerjaan' : s === 'proses' ? 'Proses Pengerjaan' : s === 'after' ? 'Sesudah Pekerjaan' : s }
+
 // ── MAP ──────────────────────────────────────────────────────
 const mapContainer = ref<HTMLDivElement | null>(null)
 let mapInstance: L.Map | null = null
@@ -151,6 +165,7 @@ onMounted(async () => {
     ops.fetchTeknisiList(),
     proyek.fetchSiteList(),
   ])
+  await fetchFotos()
   await nextTick()
   initMap()
   await fetchTeknisiLokasi()
@@ -344,6 +359,37 @@ function ageHours(d: string) {
             🗺 Buka di Google Maps
           </a>
           <span class="map-coords">{{ ops.current.site.koordinat_gps }}</span>
+        </div>
+      </div>
+
+      <!-- Dokumentasi Foto -->
+      <div class="foto-card" v-if="fotos.length">
+        <div class="foto-card-header">
+          <span class="foto-card-title">📷 Dokumentasi Foto Teknisi</span>
+          <span class="foto-badge">{{ fotos.length }} foto</span>
+        </div>
+        <div class="foto-stages">
+          <div v-for="stage in ['before','proses','after']" :key="stage" v-if="fotosOf(stage).length">
+            <div class="stage-label">{{ stageLabel(stage) }}</div>
+            <div class="stage-row">
+              <div
+                v-for="f in fotosOf(stage)" :key="f.id_foto"
+                class="foto-thumb-wrap"
+                @click="previewUrl = f.url"
+              >
+                <img :src="f.url" class="foto-thumb" loading="lazy" />
+                <div class="foto-time">{{ fmtDt(f.created_at) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Preview Foto -->
+      <div v-if="previewUrl" class="modal-overlay" @click.self="previewUrl = ''" style="z-index:3000">
+        <div class="foto-preview-modal">
+          <button class="foto-preview-close" @click="previewUrl = ''">✕</button>
+          <img :src="previewUrl" class="foto-preview-img" />
         </div>
       </div>
 
@@ -624,6 +670,22 @@ function ageHours(d: string) {
 .rel-arrow { color: #94a3b8; font-size: 16px; }
 
 @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
+
+/* FOTO GALLERY */
+.foto-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); margin-bottom: 16px; overflow: hidden; }
+.foto-card-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 12px; }
+.foto-card-title { font-size: 13px; font-weight: 700; color: #0f172a; }
+.foto-badge { background: #f0fdf4; color: #15803d; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+.foto-stages { padding: 0 18px 16px; display: flex; flex-direction: column; gap: 16px; }
+.stage-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b; margin-bottom: 8px; }
+.stage-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.foto-thumb-wrap { cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.foto-thumb { width: 120px; height: 120px; object-fit: cover; border-radius: 10px; border: 2px solid #e2e8f0; transition: transform 0.15s, border-color 0.15s; }
+.foto-thumb:hover { transform: scale(1.04); border-color: #3b82f6; }
+.foto-time { font-size: 10px; color: #94a3b8; }
+.foto-preview-modal { position: relative; max-width: 90vw; max-height: 90vh; }
+.foto-preview-img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 12px; display: block; }
+.foto-preview-close { position: absolute; top: -14px; right: -14px; width: 32px; height: 32px; border-radius: 50%; background: #fff; border: none; cursor: pointer; font-size: 16px; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 1; }
 
 /* MAP */
 .map-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); margin-bottom: 16px; overflow: hidden; }

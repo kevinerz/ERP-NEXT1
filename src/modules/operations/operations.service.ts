@@ -428,6 +428,18 @@ export class OperationsService {
     return { data };
   }
 
+  async getFotos(id_ticket: number) {
+    const fotos = await this.prisma.operationTicketPhoto.findMany({
+      where: { id_ticket },
+      orderBy: { created_at: 'asc' },
+    });
+    const BASE = process.env.APP_URL || 'https://1erp.nextone.id';
+    return fotos.map(f => ({
+      ...f,
+      url: `${BASE}/uploads/tickets/${id_ticket}/${f.filename}`,
+    }));
+  }
+
   async remove(id: number) {
     const row = await this.prisma.operationTicket.findUnique({ where: { id_ticket: id } });
     if (!row) throw new NotFoundException('Tiket tidak ditemukan');
