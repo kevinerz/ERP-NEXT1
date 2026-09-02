@@ -17,192 +17,225 @@
       </ion-toolbar>
     </ion-header>
 
-    <!-- LOADING -->
-    <ion-content v-if="loading" class="center-content">
-      <ion-spinner name="crescent" color="primary" style="transform:scale(2)" />
-    </ion-content>
+    <!-- SATU ion-content — tidak boleh lebih dari satu per ion-page -->
+    <ion-content :fullscreen="true">
 
-    <ion-content v-else-if="ticket" :fullscreen="true">
-
-      <!-- ── HERO ── -->
-      <div class="hero" :class="'p-' + ticket.prioritas.toLowerCase()">
-        <div class="hero-badges">
-          <span class="badge-p"><ion-icon :icon="priorityIcon(ticket.prioritas)" /> {{ ticket.prioritas }}</span>
-          <span class="badge-s" :class="'s-' + ticket.status_tiket.replace('_','')">{{ ticket.status_tiket.replace('_',' ') }}</span>
-          <span v-if="ticket.sla_breached" class="badge-breach"><ion-icon :icon="alertCircle" /> Breach</span>
-        </div>
-        <h1 class="hero-judul">{{ ticket.judul_tiket }}</h1>
-        <p class="hero-nomor">{{ ticket.nomor_tiket }}</p>
-        <div class="hero-sla">
-          <ion-icon :icon="ticket.sla_breached ? closeCircle : checkmarkCircle" />
-          {{ ticket.sla_breached ? 'SLA Dilanggar' : 'SLA Terpenuhi' }}
-          <span v-if="ticket.sla_due" class="sla-cd">· {{ slaCountdown(ticket.sla_due, ticket.sla_breached) }}</span>
-        </div>
+      <!-- Loading -->
+      <div v-if="loading" class="center-content" style="height:60vh">
+        <ion-spinner name="crescent" color="primary" style="transform:scale(2)" />
       </div>
 
-      <!-- ── WORKFLOW STEPPER ── -->
-      <div class="workflow-card">
-        <div class="wf-title">Alur Pengerjaan</div>
-        <div class="stepper">
-          <div v-for="(step, i) in steps" :key="step.key" class="step-item">
-            <div class="step-connector" v-if="i > 0" :class="{ done: stepDone(steps[i-1].key) }" />
-            <div class="step-circle" :class="{ done: stepDone(step.key), active: stepActive(step.key) }">
-              <ion-icon :icon="stepDone(step.key) ? checkmarkCircle : step.icon" />
-            </div>
-            <div class="step-label" :class="{ active: stepActive(step.key) || stepDone(step.key) }">{{ step.label }}</div>
-          </div>
-        </div>
+      <!-- Error state dengan tombol retry -->
+      <div v-else-if="loadError" class="error-state">
+        <ion-icon :icon="alertCircleOutline" class="error-icon" />
+        <p class="error-msg">{{ loadError }}</p>
+        <ion-button @click="load" color="primary" shape="round">
+          <ion-icon slot="start" :icon="refreshOutline" /> Coba Lagi
+        </ion-button>
       </div>
 
-      <!-- ── ACTION PANEL ── -->
-      <div class="action-card">
-        <!-- Step 1: Terima -->
-        <template v-if="ticket.status_tiket === 'Open'">
-          <div class="action-title"><ion-icon :icon="handRightOutline" /> Terima Tiket</div>
-          <p class="action-desc">Konfirmasi bahwa Anda menerima penugasan ini.</p>
-          <ion-button expand="block" class="act-btn" color="primary" :disabled="actionLoading" @click="doAccept">
-            <ion-icon slot="start" :icon="checkmarkCircleOutline" /><ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Terima Tiket</span>
-          </ion-button>
-        </template>
+      <!-- Konten utama -->
+      <template v-else-if="ticket">
 
-        <!-- Step 2: Berangkat -->
-        <template v-else-if="ticket.status_tiket === 'In_Progress' && !ticket.tgl_berangkat">
-          <div class="action-title"><ion-icon :icon="navigateOutline" /> Berangkat ke Lokasi</div>
-          <p class="action-desc">GPS akan merekam perjalanan Anda secara real-time.</p>
-          <ion-button expand="block" class="act-btn" color="warning" :disabled="actionLoading" @click="doBerangkat">
-            <ion-icon slot="start" :icon="carOutline" /><ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Mulai Berangkat</span>
-          </ion-button>
-        </template>
-
-        <!-- Step 3: Sampai + Foto Before -->
-        <template v-else-if="ticket.tgl_berangkat && !ticket.tgl_sampai">
-          <div class="gps-live-bar">
-            <div class="gps-dot" /><span>GPS aktif · merekam perjalanan</span>
+        <!-- HERO -->
+        <div class="hero" :class="'p-' + ticket.prioritas.toLowerCase()">
+          <div class="hero-badges">
+            <span class="badge-p"><ion-icon :icon="priorityIcon(ticket.prioritas)" /> {{ ticket.prioritas }}</span>
+            <span class="badge-s" :class="'s-' + ticket.status_tiket.replace('_','')">{{ ticket.status_tiket.replace('_',' ') }}</span>
+            <span v-if="ticket.sla_breached" class="badge-breach"><ion-icon :icon="alertCircle" /> Breach</span>
           </div>
-          <div class="action-title"><ion-icon :icon="locationOutline" /> Tiba di Lokasi</div>
-          <p class="action-desc">Tekan saat sudah tiba, lalu ambil foto kondisi awal.</p>
-          <ion-button expand="block" class="act-btn" color="success" :disabled="actionLoading" @click="doSampai">
-            <ion-icon slot="start" :icon="pinOutline" /><ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Saya Sudah Sampai</span>
-          </ion-button>
-        </template>
+          <h1 class="hero-judul">{{ ticket.judul_tiket }}</h1>
+          <p class="hero-nomor">{{ ticket.nomor_tiket }}</p>
+          <div class="hero-sla">
+            <ion-icon :icon="ticket.sla_breached ? closeCircle : checkmarkCircle" />
+            {{ ticket.sla_breached ? 'SLA Dilanggar' : 'SLA Terpenuhi' }}
+            <span v-if="ticket.sla_due" class="sla-cd">· {{ slaCountdown(ticket.sla_due, ticket.sla_breached) }}</span>
+          </div>
+        </div>
 
-        <!-- Step 4: Foto Before (sudah sampai, belum ada foto before) -->
-        <template v-else-if="ticket.tgl_sampai && !hasFoto('before')">
-          <div class="action-title"><ion-icon :icon="cameraOutline" /> Foto Kondisi Awal</div>
-          <p class="action-desc">Ambil foto kondisi perangkat/jaringan sebelum diperbaiki.</p>
-          <ion-button expand="block" class="act-btn" color="secondary" @click="takePhoto('before')">
-            <ion-icon slot="start" :icon="cameraOutline" /> Ambil Foto Before
-          </ion-button>
-        </template>
-
-        <!-- Step 5: Pengerjaan + Foto Proses -->
-        <template v-else-if="ticket.tgl_sampai && hasFoto('before') && ticket.status_tiket === 'In_Progress'">
-          <div class="action-title"><ion-icon :icon="constructOutline" /> Sedang Pengerjaan</div>
-          <div class="foto-section">
-            <div class="foto-row">
-              <div v-for="f in fotosOf('proses')" :key="f.id_foto" class="foto-thumb">
-                <img :src="fotoUrl(f.filename, ticket.id_ticket)" @click="previewFoto(f)" />
-                <span class="foto-caption">{{ f.caption || 'Proses' }}</span>
+        <!-- WORKFLOW STEPPER -->
+        <div class="workflow-card">
+          <div class="wf-title">Alur Pengerjaan</div>
+          <div class="stepper">
+            <div v-for="(step, i) in steps" :key="step.key" class="step-item">
+              <div class="step-connector" v-if="i > 0" :class="{ done: stepDone(steps[i-1].key) }" />
+              <div class="step-circle" :class="{ done: stepDone(step.key), active: stepActive(step.key) }">
+                <ion-icon :icon="stepDone(step.key) ? checkmarkCircle : step.icon" />
               </div>
-              <button class="foto-add" @click="takePhoto('proses')">
-                <ion-icon :icon="addOutline" /><span>Tambah</span>
-              </button>
+              <div class="step-label" :class="{ active: stepActive(step.key) || stepDone(step.key) }">{{ step.label }}</div>
             </div>
           </div>
-          <ion-button expand="block" class="act-btn resolve-btn" @click="openResolveModal">
-            <ion-icon slot="start" :icon="checkmarkDoneCircleOutline" /> Selesaikan Tiket
-          </ion-button>
-        </template>
+        </div>
 
-        <!-- Done -->
-        <template v-else-if="ticket.status_tiket === 'Resolved' || ticket.status_tiket === 'Closed'">
-          <div class="done-block">
-            <ion-icon :icon="checkmarkCircle" class="done-icon" />
-            <div class="done-text">Tiket Selesai</div>
-            <div class="done-sub">{{ formatDate(ticket.tgl_resolved) }}</div>
-          </div>
-        </template>
-      </div>
+        <!-- ACTION PANEL -->
+        <div class="action-card">
+          <!-- Step 1: Terima -->
+          <template v-if="ticket.status_tiket === 'Open'">
+            <div class="action-title"><ion-icon :icon="handRightOutline" /> Terima Tiket</div>
+            <p class="action-desc">Konfirmasi bahwa Anda menerima penugasan ini.</p>
+            <ion-button expand="block" class="act-btn" color="primary" :disabled="actionLoading" @click="doAccept">
+              <ion-icon slot="start" :icon="checkmarkCircleOutline" />
+              <ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Terima Tiket</span>
+            </ion-button>
+          </template>
 
-      <!-- ── FOTO GALLERY ── -->
-      <div class="section-card" v-if="allFotos.length">
-        <div class="section-title"><ion-icon :icon="imagesOutline" /> Dokumentasi Foto</div>
-        <div class="gallery-stages">
-          <div v-for="stage in ['before','proses','after']" :key="stage">
-            <div v-if="fotosOf(stage).length" class="gallery-group">
-              <div class="gallery-label">{{ stageLabel(stage) }}</div>
-              <div class="gallery-row">
-                <div v-for="f in fotosOf(stage)" :key="f.id_foto" class="gallery-thumb" @click="previewFoto(f)">
-                  <img :src="fotoUrl(f.filename, ticket.id_ticket)" />
+          <!-- Step 2: Berangkat -->
+          <template v-else-if="ticket.status_tiket === 'In_Progress' && !ticket.tgl_berangkat">
+            <div class="action-title"><ion-icon :icon="navigateOutline" /> Berangkat ke Lokasi</div>
+            <p class="action-desc">GPS akan merekam perjalanan Anda secara real-time.</p>
+            <ion-button expand="block" class="act-btn" color="warning" :disabled="actionLoading" @click="doBerangkat">
+              <ion-icon slot="start" :icon="carOutline" />
+              <ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Mulai Berangkat</span>
+            </ion-button>
+          </template>
+
+          <!-- Step 3: Sampai + Foto Before -->
+          <template v-else-if="ticket.tgl_berangkat && !ticket.tgl_sampai">
+            <div class="gps-live-bar">
+              <div class="gps-dot" /><span>GPS aktif · merekam perjalanan</span>
+            </div>
+            <div class="action-title"><ion-icon :icon="locationOutline" /> Tiba di Lokasi</div>
+            <p class="action-desc">Tekan saat sudah tiba, lalu ambil foto kondisi awal.</p>
+            <ion-button expand="block" class="act-btn" color="success" :disabled="actionLoading" @click="doSampai">
+              <ion-icon slot="start" :icon="pinOutline" />
+              <ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Saya Sudah Sampai</span>
+            </ion-button>
+          </template>
+
+          <!-- Step 4: Foto Before -->
+          <template v-else-if="ticket.tgl_sampai && !hasFoto('before')">
+            <div class="action-title"><ion-icon :icon="cameraOutline" /> Foto Kondisi Awal</div>
+            <p class="action-desc">Ambil foto kondisi perangkat sebelum diperbaiki.</p>
+            <ion-button expand="block" class="act-btn" color="secondary" :disabled="actionLoading" @click="takePhoto('before')">
+              <ion-icon slot="start" :icon="cameraOutline" />
+              <ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Ambil Foto Before</span>
+            </ion-button>
+          </template>
+
+          <!-- Step 5: Pengerjaan + Foto Proses -->
+          <template v-else-if="ticket.tgl_sampai && hasFoto('before') && ticket.status_tiket === 'In_Progress'">
+            <div class="action-title"><ion-icon :icon="constructOutline" /> Sedang Pengerjaan</div>
+            <div class="foto-section">
+              <div class="foto-row">
+                <div v-for="f in fotosOf('proses')" :key="f.id_foto" class="foto-thumb">
+                  <img :src="fotoUrl(f.filename, ticket.id_ticket)" @click="previewFoto(f)" />
+                  <span class="foto-caption">{{ f.caption || 'Proses' }}</span>
+                </div>
+                <button class="foto-add" :disabled="actionLoading" @click="takePhoto('proses')">
+                  <ion-icon :icon="addOutline" /><span>Tambah</span>
+                </button>
+              </div>
+            </div>
+            <ion-button expand="block" class="act-btn resolve-btn" :disabled="actionLoading" @click="openResolveModal">
+              <ion-icon slot="start" :icon="checkmarkDoneCircleOutline" /> Selesaikan Tiket
+            </ion-button>
+          </template>
+
+          <!-- Done -->
+          <template v-else-if="ticket.status_tiket === 'Resolved' || ticket.status_tiket === 'Closed'">
+            <div class="done-block">
+              <ion-icon :icon="checkmarkCircle" class="done-icon" />
+              <div class="done-text">Tiket Selesai</div>
+              <div class="done-sub">{{ formatDate(ticket.tgl_resolved) }}</div>
+            </div>
+          </template>
+        </div>
+
+        <!-- FOTO GALLERY -->
+        <div class="section-card" v-if="allFotos.length">
+          <div class="section-title"><ion-icon :icon="imagesOutline" /> Dokumentasi Foto</div>
+          <div class="gallery-stages">
+            <div v-for="stage in ['before','proses','after']" :key="stage">
+              <div v-if="fotosOf(stage).length" class="gallery-group">
+                <div class="gallery-label">{{ stageLabel(stage) }}</div>
+                <div class="gallery-row">
+                  <div v-for="f in fotosOf(stage)" :key="f.id_foto" class="gallery-thumb" @click="previewFoto(f)">
+                    <img :src="fotoUrl(f.filename, ticket.id_ticket)" />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- ── SITE INFO ── -->
-      <div class="section-card">
-        <div class="section-title"><ion-icon :icon="locationOutline" /> Informasi Site</div>
-        <div class="info-rows">
-          <div class="info-row"><ion-icon :icon="businessOutline" /><div><div class="lbl">Pelanggan</div><div class="val">{{ ticket.site?.pelanggan?.nama_pelanggan || '—' }}</div></div></div>
-          <div class="info-row"><ion-icon :icon="wifiOutline" /><div><div class="lbl">Site</div><div class="val">{{ ticket.site?.nama_site }} <span class="val-sub">({{ ticket.site?.kode_site }})</span></div></div></div>
-          <div class="info-row"><ion-icon :icon="pulseOutline" /><div><div class="lbl">Layanan</div><div class="val">{{ ticket.site?.layanan?.nama_layanan || '—' }}</div></div></div>
-          <div class="info-row"><ion-icon :icon="mapOutline" /><div><div class="lbl">Alamat</div><div class="val">{{ ticket.site?.alamat_lengkap || '—' }}</div></div></div>
-          <a v-if="ticket.site?.koordinat_gps" class="info-row maps-link" :href="`https://maps.google.com/?q=${ticket.site.koordinat_gps}`" target="_blank">
-            <ion-icon :icon="navigateOutline" color="primary" />
-            <div><div class="lbl">Buka Maps</div><div class="val primary">{{ ticket.site.koordinat_gps }}</div></div>
-            <ion-icon :icon="openOutline" style="margin-left:auto;color:#16a34a" />
-          </a>
-        </div>
-      </div>
-
-      <!-- ── TIMELINE ── -->
-      <div class="section-card">
-        <div class="section-title"><ion-icon :icon="timeOutline" /> Timeline</div>
-        <div class="tl">
-          <div class="tl-row" v-if="ticket.tgl_open"><div class="tl-dot open"/><div class="tl-line"/><div><div class="tl-lbl">Dibuka</div><div class="tl-val">{{ formatDate(ticket.tgl_open) }}</div></div></div>
-          <div class="tl-row" v-if="ticket.tgl_berangkat"><div class="tl-dot go"/><div class="tl-line"/><div><div class="tl-lbl">Berangkat</div><div class="tl-val">{{ formatDate(ticket.tgl_berangkat) }}</div></div></div>
-          <div class="tl-row" v-if="ticket.tgl_sampai"><div class="tl-dot arrive"/><div class="tl-line"/><div><div class="tl-lbl">Tiba di Lokasi</div><div class="tl-val">{{ formatDate(ticket.tgl_sampai) }}</div></div></div>
-          <div class="tl-row" v-if="ticket.sla_due"><div class="tl-dot" :class="ticket.sla_breached?'breach':'sla'"/><div class="tl-line"/><div><div class="tl-lbl">Target SLA</div><div class="tl-val" :class="{danger:ticket.sla_breached}">{{ formatDate(ticket.sla_due) }}</div></div></div>
-          <div class="tl-row" v-if="ticket.tgl_resolved"><div class="tl-dot done"/><div><div class="tl-lbl">Selesai</div><div class="tl-val">{{ formatDate(ticket.tgl_resolved) }}</div></div></div>
-        </div>
-      </div>
-
-      <!-- ── LOGS ── -->
-      <div class="section-card" v-if="ticket.logs?.length">
-        <div class="section-title"><ion-icon :icon="listOutline" /> Riwayat</div>
-        <div class="log-list">
-          <div v-for="log in ticket.logs.slice(0,6)" :key="log.id_log" class="log-item">
-            <div class="log-hdr">
-              <span v-if="log.status_dari&&log.status_ke" class="log-tr">{{ log.status_dari }} → {{ log.status_ke }}</span>
-              <span class="log-time">{{ formatDate(log.created_at) }}</span>
-            </div>
-            <p class="log-cat">{{ log.catatan }}</p>
+        <!-- SITE INFO -->
+        <div class="section-card">
+          <div class="section-title"><ion-icon :icon="locationOutline" /> Informasi Site</div>
+          <div class="info-rows">
+            <div class="info-row"><ion-icon :icon="businessOutline" /><div><div class="lbl">Pelanggan</div><div class="val">{{ ticket.site?.pelanggan?.nama_pelanggan || '—' }}</div></div></div>
+            <div class="info-row"><ion-icon :icon="wifiOutline" /><div><div class="lbl">Site</div><div class="val">{{ ticket.site?.nama_site }} <span class="val-sub">({{ ticket.site?.kode_site }})</span></div></div></div>
+            <div class="info-row"><ion-icon :icon="pulseOutline" /><div><div class="lbl">Layanan</div><div class="val">{{ ticket.site?.layanan?.nama_layanan || '—' }}</div></div></div>
+            <div class="info-row"><ion-icon :icon="mapOutline" /><div><div class="lbl">Alamat</div><div class="val">{{ ticket.site?.alamat_lengkap || '—' }}</div></div></div>
+            <a v-if="ticket.site?.koordinat_gps" class="info-row maps-link" :href="`https://maps.google.com/?q=${ticket.site.koordinat_gps}`" target="_blank">
+              <ion-icon :icon="navigateOutline" color="primary" />
+              <div><div class="lbl">Buka Maps</div><div class="val primary">{{ ticket.site.koordinat_gps }}</div></div>
+              <ion-icon :icon="openOutline" style="margin-left:auto;color:#16a34a" />
+            </a>
           </div>
         </div>
-      </div>
 
-      <div style="height:20px" />
+        <!-- TIMELINE -->
+        <div class="section-card">
+          <div class="section-title"><ion-icon :icon="timeOutline" /> Timeline</div>
+          <div class="tl">
+            <div class="tl-row" v-if="ticket.tgl_open"><div class="tl-dot open"/><div><div class="tl-lbl">Dibuka</div><div class="tl-val">{{ formatDate(ticket.tgl_open) }}</div></div></div>
+            <div class="tl-row" v-if="ticket.tgl_berangkat"><div class="tl-dot go"/><div><div class="tl-lbl">Berangkat</div><div class="tl-val">{{ formatDate(ticket.tgl_berangkat) }}</div></div></div>
+            <div class="tl-row" v-if="ticket.tgl_sampai"><div class="tl-dot arrive"/><div><div class="tl-lbl">Tiba di Lokasi</div><div class="tl-val">{{ formatDate(ticket.tgl_sampai) }}</div></div></div>
+            <div class="tl-row" v-if="ticket.sla_due"><div class="tl-dot" :class="ticket.sla_breached?'breach':'sla'"/><div><div class="tl-lbl">Target SLA</div><div class="tl-val" :class="{danger:ticket.sla_breached}">{{ formatDate(ticket.sla_due) }}</div></div></div>
+            <div class="tl-row" v-if="ticket.tgl_resolved"><div class="tl-dot done"/><div><div class="tl-lbl">Selesai</div><div class="tl-val">{{ formatDate(ticket.tgl_resolved) }}</div></div></div>
+          </div>
+        </div>
+
+        <!-- LOGS -->
+        <div class="section-card" v-if="ticket.logs?.length">
+          <div class="section-title"><ion-icon :icon="listOutline" /> Riwayat</div>
+          <div class="log-list">
+            <div v-for="log in ticket.logs.slice(0,6)" :key="log.id_log" class="log-item">
+              <div class="log-hdr">
+                <span v-if="log.status_dari&&log.status_ke" class="log-tr">{{ log.status_dari }} → {{ log.status_ke }}</span>
+                <span class="log-time">{{ formatDate(log.created_at) }}</span>
+              </div>
+              <p class="log-cat">{{ log.catatan }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:24px" />
+      </template>
     </ion-content>
 
     <!-- ══ RESOLVE MODAL ══ -->
     <ion-modal :is-open="resolveModalOpen" @didDismiss="resolveModalOpen=false" :initial-breakpoint="0.75" :breakpoints="[0,0.75,1]">
-      <ion-header><ion-toolbar><ion-title>Selesaikan Tiket</ion-title><ion-buttons slot="end"><ion-button @click="resolveModalOpen=false"><ion-icon :icon="closeOutline"/></ion-button></ion-buttons></ion-toolbar></ion-header>
+      <ion-header>
+        <ion-toolbar>
+          <ion-title>Selesaikan Tiket</ion-title>
+          <ion-buttons slot="end"><ion-button @click="resolveModalOpen=false"><ion-icon :icon="closeOutline"/></ion-button></ion-buttons>
+        </ion-toolbar>
+      </ion-header>
       <ion-content class="ion-padding">
         <div class="resolve-step" v-if="!hasFoto('after')">
           <div class="resolve-hint"><ion-icon :icon="cameraOutline" /> Ambil foto kondisi akhir setelah selesai</div>
-          <ion-button expand="block" color="primary" @click="takePhoto('after')">
-            <ion-icon slot="start" :icon="cameraOutline" /> Foto After (Wajib)
+          <ion-button expand="block" color="primary" :disabled="actionLoading" @click="takePhoto('after')">
+            <ion-icon slot="start" :icon="cameraOutline" />
+            <ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Foto After (Wajib)</span>
           </ion-button>
         </div>
         <div v-else>
           <div class="foto-preview-after">
-            <img v-for="f in fotosOf('after')" :key="f.id_foto" :src="fotoUrl(f.filename, ticket.id_ticket)" class="after-thumb" />
+            <img v-for="f in fotosOf('after')" :key="f.id_foto" :src="fotoUrl(f.filename, ticket!.id_ticket)" class="after-thumb" />
           </div>
-          <ion-textarea v-model="catatanResolusi" placeholder="Catatan penyelesaian masalah..." :rows="4" label="Catatan Resolusi" label-placement="stacked" fill="outline" class="ion-margin-bottom" />
-          <ion-button expand="block" color="success" :disabled="!catatanResolusi||actionLoading" @click="submitResolve">
-            <ion-icon slot="start" :icon="checkmarkDoneCircleOutline" /><ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Konfirmasi Selesai</span>
+          <ion-textarea
+            v-model="catatanResolusi"
+            placeholder="Catatan penyelesaian masalah..."
+            :rows="4"
+            label="Catatan Resolusi"
+            label-placement="stacked"
+            fill="outline"
+            class="ion-margin-bottom"
+          />
+          <ion-button expand="block" color="success" :disabled="!catatanResolusi || actionLoading" @click="submitResolve">
+            <ion-icon slot="start" :icon="checkmarkDoneCircleOutline" />
+            <ion-spinner v-if="actionLoading" name="crescent" /><span v-else>Konfirmasi Selesai</span>
           </ion-button>
         </div>
       </ion-content>
@@ -210,7 +243,12 @@
 
     <!-- ══ SURAT TUGAS MODAL ══ -->
     <ion-modal :is-open="suratTugasOpen" @didDismiss="suratTugasOpen=false">
-      <ion-header><ion-toolbar color="primary"><ion-title>Surat Tugas</ion-title><ion-buttons slot="end"><ion-button @click="suratTugasOpen=false"><ion-icon :icon="closeOutline"/></ion-button></ion-buttons></ion-toolbar></ion-header>
+      <ion-header>
+        <ion-toolbar color="primary">
+          <ion-title>Surat Tugas</ion-title>
+          <ion-buttons slot="end"><ion-button @click="suratTugasOpen=false"><ion-icon :icon="closeOutline"/></ion-button></ion-buttons>
+        </ion-toolbar>
+      </ion-header>
       <ion-content>
         <div class="surat" v-if="ticket">
           <div class="surat-header">
@@ -265,26 +303,38 @@
 
     <!-- ══ FOTO PREVIEW MODAL ══ -->
     <ion-modal :is-open="!!previewFotoData" @didDismiss="previewFotoData=null">
-      <ion-header><ion-toolbar><ion-title>{{ previewFotoData?.caption || stageLabel(previewFotoData?.stage) }}</ion-title><ion-buttons slot="end"><ion-button @click="previewFotoData=null"><ion-icon :icon="closeOutline"/></ion-button></ion-buttons></ion-toolbar></ion-header>
+      <ion-header>
+        <ion-toolbar>
+          <ion-title>{{ previewFotoData?.caption || stageLabel(previewFotoData?.stage) }}</ion-title>
+          <ion-buttons slot="end"><ion-button @click="previewFotoData=null"><ion-icon :icon="closeOutline"/></ion-button></ion-buttons>
+        </ion-toolbar>
+      </ion-header>
       <ion-content class="center-content" v-if="previewFotoData">
         <img :src="fotoUrl(previewFotoData.filename, ticket?.id_ticket)" style="width:100%;max-height:80vh;object-fit:contain" />
       </ion-content>
     </ion-modal>
 
-    <!-- Accept Alert -->
-    <ion-alert :is-open="acceptAlertOpen" header="Terima Tiket" :message="`Terima tiket ${ticket?.nomor_tiket}?`" :buttons="acceptAlertButtons" @didDismiss="acceptAlertOpen=false" />
+    <!-- Toast feedback -->
+    <ion-toast
+      :is-open="toast.open"
+      :message="toast.msg"
+      :color="toast.color"
+      :duration="2800"
+      position="top"
+      @didDismiss="toast.open = false"
+    />
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton, IonButton,
-  IonContent, IonSpinner, IonIcon, IonModal, IonTextarea, IonAlert,
+  IonContent, IonSpinner, IonIcon, IonModal, IonTextarea, IonToast,
 } from '@ionic/vue'
 import {
-  refreshOutline, documentOutline, checkmarkCircle, closeCircle, alertCircle,
+  refreshOutline, documentOutline, checkmarkCircle, closeCircle, alertCircle, alertCircleOutline,
   checkmarkCircleOutline, checkmarkDoneCircleOutline, closeOutline,
   navigateOutline, locationOutline, businessOutline, wifiOutline, pulseOutline,
   mapOutline, openOutline, timeOutline, listOutline, constructOutline,
@@ -300,12 +350,18 @@ const ticketsStore = useTicketsStore()
 const ticket = ref<any>(null)
 const allFotos = ref<any[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const actionLoading = ref(false)
 const resolveModalOpen = ref(false)
-const acceptAlertOpen = ref(false)
 const suratTugasOpen = ref(false)
 const catatanResolusi = ref('')
 const previewFotoData = ref<any>(null)
+
+const toast = ref({ open: false, msg: '', color: 'success' })
+
+function showToast(msg: string, color: 'success' | 'danger' | 'warning' = 'success') {
+  toast.value = { open: true, msg, color }
+}
 
 const BASE_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'https://1erp.nextone.id'
 
@@ -353,15 +409,11 @@ function stepActive(key: string): boolean {
 function hasFoto(stage: string) { return allFotos.value.some(f => f.stage === stage) }
 function fotosOf(stage: string) { return allFotos.value.filter(f => f.stage === stage) }
 function fotoUrl(filename: string, id: number) { return `${BASE_URL}/uploads/tickets/${id}/${filename}` }
-function stageLabel(s: string) { return s === 'before' ? 'Sebelum' : s === 'proses' ? 'Proses' : s === 'after' ? 'Sesudah' : s }
-
-const acceptAlertButtons = [
-  { text: 'Batal', role: 'cancel' },
-  { text: 'Ya, Terima', handler: doAccept },
-]
+function stageLabel(s: string) { return s === 'before' ? 'Sebelum' : s === 'proses' ? 'Proses' : s === 'after' ? 'Sesudah' : (s ?? '') }
 
 async function load() {
   loading.value = true
+  loadError.value = ''
   try {
     const [tr, fr] = await Promise.all([
       api.get(`/mobile/tickets/${route.params.id}`),
@@ -369,8 +421,13 @@ async function load() {
     ])
     ticket.value = tr.data.data ?? tr.data
     const rawFotos = fr.data.data ?? fr.data
-    allFotos.value = Array.isArray(rawFotos) ? rawFotos : (rawFotos.data ?? [])
-  } catch { /* silent */ } finally { loading.value = false }
+    allFotos.value = Array.isArray(rawFotos) ? rawFotos : (rawFotos?.data ?? [])
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || e?.message || 'Gagal memuat data tiket'
+    loadError.value = msg
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(load)
@@ -380,7 +437,12 @@ async function doAccept() {
   try {
     await ticketsStore.acceptTicket(ticket.value.id_ticket)
     await load()
-  } finally { actionLoading.value = false }
+    showToast('Tiket berhasil diterima')
+  } catch (e: any) {
+    showToast(e?.response?.data?.message || 'Gagal menerima tiket', 'danger')
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 async function doBerangkat() {
@@ -388,7 +450,12 @@ async function doBerangkat() {
   try {
     await api.post(`/mobile/tickets/${ticket.value.id_ticket}/berangkat`)
     await load()
-  } finally { actionLoading.value = false }
+    showToast('Perjalanan dimulai, GPS aktif')
+  } catch (e: any) {
+    showToast(e?.response?.data?.message || 'Gagal memulai perjalanan', 'danger')
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 async function doSampai() {
@@ -396,28 +463,50 @@ async function doSampai() {
   try {
     await api.post(`/mobile/tickets/${ticket.value.id_ticket}/sampai`)
     await load()
-  } finally { actionLoading.value = false }
+    showToast('Tiba di lokasi tercatat')
+  } catch (e: any) {
+    showToast(e?.response?.data?.message || 'Gagal mencatat kedatangan', 'danger')
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 async function takePhoto(stage: string) {
   try {
     const photo = await Camera.getPhoto({
-      quality: 80,
+      quality: 75,
       allowEditing: false,
       resultType: CameraResultType.Base64,
       source: CameraSource.Camera,
     })
     if (!photo.base64String) return
+
+    actionLoading.value = true
     const base64 = `data:image/jpeg;base64,${photo.base64String}`
-    await api.post(`/mobile/tickets/${ticket.value.id_ticket}/foto`, { stage, base64 })
-    await Promise.all([load(), loadFotos()])
-  } catch { /* user cancelled */ }
+    await api.post(
+      `/mobile/tickets/${ticket.value.id_ticket}/foto`,
+      { stage, base64 },
+      { timeout: 45000 },
+    )
+    await loadFotos()
+    showToast(`Foto ${stageLabel(stage)} berhasil diupload`)
+  } catch (e: any) {
+    if (e?.name !== 'CanceledError' && e?.code !== 'ERR_CANCELED' && !String(e).includes('cancel')) {
+      showToast(e?.response?.data?.message || 'Gagal upload foto', 'danger')
+    }
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 async function loadFotos() {
-  const r = await api.get(`/mobile/tickets/${ticket.value.id_ticket}/fotos`)
-  const rawF = r.data.data ?? r.data
-  allFotos.value = Array.isArray(rawF) ? rawF : (rawF.data ?? [])
+  try {
+    const r = await api.get(`/mobile/tickets/${ticket.value.id_ticket}/fotos`)
+    const rawF = r.data.data ?? r.data
+    allFotos.value = Array.isArray(rawF) ? rawF : (rawF?.data ?? [])
+  } catch {
+    /* silent — fotos optional */
+  }
 }
 
 function openResolveModal() { catatanResolusi.value = ''; resolveModalOpen.value = true }
@@ -428,8 +517,13 @@ async function submitResolve() {
   try {
     await ticketsStore.resolveTicket(ticket.value.id_ticket, catatanResolusi.value)
     resolveModalOpen.value = false
+    showToast('Tiket berhasil diselesaikan ✓')
     await load()
-  } finally { actionLoading.value = false }
+  } catch (e: any) {
+    showToast(e?.response?.data?.message || 'Gagal menyelesaikan tiket', 'danger')
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 function openSuratTugas() { suratTugasOpen.value = true }
@@ -478,23 +572,19 @@ function slaCountdown(due: string, breached: boolean) {
 .hero-sla { display: flex; align-items: center; gap: 6px; font-size: 13px; background: rgba(0,0,0,0.15); padding: 8px 12px; border-radius: 10px; }
 .sla-cd { opacity: 0.8; margin-left: 4px; }
 
+/* ERROR STATE */
+.error-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 24px; gap: 16px; }
+.error-icon { font-size: 56px; color: #ef4444; }
+.error-msg { font-size: 14px; color: #374151; text-align: center; margin: 0; }
+
 /* WORKFLOW */
 .workflow-card { margin: 12px 12px 0; background: #fff; border-radius: 16px; padding: 16px; box-shadow: 0 1px 6px rgba(0,0,0,0.07); }
 .wf-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #6b7280; margin-bottom: 14px; }
-
 .stepper { display: flex; justify-content: space-between; align-items: flex-start; position: relative; }
 .step-item { display: flex; flex-direction: column; align-items: center; flex: 1; position: relative; }
-.step-connector {
-  position: absolute; top: 14px; right: 50%; left: -50%;
-  height: 2px; background: #e5e7eb; z-index: 0;
-}
+.step-connector { position: absolute; top: 14px; right: 50%; left: -50%; height: 2px; background: #e5e7eb; z-index: 0; }
 .step-connector.done { background: #16a34a; }
-.step-circle {
-  width: 28px; height: 28px; border-radius: 50%;
-  background: #f3f4f6; border: 2px solid #e5e7eb;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; color: #9ca3af; z-index: 1; position: relative;
-}
+.step-circle { width: 28px; height: 28px; border-radius: 50%; background: #f3f4f6; border: 2px solid #e5e7eb; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #9ca3af; z-index: 1; position: relative; }
 .step-circle.done   { background: #16a34a; border-color: #16a34a; color: #fff; }
 .step-circle.active { background: #fff; border-color: #16a34a; color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.15); }
 .step-label { font-size: 9px; text-align: center; color: #9ca3af; margin-top: 4px; line-height: 1.2; }
@@ -507,16 +597,8 @@ function slaCountdown(due: string, breached: boolean) {
 .act-btn { --border-radius: 12px; height: 48px; font-size: 15px; font-weight: 700; }
 .resolve-btn { --background: #16a34a; }
 
-.gps-live-bar {
-  display: flex; align-items: center; gap: 8px;
-  background: #f0fdf4; border: 1px solid #bbf7d0;
-  border-radius: 10px; padding: 8px 12px; margin-bottom: 12px;
-  font-size: 12px; font-weight: 600; color: #15803d;
-}
-.gps-dot {
-  width: 10px; height: 10px; border-radius: 50%; background: #16a34a;
-  animation: pulse 1.2s infinite;
-}
+.gps-live-bar { display: flex; align-items: center; gap: 8px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; font-weight: 600; color: #15803d; }
+.gps-dot { width: 10px; height: 10px; border-radius: 50%; background: #16a34a; animation: pulse 1.2s infinite; }
 @keyframes pulse {
   0%,100% { box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }
   50% { box-shadow: 0 0 0 6px rgba(22,163,74,0); }
@@ -533,12 +615,9 @@ function slaCountdown(due: string, breached: boolean) {
 .foto-thumb { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .foto-thumb img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; border: 2px solid #e5e7eb; }
 .foto-caption { font-size: 9px; color: #6b7280; }
-.foto-add {
-  width: 72px; height: 72px; border-radius: 10px; border: 2px dashed #d1d5db;
-  background: #f9fafb; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 3px; cursor: pointer; color: #6b7280; font-size: 10px;
-}
+.foto-add { width: 72px; height: 72px; border-radius: 10px; border: 2px dashed #d1d5db; background: #f9fafb; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; cursor: pointer; color: #6b7280; font-size: 10px; }
 .foto-add ion-icon { font-size: 22px; color: #16a34a; }
+.foto-add:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* SECTION CARDS */
 .section-card { margin: 10px 12px 0; background: #fff; border-radius: 16px; padding: 16px; box-shadow: 0 1px 6px rgba(0,0,0,0.07); }
@@ -570,7 +649,6 @@ function slaCountdown(due: string, breached: boolean) {
 .tl-dot.sla    { border-color: #f59e0b; background: #fef3c7; }
 .tl-dot.breach { border-color: #ef4444; background: #fee2e2; }
 .tl-dot.done   { border-color: #22c55e; background: #dcfce7; }
-.tl-line { display: none; }
 .tl-lbl { font-size: 11px; color: #9ca3af; margin: 0; }
 .tl-val { font-size: 13px; font-weight: 500; margin: 1px 0 0; }
 .tl-val.danger { color: #ef4444; }
