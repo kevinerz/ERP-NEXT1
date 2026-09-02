@@ -71,7 +71,7 @@ async function handleEdit() {
   editSubmitting.value = true; editError.value = ''
   try {
     const payload: any = { ...editForm.value }
-    if (!payload.id_teknisi_pic) delete payload.id_teknisi_pic
+    if (!payload.id_teknisi_pic) payload.id_teknisi_pic = null
     await ops.update(id, payload)
     await ops.fetchOne(id)
     showEditModal.value = false; flash('Tiket diperbarui')

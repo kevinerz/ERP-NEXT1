@@ -240,7 +240,8 @@ export class OperationsService {
 
     // FCM push ke teknisi baru jika id_teknisi_pic berubah
     const prevTeknisi = (ticket as any).id_teknisi_pic;
-    const newTeknisi = Number((dto as any).id_teknisi_pic);
+    const rawTeknisi = (dto as any).id_teknisi_pic;
+    const newTeknisi = rawTeknisi ? Number(rawTeknisi) : null;
     this.logger.log(`FCM check: prevTeknisi=${prevTeknisi} newTeknisi=${newTeknisi}`);
     if (newTeknisi && newTeknisi !== prevTeknisi) {
       this.prisma.coreUser.findFirst({
