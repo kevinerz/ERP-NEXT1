@@ -96,6 +96,53 @@ const timelineEvents = computed(() => {
   return events.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
 })
 
+// ── PRTG ─────────────────────────────────────────────────────
+const prtgDeviceName = ref('')
+const prtgSensors = ref<any[]>([])
+const prtgLoading = ref(false)
+const prtgError = ref('')
+const selectedSensorId = ref<number | null>(null)
+const selectedGraphId = ref(0) // 0=live,1=48h,2=30d,3=365d
+const graphCacheKey = ref(Date.now())
+let graphRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+async function fetchPrtgSensors() {
+  const siteId = ops.current?.site?.id_site
+  if (!siteId) return
+  prtgLoading.value = true
+  prtgError.value = ''
+  try {
+    const { data } = await api.get(`/prtg/site/${siteId}/sensors`)
+    const r = data.data ?? data
+    prtgDeviceName.value = r.device_name || ''
+    prtgSensors.value = r.sensors || []
+    if (prtgSensors.value.length && !selectedSensorId.value) {
+      const ping = prtgSensors.value.find((s: any) => s.sensor?.toLowerCase().includes('ping'))
+      selectedSensorId.value = ping?.objid ?? prtgSensors.value[0]?.objid
+    }
+  } catch (e: any) {
+    prtgError.value = e?.response?.data?.message || 'Gagal memuat sensor'
+  } finally {
+    prtgLoading.value = false
+  }
+}
+
+function prtgStatusColor(raw: number) {
+  return { 3: '#16a34a', 4: '#f59e0b', 5: '#ef4444', 13: '#f97316', 14: '#f97316' }[raw] ?? '#64748b'
+}
+function prtgStatusLabel(raw: number) {
+  return { 3: 'Up', 4: 'Warning', 5: 'Down', 13: 'Down (Ack)', 14: 'Partial Down' }[raw] ?? '?'
+}
+function graphUrl(sensorId: number, graphId: number) {
+  return `/api/prtg/sensor/${sensorId}/graph.png?graphid=${graphId}&_t=${graphCacheKey.value}`
+}
+function refreshGraph() { graphCacheKey.value = Date.now() }
+
+function startGraphRefresh() {
+  if (graphRefreshTimer) clearInterval(graphRefreshTimer)
+  graphRefreshTimer = setInterval(() => { if (selectedGraphId.value === 0) graphCacheKey.value = Date.now() }, 60_000)
+}
+
 // ── MAP ──────────────────────────────────────────────────────
 const mapContainer = ref<HTMLDivElement | null>(null)
 let mapInstance: L.Map | null = null
@@ -192,9 +239,14 @@ onMounted(async () => {
   initMap()
   await fetchTeknisiLokasi()
   lokasiInterval = setInterval(fetchTeknisiLokasi, 15000)
+  await fetchPrtgSensors()
+  startGraphRefresh()
 })
 
-onUnmounted(destroyMap)
+onUnmounted(() => {
+  destroyMap()
+  if (graphRefreshTimer) clearInterval(graphRefreshTimer)
+})
 
 function openEdit() {
   const t = ops.current!
@@ -531,6 +583,84 @@ function journeyStep(t: any) {
               </div>
             </div>
           </template>
+        </div>
+      </div>
+
+      <!-- ── PRTG PERANGKAT STATUS SENSOR ──────────────────────── -->
+      <div class="prtg-wrap">
+
+        <!-- Sensor Status -->
+        <div class="prtg-card">
+          <div class="prtg-hdr">
+            <div class="prtg-hdr-left">
+              <span class="prtg-icon">📡</span>
+              <div>
+                <div class="prtg-title">Status Sensor Perangkat</div>
+                <div class="prtg-device-name" v-if="prtgDeviceName">{{ prtgDeviceName }}</div>
+                <div class="prtg-device-name text-gray" v-else-if="!prtgLoading">Belum ada mapping device untuk site ini</div>
+              </div>
+            </div>
+            <button class="btn-refresh-prtg" @click="fetchPrtgSensors" :disabled="prtgLoading" title="Refresh">
+              <span :class="{ spinning: prtgLoading }">↻</span>
+            </button>
+          </div>
+
+          <div v-if="prtgLoading" class="prtg-loading">Memuat data sensor PRTG...</div>
+          <div v-else-if="prtgError" class="prtg-err">{{ prtgError }}</div>
+          <div v-else-if="!prtgSensors.length" class="prtg-empty">Tidak ada sensor ditemukan untuk device ini</div>
+          <div v-else class="sensor-grid">
+            <div
+              v-for="s in prtgSensors"
+              :key="s.objid"
+              class="sensor-card"
+              :class="{ 'sensor-selected': selectedSensorId === s.objid }"
+              @click="selectedSensorId = s.objid; refreshGraph()"
+            >
+              <div class="sensor-status-dot" :style="{ background: prtgStatusColor(s.status_raw) }"></div>
+              <div class="sensor-body">
+                <div class="sensor-name">{{ s.sensor }}</div>
+                <div class="sensor-device text-gray">{{ s.device }}</div>
+                <div v-if="s.message_raw" class="sensor-msg">{{ s.message_raw }}</div>
+              </div>
+              <div class="sensor-badge" :style="{ background: prtgStatusColor(s.status_raw) + '20', color: prtgStatusColor(s.status_raw) }">
+                {{ prtgStatusLabel(s.status_raw) }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PRTG Graph Live -->
+        <div v-if="selectedSensorId && prtgSensors.length" class="prtg-graph-card">
+          <div class="prtg-graph-hdr">
+            <div class="prtg-graph-title">
+              📊 PRTG Graph —
+              <span class="prtg-live-dot" v-if="selectedGraphId === 0"><span class="blink-dot"></span> Live</span>
+              <span v-else>{{ ['Live', '48 Jam', '30 Hari', '365 Hari'][selectedGraphId] }}</span>
+              <span class="prtg-sensor-lbl">· {{ prtgSensors.find(s => s.objid === selectedSensorId)?.sensor }}</span>
+            </div>
+            <div class="prtg-graph-tabs">
+              <button v-for="(lbl, gid) in ['Live', '48 Jam', '30 Hari', '365 Hari']" :key="gid"
+                :class="['prtg-tab', { active: selectedGraphId === gid }]"
+                @click="selectedGraphId = gid; refreshGraph()">{{ lbl }}</button>
+              <button class="prtg-refresh-btn" @click="refreshGraph" title="Refresh grafik">↻</button>
+            </div>
+          </div>
+          <div class="prtg-graph-wrap">
+            <img
+              :key="`g-${selectedSensorId}-${selectedGraphId}-${graphCacheKey}`"
+              :src="graphUrl(selectedSensorId, selectedGraphId)"
+              class="prtg-graph-img"
+              alt="PRTG Graph"
+              @error="($event.target as HTMLImageElement).style.display='none'; ($event.target as HTMLImageElement).nextElementSibling!.setAttribute('style','')"
+            />
+            <div class="prtg-graph-err" style="display:none">
+              Gagal memuat grafik — sensor mungkin tidak aktif atau PRTG tidak terkonfigurasi
+            </div>
+          </div>
+          <div class="prtg-graph-footer">
+            <span class="prtg-graph-id">Sensor ID: {{ selectedSensorId }}</span>
+            <span v-if="selectedGraphId === 0" class="prtg-auto-refresh">Auto-refresh setiap 60 detik</span>
+          </div>
         </div>
       </div>
 
@@ -895,12 +1025,98 @@ function journeyStep(t: any) {
 .tl-foto-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 2px solid #e2e8f0; cursor: pointer; transition: transform 0.15s, border-color 0.15s; }
 .tl-foto-thumb:hover { transform: scale(1.06); border-color: #3b82f6; }
 
+/* ── PRTG SECTION ────────────────────────────── */
+.prtg-wrap { margin-top: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Status Card */
+.prtg-card { background: #fff; border-radius: 14px; border: 1px solid #e2e8f0; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.prtg-hdr { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
+.prtg-hdr-left { display: flex; align-items: flex-start; gap: 12px; }
+.prtg-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+.prtg-title { font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 3px; }
+.prtg-device-name { font-size: 12px; color: #3b82f6; font-weight: 600; font-family: monospace; }
+.prtg-loading { font-size: 13px; color: #94a3b8; padding: 10px 0; }
+.prtg-err { font-size: 13px; color: #ef4444; padding: 10px 0; }
+.prtg-empty { font-size: 13px; color: #94a3b8; padding: 10px 0; }
+.btn-refresh-prtg {
+  background: #f1f5f9; border: none; border-radius: 8px; padding: 6px 10px;
+  font-size: 18px; cursor: pointer; color: #64748b; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.btn-refresh-prtg:hover { background: #e2e8f0; }
+.btn-refresh-prtg:disabled { opacity: 0.5; cursor: not-allowed; }
+.spinning { display: inline-block; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Sensor Grid */
+.sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.sensor-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px 14px;
+  cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+  background: #fafafa;
+}
+.sensor-card:hover { border-color: #93c5fd; background: #f0f9ff; }
+.sensor-card.sensor-selected { border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+.sensor-status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; box-shadow: 0 0 0 3px rgba(0,0,0,0.07); }
+.sensor-body { flex: 1; min-width: 0; }
+.sensor-name { font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+.sensor-device { font-size: 11px; }
+.sensor-msg { font-size: 11px; color: #64748b; margin-top: 2px; font-style: italic; }
+.sensor-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; white-space: nowrap; align-self: flex-start; }
+
+/* Graph Card */
+.prtg-graph-card { background: #fff; border-radius: 14px; border: 1px solid #e2e8f0; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.prtg-graph-hdr { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.prtg-graph-title { font-size: 15px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.prtg-live-dot { display: flex; align-items: center; gap: 5px; color: #16a34a; }
+.blink-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #16a34a;
+  animation: blink 1.2s ease-in-out infinite;
+  display: inline-block;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }
+  50% { opacity: 0.5; box-shadow: 0 0 0 5px rgba(22,163,74,0); }
+}
+.prtg-sensor-lbl { font-size: 13px; color: #64748b; font-weight: 500; }
+
+.prtg-graph-tabs { display: flex; align-items: center; gap: 4px; }
+.prtg-tab {
+  padding: 5px 12px; border-radius: 7px; border: 1.5px solid #e2e8f0;
+  font-size: 12px; font-weight: 600; cursor: pointer; background: #f8fafc; color: #64748b;
+  transition: all 0.15s;
+}
+.prtg-tab.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+.prtg-tab:hover:not(.active) { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
+.prtg-refresh-btn {
+  margin-left: 4px; padding: 5px 10px; border-radius: 7px;
+  border: 1.5px solid #e2e8f0; background: #f8fafc; color: #64748b;
+  font-size: 16px; cursor: pointer; transition: background 0.15s;
+}
+.prtg-refresh-btn:hover { background: #e2e8f0; }
+
+.prtg-graph-wrap { background: #f8fafc; border-radius: 10px; overflow: hidden; min-height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.prtg-graph-img { width: 100%; max-width: 900px; display: block; border-radius: 10px; }
+.prtg-graph-err { font-size: 13px; color: #94a3b8; padding: 32px; text-align: center; }
+
+.prtg-graph-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.prtg-graph-id { font-size: 11px; color: #94a3b8; font-family: monospace; }
+.prtg-auto-refresh { font-size: 11px; color: #16a34a; font-weight: 600; }
+
 @media (max-width: 900px) {
   .main-grid { grid-template-columns: 1fr; }
   .foto-stages-grid { grid-template-columns: 1fr; }
+  .prtg-graph-hdr { flex-direction: column; align-items: flex-start; }
 }
 @media (max-width: 600px) {
   .page { padding: 16px; }
   .info-bar { grid-template-columns: 1fr 1fr; }
+  .sensor-grid { grid-template-columns: 1fr; }
+  .prtg-graph-tabs { flex-wrap: wrap; }
 }
 </style>
