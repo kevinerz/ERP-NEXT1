@@ -474,6 +474,80 @@ function journeyStep(t: any) {
               <div class="wo-status" :style="{ color: WO_STATUS_COLOR[wo.status_wo] }">{{ wo.status_wo }}</div>
             </div>
           </div>
+
+          <!-- ── PRTG SENSOR STATUS ───────────────────────────── -->
+          <div class="prtg-card">
+            <div class="prtg-hdr">
+              <div class="prtg-hdr-left">
+                <span class="prtg-icon">📡</span>
+                <div>
+                  <div class="prtg-title">Status Sensor Perangkat</div>
+                  <div class="prtg-device-name" v-if="prtgDeviceName">{{ prtgDeviceName }}</div>
+                  <div class="prtg-device-name text-gray" v-else-if="!prtgLoading">Belum ada mapping device untuk site ini</div>
+                </div>
+              </div>
+              <button class="btn-refresh-prtg" @click="fetchPrtgSensors" :disabled="prtgLoading" title="Refresh">
+                <span :class="{ spinning: prtgLoading }">↻</span>
+              </button>
+            </div>
+            <div v-if="prtgLoading" class="prtg-loading">Memuat data sensor PRTG...</div>
+            <div v-else-if="prtgError" class="prtg-err">{{ prtgError }}</div>
+            <div v-else-if="!prtgSensors.length" class="prtg-empty">Tidak ada sensor ditemukan untuk device ini</div>
+            <div v-else class="sensor-grid">
+              <div
+                v-for="s in prtgSensors"
+                :key="s.objid"
+                class="sensor-card"
+                :class="{ 'sensor-selected': selectedSensorId === s.objid }"
+                @click="selectedSensorId = s.objid; refreshGraph()"
+              >
+                <div class="sensor-status-dot" :style="{ background: prtgStatusColor(s.status_raw) }"></div>
+                <div class="sensor-body">
+                  <div class="sensor-name">{{ s.sensor }}</div>
+                  <div class="sensor-device text-gray">{{ s.device }}</div>
+                  <div v-if="s.message_raw" class="sensor-msg">{{ s.message_raw }}</div>
+                </div>
+                <div class="sensor-badge" :style="{ background: prtgStatusColor(s.status_raw) + '20', color: prtgStatusColor(s.status_raw) }">
+                  {{ prtgStatusLabel(s.status_raw) }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── PRTG GRAPH LIVE ─────────────────────────────── -->
+          <div v-if="selectedSensorId && prtgSensors.length" class="prtg-graph-card">
+            <div class="prtg-graph-hdr">
+              <div class="prtg-graph-title">
+                📊 PRTG Graph —
+                <span class="prtg-live-dot" v-if="selectedGraphId === 0"><span class="blink-dot"></span> Live</span>
+                <span v-else>{{ ['Live','48 Jam','30 Hari','365 Hari'][selectedGraphId] }}</span>
+                <span class="prtg-sensor-lbl">· {{ prtgSensors.find(s => s.objid === selectedSensorId)?.sensor }}</span>
+              </div>
+              <div class="prtg-graph-tabs">
+                <button v-for="(lbl, gid) in ['Live','48 Jam','30 Hari','365 Hari']" :key="gid"
+                  :class="['prtg-tab', { active: selectedGraphId === gid }]"
+                  @click="selectedGraphId = gid; refreshGraph()">{{ lbl }}</button>
+                <button class="prtg-refresh-btn" @click="refreshGraph" title="Refresh grafik">↻</button>
+              </div>
+            </div>
+            <div class="prtg-graph-wrap">
+              <img
+                :key="`g-${selectedSensorId}-${selectedGraphId}-${graphCacheKey}`"
+                :src="graphUrl(selectedSensorId, selectedGraphId)"
+                class="prtg-graph-img"
+                alt="PRTG Graph"
+                @error="($event.target as HTMLImageElement).style.display='none'; ($event.target as HTMLImageElement).nextElementSibling!.setAttribute('style','')"
+              />
+              <div class="prtg-graph-err" style="display:none">
+                Gagal memuat grafik — sensor mungkin tidak aktif atau PRTG tidak terkonfigurasi
+              </div>
+            </div>
+            <div class="prtg-graph-footer">
+              <span class="prtg-graph-id">Sensor ID: {{ selectedSensorId }}</span>
+              <span v-if="selectedGraphId === 0" class="prtg-auto-refresh">Auto-refresh setiap 60 detik</span>
+            </div>
+          </div>
+
         </div>
 
         <!-- RIGHT: Journey + Activity Feed -->
@@ -583,84 +657,6 @@ function journeyStep(t: any) {
               </div>
             </div>
           </template>
-        </div>
-      </div>
-
-      <!-- ── PRTG PERANGKAT STATUS SENSOR ──────────────────────── -->
-      <div class="prtg-wrap">
-
-        <!-- Sensor Status -->
-        <div class="prtg-card">
-          <div class="prtg-hdr">
-            <div class="prtg-hdr-left">
-              <span class="prtg-icon">📡</span>
-              <div>
-                <div class="prtg-title">Status Sensor Perangkat</div>
-                <div class="prtg-device-name" v-if="prtgDeviceName">{{ prtgDeviceName }}</div>
-                <div class="prtg-device-name text-gray" v-else-if="!prtgLoading">Belum ada mapping device untuk site ini</div>
-              </div>
-            </div>
-            <button class="btn-refresh-prtg" @click="fetchPrtgSensors" :disabled="prtgLoading" title="Refresh">
-              <span :class="{ spinning: prtgLoading }">↻</span>
-            </button>
-          </div>
-
-          <div v-if="prtgLoading" class="prtg-loading">Memuat data sensor PRTG...</div>
-          <div v-else-if="prtgError" class="prtg-err">{{ prtgError }}</div>
-          <div v-else-if="!prtgSensors.length" class="prtg-empty">Tidak ada sensor ditemukan untuk device ini</div>
-          <div v-else class="sensor-grid">
-            <div
-              v-for="s in prtgSensors"
-              :key="s.objid"
-              class="sensor-card"
-              :class="{ 'sensor-selected': selectedSensorId === s.objid }"
-              @click="selectedSensorId = s.objid; refreshGraph()"
-            >
-              <div class="sensor-status-dot" :style="{ background: prtgStatusColor(s.status_raw) }"></div>
-              <div class="sensor-body">
-                <div class="sensor-name">{{ s.sensor }}</div>
-                <div class="sensor-device text-gray">{{ s.device }}</div>
-                <div v-if="s.message_raw" class="sensor-msg">{{ s.message_raw }}</div>
-              </div>
-              <div class="sensor-badge" :style="{ background: prtgStatusColor(s.status_raw) + '20', color: prtgStatusColor(s.status_raw) }">
-                {{ prtgStatusLabel(s.status_raw) }}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- PRTG Graph Live -->
-        <div v-if="selectedSensorId && prtgSensors.length" class="prtg-graph-card">
-          <div class="prtg-graph-hdr">
-            <div class="prtg-graph-title">
-              📊 PRTG Graph —
-              <span class="prtg-live-dot" v-if="selectedGraphId === 0"><span class="blink-dot"></span> Live</span>
-              <span v-else>{{ ['Live', '48 Jam', '30 Hari', '365 Hari'][selectedGraphId] }}</span>
-              <span class="prtg-sensor-lbl">· {{ prtgSensors.find(s => s.objid === selectedSensorId)?.sensor }}</span>
-            </div>
-            <div class="prtg-graph-tabs">
-              <button v-for="(lbl, gid) in ['Live', '48 Jam', '30 Hari', '365 Hari']" :key="gid"
-                :class="['prtg-tab', { active: selectedGraphId === gid }]"
-                @click="selectedGraphId = gid; refreshGraph()">{{ lbl }}</button>
-              <button class="prtg-refresh-btn" @click="refreshGraph" title="Refresh grafik">↻</button>
-            </div>
-          </div>
-          <div class="prtg-graph-wrap">
-            <img
-              :key="`g-${selectedSensorId}-${selectedGraphId}-${graphCacheKey}`"
-              :src="graphUrl(selectedSensorId, selectedGraphId)"
-              class="prtg-graph-img"
-              alt="PRTG Graph"
-              @error="($event.target as HTMLImageElement).style.display='none'; ($event.target as HTMLImageElement).nextElementSibling!.setAttribute('style','')"
-            />
-            <div class="prtg-graph-err" style="display:none">
-              Gagal memuat grafik — sensor mungkin tidak aktif atau PRTG tidak terkonfigurasi
-            </div>
-          </div>
-          <div class="prtg-graph-footer">
-            <span class="prtg-graph-id">Sensor ID: {{ selectedSensorId }}</span>
-            <span v-if="selectedGraphId === 0" class="prtg-auto-refresh">Auto-refresh setiap 60 detik</span>
-          </div>
         </div>
       </div>
 
@@ -1026,8 +1022,6 @@ function journeyStep(t: any) {
 .tl-foto-thumb:hover { transform: scale(1.06); border-color: #3b82f6; }
 
 /* ── PRTG SECTION ────────────────────────────── */
-.prtg-wrap { margin-top: 20px; display: flex; flex-direction: column; gap: 16px; }
-
 /* Status Card */
 .prtg-card { background: #fff; border-radius: 14px; border: 1px solid #e2e8f0; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
 .prtg-hdr { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
