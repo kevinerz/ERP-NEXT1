@@ -119,6 +119,21 @@
           </div>
         </div>
 
+        <!-- Dering / Audio -->
+        <div class="perm-item">
+          <div class="perm-icon-wrap audio">
+            <ion-icon :icon="volumeHighOutline" />
+          </div>
+          <div class="perm-body">
+            <div class="perm-name">Dering & Audio</div>
+            <div class="perm-desc">Suara dering untuk fitur telepon & chat</div>
+          </div>
+          <div class="perm-right">
+            <span class="perm-badge badge-ok">Aktif</span>
+            <span style="font-size:18px;padding:4px 8px;color:#16a34a">✓</span>
+          </div>
+        </div>
+
       </div>
 
       <!-- BANNER BANTUAN jika ada yang ditolak -->
@@ -183,7 +198,7 @@ import {
 } from '@ionic/vue'
 import {
   refreshOutline, locationOutline, cameraOutline, imagesOutline,
-  notificationsOutline, informationCircleOutline, logOutOutline,
+  notificationsOutline, informationCircleOutline, logOutOutline, volumeHighOutline,
 } from 'ionicons/icons'
 import { Capacitor } from '@capacitor/core'
 import { Geolocation } from '@capacitor/geolocation'
@@ -439,7 +454,8 @@ onMounted(checkAllPermissions)
 .perm-icon-wrap.loc   { background: #ecfdf5; color: #16a34a; }
 .perm-icon-wrap.cam   { background: #eff6ff; color: #1d4ed8; }
 .perm-icon-wrap.photo { background: #fdf4ff; color: #9333ea; }
-.perm-icon-wrap.notif { background: #fff7ed; color: #c2410c; }
+.perm-icon-wrap.notif  { background: #fff7ed; color: #c2410c; }
+.perm-icon-wrap.audio  { background: #f0fdf4; color: #059669; }
 
 .perm-body { flex: 1; min-width: 0; }
 .perm-name { font-size: 14px; font-weight: 600; color: #111827; }
