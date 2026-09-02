@@ -369,19 +369,21 @@ function ageHours(d: string) {
           <span class="foto-badge">{{ fotos.length }} foto</span>
         </div>
         <div class="foto-stages">
-          <div v-for="stage in ['before','proses','after']" :key="stage" v-if="fotosOf(stage).length">
-            <div class="stage-label">{{ stageLabel(stage) }}</div>
-            <div class="stage-row">
-              <div
-                v-for="f in fotosOf(stage)" :key="f.id_foto"
-                class="foto-thumb-wrap"
-                @click="previewUrl = f.url"
-              >
-                <img :src="f.url" class="foto-thumb" loading="lazy" />
-                <div class="foto-time">{{ fmtDt(f.created_at) }}</div>
+          <template v-for="stage in ['before','proses','after']" :key="stage">
+            <div v-if="fotosOf(stage).length">
+              <div class="stage-label">{{ stageLabel(stage) }}</div>
+              <div class="stage-row">
+                <div
+                  v-for="f in fotosOf(stage)" :key="f.id_foto"
+                  class="foto-thumb-wrap"
+                  @click="previewUrl = f.url"
+                >
+                  <img :src="f.url" class="foto-thumb" loading="lazy" />
+                  <div class="foto-time">{{ fmtDt(f.created_at) }}</div>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
         </div>
       </div>
 
