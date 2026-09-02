@@ -189,7 +189,7 @@ import { Capacitor } from '@capacitor/core'
 import { Geolocation } from '@capacitor/geolocation'
 import { Camera } from '@capacitor/camera'
 import { PushNotifications } from '@capacitor/push-notifications'
-import { App } from '@capacitor/app'
+
 import { useAuthStore } from '../stores/auth'
 import { sendLocationNow, stopGps } from '../plugins/gps'
 import api from '../services/api'
@@ -309,16 +309,9 @@ function showDenied(name: string) {
   showDeniedAlert.value = true
 }
 
-async function openDeviceSettings() {
-  try {
-    if (platform === 'android') {
-      await App.openUrl({ url: 'package:com.nextone.myapp' })
-    } else if (platform === 'ios') {
-      await App.openUrl({ url: 'app-settings:' })
-    }
-  } catch {
-    showToast('Buka Pengaturan HP → Aplikasi → myNEXTtech → Izin', 'warning')
-  }
+function openDeviceSettings() {
+  deniedAlertMsg.value = 'Buka Pengaturan HP → Aplikasi → myNEXTtech → Izin, lalu aktifkan izin yang diperlukan.'
+  showDeniedAlert.value = true
 }
 
 async function sendGpsNow() {
