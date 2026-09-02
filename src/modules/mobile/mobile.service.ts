@@ -8,6 +8,8 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class MobileService {
@@ -115,6 +117,8 @@ export class MobileService {
       tgl_open:         t.tgl_open,
       sla_due:          t.sla_due,
       sla_breached:     t.sla_breached,
+      tgl_berangkat:    t.tgl_berangkat,
+      tgl_sampai:       t.tgl_sampai,
       site: {
         kode_site:      t.site.kode_site,
         nama_site:      t.site.nama_site,
@@ -137,6 +141,9 @@ export class MobileService {
         logs: {
           orderBy: { created_at: 'desc' },
           take: 10,
+        },
+        photos: {
+          orderBy: { created_at: 'asc' },
         },
       },
     });
@@ -219,6 +226,89 @@ export class MobileService {
     ]);
 
     return updated;
+  }
+
+  // ── WORKFLOW LAPANGAN ────────────────────────────────────────
+
+  async berangkat(id_karyawan: number, id_ticket: number) {
+    const ticket = await this.prisma.operationTicket.findUnique({ where: { id_ticket } });
+    if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
+    if (ticket.id_teknisi_pic !== id_karyawan) throw new ForbiddenException('Bukan tiket Anda');
+    if (ticket.tgl_berangkat) throw new BadRequestException('Sudah berangkat');
+
+    const data = await this.prisma.operationTicket.update({
+      where: { id_ticket },
+      data: { tgl_berangkat: new Date(), status_tiket: 'In_Progress', updated_at: new Date() },
+    });
+    await this.prisma.operationTicketLog.create({
+      data: { id_ticket, catatan: 'Teknisi berangkat ke lokasi', status_ke: 'In_Progress', status_dari: ticket.status_tiket },
+    });
+    return { data, message: 'Teknisi berangkat' };
+  }
+
+  async sampai(id_karyawan: number, id_ticket: number) {
+    const ticket = await this.prisma.operationTicket.findUnique({ where: { id_ticket } });
+    if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
+    if (ticket.id_teknisi_pic !== id_karyawan) throw new ForbiddenException('Bukan tiket Anda');
+    if (!ticket.tgl_berangkat) throw new BadRequestException('Belum berangkat');
+    if (ticket.tgl_sampai) throw new BadRequestException('Sudah sampai');
+
+    const data = await this.prisma.operationTicket.update({
+      where: { id_ticket },
+      data: { tgl_sampai: new Date(), updated_at: new Date() },
+    });
+    await this.prisma.operationTicketLog.create({
+      data: { id_ticket, catatan: 'Teknisi tiba di lokasi' },
+    });
+    return { data, message: 'Teknisi sampai di lokasi' };
+  }
+
+  async uploadFoto(id_karyawan: number, id_ticket: number, stage: string, base64: string, caption?: string) {
+    const ticket = await this.prisma.operationTicket.findUnique({ where: { id_ticket } });
+    if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
+    if (ticket.id_teknisi_pic !== id_karyawan) throw new ForbiddenException('Bukan tiket Anda');
+
+    const uploadDir = path.join(process.env.HOME || '/home/next1', 'erp-next1', 'uploads', 'tickets', String(id_ticket));
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+    const filename = `${stage}_${Date.now()}.jpg`;
+    const filepath = path.join(uploadDir, filename);
+    const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
+    fs.writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
+
+    const foto = await this.prisma.operationTicketPhoto.create({
+      data: { id_ticket, stage, filename, caption },
+    });
+    return { data: { ...foto, url: `/uploads/tickets/${id_ticket}/${filename}` }, message: 'Foto berhasil diupload' };
+  }
+
+  async getFotos(id_karyawan: number, id_ticket: number) {
+    const ticket = await this.prisma.operationTicket.findUnique({ where: { id_ticket } });
+    if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
+    if (ticket.id_teknisi_pic !== id_karyawan) throw new ForbiddenException('Bukan tiket Anda');
+
+    const fotos = await this.prisma.operationTicketPhoto.findMany({
+      where: { id_ticket },
+      orderBy: { created_at: 'asc' },
+    });
+    return {
+      data: fotos.map(f => ({ ...f, url: `/uploads/tickets/${id_ticket}/${f.filename}` })),
+      message: 'OK',
+    };
+  }
+
+  async getSuratTugas(id_karyawan: number, id_ticket: number) {
+    const ticket = await this.prisma.operationTicket.findUnique({
+      where: { id_ticket },
+      include: {
+        site: { include: { pelanggan: { select: { nama_pelanggan: true } }, layanan: { select: { nama_layanan: true } } } },
+        teknisi: { select: { nama_lengkap: true, jabatan: true, no_hp: true } },
+        logs: { orderBy: { created_at: 'asc' }, take: 10 },
+      },
+    });
+    if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
+    if (ticket.id_teknisi_pic !== id_karyawan) throw new ForbiddenException('Bukan tiket Anda');
+    return { data: ticket, message: 'OK' };
   }
 
   // ── LOKASI ───────────────────────────────────────────────────

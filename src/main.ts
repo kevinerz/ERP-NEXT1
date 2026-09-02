@@ -53,6 +53,9 @@ async function bootstrap() {
   app.useStaticAssets(join(__dirname, '..', 'public'));
   app.setBaseViewsDir(join(__dirname, '..', 'public'));
 
+  // Serve upload files (foto tiket, dll)
+  app.useStaticAssets(join(process.env.HOME || '/home/next1', 'erp-next1', 'uploads'), { prefix: '/uploads' });
+
   // CORS — selalu aktif dengan allowlist dari env (fallback ke localhost dev)
   const corsOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())

@@ -605,6 +605,8 @@ model OperationTicket {
   tgl_closed                 DateTime?
   sla_due                    DateTime?
   sla_breached               Boolean   @default(false)
+  tgl_berangkat              DateTime?
+  tgl_sampai                 DateTime?
   created_at                 DateTime  @default(now())
   updated_at                 DateTime  @updatedAt
 
@@ -614,6 +616,7 @@ model OperationTicket {
   work_orders     WorkOrder[]
   logs            OperationTicketLog[]
   rca             OperationRca?
+  photos          OperationTicketPhoto[]
   prtg_webhooks       IntegrationPrtgWebhook[]
   uptimekuma_webhooks IntegrationUptimeKumaWebhook[]
 
@@ -941,6 +944,20 @@ model OperationTicketLog {
   user   CoreUser?       @relation(fields: [id_user], references: [id_user])
 
   @@map("operation_ticket_logs")
+}
+
+model OperationTicketPhoto {
+  id_foto    Int      @id @default(autoincrement())
+  id_ticket  Int
+  stage      String   @db.VarChar(20)
+  filename   String   @db.VarChar(255)
+  caption    String?  @db.VarChar(500)
+  created_at DateTime @default(now())
+
+  ticket OperationTicket @relation(fields: [id_ticket], references: [id_ticket], onDelete: Cascade)
+
+  @@index([id_ticket])
+  @@map("operation_ticket_photos")
 }
 
 model OperationRca {
