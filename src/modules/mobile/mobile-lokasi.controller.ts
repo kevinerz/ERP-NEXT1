@@ -1,11 +1,13 @@
 import { Controller, Post, Get, Body, UseGuards, Req } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { MobileService } from './mobile.service';
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('mobile/lokasi')
 export class MobileLokasiController {
   constructor(private readonly mobileService: MobileService) {}
 
+  @Public()
   @UseGuards(AuthGuard('mobile-jwt'))
   @Post()
   async updateLokasi(

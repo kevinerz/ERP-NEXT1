@@ -1,7 +1,9 @@
 import { Controller, Get, Patch, Param, Query, Body, UseGuards, Req, ParseIntPipe } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { MobileService } from './mobile.service';
+import { Public } from '../../common/decorators/public.decorator';
 
+@Public()
 @UseGuards(AuthGuard('mobile-jwt'))
 @Controller('mobile/tickets')
 export class MobileTicketsController {
