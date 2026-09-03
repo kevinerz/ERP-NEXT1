@@ -30,7 +30,17 @@
         <div class="login-card">
           <div class="card-header">
             <h2>Masuk ke Akun</h2>
-            <p>Gunakan kredensial teknisi Anda</p>
+            <p>{{ isVendor ? 'Login vendor dengan username & PIN' : 'Gunakan kredensial teknisi Anda' }}</p>
+          </div>
+
+          <!-- Toggle Internal / Vendor -->
+          <div class="type-toggle">
+            <button class="type-btn" :class="{ active: !isVendor }" @click="isVendor = false; password = ''">
+              Teknisi Internal
+            </button>
+            <button class="type-btn" :class="{ active: isVendor }" @click="isVendor = true; password = ''">
+              Vendor / Pihak 3
+            </button>
           </div>
 
           <div class="field-group">
@@ -50,14 +60,14 @@
           </div>
 
           <div class="field-group">
-            <div class="field-label">Password</div>
+            <div class="field-label">{{ isVendor ? 'PIN' : 'Password' }}</div>
             <div class="field-wrap" :class="{ focused: passFocus }">
               <ion-icon :icon="lockClosedOutline" class="field-icon" />
               <ion-input
                 v-model="password"
                 type="password"
-                placeholder="password"
-                autocomplete="current-password"
+                :placeholder="isVendor ? '4-10 digit PIN' : 'password'"
+                :autocomplete="isVendor ? 'off' : 'current-password'"
                 :disabled="loading"
                 @ionFocus="passFocus = true"
                 @ionBlur="passFocus = false"
@@ -110,18 +120,24 @@ const loading = ref(false)
 const errorMsg = ref('')
 const userFocus = ref(false)
 const passFocus = ref(false)
+const isVendor = ref(false)
 
 async function doLogin() {
   if (!username.value || !password.value) return
   loading.value = true
   errorMsg.value = ''
   try {
-    await auth.login(username.value, password.value)
-    await setupPushNotifications()
-    setupGps()
-    router.replace('/dashboard')
+    if (isVendor.value) {
+      await auth.vendorLogin(username.value, password.value)
+      router.replace('/instalasi')
+    } else {
+      await auth.login(username.value, password.value)
+      await setupPushNotifications()
+      setupGps()
+      router.replace('/dashboard')
+    }
   } catch (e: any) {
-    errorMsg.value = e?.response?.data?.message || 'Login gagal. Periksa username dan password.'
+    errorMsg.value = e?.response?.data?.message || 'Login gagal. Periksa username dan PIN/password.'
   } finally {
     loading.value = false
   }
@@ -199,6 +215,18 @@ async function doLogin() {
 .field-icon { color: #9ca3af; font-size: 18px; flex-shrink: 0; margin-right: 8px; }
 .field-wrap.focused .field-icon { color: #16a34a; }
 .field-input { flex: 1; --color: #111827; --placeholder-color: #9ca3af; font-size: 15px; }
+
+/* Type toggle */
+.type-toggle {
+  display: flex; border: 1.5px solid #e5e7eb; border-radius: 10px;
+  overflow: hidden; margin-bottom: 20px;
+}
+.type-btn {
+  flex: 1; padding: 9px 6px; border: none; background: #f9fafb;
+  font-size: 13px; font-weight: 500; color: #6b7280; cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.type-btn.active { background: #16a34a; color: #fff; font-weight: 700; }
 
 /* Error */
 .error-box {
