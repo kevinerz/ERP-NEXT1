@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useOperationsStore } from '@/stores/operations'
 import { useProyekStore } from '@/stores/proyek'
+import { useAuthStore } from '@/stores/auth'
 import { printLaporanTiket } from '@/composables/usePrint'
 import { fmtDateTime as fmtDt, statusLabel } from '@/composables/useFormat'
 import api from '@/services/api'
@@ -19,6 +20,7 @@ const router = useRouter()
 const route = useRoute()
 const ops = useOperationsStore()
 const proyek = useProyekStore()
+const auth = useAuthStore()
 const id = Number(route.params.id)
 
 const showEditModal = ref(false)
@@ -37,6 +39,20 @@ const woError = ref('')
 
 const showTimeline = ref(false)
 const successMsg = ref('')
+const deletingTicket = ref(false)
+
+async function hapusTiket() {
+  if (!confirm(`Hapus tiket ${ops.current?.nomor_tiket}? Tindakan ini tidak bisa dibatalkan.`)) return
+  deletingTicket.value = true
+  try {
+    await api.delete(`/operations/${id}`)
+    router.push('/operasional')
+  } catch (e: any) {
+    alert(e?.response?.data?.message || 'Gagal menghapus tiket')
+  } finally {
+    deletingTicket.value = false
+  }
+}
 
 // ── FOTOS ────────────────────────────────────────────────────
 const fotos = ref<any[]>([])
@@ -406,6 +422,9 @@ function journeyStep(t: any) {
           <button class="btn-timeline" @click="showTimeline = true">📊 Timeline</button>
           <button class="btn-print" @click="printLaporanTiket(ops.current)">🖨 Laporan</button>
           <button class="btn-edit" @click="openEdit">Edit</button>
+          <button v-if="auth.hasRole('Admin')" class="btn-hapus-tiket" :disabled="deletingTicket" @click="hapusTiket">
+            {{ deletingTicket ? 'Menghapus...' : '🗑 Hapus' }}
+          </button>
           <button v-if="ops.current.status_tiket === 'Open' || ops.current.status_tiket === 'Closed'" class="btn-hapus" @click="hapusTiket">Hapus</button>
         </div>
       </div>
@@ -920,6 +939,9 @@ function journeyStep(t: any) {
 .btn-print { padding: 8px 14px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-print:hover { background: #dcfce7; }
 .btn-edit { padding: 8px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-hapus-tiket { padding: 8px 16px; background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-hapus-tiket:hover:not(:disabled) { background: #fee2e2; border-color: #f87171; }
+.btn-hapus-tiket:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 
 /* ── INFO BAR ────────────────────────────────── */

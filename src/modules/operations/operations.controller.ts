@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { OperationsService } from './operations.service';
 import { CreateTicketDto, UpdateTicketDto, AddLogDto } from './dto/ticket.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('operations')
 export class OperationsController {
@@ -34,6 +35,7 @@ export class OperationsController {
     return this.operationsService.addLog(dto, req.user?.id_user);
   }
 
+  @Roles('Admin')
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) { return this.operationsService.remove(id); }
 }
