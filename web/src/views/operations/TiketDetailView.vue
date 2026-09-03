@@ -104,6 +104,9 @@ const prtgError = ref('')
 const selectedSensorId = ref<number | null>(null)
 const selectedGraphId = ref(0) // 0=live,1=48h,2=30d,3=365d
 const graphCacheKey = ref(Date.now())
+const graphBlobUrl = ref('')
+const graphLoading = ref(false)
+const graphLoadError = ref(false)
 let graphRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 async function fetchPrtgSensors() {
@@ -120,6 +123,7 @@ async function fetchPrtgSensors() {
       const ping = prtgSensors.value.find((s: any) => s.sensor?.toLowerCase().includes('ping'))
       selectedSensorId.value = ping?.objid ?? prtgSensors.value[0]?.objid
     }
+    if (selectedSensorId.value) loadGraphBlob(selectedSensorId.value, selectedGraphId.value)
   } catch (e: any) {
     prtgError.value = e?.response?.data?.message || 'Gagal memuat sensor'
   } finally {
@@ -133,14 +137,35 @@ function prtgStatusColor(raw: number) {
 function prtgStatusLabel(raw: number) {
   return { 3: 'Up', 4: 'Warning', 5: 'Down', 13: 'Down (Ack)', 14: 'Partial Down' }[raw] ?? '?'
 }
-function graphUrl(sensorId: number, graphId: number) {
-  return `/api/prtg/sensor/${sensorId}/graph.png?graphid=${graphId}&_t=${graphCacheKey.value}`
+async function loadGraphBlob(sensorId: number, graphId: number) {
+  if (!sensorId) return
+  graphLoading.value = true
+  graphLoadError.value = false
+  if (graphBlobUrl.value) { URL.revokeObjectURL(graphBlobUrl.value); graphBlobUrl.value = '' }
+  try {
+    const resp = await api.get(`/prtg/sensor/${sensorId}/graph.png`, {
+      params: { graphid: graphId },
+      responseType: 'blob',
+      timeout: 20000,
+    })
+    graphBlobUrl.value = URL.createObjectURL(resp.data)
+  } catch {
+    graphLoadError.value = true
+  } finally {
+    graphLoading.value = false
+  }
 }
-function refreshGraph() { graphCacheKey.value = Date.now() }
+
+function refreshGraph() {
+  graphCacheKey.value = Date.now()
+  if (selectedSensorId.value) loadGraphBlob(selectedSensorId.value, selectedGraphId.value)
+}
 
 function startGraphRefresh() {
   if (graphRefreshTimer) clearInterval(graphRefreshTimer)
-  graphRefreshTimer = setInterval(() => { if (selectedGraphId.value === 0) graphCacheKey.value = Date.now() }, 60_000)
+  graphRefreshTimer = setInterval(() => {
+    if (selectedGraphId.value === 0 && selectedSensorId.value) loadGraphBlob(selectedSensorId.value, 0)
+  }, 60_000)
 }
 
 // ── MAP ──────────────────────────────────────────────────────
@@ -246,6 +271,7 @@ onMounted(async () => {
 onUnmounted(() => {
   destroyMap()
   if (graphRefreshTimer) clearInterval(graphRefreshTimer)
+  if (graphBlobUrl.value) URL.revokeObjectURL(graphBlobUrl.value)
 })
 
 function openEdit() {
@@ -499,7 +525,7 @@ function journeyStep(t: any) {
                 :key="s.objid"
                 class="sensor-card"
                 :class="{ 'sensor-selected': selectedSensorId === s.objid }"
-                @click="selectedSensorId = s.objid; refreshGraph()"
+                @click="selectedSensorId = s.objid; loadGraphBlob(s.objid, selectedGraphId)"
               >
                 <div class="sensor-status-dot" :style="{ background: prtgStatusColor(s.status_raw) }"></div>
                 <div class="sensor-body">
@@ -526,19 +552,22 @@ function journeyStep(t: any) {
               <div class="prtg-graph-tabs">
                 <button v-for="(lbl, gid) in ['Live','48 Jam','30 Hari','365 Hari']" :key="gid"
                   :class="['prtg-tab', { active: selectedGraphId === gid }]"
-                  @click="selectedGraphId = gid; refreshGraph()">{{ lbl }}</button>
+                  @click="selectedGraphId = gid; loadGraphBlob(selectedSensorId!, gid)">{{ lbl }}</button>
                 <button class="prtg-refresh-btn" @click="refreshGraph" title="Refresh grafik">↻</button>
               </div>
             </div>
             <div class="prtg-graph-wrap">
+              <div v-if="graphLoading" class="prtg-graph-spinner">
+                <svg class="spin-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#3b82f6" stroke-width="3" stroke-dasharray="31" stroke-dashoffset="10"/></svg>
+                Memuat grafik...
+              </div>
               <img
-                :key="`g-${selectedSensorId}-${selectedGraphId}-${graphCacheKey}`"
-                :src="graphUrl(selectedSensorId, selectedGraphId)"
+                v-else-if="graphBlobUrl && !graphLoadError"
+                :src="graphBlobUrl"
                 class="prtg-graph-img"
                 alt="PRTG Graph"
-                @error="($event.target as HTMLImageElement).style.display='none'; ($event.target as HTMLImageElement).nextElementSibling!.setAttribute('style','')"
               />
-              <div class="prtg-graph-err" style="display:none">
+              <div v-else class="prtg-graph-err">
                 Gagal memuat grafik — sensor mungkin tidak aktif atau PRTG tidak terkonfigurasi
               </div>
             </div>
@@ -1095,8 +1124,10 @@ function journeyStep(t: any) {
 .prtg-refresh-btn:hover { background: #e2e8f0; }
 
 .prtg-graph-wrap { background: #f8fafc; border-radius: 10px; overflow: hidden; min-height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.prtg-graph-img { width: 100%; max-width: 900px; display: block; border-radius: 10px; }
+.prtg-graph-img { width: 100%; display: block; border-radius: 10px; }
 .prtg-graph-err { font-size: 13px; color: #94a3b8; padding: 32px; text-align: center; }
+.prtg-graph-spinner { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px; color: #94a3b8; font-size: 13px; }
+.spin-svg { width: 28px; height: 28px; animation: spin 0.9s linear infinite; }
 
 .prtg-graph-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
 .prtg-graph-id { font-size: 11px; color: #94a3b8; font-family: monospace; }
