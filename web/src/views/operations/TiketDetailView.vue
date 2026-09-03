@@ -109,6 +109,16 @@ const graphLoading = ref(false)
 const graphLoadError = ref(false)
 let graphRefreshTimer: ReturnType<typeof setInterval> | null = null
 
+// Rincian waktu down-up untuk tiket ini
+const prtgEvents = ref<any>(null)
+
+async function fetchPrtgTicketEvents() {
+  try {
+    const { data } = await api.get(`/prtg/ticket/${id}/events`)
+    prtgEvents.value = data.data ?? null
+  } catch { /* silent */ }
+}
+
 async function fetchPrtgSensors() {
   const siteId = ops.current?.site?.id_site
   if (!siteId) return
@@ -264,7 +274,7 @@ onMounted(async () => {
   initMap()
   await fetchTeknisiLokasi()
   lokasiInterval = setInterval(fetchTeknisiLokasi, 15000)
-  await fetchPrtgSensors()
+  await Promise.all([fetchPrtgSensors(), fetchPrtgTicketEvents()])
   startGraphRefresh()
 })
 
@@ -516,6 +526,34 @@ function journeyStep(t: any) {
                 <span :class="{ spinning: prtgLoading }">↻</span>
               </button>
             </div>
+            <!-- Rincian waktu down-up -->
+            <div v-if="prtgEvents" class="prtg-downup">
+              <div class="prtg-downup-row">
+                <div class="prtg-downup-item">
+                  <div class="pdu-icon down">▼</div>
+                  <div>
+                    <div class="pdu-label">Mulai Down</div>
+                    <div class="pdu-val">{{ fmtDt(prtgEvents.waktu_down) }}</div>
+                    <div v-if="prtgEvents.pesan_down" class="pdu-msg">{{ prtgEvents.pesan_down }}</div>
+                  </div>
+                </div>
+                <div class="prtg-downup-arrow">→</div>
+                <div class="prtg-downup-item">
+                  <div class="pdu-icon" :class="prtgEvents.sudah_up ? 'up' : 'pending'">{{ prtgEvents.sudah_up ? '▲' : '?' }}</div>
+                  <div>
+                    <div class="pdu-label">{{ prtgEvents.sudah_up ? 'Kembali Up' : 'Belum Up' }}</div>
+                    <div class="pdu-val">{{ prtgEvents.sudah_up ? fmtDt(prtgEvents.waktu_up) : '—' }}</div>
+                  </div>
+                </div>
+                <div class="prtg-downup-duration">
+                  <div class="pdu-dur-label">Total Downtime</div>
+                  <div class="pdu-dur-val" :class="prtgEvents.sudah_up ? 'dur-done' : 'dur-live'">
+                    {{ prtgEvents.sudah_up ? prtgEvents.durasi_label : 'Masih down' }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div v-if="prtgLoading" class="prtg-loading">Memuat data sensor PRTG...</div>
             <div v-else-if="prtgError" class="prtg-err">{{ prtgError }}</div>
             <div v-else-if="!prtgSensors.length" class="prtg-empty">Tidak ada sensor ditemukan untuk device ini</div>
@@ -1070,6 +1108,24 @@ function journeyStep(t: any) {
 .btn-refresh-prtg:disabled { opacity: 0.5; cursor: not-allowed; }
 .spinning { display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Down-Up rincian */
+.prtg-downup { background: #f8fafc; border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; border: 1px solid #e2e8f0; }
+.prtg-downup-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.prtg-downup-item { display: flex; align-items: flex-start; gap: 10px; flex: 1; min-width: 140px; }
+.pdu-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; flex-shrink: 0; }
+.pdu-icon.down    { background: #fee2e2; color: #dc2626; }
+.pdu-icon.up      { background: #dcfce7; color: #16a34a; }
+.pdu-icon.pending { background: #fef9c3; color: #a16207; }
+.pdu-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 2px; }
+.pdu-val   { font-size: 13px; font-weight: 700; color: #0f172a; }
+.pdu-msg   { font-size: 11px; color: #64748b; margin-top: 2px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.prtg-downup-arrow { font-size: 18px; color: #cbd5e1; flex-shrink: 0; }
+.prtg-downup-duration { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px 16px; text-align: center; flex-shrink: 0; min-width: 120px; }
+.pdu-dur-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 4px; }
+.pdu-dur-val { font-size: 16px; font-weight: 900; }
+.pdu-dur-val.dur-done { color: #16a34a; }
+.pdu-dur-val.dur-live { color: #ef4444; }
 
 /* Sensor Grid */
 .sensor-grid {

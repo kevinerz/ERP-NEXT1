@@ -13,6 +13,11 @@ export class PrtgController {
   @Get('log')
   getLog(@Query() q: any) { return this.prtgService.getWebhookLog(q); }
 
+  @Get('ticket/:id/events')
+  getTicketEvents(@Param('id', ParseIntPipe) id: number) {
+    return this.prtgService.getTicketPrtgEvents(id);
+  }
+
   // Trigger polling manual (tanpa menunggu cron 5 menit)
   @Post('poll')
   poll() { return this.prtgService.poll(); }

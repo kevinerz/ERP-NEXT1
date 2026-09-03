@@ -69,6 +69,54 @@ export class PrtgService {
     };
   }
 
+  // Semua webhook PRTG yang terkait satu tiket (Down, Up, dsb)
+  // Dipakai untuk menampilkan rincian waktu down-up-durasi di detail tiket
+  async getTicketPrtgEvents(id_ticket: number) {
+    const rows = await this.prisma.integrationPrtgWebhook.findMany({
+      where: { id_ticket_terbentuk: id_ticket },
+      orderBy: { diterima_pada: 'asc' },
+    });
+
+    if (!rows.length) return { data: null };
+
+    // Cari event Down (status mengandung "down" ci) dan Up
+    const isDown = (s?: string | null) => /down/i.test(s ?? '');
+    const isUp   = (s?: string | null) => /up/i.test(s ?? '') && !/down/i.test(s ?? '');
+
+    const downRow = rows.find(r => isDown(r.status_sensor));
+    const upRow   = rows.find(r => isUp(r.status_sensor));
+
+    const waktuDown = downRow?.diterima_pada ?? rows[0].diterima_pada;
+    const waktuUp   = upRow?.diterima_pada ?? null;
+
+    let durasiMs: number | null = null;
+    let durasiLabel = '—';
+    if (waktuDown && waktuUp) {
+      durasiMs = new Date(waktuUp).getTime() - new Date(waktuDown).getTime();
+      const totalSec = Math.floor(durasiMs / 1000);
+      const jam   = Math.floor(totalSec / 3600);
+      const menit = Math.floor((totalSec % 3600) / 60);
+      const dtk   = totalSec % 60;
+      durasiLabel = jam > 0 ? `${jam} jam ${menit} menit` : menit > 0 ? `${menit} menit ${dtk} detik` : `${dtk} detik`;
+    }
+
+    return {
+      data: {
+        sensor_id:    downRow?.prtg_sensor_id,
+        sensor_name:  downRow?.prtg_sensor_name,
+        device_name:  downRow?.prtg_device_name,
+        waktu_down:   waktuDown,
+        waktu_up:     waktuUp,
+        durasi_ms:    durasiMs,
+        durasi_label: durasiLabel,
+        sudah_up:     !!waktuUp,
+        pesan_down:   downRow?.pesan_alert,
+        pesan_up:     upRow?.pesan_alert,
+        semua_events: rows.map(r => ({ status: r.status_sensor, waktu: r.diterima_pada, pesan: r.pesan_alert })),
+      },
+    };
+  }
+
   async getWebhookLog(query: { page?: number; limit?: number }) {
     const page = Number(query.page) || 1;
     const limit = Math.min(Number(query.limit) || 50, 200);
