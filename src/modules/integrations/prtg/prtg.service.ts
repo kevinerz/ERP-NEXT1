@@ -198,7 +198,7 @@ export class PrtgService {
       where: {
         OR: [
           { ticket: { status_tiket: { in: STATUS_TIKET_AKTIF } } },
-          { id_ticket_terbentuk: null, diterima_pada: { gte: new Date(Date.now() - 24 * 3600_000) } },
+          { id_ticket_terbentuk: null, diterima_pada: { gte: new Date(Date.now() - 15 * 60_000) } },
         ],
       },
       select: { prtg_sensor_id: true, prtg_device_name: true, id_ticket_terbentuk: true },
