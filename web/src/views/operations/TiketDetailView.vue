@@ -116,10 +116,7 @@ async function fetchPrtgTicketEvents() {
   try {
     const { data } = await api.get(`/prtg/ticket/${id}/events`)
     prtgEvents.value = data.data ?? null
-    console.log('[prtg-events]', id, data)
-  } catch (e) {
-    console.warn('[prtg-events] error', e)
-  }
+  } catch { /* silent */ }
 }
 
 async function fetchPrtgSensors() {
