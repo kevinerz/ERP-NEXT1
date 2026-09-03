@@ -39,7 +39,7 @@ export class DocumentNumberService {
       BAST: { model: 'projectDokumenLegal', field: 'nomor_bast' },
       PRJ:  { model: 'projectDelivery',     field: 'nomor_project' },
       KTR:  { model: 'kontrakLayanan',      field: 'nomor_kontrak' },
-      INS:  { model: 'instalasiOrders',     field: 'nomor_instalasi' },
+      INS:  { model: 'instalasiOrder',      field: 'nomor_instalasi' },
     };
 
     const { model, field } = map[type];
