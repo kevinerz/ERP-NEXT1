@@ -74,6 +74,7 @@ export class PrtgService {
   // - Waktu Up    = tgl_resolved tiket (UP tidak disimpan sebagai webhook,
   //                 sistem langsung update tgl_resolved saat polling deteksi UP)
   async getTicketPrtgEvents(id_ticket: number) {
+    this.logger.log(`getTicketPrtgEvents called: id_ticket=${id_ticket}`);
     const [rows, tiket] = await Promise.all([
       this.prisma.integrationPrtgWebhook.findMany({
         where: { id_ticket_terbentuk: id_ticket },
