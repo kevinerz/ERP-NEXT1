@@ -116,7 +116,10 @@ async function fetchPrtgTicketEvents() {
   try {
     const { data } = await api.get(`/prtg/ticket/${id}/events`)
     prtgEvents.value = data.data ?? null
-  } catch { /* silent */ }
+    console.log('[prtg-events]', id, data)
+  } catch (e) {
+    console.warn('[prtg-events] error', e)
+  }
 }
 
 async function fetchPrtgSensors() {
@@ -586,34 +589,35 @@ function journeyStep(t: any) {
               <span v-if="selectedGraphId === 0" class="prtg-auto-refresh">Auto-refresh setiap 60 detik</span>
             </div>
 
-            <!-- ── Rincian Downtime ──────────────────────────── -->
-            <div v-if="prtgEvents" class="prtg-downup">
-              <div class="pdu-section-title">⏱ Rincian Downtime Tiket Ini</div>
-              <div class="prtg-downup-row">
-                <div class="prtg-downup-item">
-                  <div class="pdu-icon down">▼</div>
-                  <div>
-                    <div class="pdu-label">Mulai Down</div>
-                    <div class="pdu-val">{{ fmtDt(prtgEvents.waktu_down) }}</div>
-                    <div v-if="prtgEvents.pesan_down" class="pdu-msg">{{ prtgEvents.pesan_down }}</div>
-                  </div>
+          </div>
+
+          <!-- ── Rincian Downtime ──────────────────────────── -->
+          <div v-if="prtgEvents" class="prtg-downup">
+            <div class="pdu-section-title">⏱ Rincian Downtime Tiket Ini</div>
+            <div class="prtg-downup-row">
+              <div class="prtg-downup-item">
+                <div class="pdu-icon down">▼</div>
+                <div>
+                  <div class="pdu-label">Mulai Down</div>
+                  <div class="pdu-val">{{ fmtDt(prtgEvents.waktu_down) }}</div>
+                  <div v-if="prtgEvents.pesan_down" class="pdu-msg">{{ prtgEvents.pesan_down }}</div>
                 </div>
-                <div class="prtg-downup-arrow">→</div>
-                <div class="prtg-downup-item">
-                  <div class="pdu-icon" :class="prtgEvents.sudah_up ? 'up' : 'pending'">
-                    {{ prtgEvents.sudah_up ? '▲' : '?' }}
-                  </div>
-                  <div>
-                    <div class="pdu-label">{{ prtgEvents.sudah_up ? 'Kembali Up' : 'Belum Up' }}</div>
-                    <div class="pdu-val">{{ prtgEvents.sudah_up ? fmtDt(prtgEvents.waktu_up) : '—' }}</div>
-                    <div v-if="prtgEvents.pesan_up" class="pdu-msg">{{ prtgEvents.pesan_up }}</div>
-                  </div>
+              </div>
+              <div class="prtg-downup-arrow">→</div>
+              <div class="prtg-downup-item">
+                <div class="pdu-icon" :class="prtgEvents.sudah_up ? 'up' : 'pending'">
+                  {{ prtgEvents.sudah_up ? '▲' : '?' }}
                 </div>
-                <div class="prtg-downup-duration" :class="prtgEvents.sudah_up ? 'dur-card-done' : 'dur-card-live'">
-                  <div class="pdu-dur-label">Total Downtime</div>
-                  <div class="pdu-dur-val" :class="prtgEvents.sudah_up ? 'dur-done' : 'dur-live'">
-                    {{ prtgEvents.sudah_up ? prtgEvents.durasi_label : 'Masih down...' }}
-                  </div>
+                <div>
+                  <div class="pdu-label">{{ prtgEvents.sudah_up ? 'Kembali Up' : 'Belum Up' }}</div>
+                  <div class="pdu-val">{{ prtgEvents.sudah_up ? fmtDt(prtgEvents.waktu_up) : '—' }}</div>
+                  <div v-if="prtgEvents.pesan_up" class="pdu-msg">{{ prtgEvents.pesan_up }}</div>
+                </div>
+              </div>
+              <div class="prtg-downup-duration" :class="prtgEvents.sudah_up ? 'dur-card-done' : 'dur-card-live'">
+                <div class="pdu-dur-label">Total Downtime</div>
+                <div class="pdu-dur-val" :class="prtgEvents.sudah_up ? 'dur-done' : 'dur-live'">
+                  {{ prtgEvents.sudah_up ? prtgEvents.durasi_label : 'Masih down...' }}
                 </div>
               </div>
             </div>
