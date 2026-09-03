@@ -443,6 +443,8 @@ export class OperationsService {
   async remove(id: number) {
     const row = await this.prisma.operationTicket.findUnique({ where: { id_ticket: id } });
     if (!row) throw new NotFoundException('Tiket tidak ditemukan');
+    // Hapus webhook PRTG terkait agar dedup tidak memblokir pembuatan tiket baru
+    await this.prisma.integrationPrtgWebhook.deleteMany({ where: { id_ticket_terbentuk: id } });
     await this.prisma.operationTicket.delete({ where: { id_ticket: id } });
     return { message: `Tiket ${row.nomor_tiket} dihapus` };
   }
