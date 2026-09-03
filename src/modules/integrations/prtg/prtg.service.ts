@@ -69,50 +69,64 @@ export class PrtgService {
     };
   }
 
-  // Semua webhook PRTG yang terkait satu tiket (Down, Up, dsb)
-  // Dipakai untuk menampilkan rincian waktu down-up-durasi di detail tiket
+  // Rincian downtime tiket dari PRTG:
+  // - Waktu Down  = diterima_pada webhook Down paling awal
+  // - Waktu Up    = tgl_resolved tiket (UP tidak disimpan sebagai webhook,
+  //                 sistem langsung update tgl_resolved saat polling deteksi UP)
   async getTicketPrtgEvents(id_ticket: number) {
-    const rows = await this.prisma.integrationPrtgWebhook.findMany({
-      where: { id_ticket_terbentuk: id_ticket },
-      orderBy: { diterima_pada: 'asc' },
-    });
+    const [rows, tiket] = await Promise.all([
+      this.prisma.integrationPrtgWebhook.findMany({
+        where: { id_ticket_terbentuk: id_ticket },
+        orderBy: { diterima_pada: 'asc' },
+      }),
+      this.prisma.operationTicket.findUnique({
+        where: { id_ticket },
+        select: { tgl_resolved: true, status_tiket: true, sumber_tiket: true },
+      }),
+    ]);
 
     if (!rows.length) return { data: null };
 
-    // Cari event Down (status mengandung "down" ci) dan Up
-    const isDown = (s?: string | null) => /down/i.test(s ?? '');
-    const isUp   = (s?: string | null) => /up/i.test(s ?? '') && !/down/i.test(s ?? '');
+    const waktuDown = rows[0].diterima_pada;
+    // Sensor dengan pesan Down paling kritis
+    const firstDown = rows[0];
 
-    const downRow = rows.find(r => isDown(r.status_sensor));
-    const upRow   = rows.find(r => isUp(r.status_sensor));
-
-    const waktuDown = downRow?.diterima_pada ?? rows[0].diterima_pada;
-    const waktuUp   = upRow?.diterima_pada ?? null;
+    // Waktu Up = tgl_resolved tiket (diset saat polling deteksi device kembali UP)
+    const waktuUp = tiket?.tgl_resolved ?? null;
+    const sudahUp = !!waktuUp && ['Resolved', 'Closed'].includes(tiket?.status_tiket ?? '');
 
     let durasiMs: number | null = null;
     let durasiLabel = '—';
-    if (waktuDown && waktuUp) {
+    if (waktuDown && waktuUp && sudahUp) {
       durasiMs = new Date(waktuUp).getTime() - new Date(waktuDown).getTime();
       const totalSec = Math.floor(durasiMs / 1000);
       const jam   = Math.floor(totalSec / 3600);
       const menit = Math.floor((totalSec % 3600) / 60);
       const dtk   = totalSec % 60;
-      durasiLabel = jam > 0 ? `${jam} jam ${menit} menit` : menit > 0 ? `${menit} menit ${dtk} detik` : `${dtk} detik`;
+      durasiLabel = jam > 0
+        ? `${jam} jam ${menit > 0 ? menit + ' menit' : ''}`
+        : menit > 0 ? `${menit} menit ${dtk} detik`
+        : `${dtk} detik`;
     }
+
+    // Kumpulkan sensor-sensor yang down (bisa lebih dari 1)
+    const sensors = rows.map(r => ({
+      sensor_id:   r.prtg_sensor_id,
+      sensor_name: r.prtg_sensor_name,
+      pesan:       r.pesan_alert,
+      waktu:       r.diterima_pada,
+    }));
 
     return {
       data: {
-        sensor_id:    downRow?.prtg_sensor_id,
-        sensor_name:  downRow?.prtg_sensor_name,
-        device_name:  downRow?.prtg_device_name,
+        device_name:  firstDown.prtg_device_name,
         waktu_down:   waktuDown,
         waktu_up:     waktuUp,
+        sudah_up:     sudahUp,
         durasi_ms:    durasiMs,
         durasi_label: durasiLabel,
-        sudah_up:     !!waktuUp,
-        pesan_down:   downRow?.pesan_alert,
-        pesan_up:     upRow?.pesan_alert,
-        semua_events: rows.map(r => ({ status: r.status_sensor, waktu: r.diterima_pada, pesan: r.pesan_alert })),
+        pesan_down:   firstDown.pesan_alert,
+        sensors,
       },
     };
   }
