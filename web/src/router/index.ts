@@ -190,6 +190,17 @@ const router = createRouter({
           name: 'tiket-detail',
           component: () => import('@/views/operations/TiketDetailView.vue'),
         },
+        // Instalasi
+        {
+          path: 'instalasi',
+          name: 'instalasi-list',
+          component: () => import('@/views/instalasi/InstalasiListView.vue'),
+        },
+        {
+          path: 'instalasi/:id',
+          name: 'instalasi-detail',
+          component: () => import('@/views/instalasi/InstalasiDetailView.vue'),
+        },
         // Proyek
         {
           path: 'projects',
@@ -376,6 +387,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'sales-quotation-list': 'sales', 'sales-quotation-detail': 'sales',
   'proyek-list': 'projects', 'proyek-detail': 'projects',
   'tiket-list': 'operations', 'tiket-detail': 'operations',
+  'instalasi-list': 'instalasi', 'instalasi-detail': 'instalasi',
   'aset-list': 'assets', 'aset-detail': 'assets', 'sim-topup': 'assets',
   'stok-opname-list': 'assets', 'stok-opname-detail': 'assets',
   'pengajuan-aset-list': 'assets', 'pengajuan-aset-detail': 'assets',
