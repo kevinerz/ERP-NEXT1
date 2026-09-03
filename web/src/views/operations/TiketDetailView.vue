@@ -39,20 +39,6 @@ const woError = ref('')
 
 const showTimeline = ref(false)
 const successMsg = ref('')
-const deletingTicket = ref(false)
-
-async function hapusTiket() {
-  if (!confirm(`Hapus tiket ${ops.current?.nomor_tiket}? Tindakan ini tidak bisa dibatalkan.`)) return
-  deletingTicket.value = true
-  try {
-    await api.delete(`/operations/${id}`)
-    router.push('/operasional')
-  } catch (e: any) {
-    alert(e?.response?.data?.message || 'Gagal menghapus tiket')
-  } finally {
-    deletingTicket.value = false
-  }
-}
 
 // ── FOTOS ────────────────────────────────────────────────────
 const fotos = ref<any[]>([])
@@ -363,11 +349,11 @@ async function handleAddWo() {
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
 
 async function hapusTiket() {
-  if (!confirm('Hapus tiket ini?')) return
+  if (!confirm(`Hapus tiket ${ops.current?.nomor_tiket}? Tindakan ini tidak bisa dibatalkan.`)) return
   try {
     await api.delete(`/operations/${id}`)
-    router.push('/operations')
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus tiket') }
+    router.push('/operasional')
+  } catch (e: any) { alert(e?.response?.data?.message || 'Gagal menghapus tiket') }
 }
 
 function slaInfo(t: any): { label: string; cls: string } {
@@ -422,10 +408,7 @@ function journeyStep(t: any) {
           <button class="btn-timeline" @click="showTimeline = true">📊 Timeline</button>
           <button class="btn-print" @click="printLaporanTiket(ops.current)">🖨 Laporan</button>
           <button class="btn-edit" @click="openEdit">Edit</button>
-          <button v-if="auth.hasRole('Admin')" class="btn-hapus-tiket" :disabled="deletingTicket" @click="hapusTiket">
-            {{ deletingTicket ? 'Menghapus...' : '🗑 Hapus' }}
-          </button>
-          <button v-if="ops.current.status_tiket === 'Open' || ops.current.status_tiket === 'Closed'" class="btn-hapus" @click="hapusTiket">Hapus</button>
+          <button v-if="auth.hasRole('Admin')" class="btn-hapus-tiket" @click="hapusTiket">🗑 Hapus</button>
         </div>
       </div>
 
