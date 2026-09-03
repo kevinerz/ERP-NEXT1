@@ -68,6 +68,7 @@ model HrisKaryawan {
   projects_pm         ProjectDelivery[]
   tickets_teknisi     OperationTicket[]
   wo_teknisi          WorkOrder[]        @relation("WoTeknisiInternal")
+  instalasi_orders    InstalasiOrder[]   @relation("InstalasiTeknisiInternal")
   invitation          HrisInvitation?
   lokasi              TeknisiLokasi?
 
@@ -144,9 +145,10 @@ model MasterLayanan {
   is_aktif           Boolean @default(true)
   mekari_product_uid String? @db.VarChar(100)
 
-  sites         SitePelanggan[]
-  opportunities SalesOpportunity[]
-  kontrak       KontrakLayanan[]
+  sites            SitePelanggan[]
+  opportunities    SalesOpportunity[]
+  kontrak          KontrakLayanan[]
+  instalasi_orders InstalasiOrder[]
 
   @@map("master_layanan")
 }
@@ -205,6 +207,12 @@ model MasterKontakTeknisi {
   catatan          String?  @db.Text
   is_aktif         Boolean  @default(true)
   created_at       DateTime @default(now())
+
+  // Login untuk akses mobile (opsional — hanya diisi jika teknisi perlu login)
+  username         String?  @unique @db.VarChar(80)
+  pin_hash         String?  @db.VarChar(255)
+
+  instalasi_orders InstalasiOrder[]
 
   @@map("master_kontak_teknisi")
 }
@@ -326,6 +334,7 @@ model SitePelanggan {
   invoices        Invoice[]
   prtg_mapping       IntegrationPrtgMapping[]
   uptimekuma_mapping IntegrationUptimeKumaMapping[]
+  instalasi_orders   InstalasiOrder[]
 
   @@map("site_pelanggan")
 }
@@ -1243,4 +1252,81 @@ model InvoicePembayaran {
 
   @@index([id_invoice])
   @@map("invoice_pembayaran")
+}
+
+// ============================================================
+// LAYER 12 — INSTALASI
+// ============================================================
+
+model InstalasiOrder {
+  id_instalasi        Int       @id @default(autoincrement())
+  nomor_instalasi     String    @unique @db.VarChar(100)
+  id_site             Int
+  id_layanan          Int?
+  jenis_pelaksana     String    @default("Internal") @db.VarChar(20) // Internal | Vendor
+  id_teknisi_internal Int?
+  id_kontak_teknisi   Int?
+  fee_vendor          Decimal   @default(0) @db.Decimal(15, 2)
+  status_instalasi    String    @default("Draft") @db.VarChar(30) // Draft | Dijadwalkan | Dalam_Proses | Selesai | Dibatalkan
+  tgl_jadwal          DateTime? @db.Date
+  tgl_mulai           DateTime?
+  tgl_selesai         DateTime?
+  catatan             String?   @db.Text
+  lokasi_lat          Decimal?  @db.Decimal(10, 7)
+  lokasi_lng          Decimal?  @db.Decimal(10, 7)
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  site              SitePelanggan        @relation(fields: [id_site], references: [id_site])
+  layanan           MasterLayanan?       @relation(fields: [id_layanan], references: [id_layanan])
+  teknisi_internal  HrisKaryawan?        @relation("InstalasiTeknisiInternal", fields: [id_teknisi_internal], references: [id_karyawan])
+  kontak_teknisi    MasterKontakTeknisi? @relation(fields: [id_kontak_teknisi], references: [id_kontak])
+  photos            InstalasiPhoto[]
+  logs              InstalasiLog[]
+  bast              InstalasiBASTSign?
+
+  @@index([status_instalasi])
+  @@map("instalasi_orders")
+}
+
+model InstalasiPhoto {
+  id_foto      Int      @id @default(autoincrement())
+  id_instalasi Int
+  stage        String   @default("Proses") @db.VarChar(30) // Sebelum | Proses | Sesudah
+  filename     String   @db.VarChar(255)
+  caption      String?  @db.VarChar(500)
+  created_at   DateTime @default(now())
+
+  instalasi InstalasiOrder @relation(fields: [id_instalasi], references: [id_instalasi], onDelete: Cascade)
+
+  @@index([id_instalasi])
+  @@map("instalasi_photos")
+}
+
+model InstalasiLog {
+  id_log       Int      @id @default(autoincrement())
+  id_instalasi Int
+  status_dari  String?  @db.VarChar(50)
+  status_ke    String?  @db.VarChar(50)
+  catatan      String?  @db.Text
+  created_at   DateTime @default(now())
+
+  instalasi InstalasiOrder @relation(fields: [id_instalasi], references: [id_instalasi], onDelete: Cascade)
+
+  @@map("instalasi_logs")
+}
+
+model InstalasiBASTSign {
+  id_bast                      Int       @id @default(autoincrement())
+  id_instalasi                 Int       @unique
+  nama_penandatangan_pelanggan String?   @db.VarChar(150)
+  jabatan_penandatangan        String?   @db.VarChar(100)
+  ttd_teknisi_path             String?   @db.VarChar(255)
+  ttd_pelanggan_path           String?   @db.VarChar(255)
+  tgl_ditandatangani           DateTime?
+  created_at                   DateTime  @default(now())
+
+  instalasi InstalasiOrder @relation(fields: [id_instalasi], references: [id_instalasi], onDelete: Cascade)
+
+  @@map("instalasi_bast_sign")
 }

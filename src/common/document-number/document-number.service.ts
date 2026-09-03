@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
-export type DocType = 'WO' | 'TKT' | 'QUO' | 'BA' | 'BAST' | 'PRJ' | 'KTR';
+export type DocType = 'WO' | 'TKT' | 'QUO' | 'BA' | 'BAST' | 'PRJ' | 'KTR' | 'INS';
 
 @Injectable()
 export class DocumentNumberService {
@@ -14,7 +14,7 @@ export class DocumentNumberService {
     const yyyy = now.getFullYear().toString();
     const mm = String(now.getMonth() + 1).padStart(2, '0');
 
-    const withMonth = ['WO', 'TKT', 'QUO', 'BA'];
+    const withMonth = ['WO', 'TKT', 'QUO', 'BA', 'INS'];
     const prefix = `${type}/N1/${yyyy}${withMonth.includes(type) ? '/' + mm : ''}`;
 
     // Cari nomor terakhir di tabel yang sesuai
@@ -25,7 +25,7 @@ export class DocumentNumberService {
   }
 
   private async getLastNumber(type: DocType, yyyy: string, mm: string): Promise<number> {
-    const withMonth = ['WO', 'TKT', 'QUO', 'BA'];
+    const withMonth = ['WO', 'TKT', 'QUO', 'BA', 'INS'];
     const pattern = withMonth.includes(type)
       ? `${type}/N1/${yyyy}/${mm}/%`
       : `${type}/N1/${yyyy}/%`;
@@ -39,6 +39,7 @@ export class DocumentNumberService {
       BAST: { model: 'projectDokumenLegal', field: 'nomor_bast' },
       PRJ:  { model: 'projectDelivery',     field: 'nomor_project' },
       KTR:  { model: 'kontrakLayanan',      field: 'nomor_kontrak' },
+      INS:  { model: 'instalasiOrders',     field: 'nomor_instalasi' },
     };
 
     const { model, field } = map[type];

@@ -45,6 +45,7 @@ import { DigiflazzModule } from './modules/integrations/digiflazz/digiflazz.modu
 import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.module';
 import { StarsenderModule } from './modules/integrations/starsender/starsender.module';
 import { MobileModule } from './modules/mobile/mobile.module';
+import { InstalasiModule } from './modules/instalasi/instalasi.module';
 
 @Module({
   imports: [
@@ -101,6 +102,7 @@ import { MobileModule } from './modules/mobile/mobile.module';
     UptimeKumaModule,
     StarsenderModule,
     MobileModule,
+    InstalasiModule,
   ],
   controllers: [HealthController],
   providers: [
