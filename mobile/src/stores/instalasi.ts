@@ -20,8 +20,21 @@ export interface InstalasiItem {
   bast?: { nama_penandatangan_pelanggan?: string; jabatan_penandatangan?: string; ttd_teknisi_path?: string; ttd_pelanggan_path?: string }
 }
 
+export interface TiketItem {
+  id_ticket: number
+  nomor_tiket: string
+  judul_tiket: string
+  status_tiket: string
+  prioritas: string
+  tgl_open: string
+  site?: { nama_site: string; kota?: string; pelanggan?: { nama_pelanggan: string } }
+  logs?: { id_log: number; status_dari?: string; status_ke?: string; catatan?: string; created_at: string }[]
+  photos?: { id_foto: number; stage: string; filename: string }[]
+}
+
 export const useInstalasiStore = defineStore('instalasi', () => {
   const list = ref<InstalasiItem[]>([])
+  const tiketList = ref<TiketItem[]>([])
   const current = ref<InstalasiItem | null>(null)
   const loading = ref(false)
   const error = ref('')
@@ -33,6 +46,16 @@ export const useInstalasiStore = defineStore('instalasi', () => {
       list.value = data.data ?? []
     } catch (e: any) {
       error.value = e?.response?.data?.message || 'Gagal memuat tugas'
+    } finally { loading.value = false }
+  }
+
+  async function fetchVendorTiket() {
+    loading.value = true; error.value = ''
+    try {
+      const { data } = await api.get('/instalasi/vendor/tiket')
+      tiketList.value = data.data ?? []
+    } catch (e: any) {
+      error.value = e?.response?.data?.message || 'Gagal memuat tiket'
     } finally { loading.value = false }
   }
 
@@ -74,5 +97,5 @@ export const useInstalasiStore = defineStore('instalasi', () => {
     return data.data
   }
 
-  return { list, current, loading, error, fetchVendorTugas, fetchOne, updateStatus, addLog, uploadFoto, saveBAST }
+  return { list, tiketList, current, loading, error, fetchVendorTugas, fetchVendorTiket, fetchOne, updateStatus, addLog, uploadFoto, saveBAST }
 })

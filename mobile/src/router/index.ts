@@ -39,6 +39,10 @@ const routes: RouteRecordRaw[] = [
     path: '/instalasi/:id',
     component: () => import('../views/InstalasiDetailView.vue'),
   },
+  {
+    path: '/tiket/:id',
+    component: () => import('../views/TicketDetailView.vue'),
+  },
 ]
 
 const router = createRouter({

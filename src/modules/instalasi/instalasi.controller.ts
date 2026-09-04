@@ -34,12 +34,18 @@ export class InstalasiController {
     return this.instalasiService.findAll(q);
   }
 
-  // GET /api/instalasi/vendor/tugas — tugas milik vendor yang login
+  // GET /api/instalasi/vendor/tugas — instalasi milik vendor yang login
   @Get('vendor/tugas')
   getMyTasks(@Req() req: any) {
-    // id_kontak dari JWT vendor (type: vendor_teknisi)
     const idKontak = req.user?.id_kontak ?? req.user?.sub;
     return this.instalasiService.findByVendor(Number(idKontak));
+  }
+
+  // GET /api/instalasi/vendor/tiket — tiket gangguan milik vendor yang login
+  @Get('vendor/tiket')
+  getMyTickets(@Req() req: any) {
+    const idKontak = req.user?.id_kontak ?? req.user?.sub;
+    return this.instalasiService.findTicketsByVendor(Number(idKontak));
   }
 
   // GET /api/instalasi/:id

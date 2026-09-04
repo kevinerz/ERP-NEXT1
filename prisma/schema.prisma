@@ -212,7 +212,8 @@ model MasterKontakTeknisi {
   username         String?  @unique @db.VarChar(80)
   pin_hash         String?  @db.VarChar(255)
 
-  instalasi_orders InstalasiOrder[]
+  instalasi_orders  InstalasiOrder[]
+  operation_tickets OperationTicket[]
 
   @@map("master_kontak_teknisi")
 }
@@ -603,6 +604,7 @@ model OperationTicket {
   id_site                    Int
   id_perangkat               Int?
   id_teknisi_pic             Int?
+  id_kontak_teknisi          Int?
   sumber_tiket               String    @default("Internal") @db.VarChar(30)
 
   judul_tiket                String    @db.VarChar(255)
@@ -619,14 +621,15 @@ model OperationTicket {
   created_at                 DateTime  @default(now())
   updated_at                 DateTime  @updatedAt
 
-  site            SitePelanggan              @relation(fields: [id_site], references: [id_site])
-  perangkat       PerangkatSite?             @relation(fields: [id_perangkat], references: [id_perangkat])
-  teknisi         HrisKaryawan?              @relation(fields: [id_teknisi_pic], references: [id_karyawan])
-  work_orders     WorkOrder[]
-  logs            OperationTicketLog[]
-  rca             OperationRca?
-  photos          OperationTicketPhoto[]
-  prtg_webhooks       IntegrationPrtgWebhook[]
+  site              SitePelanggan              @relation(fields: [id_site], references: [id_site])
+  perangkat         PerangkatSite?             @relation(fields: [id_perangkat], references: [id_perangkat])
+  teknisi           HrisKaryawan?              @relation(fields: [id_teknisi_pic], references: [id_karyawan])
+  kontak_teknisi    MasterKontakTeknisi?       @relation(fields: [id_kontak_teknisi], references: [id_kontak])
+  work_orders       WorkOrder[]
+  logs              OperationTicketLog[]
+  rca               OperationRca?
+  photos            OperationTicketPhoto[]
+  prtg_webhooks     IntegrationPrtgWebhook[]
   uptimekuma_webhooks IntegrationUptimeKumaWebhook[]
 
   @@index([status_tiket])

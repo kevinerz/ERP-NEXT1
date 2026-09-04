@@ -127,6 +127,20 @@ export class InstalasiService {
     return { data };
   }
 
+  async findTicketsByVendor(id_kontak: number) {
+    const data = await this.prisma.operationTicket.findMany({
+      where: { id_kontak_teknisi: id_kontak },
+      include: {
+        site: { include: { pelanggan: { select: { nama_pelanggan: true } } } },
+        logs: { orderBy: { created_at: 'desc' }, take: 5 },
+        photos: { orderBy: { created_at: 'desc' } },
+        kontak_teknisi: { select: { nama: true, no_hp: true } },
+      },
+      orderBy: { tgl_open: 'desc' },
+    });
+    return { data };
+  }
+
   async create(dto: CreateInstalasiDto) {
     const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site: dto.id_site } });
     if (!site) throw new NotFoundException('Site tidak ditemukan');
