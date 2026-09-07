@@ -395,6 +395,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'uptime-kuma-settings': 'uptime-kuma',
   'starsender-settings': 'starsender',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
+  'crm-pic-list': 'crm', 'crm-pic-detail': 'crm',
   'laporan': 'reports',
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',
 }

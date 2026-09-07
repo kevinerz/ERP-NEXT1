@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { fmtDateTime } from '@/composables/useFormat'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,6 +15,10 @@ const scanMsg = ref('')
 const scanIsError = ref(false)
 const scanning = ref(false)
 const finishing = ref(false)
+
+const confirmSelesai = ref(false)
+const confirmBatal = ref(false)
+const actionError = ref('')
 
 onMounted(load)
 async function load() { await aset.fetchOpnameOne(id) }
@@ -46,30 +51,55 @@ async function toggleManual(item: any) {
   try {
     await aset.toggleOpnameItem(item.id_item, !item.ditemukan)
     await load()
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal update item') }
+  } catch (e: any) { actionError.value = e.response?.data?.message || 'Gagal update item' }
 }
 
-async function selesaikan() {
-  if (!confirm(`Selesaikan sesi opname ini? ${belumCount.value} aset belum ditemukan akan tercatat sebagai selisih/hilang.`)) return
+function selesaikan() { confirmSelesai.value = true }
+async function doSelesaikan() {
+  confirmSelesai.value = false
   finishing.value = true
+  actionError.value = ''
   try {
     await aset.selesaikanOpname(id)
     await load()
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menyelesaikan opname') }
+  } catch (e: any) { actionError.value = e.response?.data?.message || 'Gagal menyelesaikan opname' }
   finally { finishing.value = false }
 }
 
-async function batalkan() {
-  if (!confirm('Batalkan sesi opname ini? Semua progres akan dihapus.')) return
+function batalkan() { confirmBatal.value = true }
+async function doBatalkan() {
+  confirmBatal.value = false
+  actionError.value = ''
   try {
     await aset.removeOpname(id)
     router.push('/assets/stok-opname')
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal membatalkan opname') }
+  } catch (e: any) { actionError.value = e.response?.data?.message || 'Gagal membatalkan opname' }
 }
 </script>
 
 <template>
   <div class="page" v-if="o">
+    <ConfirmDialog
+      v-model="confirmSelesai"
+      title="Selesaikan Opname?"
+      :message="`${belumCount} aset belum ditemukan akan tercatat sebagai selisih/hilang. Tindakan ini tidak bisa dibatalkan.`"
+      confirm-label="Ya, Selesaikan"
+      variant="warning"
+      @confirm="doSelesaikan"
+      @cancel="confirmSelesai = false"
+    />
+    <ConfirmDialog
+      v-model="confirmBatal"
+      title="Batalkan Sesi Opname?"
+      message="Semua progres scan akan dihapus permanen."
+      confirm-label="Ya, Batalkan"
+      variant="danger"
+      @confirm="doBatalkan"
+      @cancel="confirmBatal = false"
+    />
+
+    <div v-if="actionError" class="action-error">{{ actionError }}</div>
+
     <div class="page-header">
       <div>
         <div class="breadcrumb"><span @click="router.push('/assets/stok-opname')">Stok Opname</span> › #{{ o.id_opname }}</div>
@@ -200,4 +230,5 @@ td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .text-sm { font-size: 12px; }
 .row-found td { background: #f0fdf4; }
 .anomali-card .anomali-header { padding: 12px 16px; background: #fffbeb; color: #92400e; font-weight: 600; font-size: 13px; }
+.action-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 </style>

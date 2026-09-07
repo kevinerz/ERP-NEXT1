@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useOperationsStore } from '@/stores/operations'
 import { useProyekStore } from '@/stores/proyek'
@@ -348,12 +349,17 @@ async function handleAddWo() {
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
 
-async function hapusTiket() {
-  if (!confirm(`Hapus tiket ${ops.current?.nomor_tiket}? Tindakan ini tidak bisa dibatalkan.`)) return
+const confirmHapusTiket = ref(false)
+const hapusTiketError = ref('')
+
+function hapusTiket() { hapusTiketError.value = ''; confirmHapusTiket.value = true }
+
+async function doHapusTiket() {
+  confirmHapusTiket.value = false
   try {
     await api.delete(`/operations/${id}`)
     router.push('/operations')
-  } catch (e: any) { alert(e?.response?.data?.message || 'Gagal menghapus tiket') }
+  } catch (e: any) { hapusTiketError.value = e?.response?.data?.message || 'Gagal menghapus tiket' }
 }
 
 function slaInfo(t: any): { label: string; cls: string } {
@@ -386,6 +392,17 @@ function journeyStep(t: any) {
 
 <template>
   <div class="page">
+    <ConfirmDialog
+      v-model="confirmHapusTiket"
+      :title="`Hapus Tiket ${ops.current?.nomor_tiket}?`"
+      message="Tindakan ini tidak bisa dibatalkan. Semua log dan data terkait tiket ini akan hilang."
+      confirm-label="Ya, Hapus"
+      variant="danger"
+      @confirm="doHapusTiket"
+      @cancel="confirmHapusTiket = false"
+    />
+    <div v-if="hapusTiketError" class="alert-error">{{ hapusTiketError }}</div>
+
     <div v-if="ops.loading && !ops.current" class="loading-page">Memuat...</div>
     <div v-else-if="ops.error" class="alert-error">{{ ops.error }}</div>
     <template v-else-if="ops.current">

@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import DOMPurify from 'dompurify'
 import { useEmailStore } from '@/stores/email'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { fmtDateTime } from '@/composables/useFormat'
 import api from '@/services/api'
 
@@ -21,6 +22,10 @@ function folderIcon(key: string) { return FOLDER_ICON[key] || '📁' }
 const connecting = ref(false)
 const connectError = ref('')
 const form = ref({ email_address: '', password: '', imap_host: '', imap_port: 993, smtp_host: '', smtp_port: 465 })
+
+const confirmDisconnect = ref(false)
+const confirmHapusEmail = ref(false)
+const hapusEmailTarget = ref<{ uid: number; pesan: string } | null>(null)
 
 function pakaiPresetHostinger() {
   form.value.imap_host = 'imap.hostinger.com'
@@ -42,8 +47,11 @@ async function handleConnect() {
   finally { connecting.value = false }
 }
 
-async function handleDisconnect() {
-  if (!confirm(`Putuskan koneksi dari ${email.account?.email_address}? Kamu bisa connect lagi kapan saja.`)) return
+function handleDisconnect() {
+  confirmDisconnect.value = true
+}
+async function doDisconnect() {
+  confirmDisconnect.value = false
   await email.disconnect()
 }
 
@@ -95,11 +103,17 @@ async function toggleSeen(m: any, e: Event) {
   } catch { /* error sudah ditampilkan lewat email.error */ }
 }
 
-async function hapusEmail(uid: number) {
+function hapusEmail(uid: number) {
   const pesan = email.currentFolder === 'trash'
-    ? 'Hapus email ini secara permanen? Tidak bisa dikembalikan.'
-    : email.currentFolder === 'drafts' ? 'Hapus draf ini?' : 'Hapus email ini?'
-  if (!confirm(pesan)) return
+    ? 'Email ini akan dihapus secara permanen dan tidak bisa dikembalikan.'
+    : email.currentFolder === 'drafts' ? 'Draf ini akan dihapus.' : 'Email ini akan dipindahkan ke Sampah.'
+  hapusEmailTarget.value = { uid, pesan }
+  confirmHapusEmail.value = true
+}
+async function doHapusEmail() {
+  if (!hapusEmailTarget.value) return
+  const { uid } = hapusEmailTarget.value
+  confirmHapusEmail.value = false
   try {
     if (email.currentFolder === 'drafts') await email.deleteDraft(uid)
     else await email.deleteMessage(uid)
@@ -367,6 +381,25 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
     </div>
 
     <div v-else class="loading">Memuat...</div>
+
+    <ConfirmDialog
+      v-model="confirmDisconnect"
+      title="Putuskan Koneksi Email?"
+      :message="`Koneksi dari ${email.account?.email_address} akan diputus. Kamu bisa connect lagi kapan saja.`"
+      confirm-label="Ya, Putuskan"
+      variant="warning"
+      @confirm="doDisconnect"
+      @cancel="confirmDisconnect = false"
+    />
+    <ConfirmDialog
+      v-model="confirmHapusEmail"
+      :title="email.currentFolder === 'trash' ? 'Hapus Permanen?' : 'Hapus Email?'"
+      :message="hapusEmailTarget?.pesan"
+      :confirm-label="email.currentFolder === 'trash' ? 'Hapus Permanen' : 'Hapus'"
+      variant="danger"
+      @confirm="doHapusEmail"
+      @cancel="confirmHapusEmail = false"
+    />
 
     <!-- ─── MODAL COMPOSE ─── -->
     <div v-if="showCompose" class="modal-overlay" @click.self="tutupCompose">

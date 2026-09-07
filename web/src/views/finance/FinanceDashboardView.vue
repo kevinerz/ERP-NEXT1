@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
 import { fmtRupiah, fmtDateShort as fmtDate, statusLabel } from '@/composables/useFormat'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const router = useRouter()
 const finance = useFinanceStore()
@@ -21,6 +22,8 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 const showBulkModal = ref(false)
 const submitting = ref(false)
 const formError = ref('')
+const bulkResult = ref('')
+const showBulkResult = ref(false)
 const bulkForm = ref({
   periode: new Date().toISOString().slice(0, 7),
   tgl_invoice: new Date().toISOString().slice(0, 10),
@@ -49,7 +52,8 @@ async function handleBulk() {
   try {
     const res = await finance.generateBulk({ ...bulkForm.value })
     showBulkModal.value = false
-    alert(`${res.dibuat} invoice dibuat, ${res.dilewati} dilewati (dari ${res.total_kontrak} kontrak)`)
+    bulkResult.value = `${res.dibuat} invoice dibuat, ${res.dilewati} dilewati (dari ${res.total_kontrak} kontrak)`
+    showBulkResult.value = true
     await load()
   } catch (err: any) {
     formError.value = err?.response?.data?.message ?? 'Gagal generate invoice'
@@ -73,6 +77,16 @@ async function handleBulk() {
     </div>
 
     <div v-if="loadError" class="alert-error">{{ loadError }}</div>
+
+    <ConfirmDialog
+      v-model="showBulkResult"
+      :title="bulkResult"
+      confirm-label="OK"
+      cancel-label="Tutup"
+      variant="default"
+      @confirm="showBulkResult = false"
+      @cancel="showBulkResult = false"
+    />
 
     <!-- Summary cards -->
     <div class="kpi-row" v-if="finance.summary">

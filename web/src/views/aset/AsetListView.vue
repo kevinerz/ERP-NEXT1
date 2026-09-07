@@ -44,6 +44,7 @@ const form = ref({
 // halaman lain tidak hilang saat pindah halaman (aset.list diganti tiap fetch).
 const selectedItems = ref<Map<number, any>>(new Map())
 const selectingAll = ref(false)
+const selectNotif = ref('')
 
 function toggleSelect(a: any) {
   if (selectedItems.value.has(a.id_aset)) selectedItems.value.delete(a.id_aset)
@@ -65,13 +66,22 @@ async function pilihSemuaSesuaiFilter() {
     if (search.value) params.search = search.value
     const r = await api.get('/assets', { params })
     r.data.data.forEach((a: any) => selectedItems.value.set(a.id_aset, a))
+    const total = r.data.meta?.total ?? r.data.total ?? 0
+    if (total > 200) {
+      selectNotif.value = `Menampilkan 200 dari ${total} aset yang cocok dengan filter.`
+      setTimeout(() => { selectNotif.value = '' }, 6000)
+    }
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal memilih semua aset')
+    selectNotif.value = e.response?.data?.message || 'Gagal memilih semua aset'
   } finally { selectingAll.value = false }
 }
 function cetakLabelTerpilih() {
   const items = Array.from(selectedItems.value.values())
-  if (!items.length) { alert('Pilih dulu aset yang mau dicetak labelnya.'); return }
+  if (!items.length) {
+    selectNotif.value = 'Pilih dulu aset yang mau dicetak labelnya.'
+    setTimeout(() => { selectNotif.value = '' }, 4000)
+    return
+  }
   printLabelAset(items)
 }
 
@@ -212,6 +222,7 @@ function fmtRupiah(n: number) {
     </div>
 
     <div v-if="aset.error" class="alert-error">{{ aset.error }}</div>
+    <div v-if="selectNotif" class="select-notif">{{ selectNotif }}</div>
 
     <div v-if="selectedItems.size > 0" class="selection-bar">
       <span>{{ selectedItems.size }} aset dipilih</span>
@@ -406,6 +417,7 @@ function fmtRupiah(n: number) {
 .filter-select { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
 .btn-search { padding: 9px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.select-notif { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; color: #92400e; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 .selection-bar { display: flex; align-items: center; gap: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #1e40af; font-weight: 600; }
 .btn-label { padding: 6px 14px; background: #1e40af; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-label:hover { background: #1e3a8a; }

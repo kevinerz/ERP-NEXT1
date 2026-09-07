@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useMasterStore } from '@/stores/master'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import api from '@/services/api'
 
 const master = useMasterStore()
@@ -68,14 +69,26 @@ async function handleSubmit() {
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
 
-async function hapusPelanggan(id: number, nama: string) {
-  if (!confirm(`Hapus pelanggan "${nama}" ini?`)) return
+const confirmHapus = ref(false)
+const hapusTarget = ref<{ id: number; nama: string } | null>(null)
+const hapusError = ref('')
+
+function hapusPelanggan(id: number, nama: string) {
+  hapusTarget.value = { id, nama }
+  hapusError.value = ''
+  confirmHapus.value = true
+}
+
+async function doHapusPelanggan() {
+  if (!hapusTarget.value) return
   try {
-    await api.delete(`/master/pelanggan/${id}`)
+    await api.delete(`/master/pelanggan/${hapusTarget.value.id}`)
+    confirmHapus.value = false
     flash('Pelanggan dihapus')
     fetchData()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus pelanggan')
+    hapusError.value = e.response?.data?.message || 'Gagal menghapus pelanggan'
+    confirmHapus.value = false
   }
 }
 </script>
@@ -92,6 +105,7 @@ async function hapusPelanggan(id: number, nama: string) {
 
     <div v-if="successMsg" class="alert-success">{{ successMsg }}</div>
     <div v-if="master.error" class="alert-error">{{ master.error }}</div>
+    <div v-if="hapusError" class="alert-error">{{ hapusError }}</div>
 
     <div class="toolbar">
       <input v-model="search" @keyup.enter="doSearch" placeholder="Cari nama / kode..." class="search-input" />
@@ -138,6 +152,16 @@ async function hapusPelanggan(id: number, nama: string) {
       </div>
       <div class="table-footer" v-if="master.pelangganMeta.total">Total: {{ master.pelangganMeta.total }} pelanggan</div>
     </div>
+
+    <ConfirmDialog
+      v-model="confirmHapus"
+      title="Hapus Pelanggan?"
+      :message="`Pelanggan &quot;${hapusTarget?.nama}&quot; akan dihapus permanen dan tidak bisa dikembalikan.`"
+      confirm-label="Ya, Hapus"
+      variant="danger"
+      @confirm="doHapusPelanggan"
+      @cancel="confirmHapus = false"
+    />
 
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal">

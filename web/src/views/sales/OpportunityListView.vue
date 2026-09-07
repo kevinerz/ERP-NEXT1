@@ -5,6 +5,7 @@ import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -15,6 +16,15 @@ const canForce = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'
 const search = ref('')
 const filterTahapan = ref((route.query.tahapan as string) || '')
 const page = ref(1)
+
+// Confirm hapus
+const confirmHapus = ref(false)
+const hapusTarget = ref<{ id: number; nama: string } | null>(null)
+// Force delete: tampilkan input ketik nama
+const showForce = ref(false)
+const forceNamaInput = ref('')
+const forceError = ref('')
+const forceMsg = ref('')
 
 const TAHAPAN = ['Prospecting', 'Presentasi', 'Survey', 'Negosiasi', 'Penawaran', 'Won', 'Lost']
 const TAHAPAN_COLOR: Record<string, string> = {
@@ -33,33 +43,50 @@ function fetchData() {
 function doSearch() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
-async function hapusOpportunity(id: number, nama: string) {
-  if (!confirm(`Hapus opportunity "${nama}" ini?`)) return
+function hapusOpportunity(id: number, nama: string) {
+  hapusTarget.value = { id, nama }
+  confirmHapus.value = true
+}
+
+async function doHapus() {
+  if (!hapusTarget.value) return
+  confirmHapus.value = false
   try {
-    await api.delete(`/sales/opportunity/${id}`)
+    await api.delete(`/sales/opportunity/${hapusTarget.value.id}`)
     fetchData()
   } catch (e: any) {
     const msg = e.response?.data?.message || 'Gagal menghapus opportunity'
-    // Opportunity masih punya data terkait → tawarkan force delete (Admin/Director)
     if (e.response?.status === 400 && String(msg).includes('force delete')) {
-      if (!canForce.value) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
-      const ketik = prompt(
-        `⚠️ PERINGATAN — Opportunity "${nama}" akan DIHAPUS PERMANEN.\n\n` +
-        `Seluruh quotation, aktivitas, dan survey milik opportunity ini ikut terhapus permanen.\n\n` +
-        `Ketik nama opportunity "${nama}" untuk konfirmasi:`,
-      )
-      if (ketik === null) return
-      if (ketik.trim() !== nama) { alert('Nama opportunity tidak cocok — dibatalkan.'); return }
-      try {
-        const r = await api.delete(`/sales/opportunity/${id}?force=true`)
-        fetchData()
-        alert(r.data?.message || 'Opportunity + data terkait dihapus')
-      } catch (e2: any) {
-        alert(e2.response?.data?.message || 'Force delete gagal')
+      if (!canForce.value) {
+        forceMsg.value = msg + ' — Hubungi Admin untuk force delete.'
+        showForce.value = true
+        return
       }
+      forceNamaInput.value = ''
+      forceError.value = ''
+      forceMsg.value = `Seluruh quotation, aktivitas, dan survey milik opportunity ini ikut terhapus permanen.`
+      showForce.value = true
       return
     }
-    alert(msg)
+    forceMsg.value = msg
+    showForce.value = true
+  }
+}
+
+async function doForceHapus() {
+  if (!hapusTarget.value) return
+  if (!canForce.value) { showForce.value = false; return }
+  if (forceNamaInput.value.trim() !== hapusTarget.value.nama) {
+    forceError.value = 'Nama opportunity tidak cocok — coba lagi.'
+    return
+  }
+  try {
+    const r = await api.delete(`/sales/opportunity/${hapusTarget.value.id}?force=true`)
+    showForce.value = false
+    fetchData()
+    forceMsg.value = r.data?.message || 'Opportunity + data terkait dihapus'
+  } catch (e2: any) {
+    forceError.value = e2.response?.data?.message || 'Force delete gagal'
   }
 }
 
@@ -151,6 +178,35 @@ const fmtDate = fmtDateShort
       </div>
       <div class="table-footer" v-if="sales.oppMeta.total">Total: {{ sales.oppMeta.total }} opportunity</div>
     </div>
+    <ConfirmDialog
+      v-model="confirmHapus"
+      title="Hapus Opportunity?"
+      :message="`Opportunity &quot;${hapusTarget?.nama}&quot; akan dihapus.`"
+      confirm-label="Ya, Hapus"
+      variant="danger"
+      @confirm="doHapus"
+      @cancel="confirmHapus = false"
+    />
+
+    <!-- Force delete modal (ketik nama) -->
+    <div v-if="showForce" class="modal-overlay" @click.self="showForce = false">
+      <div class="modal-force">
+        <h3>⚠️ Force Delete Opportunity</h3>
+        <p class="force-msg">{{ forceMsg }}</p>
+        <template v-if="canForce">
+          <p class="force-hint">Ketik nama opportunity <strong>{{ hapusTarget?.nama }}</strong> untuk konfirmasi:</p>
+          <input v-model="forceNamaInput" placeholder="Ketik nama persis..." class="force-input" />
+          <p v-if="forceError" class="force-error">{{ forceError }}</p>
+          <div class="force-actions">
+            <button class="btn-cancel" @click="showForce = false">Batal</button>
+            <button class="btn-force" @click="doForceHapus">Hapus Permanen</button>
+          </div>
+        </template>
+        <div v-else class="force-actions">
+          <button class="btn-cancel" @click="showForce = false">Tutup</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -193,4 +249,16 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+.modal-force { background: #fff; border-radius: 14px; padding: 28px 32px; width: 480px; max-width: 95vw; box-shadow: 0 12px 40px rgba(0,0,0,0.18); }
+.modal-force h3 { margin: 0 0 12px; font-size: 16px; color: #dc2626; }
+.force-msg { font-size: 13.5px; color: #374151; margin: 0 0 12px; line-height: 1.6; }
+.force-hint { font-size: 13px; color: #64748b; margin: 0 0 8px; }
+.force-input { width: 100%; padding: 9px 12px; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box; }
+.force-input:focus { border-color: #dc2626; }
+.force-error { color: #dc2626; font-size: 13px; margin: 6px 0 0; }
+.force-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
+.btn-force { padding: 9px 18px; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-force:hover { background: #b91c1c; }
 </style>

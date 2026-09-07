@@ -352,9 +352,7 @@ const today = computed(() =>
 .bar-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
 .bar-tip {
   font-size: 9px; color: #64748b; white-space: nowrap;
-  opacity: 0; transition: opacity 0.15s;
 }
-.bar-col:hover .bar-tip { opacity: 1; }
 .bar-fill {
   width: 100%; min-height: 4px; border-radius: 4px 4px 0 0;
   background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
