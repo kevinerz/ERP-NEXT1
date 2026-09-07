@@ -462,10 +462,7 @@ export class OperationsService {
     const data = await this.prisma.hrisKaryawan.findMany({
       where: {
         status_aktif: true,
-        user: {
-          is_aktif: true,
-          user_roles: { some: { role: { nama_role: { in: ['Teknisi', 'Helpdesk', 'Manager_Ops', 'Admin'] } } } },
-        },
+        departemen: 'Teknisi',
       },
       select: { id_karyawan: true, nama_lengkap: true, jabatan: true },
       orderBy: { nama_lengkap: 'asc' },
