@@ -12,6 +12,7 @@ export class CreateTicketDto {
 
 export class UpdateTicketDto {
   @IsOptional() @IsInt() id_teknisi_pic?: number;
+  @IsOptional() @IsInt() id_kontak_teknisi?: number;
   @IsOptional() @IsString() judul_tiket?: string;
   @IsOptional() @IsString() deskripsi_masalah?: string;
   @IsOptional() @IsString() prioritas?: string;

@@ -13,6 +13,7 @@ const TICKET_INCLUDE = {
     },
   },
   teknisi: { select: { id_karyawan: true, nama_lengkap: true, jabatan: true } },
+  kontak_teknisi: { select: { id_kontak: true, nama: true, no_hp: true, asal_vendor: true } },
   _count: { select: { work_orders: true, logs: true } },
 };
 
@@ -25,6 +26,7 @@ const TICKET_DETAIL_INCLUDE = {
     },
   },
   teknisi: { select: { id_karyawan: true, nama_lengkap: true, jabatan: true } },
+  kontak_teknisi: { select: { id_kontak: true, nama: true, no_hp: true, asal_vendor: true } },
   work_orders: {
     include: {
       teknisi: { select: { id_karyawan: true, nama_lengkap: true } },
@@ -181,6 +183,13 @@ export class OperationsService {
     if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
 
     const updateData: any = { ...dto, updated_at: new Date() };
+
+    // Assign internal → bersihkan vendor, dan sebaliknya
+    if ('id_teknisi_pic' in dto) {
+      updateData.id_kontak_teknisi = null;
+    } else if ('id_kontak_teknisi' in dto) {
+      updateData.id_teknisi_pic = null;
+    }
 
     if (dto.status_tiket === 'Resolved') {
       updateData.tgl_resolved = new Date();

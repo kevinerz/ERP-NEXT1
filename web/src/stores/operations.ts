@@ -19,6 +19,7 @@ export interface Ticket {
     layanan?: { kode_layanan: string; nama_layanan: string }
   }
   teknisi?: { id_karyawan: number; nama_lengkap: string; jabatan: string }
+  kontak_teknisi?: { id_kontak: number; nama: string; no_hp: string; asal_vendor?: string }
   work_orders?: any[]
   logs?: { id_log: number; status_dari?: string; status_ke?: string; catatan?: string; created_at: string; user?: { karyawan?: { nama_lengkap: string } } }[]
   _count?: { work_orders: number; logs: number }
@@ -31,6 +32,7 @@ export const useOperationsStore = defineStore('operations', {
     current: null as Ticket | null,
     summary: [] as { status: string; count: number }[],
     teknisiList: [] as { id_karyawan: number; nama_lengkap: string; jabatan: string }[],
+    kontakTeknisiList: [] as { id_kontak: number; nama: string; no_hp: string; asal_vendor?: string }[],
     loading: false,
     error: '',
   }),
@@ -83,6 +85,14 @@ export const useOperationsStore = defineStore('operations', {
       try {
         const { data } = await api.get('/operations/teknisi-list')
         this.teknisiList = data.data ?? []
+      } catch { /* silent */ }
+    },
+
+    async fetchKontakTeknisiList() {
+      if (this.kontakTeknisiList.length) return
+      try {
+        const { data } = await api.get('/master/kontak-teknisi', { params: { is_aktif: 'true', limit: 200 } })
+        this.kontakTeknisiList = data.data ?? []
       } catch { /* silent */ }
     },
   },

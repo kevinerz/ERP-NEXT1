@@ -271,7 +271,7 @@ const WO_STATUS_COLOR: Record<string, string> = {
 }
 
 onMounted(async () => {
-  await Promise.all([ops.fetchOne(id), ops.fetchTeknisiList(), proyek.fetchSiteList()])
+  await Promise.all([ops.fetchOne(id), ops.fetchTeknisiList(), ops.fetchKontakTeknisiList(), proyek.fetchSiteList()])
   await fetchFotos()
   await nextTick()
   initMap()
@@ -289,12 +289,15 @@ onUnmounted(() => {
 
 function openEdit() {
   const t = ops.current!
+  const tipeAssign = t.kontak_teknisi ? 'vendor' : 'internal'
   editForm.value = {
     judul_tiket: t.judul_tiket,
     deskripsi_masalah: t.deskripsi_masalah || '',
     prioritas: t.prioritas,
     status_tiket: t.status_tiket,
-    id_teknisi_pic: t.teknisi?.id_karyawan || 0,
+    tipe_assign: tipeAssign,
+    id_teknisi_pic: tipeAssign === 'internal' ? (t.teknisi?.id_karyawan || 0) : 0,
+    id_kontak_teknisi: tipeAssign === 'vendor' ? (t.kontak_teknisi?.id_kontak || 0) : 0,
   }
   editError.value = ''; showEditModal.value = true
 }
@@ -302,8 +305,17 @@ function openEdit() {
 async function handleEdit() {
   editSubmitting.value = true; editError.value = ''
   try {
-    const payload: any = { ...editForm.value }
-    if (!payload.id_teknisi_pic) payload.id_teknisi_pic = null
+    const payload: any = {
+      judul_tiket: editForm.value.judul_tiket,
+      deskripsi_masalah: editForm.value.deskripsi_masalah,
+      prioritas: editForm.value.prioritas,
+      status_tiket: editForm.value.status_tiket,
+    }
+    if (editForm.value.tipe_assign === 'internal') {
+      payload.id_teknisi_pic = editForm.value.id_teknisi_pic || null
+    } else {
+      payload.id_kontak_teknisi = editForm.value.id_kontak_teknisi || null
+    }
     await ops.update(id, payload)
     await ops.fetchOne(id)
     showEditModal.value = false; flash('Tiket diperbarui')
@@ -447,7 +459,12 @@ function journeyStep(t: any) {
         </div>
         <div class="info-chip">
           <span class="ic-label">Teknisi PIC</span>
-          <span class="ic-value fw">{{ ops.current.teknisi?.nama_lengkap || 'Belum assigned' }}</span>
+          <span class="ic-value fw" v-if="ops.current.teknisi">{{ ops.current.teknisi.nama_lengkap }}</span>
+          <span class="ic-value fw vendor-pic" v-else-if="ops.current.kontak_teknisi">
+            {{ ops.current.kontak_teknisi.nama }}
+            <span class="vendor-tag">Vendor</span>
+          </span>
+          <span class="ic-value" v-else>Belum assigned</span>
         </div>
         <div class="info-chip">
           <span class="ic-label">Durasi</span>
@@ -830,11 +847,27 @@ function journeyStep(t: any) {
                 <option v-for="p in PRIORITAS_LIST" :key="p" :value="p">{{ p }}</option>
               </select>
             </div>
-            <div class="field full">
-              <label>Assign Teknisi</label>
+            <div class="field">
+              <label>Tipe Assign</label>
+              <select v-model="editForm.tipe_assign">
+                <option value="internal">Teknisi Internal</option>
+                <option value="vendor">Vendor / Kontak Eksternal</option>
+              </select>
+            </div>
+            <div class="field" v-if="editForm.tipe_assign === 'internal'">
+              <label>Teknisi Internal</label>
               <select v-model="editForm.id_teknisi_pic">
                 <option :value="0">— Belum di-assign —</option>
                 <option v-for="t in ops.teknisiList" :key="t.id_karyawan" :value="t.id_karyawan">{{ t.nama_lengkap }}</option>
+              </select>
+            </div>
+            <div class="field" v-else>
+              <label>Vendor / Kontak Teknisi</label>
+              <select v-model="editForm.id_kontak_teknisi">
+                <option :value="0">— Belum di-assign —</option>
+                <option v-for="k in ops.kontakTeknisiList" :key="k.id_kontak" :value="k.id_kontak">
+                  {{ k.nama }}{{ k.asal_vendor ? ' · ' + k.asal_vendor : '' }}
+                </option>
               </select>
             </div>
             <div class="field full"><label>Deskripsi Masalah</label><textarea v-model="editForm.deskripsi_masalah" rows="3"></textarea></div>
@@ -952,6 +985,8 @@ function journeyStep(t: any) {
 .info-chip { background: #fff; border-radius: 10px; padding: 10px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
 .ic-label { display: block; font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.4px; }
 .ic-value { font-size: 13px; color: #0f172a; }
+.vendor-pic { display: flex; align-items: center; gap: 6px; }
+.vendor-tag { background: #fef3c7; color: #92400e; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; }
 .fw { font-weight: 700; }
 .text-gray { color: #64748b; }
 
