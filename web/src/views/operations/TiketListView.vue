@@ -282,6 +282,9 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .sla-ok { background: #f0fdf4; color: #15803d; }
 .sla-none { color: #cbd5e1; }
 @keyframes slaPulse { 50% { opacity: 0.6; } }
+@media (prefers-reduced-motion: reduce) {
+  .sla-late { animation: none; }
+}
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 .row-link { cursor: pointer; }
 .row-link:hover td { background: #f8fafc; }

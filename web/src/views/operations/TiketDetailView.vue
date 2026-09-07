@@ -932,6 +932,9 @@ function journeyStep(t: any) {
 .sla-ok { background: #f0fdf4; color: #15803d; }
 .sla-none { color: #cbd5e1; }
 @keyframes slaPulse { 50% { opacity: 0.6; } }
+@media (prefers-reduced-motion: reduce) {
+  .sla-late, .blink-dot, .spinning, .spin-svg { animation: none !important; }
+}
 .prioritas-badge { padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; }
 .status-big { padding: 5px 14px; border-radius: 20px; font-size: 14px; font-weight: 700; }
 .btn-timeline { padding: 8px 14px; background: #ede9fe; color: #6d28d9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }

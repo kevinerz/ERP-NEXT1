@@ -2,9 +2,11 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
+import { useSettingsStore } from '@/stores/settings'
 
 const router = useRouter()
 const hris = useHrisStore()
+const cfg = useSettingsStore()
 
 const search = ref('')
 const filterDept = ref('')
@@ -42,7 +44,7 @@ onMounted(() => {
     <div class="page-header">
       <div>
         <h2>Karyawan</h2>
-        <p>Data karyawan PT. Perdana Global Internet</p>
+        <p>Data karyawan {{ cfg.settings.company_name || 'perusahaan' }}</p>
       </div>
       <div class="header-actions">
         <button class="btn-secondary" @click="router.push('/hris/undangan')">

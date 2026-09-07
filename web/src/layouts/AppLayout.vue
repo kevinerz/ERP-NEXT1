@@ -205,7 +205,7 @@ const initials = computed(() => {
           </Transition>
         </RouterLink>
 
-        <template v-if="auth.hasRole('Admin') || auth.hasRole('Director')">
+        <template v-if="auth.hasRole('Admin') || auth.hasRole('Director') || auth.hasRole('Manager_Ops')">
           <div class="nav-divider"></div>
           <div class="nav-section-label" v-if="sidebarOpen || mobileNavOpen">ADMIN</div>
           <RouterLink
@@ -262,6 +262,7 @@ const initials = computed(() => {
                 <button v-if="notif.count > 0" class="np-read-all" @click="notif.markAllRead()">Baca semua</button>
               </div>
               <div v-if="notif.loading" class="np-state">Memuat...</div>
+              <div v-else-if="notif.error" class="np-state np-error">{{ notif.error }}</div>
               <div v-else-if="!notif.notifications.length" class="np-state">Belum ada notifikasi 🎉</div>
               <div v-else class="np-list">
                 <div
@@ -617,6 +618,7 @@ const initials = computed(() => {
 }
 .np-read-all:hover { color: #1d4ed8; }
 .np-state { padding: 32px 16px; text-align: center; font-size: 13px; color: #94a3b8; }
+.np-error { color: #dc2626; }
 .np-list { max-height: 380px; overflow-y: auto; }
 .np-item {
   display: flex; align-items: flex-start; gap: 10px;

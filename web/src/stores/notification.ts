@@ -7,6 +7,7 @@ export const useNotificationStore = defineStore('notification', {
     notifications: [] as any[],
     meta: { total: 0, unread: 0, page: 1, total_pages: 0, limit: 25 },
     loading: false,
+    error: '',
     toasts: [] as { id: number; judul: string; deskripsi: string; url?: string }[],
     _pollInterval: null as ReturnType<typeof setInterval> | null,
     _lastSeenId: 0,
@@ -43,13 +44,16 @@ export const useNotificationStore = defineStore('notification', {
 
     async fetchNotifications(page = 1) {
       this.loading = true
+      this.error = ''
       try {
         const r = await api.get('/notifications', { params: { page } })
         this.notifications = r.data.data
         this.meta = r.data.meta
         this.count = r.data.meta.unread
         if (r.data.data.length) this._lastSeenId = r.data.data[0].id_notif
-      } catch {}
+      } catch {
+        this.error = 'Gagal memuat notifikasi'
+      }
       finally { this.loading = false }
     },
 

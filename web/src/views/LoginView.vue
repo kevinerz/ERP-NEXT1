@@ -14,6 +14,8 @@ const password = ref('')
 const showPassword = ref(false)
 const appVersion = __APP_VERSION__
 
+const showForgot = ref(false)
+
 onMounted(() => { cfg.fetch() })
 
 async function handleLogin() {
@@ -131,7 +133,24 @@ async function handleLogin() {
           </button>
         </form>
 
+        <button class="forgot-link" @click="showForgot = true">Lupa password?</button>
+
         <router-link to="/daftar" class="daftar-link">Karyawan baru? Daftar Akun Baru →</router-link>
+
+        <!-- Modal lupa password -->
+        <div v-if="showForgot" class="forgot-overlay" @click.self="showForgot = false">
+          <div class="forgot-box">
+            <h3>🔑 Lupa Password?</h3>
+            <p>Hubungi administrator atau IT Support untuk mereset password akun Anda.</p>
+            <p v-if="cfg.settings.company_name" class="forgot-company">{{ cfg.settings.company_name }}</p>
+            <p v-if="cfg.settings.company_phone || cfg.settings.company_email" class="forgot-contact">
+              <span v-if="cfg.settings.company_phone">📞 {{ cfg.settings.company_phone }}</span>
+              <span v-if="cfg.settings.company_email">✉️ {{ cfg.settings.company_email }}</span>
+            </p>
+            <p v-else class="forgot-hint">Info kontak dapat ditemukan di halaman Settings aplikasi.</p>
+            <button class="forgot-close" @click="showForgot = false">Tutup</button>
+          </div>
+        </div>
 
         <p class="version">v{{ appVersion }}</p>
       </div>
@@ -273,11 +292,36 @@ async function handleLogin() {
 }
 .btn-login:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
 .btn-login:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.forgot-link {
+  display: block; width: 100%; text-align: center; margin-top: 10px;
+  font-size: 12.5px; color: #94a3b8; background: none; border: none;
+  cursor: pointer; padding: 4px;
+}
+.forgot-link:hover { color: #64748b; text-decoration: underline; }
 .daftar-link {
-  display: block; text-align: center; margin-top: 22px;
+  display: block; text-align: center; margin-top: 16px;
   font-size: 13px; color: #3b82f6; font-weight: 600; text-decoration: none;
 }
 .daftar-link:hover { text-decoration: underline; }
+.forgot-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 999; padding: 20px;
+}
+.forgot-box {
+  background: #fff; border-radius: 14px; padding: 28px 28px 24px;
+  width: 100%; max-width: 380px; text-align: center;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+}
+.forgot-box h3 { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 10px; }
+.forgot-box p { font-size: 13.5px; color: #4b5563; line-height: 1.6; margin: 0 0 6px; }
+.forgot-company { font-weight: 700; color: #0f172a !important; }
+.forgot-contact { display: flex; flex-direction: column; gap: 4px; color: #1d4ed8 !important; font-size: 13px !important; }
+.forgot-hint { color: #94a3b8 !important; font-size: 12px !important; }
+.forgot-close {
+  margin-top: 18px; padding: 9px 24px; background: #1e40af; color: #fff;
+  border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.forgot-close:hover { background: #1e3a8a; }
 .version { text-align: center; color: #94a3b8; font-size: 11px; margin: 24px 0 0; }
 
 @media (max-width: 900px) {
