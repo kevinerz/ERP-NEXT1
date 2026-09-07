@@ -1,7 +1,8 @@
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query,
-  ParseIntPipe, UseInterceptors, UploadedFile, Req,
+  ParseIntPipe, UseInterceptors, UploadedFile, Req, UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { InstalasiService } from './instalasi.service';
@@ -35,17 +36,19 @@ export class InstalasiController {
   }
 
   // GET /api/instalasi/vendor/tugas — instalasi milik vendor yang login
+  @Public()
+  @UseGuards(AuthGuard('vendor-jwt'))
   @Get('vendor/tugas')
   getMyTasks(@Req() req: any) {
-    const idKontak = req.user?.id_kontak ?? req.user?.sub;
-    return this.instalasiService.findByVendor(Number(idKontak));
+    return this.instalasiService.findByVendor(Number(req.user.id_kontak));
   }
 
   // GET /api/instalasi/vendor/tiket — tiket gangguan milik vendor yang login
+  @Public()
+  @UseGuards(AuthGuard('vendor-jwt'))
   @Get('vendor/tiket')
   getMyTickets(@Req() req: any) {
-    const idKontak = req.user?.id_kontak ?? req.user?.sub;
-    return this.instalasiService.findTicketsByVendor(Number(idKontak));
+    return this.instalasiService.findTicketsByVendor(Number(req.user.id_kontak));
   }
 
   // GET /api/instalasi/:id

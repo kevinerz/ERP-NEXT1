@@ -105,18 +105,18 @@
           <button class="see-all" @click="$router.push('/tickets')">Lihat Semua →</button>
         </div>
 
-        <div v-if="ticketsStore.loading" class="center-spin">
+        <div v-if="displayLoading" class="center-spin">
           <ion-spinner name="crescent" color="primary" />
         </div>
 
-        <div v-else-if="ticketsStore.tickets.length === 0" class="empty-state">
+        <div v-else-if="displayTickets.length === 0" class="empty-state">
           <ion-icon :icon="checkmarkCircleOutline" />
           <p>Tidak ada tiket aktif</p>
         </div>
 
         <div v-else class="ticket-stack">
           <div
-            v-for="ticket in ticketsStore.tickets.slice(0, 5)"
+            v-for="ticket in displayTickets.slice(0, 5)"
             :key="ticket.id_ticket"
             class="tcard"
             @click="$router.push(`/tickets/${ticket.id_ticket}`)"
@@ -157,22 +157,40 @@ import {
 } from 'ionicons/icons'
 import { useAuthStore } from '../stores/auth'
 import { useTicketsStore } from '../stores/tickets'
+import { useInstalasiStore } from '../stores/instalasi'
 import { stopGps, setupGps, sendLocationNow } from '../plugins/gps'
 
 const router = useRouter()
 const auth = useAuthStore()
 const ticketsStore = useTicketsStore()
+const instalasiStore = useInstalasiStore()
 const onDuty = ref(true)
 const gpsActive = ref(false)
 const lastGpsTime = ref('')
 
 onMounted(async () => {
-  await ticketsStore.fetchTickets()
+  if (auth.isVendor) {
+    await Promise.all([instalasiStore.fetchVendorTugas(), instalasiStore.fetchVendorTiket()])
+  } else {
+    await ticketsStore.fetchTickets()
+  }
 })
 
-const totalAktif     = computed(() => ticketsStore.tickets.length)
-const totalOpen      = computed(() => ticketsStore.tickets.filter(t => t.status_tiket === 'Open').length)
-const totalInProgress = computed(() => ticketsStore.tickets.filter(t => t.status_tiket === 'In_Progress').length)
+const displayTickets = computed(() =>
+  auth.isVendor ? instalasiStore.tiketList : ticketsStore.tickets
+)
+const displayLoading = computed(() =>
+  auth.isVendor ? instalasiStore.loading : ticketsStore.loading
+)
+const totalAktif      = computed(() => auth.isVendor ? instalasiStore.list.length + instalasiStore.tiketList.length : ticketsStore.tickets.length)
+const totalOpen       = computed(() => auth.isVendor
+  ? instalasiStore.tiketList.filter((t: any) => t.status_tiket === 'Open').length
+  : ticketsStore.tickets.filter(t => t.status_tiket === 'Open').length
+)
+const totalInProgress = computed(() => auth.isVendor
+  ? instalasiStore.tiketList.filter((t: any) => t.status_tiket === 'In_Progress').length
+  : ticketsStore.tickets.filter(t => t.status_tiket === 'In_Progress').length
+)
 
 function onDutyChanged() {
   if (onDuty.value) { setupGps(onGpsSuccess); gpsActive.value = true }
@@ -191,7 +209,11 @@ async function sendGpsNow() {
 }
 
 async function doRefresh(event: any) {
-  await ticketsStore.fetchTickets()
+  if (auth.isVendor) {
+    await Promise.all([instalasiStore.fetchVendorTugas(), instalasiStore.fetchVendorTiket()])
+  } else {
+    await ticketsStore.fetchTickets()
+  }
   event.target.complete()
 }
 

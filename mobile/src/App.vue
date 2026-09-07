@@ -15,7 +15,7 @@ const auth = useAuthStore()
 
 onMounted(async () => {
   auth.loadFromStorage()
-  if (auth.isLoggedIn) {
+  if (auth.isLoggedIn && !auth.isVendor) {
     await setupPushNotifications()
     setupGps()
   }
