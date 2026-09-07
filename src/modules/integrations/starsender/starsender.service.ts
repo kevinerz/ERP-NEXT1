@@ -31,9 +31,15 @@ export class StarsenderService {
   }
 
   async testSend(phone: string) {
-    const ok = await this.client.send(phone, '✅ Test notifikasi WhatsApp dari ERP NEXT1 berhasil!');
+    const ok = await this.client.send(phone, '✅ *Test Notifikasi WA*\nERP NEXT1 — Pesan test berhasil diterima.');
     if (!ok) throw new Error('Gagal kirim WA — cek API key dan nomor tujuan');
     return { message: `Pesan test berhasil dikirim ke ${phone}` };
+  }
+
+  async testSendGroup(group_id: string) {
+    const ok = await this.client.send(group_id, '✅ *Test Notifikasi WA*\nERP NEXT1 — Pesan test berhasil diterima oleh grup ini.');
+    if (!ok) throw new Error('Gagal kirim WA ke grup — cek Group ID');
+    return { message: `Pesan test berhasil dikirim ke grup` };
   }
 
   // ── Internal Groups ──────────────────────────────────────────────
@@ -119,19 +125,19 @@ export class StarsenderService {
         select: { wa_group_id: true },
       });
       if (pel?.wa_group_id) {
-        const pesan = `🎫 *Tiket Baru*\n*${nomor_tiket}*\n📌 ${judul}\n📍 Site: ${nama_site}\n\nTim kami akan segera menindaklanjuti. Terima kasih.`;
+        const pesan = `🎫 *Tiket Baru — ${nomor_tiket}*\n\n📌 *${judul}*\n📍 Site: ${nama_site}\n\nTim dukungan kami telah menerima laporan Anda dan akan segera menindaklanjuti.\nTerima kasih atas kepercayaan Anda kepada kami.`;
         this.client.send(pel.wa_group_id, pesan).catch(() => {});
       } else if (no_hp_customer) {
-        const pesan = `Halo ${nama_pelanggan},\n\nTiket Anda telah dibuat:\n📋 *${nomor_tiket}*\n📌 ${judul}\n📍 Site: ${nama_site}\n\nTim kami akan segera menindaklanjuti. Terima kasih.`;
+        const pesan = `Halo *${nama_pelanggan}*,\n\nTiket dukungan Anda telah berhasil dibuat.\n\n🎫 *${nomor_tiket}*\n📌 ${judul}\n📍 Site: ${nama_site}\n\nTim kami akan menghubungi Anda dalam waktu dekat. Terima kasih.`;
         this.client.send(no_hp_customer, pesan).catch(() => {});
       }
     } else if (no_hp_customer) {
-      const pesan = `Halo ${nama_pelanggan},\n\nTiket Anda telah dibuat:\n📋 *${nomor_tiket}*\n📌 ${judul}\n📍 Site: ${nama_site}\n\nTim kami akan segera menindaklanjuti. Terima kasih.`;
+      const pesan = `Halo *${nama_pelanggan}*,\n\nTiket dukungan Anda telah berhasil dibuat.\n\n🎫 *${nomor_tiket}*\n📌 ${judul}\n📍 Site: ${nama_site}\n\nTim kami akan menghubungi Anda dalam waktu dekat. Terima kasih.`;
       this.client.send(no_hp_customer, pesan).catch(() => {});
     }
 
     // Ke internal
-    const pesan = `🎫 *Tiket Baru*\n${nomor_tiket} — ${judul}\nSite: ${nama_site} (${nama_pelanggan})`;
+    const pesan = `🎫 *Tiket Baru*\nNo: ${nomor_tiket}\nJudul: ${judul}\nSite: ${nama_site}\nPelanggan: ${nama_pelanggan}`;
     await this.sendToInternal(pesan);
   }
 
@@ -152,7 +158,7 @@ export class StarsenderService {
         In_Progress: 'sedang dikerjakan', Resolved: 'telah diselesaikan',
         Closed: 'telah ditutup', Pending_Customer: 'menunggu respons Anda',
       };
-      const pesanCustomer = `${emoji} *Update Tiket*\n*${nomor_tiket}* ${label[status_ke] ?? `diupdate ke ${status_ke}`}\n📌 ${judul}\n📍 Site: ${nama_site}`;
+      const pesanCustomer = `${emoji} *Update Tiket — ${nomor_tiket}*\n\nTiket Anda *${label[status_ke] ?? `diupdate ke ${status_ke}`}*.\n📌 ${judul}\n📍 Site: ${nama_site}\n\nHubungi kami jika ada pertanyaan lebih lanjut.`;
 
       if (id_pelanggan) {
         const pel = await this.prisma.pelanggan.findUnique({
@@ -170,7 +176,7 @@ export class StarsenderService {
     }
 
     // Ke internal
-    const pesan = `${emoji} *Status Tiket*\n${nomor_tiket}: ${status_dari} → ${status_ke}\n${judul}\nSite: ${nama_site}`;
+    const pesan = `${emoji} *Update Tiket*\nNo: ${nomor_tiket}\nStatus: ${status_dari} → ${status_ke}\nJudul: ${judul}\nSite: ${nama_site}`;
     await this.sendToInternal(pesan);
   }
 
@@ -180,14 +186,14 @@ export class StarsenderService {
     const { sumber, nama, nama_site, msg } = params;
     const lokasi = nama_site ? `\n📍 Site: ${nama_site}` : '';
     const detail = msg ? `\nInfo: ${msg}` : '';
-    const pesan = `🔴 *Alert Monitoring DOWN*\n🌐 ${sumber}: ${nama}${lokasi}${detail}`;
+    const pesan = `🔴 *ALERT: Jaringan DOWN*\nSumber: ${sumber}\nPerangkat: ${nama}${lokasi}${detail}\n\nSegera periksa kondisi jaringan!`;
     await this.sendToInternal(pesan);
   }
 
   async notifMonitorUp(params: { sumber: string; nama: string; nama_site?: string }) {
     const { sumber, nama, nama_site } = params;
-    const lokasi = nama_site ? ` | Site: ${nama_site}` : '';
-    const pesan = `✅ *Monitor Kembali UP*\n🌐 ${sumber}: ${nama}${lokasi}`;
+    const lokasi = nama_site ? `\n📍 Site: ${nama_site}` : '';
+    const pesan = `✅ *Jaringan Kembali UP*\nSumber: ${sumber}\nPerangkat: ${nama}${lokasi}`;
     await this.sendToInternal(pesan);
   }
 }

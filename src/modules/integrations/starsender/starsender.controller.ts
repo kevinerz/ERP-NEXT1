@@ -23,6 +23,11 @@ export class StarsenderController {
     return this.svc.testSend(body.phone);
   }
 
+  @Post('test-group')
+  testGroup(@Body() body: { group_id: string }) {
+    return this.svc.testSendGroup(body.group_id);
+  }
+
   // ── Internal Groups ──────────────────────────────────────────────
 
   @Get('internal-groups')
@@ -44,18 +49,5 @@ export class StarsenderController {
   @Delete('internal-groups/:id')
   deleteInternalGroup(@Param('id', ParseIntPipe) id: number) {
     return this.svc.deleteInternalGroup(id);
-  }
-
-  // ── Pelanggan WA Group ───────────────────────────────────────────
-
-  @Get('pelanggan-groups')
-  getPelangganGroups() { return this.svc.getPelangganGroups(); }
-
-  @Patch('pelanggan-groups/:id')
-  updatePelangganGroup(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() body: { wa_group_id?: string | null; nama_grup?: string | null },
-  ) {
-    return this.svc.updatePelangganGroup(id, body);
   }
 }
