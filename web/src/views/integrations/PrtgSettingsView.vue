@@ -141,19 +141,21 @@ function mapDariAudit(deviceName: string) {
 // ─── GRAPH PING & ETHER ───────────────────────────────────────
 const graphSiteId  = ref<number | null>(null)
 const graphHours   = ref(0)  // graphid: 0=live, 1=48jam, 2=30hari, 3=365hari
-const graphSensors = ref<{ device_name: string; ping: any[]; ether: any[]; other: any[] } | null>(null)
+const graphDevices = ref<{ device_name: string; sensors: any[] }[] | null>(null)
 const graphLoading = ref(false)
 const graphError   = ref('')
 const openSensorId = ref<number | null>(null)
 
 async function fetchGraphSensors() {
   if (!graphSiteId.value) return
-  graphLoading.value = true; graphError.value = ''; graphSensors.value = null
+  graphLoading.value = true; graphError.value = ''; graphDevices.value = null
   try {
     const r = await api.get(`/prtg/site/${graphSiteId.value}/sensors`)
-    // Normalise: backend sekarang return { device_name, sensors[] }
     const d = r.data.data
-    graphSensors.value = d
+    // Support format baru (array) dan lama (single object)
+    if (Array.isArray(d)) graphDevices.value = d
+    else if (d?.device_name) graphDevices.value = [d]
+    else graphDevices.value = []
   } catch (e: any) { graphError.value = e.response?.data?.message || 'Gagal memuat sensor' }
   finally { graphLoading.value = false }
 }
@@ -326,7 +328,10 @@ onMounted(async () => {
                   </span>
                 </td>
                 <td>{{ d.site ? `[${d.site.nama_site}]` : '—' }}</td>
-                <td><button v-if="!d.matched" class="btn-map" @click="mapDariAudit(d.device_name)">Map ke Site</button></td>
+                <td>
+                  <button v-if="!d.matched" class="btn-map" @click="mapDariAudit(d.device_name)">Map ke Site</button>
+                  <button v-else class="btn-map-add" @click="mapDariAudit(d.device_name)" title="Tambah / timpa dengan mapping manual">+ Manual</button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -396,31 +401,35 @@ onMounted(async () => {
         <div v-if="!graphSiteId && !graphLoading" class="empty">Pilih site untuk melihat data Ping & Traffic</div>
       </div>
 
-      <template v-if="graphSensors">
-        <p class="hint" style="margin:0">
-          Device: <strong>{{ graphSensors.device_name }}</strong>
-          — {{ graphSensors.sensors?.length ?? 0 }} sensor
-        </p>
+      <template v-if="graphDevices !== null">
+        <div v-if="!graphDevices.length" class="card">
+          <p class="empty">Tidak ada device PRTG yang cocok untuk site ini. Buat mapping manual di tab Mapping.</p>
+        </div>
 
-        <div class="card" v-if="graphSensors.sensors?.length">
-          <div v-for="s in graphSensors.sensors" :key="s.objid" class="sensor-block">
-            <div class="sensor-row" @click="openSensorHistory(s.objid)">
-              <span class="sensor-name">{{ s.sensor }}</span>
-              <span :class="['sensor-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
-              <span class="sensor-toggle">{{ openSensorId === s.objid ? '▲' : '▼' }}</span>
-            </div>
-
-            <div v-if="openSensorId === s.objid" class="sensor-detail">
-              <p class="graph-label">PRTG Graph — {{ ['Live','48 jam','30 hari','365 hari'][graphHours] ?? 'Live' }}</p>
-              <div v-if="graphBlobLoading" class="loading" style="padding:12px">Memuat graph...</div>
-              <img v-else-if="graphBlobUrl" :src="graphBlobUrl" class="prtg-graph-img" />
-              <p v-else class="empty" style="padding:12px">Graph tidak tersedia</p>
+        <template v-for="dev in graphDevices" :key="dev.device_name">
+          <p class="device-header">
+            <span class="device-label">📡 {{ dev.device_name }}</span>
+            <span class="sensor-count">{{ dev.sensors?.length ?? 0 }} sensor</span>
+          </p>
+          <div class="card" v-if="dev.sensors?.length">
+            <div v-for="s in dev.sensors" :key="s.objid" class="sensor-block">
+              <div class="sensor-row" @click="openSensorHistory(s.objid)">
+                <span class="sensor-name">{{ s.sensor }}</span>
+                <span :class="['sensor-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
+                <span class="sensor-toggle">{{ openSensorId === s.objid ? '▲' : '▼' }}</span>
+              </div>
+              <div v-if="openSensorId === s.objid" class="sensor-detail">
+                <p class="graph-label">PRTG Graph — {{ ['Live','48 jam','30 hari','365 hari'][graphHours] ?? 'Live' }}</p>
+                <div v-if="graphBlobLoading" class="loading" style="padding:12px">Memuat graph...</div>
+                <img v-else-if="graphBlobUrl" :src="graphBlobUrl" class="prtg-graph-img" />
+                <p v-else class="empty" style="padding:12px">Graph tidak tersedia</p>
+              </div>
             </div>
           </div>
-        </div>
-        <div class="card" v-else>
-          <p class="empty">Tidak ada sensor ditemukan untuk device ini di PRTG</p>
-        </div>
+          <div class="card" v-else>
+            <p class="empty">Tidak ada sensor ditemukan untuk device ini</p>
+          </div>
+        </template>
       </template>
     </div>
   </div>
@@ -474,6 +483,10 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .loading { padding: 24px; text-align: center; color: #94a3b8; }
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-map { padding: 4px 10px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-map-add { padding: 4px 10px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.device-header { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; }
+.device-label { font-size: 14px; font-weight: 700; color: #0f172a; }
+.sensor-count { font-size: 12px; color: #94a3b8; }
 
 .audit-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
 .search-input { flex: 1; min-width: 200px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }

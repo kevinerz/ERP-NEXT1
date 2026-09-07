@@ -500,32 +500,36 @@ export class PrtgService {
   private isEther = (name: string) => /traffic|ether|bandwidth|bps|byte|in\/out|interface/i.test(name);
 
   async getSiteSensors(id_site: number) {
-    if (!(await this.prtg.isConfigured())) return { data: { device_name: null, sensors: [] } };
+    if (!(await this.prtg.isConfigured())) return { data: [] };
 
-    // Prioritas: manual mapping → fallback auto-match by nama site
-    let deviceName: string | null = null;
+    // Ambil SEMUA manual mapping untuk site ini (bisa lebih dari 1 device)
+    const mappings = await this.prisma.integrationPrtgMapping.findMany({ where: { id_site } });
+    const deviceNames: string[] = mappings.map((m) => m.device_name);
 
-    const mapping = await this.prisma.integrationPrtgMapping.findFirst({ where: { id_site } });
-    if (mapping) {
-      deviceName = mapping.device_name;
-    } else {
-      // Fallback: cari nama site lalu cocokkan ke device PRTG by name
+    // Fallback: auto-match by nama site jika belum ada manual mapping sama sekali
+    if (deviceNames.length === 0) {
       const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site }, select: { nama_site: true } });
       if (site) {
         const allSensors = await this.prtg.getAllSensors();
         const namaLower = site.nama_site.toLowerCase();
-        const match = allSensors.find((s) => {
+        const matched = new Set<string>();
+        for (const s of allSensors) {
           const dl = s.device.toLowerCase();
-          return dl.includes(namaLower) || namaLower.includes(dl);
-        });
-        if (match) deviceName = match.device;
+          if (dl.includes(namaLower) || namaLower.includes(dl)) matched.add(s.device);
+        }
+        deviceNames.push(...matched);
       }
     }
 
-    if (!deviceName) return { data: { device_name: null, sensors: [] } };
+    if (deviceNames.length === 0) return { data: [] };
 
-    const sensors = await this.prtg.getSensorsByDevice(deviceName);
-    return { data: { device_name: deviceName, sensors } };
+    const results = await Promise.all(
+      deviceNames.map(async (deviceName) => {
+        const sensors = await this.prtg.getSensorsByDevice(deviceName);
+        return { device_name: deviceName, sensors };
+      }),
+    );
+    return { data: results };
   }
 
   async getSensorChannels(objid: number) {
