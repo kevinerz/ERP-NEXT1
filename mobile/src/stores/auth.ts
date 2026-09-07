@@ -31,10 +31,12 @@ export const useAuthStore = defineStore('auth', () => {
   async function vendorLogin(username: string, pin: string) {
     const { data } = await api.post('/instalasi/vendor-login', { username, pin })
     const payload = data.data ?? data
-    token.value = payload.token
-    user.value = payload.user ?? { nama_lengkap: payload.username ?? username, username: payload.username ?? username }
+    // response: { access_token, vendor: { nama, ... } }
+    token.value = payload.access_token ?? payload.token
+    const v = payload.vendor ?? payload.user ?? {}
+    user.value = { ...v, nama_lengkap: v.nama ?? v.nama_lengkap ?? username, username }
     userType.value = 'vendor'
-    localStorage.setItem('mobile_token', payload.token)
+    localStorage.setItem('mobile_token', token.value!)
     localStorage.setItem('mobile_user', JSON.stringify(user.value))
     localStorage.setItem('mobile_user_type', 'vendor')
   }
