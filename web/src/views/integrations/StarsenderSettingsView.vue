@@ -85,6 +85,38 @@ function useGroups(endpoint: string) {
 const ig = useGroups('/starsender/internal-groups')
 const pg = useGroups('/starsender/pelanggan-groups')
 
+// ── Pelanggan dropdown ───────────────────────────────────────────
+type PelangganOption = { id_pelanggan: number; kode_pelanggan: string; nama_pelanggan: string }
+const pelangganList    = ref<PelangganOption[]>([])
+const pelangganLoading = ref(false)
+const pelangganSearch  = ref('')
+const selectedPelanggan = ref<PelangganOption | null>(null)
+
+const pelangganFiltered = computed(() => {
+  const q = pelangganSearch.value.toLowerCase()
+  return q ? pelangganList.value.filter(p =>
+    p.nama_pelanggan.toLowerCase().includes(q) || p.kode_pelanggan.toLowerCase().includes(q)
+  ) : pelangganList.value
+})
+
+async function loadPelangganDropdown() {
+  if (pelangganList.value.length) return
+  pelangganLoading.value = true
+  try {
+    const r = await api.get('/master/pelanggan/dropdown')
+    pelangganList.value = r.data.data ?? []
+  } catch { } finally { pelangganLoading.value = false }
+}
+
+function selectPelanggan(p: PelangganOption) {
+  selectedPelanggan.value = p
+  pg.addForm.value.nama_group = p.nama_pelanggan
+  pelangganSearch.value = p.nama_pelanggan
+  showPelangganDropdown.value = false
+}
+
+const showPelangganDropdown = ref(false)
+
 // ── Templates ────────────────────────────────────────────────────
 const TEMPLATE_KEYS = [
   { key: 'tiket_baru_pelanggan',     label: 'Tiket Baru → Pelanggan (grup)',   hint: 'Dikirim ke grup WA pelanggan / grup external' },
@@ -98,7 +130,10 @@ const TEMPLATE_KEYS = [
 
 type Templates = Record<string, string>
 const templates    = ref<Templates>({})
-const placeholders = ref<{ tiket: string[]; monitor: string[] }>({ tiket: [], monitor: [] })
+const placeholders = {
+  tiket:   ['{nomor_tiket}','{judul}','{nama_site}','{nama_pelanggan}','{status_ke}','{status_dari}','{label_status}','{emoji}','{root_cause}','{tindakan}','{teknisi}','{root_cause_line}','{tindakan_line}','{teknisi_line}'],
+  monitor: ['{sumber}','{nama}','{nama_site}','{detail}','{site_line}','{detail_line}'],
+}
 const tplLoading   = ref(false)
 const tplSaving    = ref(false)
 const tplMsg       = ref('')
@@ -109,12 +144,16 @@ const editingTpl   = ref<Templates>({})
 const activeTplMeta = computed(() => TEMPLATE_KEYS.find(t => t.key === activeKey.value))
 const isMonitorTpl  = computed(() => activeKey.value.startsWith('monitor'))
 
+const tplError = ref('')
+
 async function loadTemplates() {
-  tplLoading.value = true
+  tplLoading.value = true; tplError.value = ''
   try {
     const r = await api.get('/starsender/templates')
-    templates.value = r.data.data; placeholders.value = r.data.placeholders
+    templates.value = r.data.data
     editingTpl.value = { ...r.data.data }
+  } catch (e: any) {
+    tplError.value = e.response?.data?.message || `Gagal memuat template (${e.response?.status ?? 'network error'})`
   } finally { tplLoading.value = false }
 }
 
@@ -159,7 +198,7 @@ async function load() {
 function switchTab(t: Tab) {
   tab.value = t
   if (t === 'internal-groups') ig.load()
-  if (t === 'pelanggan-groups') pg.load()
+  if (t === 'pelanggan-groups') { pg.load(); loadPelangganDropdown() }
   if (t === 'templates') loadTemplates()
 }
 
@@ -391,9 +430,32 @@ async function test() {
 
           <div class="add-section">
             <h4 class="add-title">Tambah Grup Pelanggan</h4>
-            <div class="add-row">
-              <input v-model="pg.addForm.value.nama_group" type="text" placeholder="Nama grup  (mis: Pelanggan Area Selatan)" />
-              <input v-model="pg.addForm.value.group_id" type="text" placeholder="Group ID  (120363...@g.us)" class="mono" />
+            <div class="add-row pg-add-row">
+              <!-- Pelanggan picker -->
+              <div class="pel-picker">
+                <input
+                  v-model="pelangganSearch"
+                  type="text"
+                  placeholder="Cari & pilih pelanggan..."
+                  class="pel-input"
+                  @focus="showPelangganDropdown = true"
+                  @blur="setTimeout(() => showPelangganDropdown = false, 150)"
+                  @input="showPelangganDropdown = true; selectedPelanggan = null; pg.addForm.value.nama_group = pelangganSearch"
+                  :disabled="pelangganLoading"
+                />
+                <div v-if="showPelangganDropdown && pelangganFiltered.length" class="pel-dropdown">
+                  <div
+                    v-for="p in pelangganFiltered.slice(0,50)"
+                    :key="p.id_pelanggan"
+                    class="pel-option"
+                    @mousedown.prevent="selectPelanggan(p)"
+                  >
+                    <span class="pel-kode">{{ p.kode_pelanggan }}</span>
+                    <span class="pel-nama">{{ p.nama_pelanggan }}</span>
+                  </div>
+                </div>
+              </div>
+              <input v-model="pg.addForm.value.group_id" type="text" placeholder="Group ID WA  (120363...@g.us)" class="mono" />
               <button class="btn-primary" @click="pg.add()" :disabled="pg.adding.value || !pg.addForm.value.group_id || !pg.addForm.value.nama_group">{{ pg.adding.value ? '...' : '+ Tambah' }}</button>
             </div>
             <div v-if="pg.addError.value" class="error-inline">⚠️ {{ pg.addError.value }}</div>
@@ -405,6 +467,7 @@ async function test() {
     <!-- ══ TAB TEMPLATE PESAN ══ -->
     <template v-else-if="tab === 'templates'">
       <div v-if="tplLoading" class="loading-state"><div class="spinner"></div>Memuat template...</div>
+      <div v-else-if="tplError" class="error-box">⚠️ {{ tplError }}<button class="btn-sm" style="margin-left:8px" @click="loadTemplates()">Coba Lagi</button></div>
       <template v-else>
         <div class="tpl-layout">
           <!-- Sidebar -->
@@ -596,6 +659,17 @@ code { background: #f1f5f9; padding: 1px 6px; border-radius: 4px; font-size: 11p
 .add-row input { flex: 1; min-width: 150px; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 12px; outline: none; font-family: inherit; }
 .add-row input.mono { font-family: monospace; }
 .add-row input:focus { border-color: #3b82f6; }
+
+/* Pelanggan picker */
+.pg-add-row { align-items: flex-start; }
+.pel-picker { position: relative; flex: 1; min-width: 200px; }
+.pel-input { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 12px; outline: none; font-family: inherit; }
+.pel-input:focus { border-color: #3b82f6; }
+.pel-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); z-index: 100; max-height: 220px; overflow-y: auto; }
+.pel-option { display: flex; gap: 8px; padding: 8px 12px; cursor: pointer; align-items: baseline; }
+.pel-option:hover { background: #eff6ff; }
+.pel-kode { font-size: 10px; color: #94a3b8; font-family: monospace; flex-shrink: 0; }
+.pel-nama { font-size: 12px; color: #0f172a; font-weight: 500; }
 
 /* Template layout */
 .tpl-layout { display: grid; grid-template-columns: 240px 1fr; gap: 16px; align-items: start; }
