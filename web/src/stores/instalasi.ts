@@ -90,7 +90,7 @@ export const useInstalasiStore = defineStore('instalasi', {
     },
 
     async setVendorPin(id_kontak: number, pin: string) {
-      const { data } = await api.patch(`/instalasi/vendor/${id_kontak}/set-pin`, { pin })
+      const { data } = await api.patch(`/master/kontak-teknisi/${id_kontak}/set-pin`, { pin })
       return data
     },
 
