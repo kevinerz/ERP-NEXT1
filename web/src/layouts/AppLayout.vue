@@ -74,41 +74,71 @@ function fmtTime(d: string) {
   return fmtRelativeTime(d, true)
 }
 
-const allMenu = [
-  { label: 'Dashboard',    icon: '▪', emoji: '📊', to: '/dashboard',     modul: null },
-  { label: 'Email',        icon: '▪', emoji: '📧', to: '/email',          modul: null },
-  { label: 'HRIS',         icon: '▪', emoji: '👤', to: '/hris/karyawan', modul: 'hris' },
-  { label: 'Master Data',  icon: '▪', emoji: '📦', to: '/master',         modul: 'master' },
-  { label: 'Sales',        icon: '▪', emoji: '💼', to: '/sales',          modul: 'sales' },
-  { label: 'CRM',          icon: '▪', emoji: '🤝', to: '/crm/pic',         modul: 'crm' },
-  { label: 'Proyek',       icon: '▪', emoji: '📋', to: '/projects',       modul: 'projects' },
-  { label: 'Operasional',  icon: '▪', emoji: '🔧', to: '/operations',     modul: 'operations' },
-  { label: 'Instalasi',   icon: '▪', emoji: '🔌', to: '/instalasi',      modul: 'instalasi' },
-  { label: 'Work Order',   icon: '▪', emoji: '🗂️', to: '/public-wo',     modul: 'public-wo' },
-  { label: 'Aset',         icon: '▪', emoji: '🖥️', to: '/assets',        modul: 'assets' },
-  { label: 'SIM Topup',   icon: '▪', emoji: '📱', to: '/assets/sim-topup', modul: 'assets' },
-  { label: 'Kontrak',      icon: '▪', emoji: '📄', to: '/contracts',      modul: 'contracts' },
-  { label: 'Finance',      icon: '▪', emoji: '💰', to: '/finance',        modul: 'finance' },
-  { label: 'Laporan',      icon: '▪', emoji: '📈', to: '/reports',        modul: 'reports' },
-  { label: 'Laporan SLA',  icon: '▪', emoji: '📉', to: '/reports/sla',    modul: 'reports' },
+const menuGroups = [
+  {
+    label: 'UMUM', accent: '#3b82f6',
+    items: [
+      { label: 'Dashboard',   emoji: '📊', to: '/dashboard',      modul: null },
+      { label: 'Email',       emoji: '📧', to: '/email',           modul: null },
+    ],
+  },
+  {
+    label: 'SDM', accent: '#8b5cf6',
+    items: [
+      { label: 'HRIS',        emoji: '👥', to: '/hris/karyawan',  modul: 'hris' },
+      { label: 'Master Data', emoji: '🗄️', to: '/master',          modul: 'master' },
+    ],
+  },
+  {
+    label: 'KOMERSIAL', accent: '#10b981',
+    items: [
+      { label: 'Sales',       emoji: '💼', to: '/sales',           modul: 'sales' },
+      { label: 'CRM',         emoji: '🤝', to: '/crm/pic',         modul: 'crm' },
+      { label: 'Proyek',      emoji: '📐', to: '/projects',        modul: 'projects' },
+      { label: 'Kontrak',     emoji: '📄', to: '/contracts',       modul: 'contracts' },
+    ],
+  },
+  {
+    label: 'TIKET', accent: '#f97316',
+    items: [
+      { label: 'Gangguan',    emoji: '⚡', to: '/operations',      modul: 'operations' },
+      { label: 'Pemasangan',  emoji: '🛠️', to: '/instalasi',       modul: 'instalasi' },
+      { label: 'Work Order',  emoji: '🗂️', to: '/public-wo',       modul: 'public-wo' },
+    ],
+  },
+  {
+    label: 'INFRASTRUKTUR', accent: '#0ea5e9',
+    items: [
+      { label: 'Aset',        emoji: '🖥️', to: '/assets',          modul: 'assets' },
+      { label: 'SIM Topup',   emoji: '📱', to: '/assets/sim-topup', modul: 'assets' },
+    ],
+  },
+  {
+    label: 'KEUANGAN', accent: '#eab308',
+    items: [
+      { label: 'Finance',     emoji: '💰', to: '/finance',          modul: 'finance' },
+      { label: 'Laporan',     emoji: '📈', to: '/reports',          modul: 'reports' },
+      { label: 'Laporan SLA', emoji: '📉', to: '/reports/sla',      modul: 'reports' },
+    ],
+  },
 ]
 
 const adminMenu = [
-  { label: 'Users',        emoji: '⚙️', to: '/admin/users'  },
-  { label: 'Portal Akun', emoji: '🌐', to: '/admin/portal-users' },
-  { label: 'Activity Log', emoji: '📝', to: '/admin/logs'   },
-  { label: 'Email Log',    emoji: '📤', to: '/admin/email-log' },
-  { label: 'PRTG',         emoji: '📡', to: '/integrations/prtg' },
-  { label: 'Uptime Kuma',  emoji: '🟢', to: '/integrations/uptime-kuma' },
-  { label: 'StarSender WA', emoji: '💬', to: '/integrations/starsender' },
-  { label: 'Pengaturan',   emoji: '🔩', to: '/settings'     },
+  { label: 'Users',          emoji: '👤', to: '/admin/users' },
+  { label: 'Portal Akun',    emoji: '🌐', to: '/admin/portal-users' },
+  { label: 'Activity Log',   emoji: '📝', to: '/admin/logs' },
+  { label: 'Email Log',      emoji: '📤', to: '/admin/email-log' },
+  { label: 'PRTG',           emoji: '📡', to: '/integrations/prtg' },
+  { label: 'Uptime Kuma',    emoji: '🟢', to: '/integrations/uptime-kuma' },
+  { label: 'StarSender WA',  emoji: '💬', to: '/integrations/starsender' },
+  { label: 'Pengaturan',     emoji: '⚙️', to: '/settings' },
 ]
 
-const menu = computed(() =>
-  allMenu.filter(m => {
-    if (!m.modul) return true
-    return auth.canAccess(m.modul)
-  })
+const visibleGroups = computed(() =>
+  menuGroups.map(g => ({
+    ...g,
+    items: g.items.filter(m => !m.modul || auth.canAccess(m.modul)),
+  })).filter(g => g.items.length > 0)
 )
 
 const PAGE_TITLES: Record<string, string> = {
@@ -134,10 +164,10 @@ const PAGE_TITLES: Record<string, string> = {
   "sales-quotation-detail": "Sales — Detail Quotation",
   "proyek-list":          "Proyek",
   "proyek-detail":        "Proyek — Detail",
-  "tiket-list":           "Operasional — Tiket",
-  "tiket-detail":         "Operasional — Detail Tiket",
-  "instalasi-list":       "Instalasi",
-  "instalasi-detail":     "Instalasi — Detail",
+  "tiket-list":           "Gangguan — Tiket",
+  "tiket-detail":         "Gangguan — Detail Tiket",
+  "instalasi-list":       "Pemasangan",
+  "instalasi-detail":     "Pemasangan — Detail",
   "wo-list":              "Work Order",
   "wo-detail":            "Work Order — Detail",
   "aset-list":            "Aset",
@@ -194,23 +224,34 @@ const initials = computed(() => {
 
       <!-- Navigation -->
       <nav class="sidebar-nav">
-        <div class="nav-section-label" v-if="sidebarOpen || mobileNavOpen">MENU</div>
-        <RouterLink
-          v-for="item in menu" :key="item.to" :to="item.to"
-          class="nav-item" active-class="active"
-        >
-          <span class="nav-emoji">{{ item.emoji }}</span>
-          <Transition name="fade-text">
-            <span v-if="sidebarOpen || mobileNavOpen" class="nav-label">{{ item.label }}</span>
-          </Transition>
-        </RouterLink>
+        <template v-for="group in visibleGroups" :key="group.label">
+          <div class="nav-group-label" v-if="sidebarOpen || mobileNavOpen">
+            <span class="group-dot" :style="{ background: group.accent }"></span>
+            {{ group.label }}
+          </div>
+          <div v-else class="nav-group-divider-mini"></div>
+          <RouterLink
+            v-for="item in group.items" :key="item.to" :to="item.to"
+            class="nav-item" active-class="active"
+            :style="{ '--group-accent': group.accent }"
+          >
+            <span class="nav-emoji">{{ item.emoji }}</span>
+            <Transition name="fade-text">
+              <span v-if="sidebarOpen || mobileNavOpen" class="nav-label">{{ item.label }}</span>
+            </Transition>
+          </RouterLink>
+        </template>
 
         <template v-if="auth.hasRole('Admin') || auth.hasRole('Director') || auth.hasRole('Manager_Ops')">
-          <div class="nav-divider"></div>
-          <div class="nav-section-label" v-if="sidebarOpen || mobileNavOpen">ADMIN</div>
+          <div class="nav-group-label admin-group" v-if="sidebarOpen || mobileNavOpen">
+            <span class="group-dot" style="background:#ef4444"></span>
+            ADMIN
+          </div>
+          <div v-else class="nav-group-divider-mini"></div>
           <RouterLink
             v-for="item in adminMenu" :key="item.to" :to="item.to"
             class="nav-item" active-class="active"
+            style="--group-accent:#ef4444"
           >
             <span class="nav-emoji">{{ item.emoji }}</span>
             <Transition name="fade-text">
@@ -363,8 +404,8 @@ const initials = computed(() => {
 
 /* ── Sidebar ── */
 .sidebar {
-  width: 220px;
-  background: #0f172a;
+  width: 232px;
+  background: #0b1120;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -373,6 +414,7 @@ const initials = computed(() => {
   z-index: 50;
   transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
+  border-right: 1px solid rgba(255,255,255,0.04);
 }
 .sidebar.collapsed { width: 60px; }
 
@@ -381,8 +423,8 @@ const initials = computed(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 18px 14px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
+  padding: 16px 14px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
   flex-shrink: 0;
 }
 .brand-logo {
@@ -391,12 +433,10 @@ const initials = computed(() => {
   border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 13px; color: #fff;
-  box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+  box-shadow: 0 0 0 1px rgba(59,130,246,0.3), 0 4px 12px rgba(59,130,246,0.3);
   overflow: hidden;
 }
-.brand-logo-img {
-  width: 100%; height: 100%; object-fit: cover;
-}
+.brand-logo-img { width: 100%; height: 100%; object-fit: cover; }
 .brand-name {
   font-weight: 700; font-size: 14px; color: #f1f5f9;
   white-space: nowrap; letter-spacing: 0.3px;
@@ -405,49 +445,82 @@ const initials = computed(() => {
 /* Nav */
 .sidebar-nav {
   flex: 1;
-  padding: 10px 8px;
+  padding: 8px 8px 4px;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
-.sidebar-nav::-webkit-scrollbar { width: 3px; }
+.sidebar-nav::-webkit-scrollbar { width: 2px; }
 .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
-.sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
 
-.nav-section-label {
-  font-size: 9px; font-weight: 700; letter-spacing: 1px;
-  color: #475569; padding: 8px 10px 4px;
+/* Group label */
+.nav-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  color: #3d4f6a;
+  padding: 12px 8px 4px;
   white-space: nowrap;
+  text-transform: uppercase;
 }
-.nav-divider {
-  height: 1px; background: rgba(255,255,255,0.06);
-  margin: 6px 4px;
+.nav-group-label.admin-group { margin-top: 4px; }
+.group-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.nav-group-divider-mini {
+  height: 1px;
+  background: rgba(255,255,255,0.05);
+  margin: 6px 8px;
 }
 
+/* Nav item */
 .nav-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 10px;
-  border-radius: 8px;
-  color: #94a3b8;
+  padding: 7.5px 10px;
+  border-radius: 7px;
+  color: #64748b;
   text-decoration: none;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.13s, color 0.13s;
   white-space: nowrap;
   overflow: hidden;
+  position: relative;
+  margin-bottom: 1px;
 }
-.nav-item:hover { background: rgba(255,255,255,0.07); color: #e2e8f0; }
-.nav-item.active { background: rgba(59,130,246,0.18); color: #60a5fa; }
-.nav-item.active .nav-emoji { filter: none; }
+.nav-item:hover {
+  background: rgba(255,255,255,0.06);
+  color: #cbd5e1;
+}
+.nav-item.active {
+  background: rgba(255,255,255,0.07);
+  color: #f1f5f9;
+  font-weight: 600;
+}
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 20%; bottom: 20%;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--group-accent, #3b82f6);
+}
 
 .nav-emoji {
-  font-size: 16px;
+  font-size: 15px;
   flex-shrink: 0;
-  width: 22px;
+  width: 20px;
   text-align: center;
   line-height: 1;
 }
@@ -496,7 +569,7 @@ const initials = computed(() => {
 .main-wrapper {
   flex: 1;
   min-width: 0;
-  margin-left: 220px;
+  margin-left: 232px;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
