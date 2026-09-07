@@ -502,16 +502,30 @@ export class PrtgService {
   async getSiteSensors(id_site: number) {
     if (!(await this.prtg.isConfigured())) return { data: { device_name: null, sensors: [] } };
 
-    const mapping = await this.prisma.integrationPrtgMapping.findFirst({ where: { id_site } });
-    if (!mapping) return { data: { device_name: null, sensors: [] } };
+    // Prioritas: manual mapping → fallback auto-match by nama site
+    let deviceName: string | null = null;
 
-    const sensors = await this.prtg.getSensorsByDevice(mapping.device_name);
-    return {
-      data: {
-        device_name: mapping.device_name,
-        sensors,   // semua sensor apa adanya dari PRTG, tidak difilter
-      },
-    };
+    const mapping = await this.prisma.integrationPrtgMapping.findFirst({ where: { id_site } });
+    if (mapping) {
+      deviceName = mapping.device_name;
+    } else {
+      // Fallback: cari nama site lalu cocokkan ke device PRTG by name
+      const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site }, select: { nama_site: true } });
+      if (site) {
+        const allSensors = await this.prtg.getAllSensors();
+        const namaLower = site.nama_site.toLowerCase();
+        const match = allSensors.find((s) => {
+          const dl = s.device.toLowerCase();
+          return dl.includes(namaLower) || namaLower.includes(dl);
+        });
+        if (match) deviceName = match.device;
+      }
+    }
+
+    if (!deviceName) return { data: { device_name: null, sensors: [] } };
+
+    const sensors = await this.prtg.getSensorsByDevice(deviceName);
+    return { data: { device_name: deviceName, sensors } };
   }
 
   async getSensorChannels(objid: number) {

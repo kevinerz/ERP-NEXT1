@@ -313,7 +313,7 @@ export class ProjectsService {
         layanan: { select: { kode_layanan: true } },
       },
       orderBy: { nama_site: 'asc' },
-      take: 50,
+      take: 2000,
     });
     return { data };
   }
