@@ -179,11 +179,16 @@ const router = createRouter({
           name: 'sales-quotation-detail',
           component: () => import('@/views/sales/QuotationDetailView.vue'),
         },
-        // Operasional
+        // Operasional — static routes BEFORE dynamic :id
         {
           path: 'operations',
           name: 'tiket-list',
           component: () => import('@/views/operations/TiketListView.vue'),
+        },
+        {
+          path: 'operations/noc',
+          name: 'noc-board',
+          component: () => import('@/views/operations/NocBoardView.vue'),
         },
         {
           path: 'operations/:id',
@@ -277,11 +282,6 @@ const router = createRouter({
         },
         // Finance
         {
-          path: 'operations/noc',
-          name: 'noc-board',
-          component: () => import('@/views/operations/NocBoardView.vue'),
-        },
-        {
           path: 'finance',
           name: 'finance-dashboard',
           component: () => import('@/views/finance/FinanceDashboardView.vue'),
@@ -296,16 +296,11 @@ const router = createRouter({
           name: 'invoice-detail',
           component: () => import('@/views/finance/InvoiceDetailView.vue'),
         },
-        // Aset
+        // Aset — static sub-routes BEFORE dynamic :id
         {
           path: 'assets',
           name: 'aset-list',
           component: () => import('@/views/aset/AsetListView.vue'),
-        },
-        {
-          path: 'assets/:id',
-          name: 'aset-detail',
-          component: () => import('@/views/aset/AsetDetailView.vue'),
         },
         {
           path: 'assets/sim-topup',
@@ -331,6 +326,11 @@ const router = createRouter({
           path: 'assets/pengajuan/:id',
           name: 'pengajuan-aset-detail',
           component: () => import('@/views/aset/PengajuanAsetDetailView.vue'),
+        },
+        {
+          path: 'assets/:id',
+          name: 'aset-detail',
+          component: () => import('@/views/aset/AsetDetailView.vue'),
         },
         // Email
         {

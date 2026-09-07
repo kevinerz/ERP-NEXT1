@@ -31,6 +31,8 @@ const asetLoading = ref(true)
 const nocMetrics = ref<any>(null)
 const nocLoading = ref(true)
 
+const loadError = ref('')
+
 const BULAN_LIST = [
   'Januari','Februari','Maret','April','Mei','Juni',
   'Juli','Agustus','September','Oktober','November','Desember',
@@ -53,7 +55,7 @@ async function loadNocMetrics() {
     nocMetrics.value = (await api.get('/operations/metrics', {
       params: { bulan: filterBulan.value, tahun: filterTahun.value }
     })).data.data
-  } catch {}
+  } catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
   finally { nocLoading.value = false }
 }
 
@@ -67,12 +69,14 @@ function fmtMenit(m: number | null) {
 
 async function loadKpi() {
   kpiLoading.value = true
-  try { kpi.value = (await api.get('/reports/kpi')).data.data } catch {}
+  try { kpi.value = (await api.get('/reports/kpi')).data.data }
+  catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
   finally { kpiLoading.value = false }
 }
 async function loadRevenue() {
   revenueLoading.value = true
-  try { revenue.value = (await api.get('/reports/revenue')).data.data } catch {}
+  try { revenue.value = (await api.get('/reports/revenue')).data.data }
+  catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
   finally { revenueLoading.value = false }
 }
 async function loadTickets() {
@@ -81,17 +85,19 @@ async function loadTickets() {
     ticketReport.value = (await api.get('/reports/tickets', {
       params: { bulan: filterBulan.value, tahun: filterTahun.value }
     })).data.data
-  } catch {}
+  } catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
   finally { ticketLoading.value = false }
 }
 async function loadProyek() {
   proyekLoading.value = true
-  try { proyekReport.value = (await api.get('/reports/projects')).data.data } catch {}
+  try { proyekReport.value = (await api.get('/reports/projects')).data.data }
+  catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
   finally { proyekLoading.value = false }
 }
 async function loadAset() {
   asetLoading.value = true
-  try { asetReport.value = (await api.get('/reports/assets')).data.data } catch {}
+  try { asetReport.value = (await api.get('/reports/assets')).data.data }
+  catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
   finally { asetLoading.value = false }
 }
 
@@ -192,6 +198,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
 
 <template>
   <div class="page">
+    <div v-if="loadError" class="error-banner">⚠ {{ loadError }}</div>
     <div class="page-header">
       <div>
         <h2>Laporan</h2>
@@ -428,6 +435,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
 
 <style scoped>
 .page { padding: 28px 32px; max-width: 1200px; }
+.error-banner { margin-bottom: 20px; padding: 12px 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; font-size: 14px; font-weight: 500; }
 .page-header { margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }

@@ -9,6 +9,7 @@ const router = useRouter()
 const tickets = ref<any[]>([])
 const meta    = ref({ total: 0, page: 1, limit: 20, total_pages: 1 })
 const loading = ref(true)
+const loadError = ref('')
 const status  = ref((route.query.status as string) || '')
 const id_site = ref((route.query.id_site as string) || '')
 const page    = ref(1)
@@ -19,6 +20,7 @@ watch([status, id_site], () => { page.value = 1; fetchTickets() })
 
 async function fetchTickets() {
   loading.value = true
+  loadError.value = ''
   try {
     const params: any = { page: page.value, limit: 20 }
     if (status.value)  params.status  = status.value
@@ -26,6 +28,8 @@ async function fetchTickets() {
     const res = await portalApi.get('/portal/tickets', { params })
     tickets.value = res.data.data
     meta.value    = res.data.meta
+  } catch (e: any) {
+    loadError.value = e?.response?.data?.message || 'Gagal memuat tiket. Periksa koneksi Anda.'
   } finally { loading.value = false }
 }
 
@@ -80,6 +84,7 @@ function fmtDatetime(d: string | null) {
       </div>
     </div>
 
+    <div v-if="loadError" class="error-banner">⚠ {{ loadError }}</div>
     <div v-if="loading" class="loading">Memuat tiket...</div>
 
     <div class="ticket-list" v-else>
@@ -156,6 +161,7 @@ function fmtDatetime(d: string | null) {
 <style scoped>
 .page        { padding: 28px 32px; max-width: 900px; }
 .page-header h2 { margin: 0 0 20px; font-size: 22px; color: #0f172a; font-weight: 800; }
+.error-banner { margin-bottom: 16px; padding: 12px 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; font-size: 14px; font-weight: 500; }
 .loading { padding: 60px; text-align: center; color: #94a3b8; }
 .empty   { padding: 60px; text-align: center; color: #94a3b8; }
 

@@ -9,6 +9,7 @@ const router = useRouter()
 
 const sites   = ref<any[]>([])
 const loading = ref(true)
+const loadError = ref('')
 
 // Sensor expand state
 const expandedSite   = ref<number | null>(null)
@@ -21,6 +22,8 @@ onMounted(async () => {
   try {
     const res = await portalApi.get('/portal/sites')
     sites.value = res.data.data
+  } catch (e: any) {
+    loadError.value = e?.response?.data?.message || 'Gagal memuat data site. Periksa koneksi Anda.'
   } finally { loading.value = false }
 })
 
@@ -122,6 +125,7 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
       </div>
     </div>
 
+    <div v-if="loadError" class="error-banner">⚠ {{ loadError }}</div>
     <div v-if="loading" class="loading">Memuat data site...</div>
 
     <div class="site-grid" v-else>
@@ -247,6 +251,7 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
 .page-header { margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; font-weight: 800; }
 .sub         { margin: 0; font-size: 13px; color: #64748b; }
+.error-banner { margin: 16px 0; padding: 12px 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; font-size: 14px; font-weight: 500; }
 .loading     { padding: 60px; text-align: center; color: #94a3b8; }
 .empty       { padding: 60px; text-align: center; color: #94a3b8; }
 

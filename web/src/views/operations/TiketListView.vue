@@ -180,7 +180,7 @@ function slaInfo(t: any): { label: string; cls: string } {
 
     <!-- Modal Buat Tiket -->
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
-      <div class="modal">
+      <div class="modal" v-focus-trap>
         <h3>Buat Tiket Baru</h3>
         <div class="form-grid">
           <div class="field full">

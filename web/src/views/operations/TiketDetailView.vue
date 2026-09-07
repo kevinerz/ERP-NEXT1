@@ -352,7 +352,7 @@ async function hapusTiket() {
   if (!confirm(`Hapus tiket ${ops.current?.nomor_tiket}? Tindakan ini tidak bisa dibatalkan.`)) return
   try {
     await api.delete(`/operations/${id}`)
-    router.push('/operasional')
+    router.push('/operations')
   } catch (e: any) { alert(e?.response?.data?.message || 'Gagal menghapus tiket') }
 }
 
@@ -797,7 +797,7 @@ function journeyStep(t: any) {
 
       <!-- ── MODAL EDIT ──────────────────────────────────────── -->
       <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-        <div class="modal">
+        <div class="modal" v-focus-trap>
           <h3>Edit Tiket</h3>
           <div class="form-grid">
             <div class="field full"><label>Judul Tiket</label><input v-model="editForm.judul_tiket" /></div>
@@ -832,7 +832,7 @@ function journeyStep(t: any) {
 
       <!-- ── MODAL LOG ───────────────────────────────────────── -->
       <div v-if="showLogModal" class="modal-overlay" @click.self="showLogModal = false">
-        <div class="modal">
+        <div class="modal" v-focus-trap>
           <h3>Tambah Log</h3>
           <div class="form-grid">
             <div class="field full">
@@ -853,7 +853,7 @@ function journeyStep(t: any) {
 
       <!-- ── MODAL SURAT TUGAS ────────────────────────────────── -->
       <div v-if="showWoModal" class="modal-overlay" @click.self="showWoModal = false">
-        <div class="modal">
+        <div class="modal" v-focus-trap>
           <h3>Buat Surat Tugas</h3>
           <div class="form-grid">
             <div class="field">

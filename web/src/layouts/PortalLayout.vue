@@ -67,5 +67,20 @@ function logout() {
 .nav-item:hover { background: #f1f5f9; }
 .nav-item.active  { background: #eff6ff; color: #1d4ed8; font-weight: 700; }
 .nav-icon     { font-size: 16px; }
-.portal-main  { flex: 1; overflow-y: auto; }
+.portal-main  { flex: 1; overflow-y: auto; min-width: 0; }
+
+@media (max-width: 768px) {
+  .topbar { padding: 0 16px; }
+  .brand-sub { display: none; }
+  .user-detail { display: none; }
+  .portal-body { flex-direction: column; }
+  .sidebar {
+    width: 100%; flex-direction: row; flex-wrap: nowrap;
+    overflow-x: auto; padding: 8px 12px; gap: 4px;
+    border-right: none; border-bottom: 1px solid #e2e8f0;
+    position: sticky; top: 56px; z-index: 9; background: #fff;
+  }
+  .nav-item { padding: 8px 14px; white-space: nowrap; flex-shrink: 0; }
+  .portal-main { padding: 0; }
+}
 </style>

@@ -45,11 +45,13 @@ const filterTahun = ref(new Date().getFullYear())
 const modeTahun = ref(false)
 const loading = ref(false)
 const data = ref<any>(null)
+const loadError = ref('')
 
 onMounted(() => loadData())
 
 async function loadData() {
   loading.value = true
+  loadError.value = ''
   try {
     const params: any = { tahun: filterTahun.value }
     if (modeTahun.value) {
@@ -58,8 +60,8 @@ async function loadData() {
       params.bulan = filterBulan.value
     }
     data.value = (await api.get('/reports/sla', { params })).data.data
-  } catch (e) {
-    console.error(e)
+  } catch (e: any) {
+    loadError.value = e?.response?.data?.message || 'Gagal memuat laporan SLA. Periksa koneksi dan coba lagi.'
   } finally {
     loading.value = false
   }
@@ -188,7 +190,7 @@ function exportCsv() {
 
     <!-- Laporan Bulanan Modal -->
     <div v-if="showLaporanModal" class="modal-overlay" @click.self="showLaporanModal = false">
-      <div class="modal-box">
+      <div class="modal-box" v-focus-trap>
         <div class="modal-header">
           <h3>Buat Laporan Bulanan</h3>
           <button class="modal-close" @click="showLaporanModal = false">✕</button>
@@ -226,6 +228,7 @@ function exportCsv() {
       </div>
     </div>
 
+    <div v-if="loadError" class="error-banner">⚠ {{ loadError }}</div>
     <div v-if="loading" class="loading-state">Memuat laporan SLA...</div>
 
     <template v-else-if="data">
@@ -532,6 +535,7 @@ function exportCsv() {
 .pct-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
 
 /* States */
+.error-banner { margin-bottom: 16px; padding: 12px 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; font-size: 14px; font-weight: 500; }
 .loading-state { padding: 60px; text-align: center; color: #94a3b8; font-size: 15px; }
 .empty-state { padding: 60px; text-align: center; color: #94a3b8; font-size: 14px; }
 .empty-state strong { color: #475569; }

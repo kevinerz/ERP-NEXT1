@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
 
 const router = useRouter()
 const sales = useSalesStore()
+const loadError = ref('')
 
 const TAHAPAN_COLOR: Record<string, string> = {
   Prospecting: '#3b82f6', Presentasi: '#8b5cf6', Survey: '#f59e0b',
@@ -17,11 +18,15 @@ function fmt(n: number) {
   return String(n)
 }
 
-onMounted(() => sales.fetchPipeline())
+onMounted(async () => {
+  try { await sales.fetchPipeline() }
+  catch (e: any) { loadError.value = e?.response?.data?.message || 'Gagal memuat data pipeline' }
+})
 </script>
 
 <template>
   <div class="page">
+    <div v-if="loadError" class="error-banner">⚠ {{ loadError }}</div>
     <div class="page-header">
       <div>
         <h2>Sales & CRM</h2>
@@ -101,4 +106,5 @@ onMounted(() => sales.fetchPipeline())
 .menu-card:hover { box-shadow: 0 4px 16px rgba(30,64,175,0.15); transform: translateY(-2px); }
 .menu-icon { font-size: 28px; }
 .menu-label { font-size: 14px; font-weight: 700; color: #0f172a; }
+.error-banner { margin-bottom: 20px; padding: 12px 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; font-size: 14px; font-weight: 500; }
 </style>
