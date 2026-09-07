@@ -1,4 +1,9 @@
-import { IsString, IsBoolean, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsBoolean, IsOptional, MaxLength, MinLength } from 'class-validator';
+
+export class VendorLoginDto {
+  @IsString() username: string;
+  @IsString() @MinLength(4) pin: string;
+}
 
 export class CreateKontakTeknisiDto {
   @IsString()

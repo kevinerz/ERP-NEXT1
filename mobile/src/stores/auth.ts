@@ -29,7 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function vendorLogin(username: string, pin: string) {
-    const { data } = await api.post('/instalasi/vendor-login', { username, pin })
+    const { data } = await api.post('/master/kontak-teknisi/vendor-login', { username, pin })
     const payload = data.data ?? data
     // response: { access_token, vendor: { nama, ... } }
     token.value = payload.access_token ?? payload.token

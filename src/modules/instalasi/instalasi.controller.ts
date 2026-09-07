@@ -4,14 +4,12 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { InstalasiService } from './instalasi.service';
 import {
   CreateInstalasiDto,
   UpdateInstalasiDto,
   AddInstalasiLogDto,
   SaveBASTDto,
-  VendorLoginDto,
 } from './dto/instalasi.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -19,15 +17,6 @@ import { Roles } from '../../common/decorators/roles.decorator';
 @Controller('instalasi')
 export class InstalasiController {
   constructor(private readonly instalasiService: InstalasiService) {}
-
-  // POST /api/instalasi/vendor-login — login vendor dengan username + PIN
-  @SkipThrottle()
-  @Throttle({ default: { ttl: 60000, limit: 5 } })
-  @Public()
-  @Post('vendor-login')
-  vendorLogin(@Body() dto: VendorLoginDto) {
-    return this.instalasiService.vendorLogin(dto);
-  }
 
   // GET /api/instalasi — list semua order (admin/internal)
   @Get()
@@ -97,16 +86,6 @@ export class InstalasiController {
   @Delete('foto/:id_foto')
   deletePhoto(@Param('id_foto', ParseIntPipe) id_foto: number) {
     return this.instalasiService.deletePhoto(id_foto);
-  }
-
-  // PATCH /api/instalasi/vendor/:id/set-pin — set PIN login vendor (Admin)
-  @Roles('Admin')
-  @Patch('vendor/:id/set-pin')
-  setVendorPin(
-    @Param('id', ParseIntPipe) id: number,
-    @Body('pin') pin: string,
-  ) {
-    return this.instalasiService.setVendorPin(id, pin);
   }
 
   // DELETE /api/instalasi/:id

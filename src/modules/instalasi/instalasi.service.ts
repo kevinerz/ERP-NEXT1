@@ -2,11 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  UnauthorizedException,
 } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DocumentNumberService } from '../../common/document-number/document-number.service';
 import {
@@ -14,7 +10,6 @@ import {
   UpdateInstalasiDto,
   AddInstalasiLogDto,
   SaveBASTDto,
-  VendorLoginDto,
 } from './dto/instalasi.dto';
 
 const INSTALASI_INCLUDE = {
@@ -42,34 +37,7 @@ export class InstalasiService {
   constructor(
     private prisma: PrismaService,
     private docNumber: DocumentNumberService,
-    private jwt: JwtService,
-    private config: ConfigService,
   ) {}
-
-  // ── VENDOR AUTH ──────────────────────────────────────────────
-
-  async vendorLogin(dto: VendorLoginDto) {
-    const vendor = await this.prisma.masterKontakTeknisi.findUnique({
-      where: { username: dto.username },
-    });
-
-    if (!vendor || !vendor.pin_hash || !vendor.is_aktif) {
-      throw new UnauthorizedException('Username atau PIN salah');
-    }
-
-    const match = await bcrypt.compare(dto.pin, vendor.pin_hash);
-    if (!match) throw new UnauthorizedException('Username atau PIN salah');
-
-    const token = await this.jwt.signAsync(
-      { sub: vendor.id_kontak, username: vendor.username, type: 'vendor_teknisi' },
-      { secret: this.config.getOrThrow('JWT_SECRET'), expiresIn: '30d' },
-    );
-
-    return {
-      access_token: token,
-      vendor: { id_kontak: vendor.id_kontak, nama: vendor.nama, no_hp: vendor.no_hp },
-    };
-  }
 
   // ── CRUD ORDER ───────────────────────────────────────────────
 
@@ -298,15 +266,4 @@ export class InstalasiService {
     return { message: `Order ${row.nomor_instalasi} dihapus` };
   }
 
-  // ── VENDOR SET PIN ────────────────────────────────────────────
-
-  async setVendorPin(id_kontak: number, pin: string) {
-    if (pin.length < 4 || pin.length > 10) throw new BadRequestException('PIN harus 4–10 karakter');
-    const pin_hash = await bcrypt.hash(pin, 10);
-    await this.prisma.masterKontakTeknisi.update({
-      where: { id_kontak },
-      data: { pin_hash },
-    });
-    return { message: 'PIN berhasil diset' };
-  }
 }

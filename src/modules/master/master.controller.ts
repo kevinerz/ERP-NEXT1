@@ -2,6 +2,7 @@ import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, ParseIntPipe, ForbiddenException, Req,
 } from '@nestjs/common';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { MasterService } from './master.service';
 import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
@@ -12,7 +13,9 @@ import {
   CreatePerangkatDto, UpdatePerangkatDto,
   CreatePicDto, UpdatePicDto,
 } from './dto/site-detail.dto';
-import { CreateKontakTeknisiDto, UpdateKontakTeknisiDto } from './dto/kontak-teknisi.dto';
+import { CreateKontakTeknisiDto, UpdateKontakTeknisiDto, VendorLoginDto } from './dto/kontak-teknisi.dto';
+import { Public } from '../../common/decorators/public.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('master')
 export class MasterController {
@@ -220,6 +223,23 @@ export class MasterController {
   removeGudang(@Param('id', ParseIntPipe) id: number) { return this.masterService.removeGudang(id); }
 
   // ─── KONTAK TEKNISI / PEMASANG ───────────────────────────────
+
+  @SkipThrottle()
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @Public()
+  @Post('kontak-teknisi/vendor-login')
+  vendorLogin(@Body() dto: VendorLoginDto) {
+    return this.masterService.vendorLogin(dto);
+  }
+
+  @Roles('Admin')
+  @Patch('kontak-teknisi/:id/set-pin')
+  setVendorPin(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('pin') pin: string,
+  ) {
+    return this.masterService.setVendorPin(id, pin);
+  }
 
   @Get('kontak-teknisi')
   findAllKontakTeknisi(@Query() q: any) { return this.masterService.findAllKontakTeknisi(q); }
