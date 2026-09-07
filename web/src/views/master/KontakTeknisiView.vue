@@ -158,6 +158,31 @@ async function hapusKontak(k: KontakTeknisi) {
     alert(e.response?.data?.message || 'Gagal menghapus kontak')
   }
 }
+
+// ── SET PIN VENDOR ───────────────────────────────────────────────
+const showPinModal = ref(false)
+const pinTarget = ref<KontakTeknisi | null>(null)
+const pinValue = ref('')
+const pinSubmitting = ref(false)
+const pinError = ref('')
+
+function openSetPin(k: KontakTeknisi) {
+  pinTarget.value = k
+  pinValue.value = ''
+  pinError.value = ''
+  showPinModal.value = true
+}
+
+async function submitPin() {
+  if (!pinValue.value || pinValue.value.length < 4) { pinError.value = 'PIN minimal 4 karakter'; return }
+  pinSubmitting.value = true; pinError.value = ''
+  try {
+    await api.patch(`/master/kontak-teknisi/${pinTarget.value!.id_kontak}/set-pin`, { pin: pinValue.value })
+    showPinModal.value = false
+    flash('PIN berhasil diset untuk ' + pinTarget.value!.nama)
+  } catch (e: any) { pinError.value = e.response?.data?.message || 'Gagal set PIN' }
+  finally { pinSubmitting.value = false }
+}
 </script>
 
 <template>
@@ -237,6 +262,7 @@ async function hapusKontak(k: KontakTeknisi) {
             </td>
             <td class="actions">
               <button class="btn-edit" @click="openEdit(k)">Edit</button>
+              <button class="btn-pin" @click="openSetPin(k)">🔑 Set PIN</button>
               <button
                 :class="k.is_aktif ? 'btn-nonaktif' : 'btn-aktif'"
                 @click="handleToggle(k)"
@@ -254,6 +280,25 @@ async function hapusKontak(k: KontakTeknisi) {
       <BasePagination :page="page" :total-pages="meta.total_pages" @change="goPage" />
       <div class="table-footer" v-if="meta.total">
         Total: {{ meta.total }} kontak
+      </div>
+    </div>
+
+    <!-- Modal Set PIN -->
+    <div v-if="showPinModal" class="modal-overlay" @click.self="showPinModal = false">
+      <div class="modal" style="width:360px">
+        <h3>Set PIN Login Vendor</h3>
+        <p class="pin-info">PIN untuk <b>{{ pinTarget?.nama }}</b> agar bisa login di aplikasi mobile vendor.</p>
+        <div class="field full">
+          <label>PIN (4–10 digit)</label>
+          <input type="password" v-model="pinValue" placeholder="••••" maxlength="10" @keyup.enter="submitPin" />
+        </div>
+        <p v-if="pinError" class="form-error">{{ pinError }}</p>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showPinModal = false">Batal</button>
+          <button class="btn-submit" @click="submitPin" :disabled="pinSubmitting">
+            {{ pinSubmitting ? 'Menyimpan...' : 'Set PIN' }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -373,7 +418,9 @@ td { padding: 13px 16px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .btn-edit { padding: 5px 12px; background: #eff6ff; color: #1d4ed8; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-nonaktif { padding: 5px 12px; background: #fff7ed; color: #c2410c; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-aktif { padding: 5px 12px; background: #f0fdf4; color: #15803d; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn-pin { padding: 5px 12px; background: #fefce8; color: #854d0e; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-hapus { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.8rem; }
+.pin-info { font-size: 13px; color: #374151; margin: 0 0 14px; }
 
 .btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 

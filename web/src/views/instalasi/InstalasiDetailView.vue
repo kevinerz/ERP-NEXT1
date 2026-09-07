@@ -44,12 +44,6 @@ const drawingPelanggan = ref(false)
 const bastSubmitting = ref(false)
 const bastError = ref('')
 
-// Set PIN vendor
-const showPinModal = ref(false)
-const pinValue = ref('')
-const pinSubmitting = ref(false)
-const pinError = ref('')
-
 // Supporting data
 const layananList = ref<any[]>([])
 const teknisiList = ref<any[]>([])
@@ -232,21 +226,6 @@ function downloadBAST() {
   window.print()
 }
 
-// ── SET PIN VENDOR ───────────────────────────────────────────────
-async function submitPin() {
-  if (!pinValue.value || pinValue.value.length < 4) { pinError.value = 'PIN minimal 4 karakter'; return }
-  pinSubmitting.value = true; pinError.value = ''
-  try {
-    const idKontak = d.value?.kontak_teknisi?.id_kontak
-    if (!idKontak) { pinError.value = 'Tidak ada kontak teknisi'; return }
-    await ins.setVendorPin(idKontak, pinValue.value)
-    showPinModal.value = false
-    pinValue.value = ''
-    alert('PIN berhasil diset')
-  } catch (e: any) { pinError.value = e.response?.data?.message || 'Gagal set PIN' }
-  finally { pinSubmitting.value = false }
-}
-
 // ── HAPUS ORDER ──────────────────────────────────────────────────
 async function hapusOrder() {
   if (!confirm(`Hapus order ${d.value?.nomor_instalasi}? Hanya Draft/Dibatalkan yang bisa dihapus.`)) return
@@ -277,8 +256,6 @@ async function hapusOrder() {
         <div class="header-actions">
           <button class="btn-outline" @click="openEdit">✏️ Edit</button>
           <button class="btn-outline" @click="openStatus">🔄 Update Status</button>
-          <button v-if="d.jenis_pelaksana === 'Vendor' && auth.hasRole('Admin')"
-            class="btn-outline" @click="showPinModal = true; pinValue = ''; pinError = ''">🔑 Set PIN Vendor</button>
           <button v-if="auth.hasRole('Admin')" class="btn-hapus" @click="hapusOrder">🗑 Hapus</button>
         </div>
       </div>
@@ -541,24 +518,6 @@ async function hapusOrder() {
       </div>
     </div>
 
-    <!-- Modal Set PIN Vendor -->
-    <div v-if="showPinModal" class="modal-overlay" @click.self="showPinModal = false">
-      <div class="modal" style="width:360px">
-        <h3>Set PIN Login Vendor</h3>
-        <p class="pin-info">PIN untuk <b>{{ d?.kontak_teknisi?.nama }}</b> agar bisa login di aplikasi mobile.</p>
-        <div class="field">
-          <label>PIN (4–10 digit)</label>
-          <input type="password" v-model="pinValue" placeholder="••••" maxlength="10" />
-        </div>
-        <p v-if="pinError" class="form-error">{{ pinError }}</p>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showPinModal = false">Batal</button>
-          <button class="btn-submit" @click="submitPin" :disabled="pinSubmitting">
-            {{ pinSubmitting ? 'Menyimpan...' : 'Set PIN' }}
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -648,8 +607,6 @@ async function hapusOrder() {
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
-.pin-info { font-size: 13px; color: #374151; margin: 0 0 14px; }
-
 @media print {
   .page-header, .tabs, .foto-upload-bar, .btn-submit, .btn-clear, .btn-back, .btn-outline, .btn-hapus { display: none !important; }
   .tab-content { box-shadow: none; }
