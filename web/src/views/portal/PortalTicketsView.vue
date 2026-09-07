@@ -2,6 +2,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import portalApi from '@/services/portalApi'
+import BasePagination from '@/components/BasePagination.vue'
 
 const route  = useRoute()
 const router = useRouter()
@@ -108,9 +109,7 @@ function fmtDatetime(d: string | null) {
     </div>
 
     <!-- Pagination -->
-    <div v-if="meta.total_pages > 1" class="pagination">
-      <button v-for="p in meta.total_pages" :key="p" :class="['page-btn', { active: p === meta.page }]" @click="goPage(p)">{{ p }}</button>
-    </div>
+    <BasePagination :page="page" :total-pages="meta.total_pages" @change="goPage" />
 
     <!-- Detail modal -->
     <div v-if="selected" class="modal-overlay" @click.self="selected = null">
@@ -193,10 +192,6 @@ function fmtDatetime(d: string | null) {
 .pri-high       { background: #fff7ed; color: #c2410c; }
 .pri-medium     { background: #fffbeb; color: #b45309; }
 .pri-low        { background: #f8fafc; color: #64748b; }
-
-.pagination { display: flex; gap: 6px; padding: 20px 0; justify-content: center; }
-.page-btn   { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
-.page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: flex-start; justify-content: center; z-index: 100; padding: 40px 16px; overflow-y: auto; }
 .modal        { background: #fff; border-radius: 14px; padding: 28px 32px; width: 620px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }

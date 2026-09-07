@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import BasePagination from '@/components/BasePagination.vue'
 import { useRouter } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
 import { useSettingsStore } from '@/stores/settings'
@@ -14,6 +15,8 @@ const filterStatus = ref('')
 const page = ref(1)
 
 let searchTimer: ReturnType<typeof setTimeout>
+
+function goPage(p: number) { page.value = p; load() }
 
 function load() {
   hris.fetchList({
@@ -123,11 +126,7 @@ onMounted(() => {
     </div>
 
     <!-- Pagination -->
-    <div class="pagination" v-if="(hris.meta?.total_pages ?? 0) > 1">
-      <button :disabled="page <= 1" @click="page--; load()">‹ Prev</button>
-      <span>Halaman {{ page }} dari {{ hris.meta?.total_pages }} ({{ hris.meta?.total }} total)</span>
-      <button :disabled="page >= (hris.meta?.total_pages ?? 1)" @click="page++; load()">Next ›</button>
-    </div>
+    <BasePagination :page="page" :total-pages="hris.meta?.total_pages ?? 1" @change="goPage" />
     <div class="meta-info" v-else-if="!hris.loading">
       {{ hris.meta?.total ?? 0 }} karyawan ditemukan
     </div>
@@ -296,25 +295,6 @@ onMounted(() => {
 }
 .error-state { color: #ef4444; }
 
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 20px;
-  font-size: 14px;
-  color: #64748b;
-}
-.pagination button {
-  background: #fff;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 7px 14px;
-  cursor: pointer;
-  font-size: 14px;
-}
-.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
-.pagination button:hover:not(:disabled) { border-color: #3b82f6; color: #3b82f6; }
 
 .meta-info {
   margin-top: 12px;

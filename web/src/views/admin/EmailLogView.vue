@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import api from '@/services/api'
+import BasePagination from '@/components/BasePagination.vue'
 
 const logs    = ref<any[]>([])
 const meta    = ref({ total: 0, page: 1, limit: 50, total_pages: 0 })
@@ -210,15 +211,7 @@ async function sendTest() {
       </table>
 
       <!-- Pagination -->
-      <div v-if="meta.total_pages > 1" class="pagination">
-        <button class="pg-btn" :disabled="page <= 1" @click="goPage(page - 1)">‹</button>
-        <template v-for="p in meta.total_pages" :key="p">
-          <button v-if="Math.abs(p - page) <= 2 || p === 1 || p === meta.total_pages"
-            :class="['pg-btn', { active: p === page }]" @click="goPage(p)">{{ p }}</button>
-          <span v-else-if="Math.abs(p - page) === 3" class="pg-dots">…</span>
-        </template>
-        <button class="pg-btn" :disabled="page >= meta.total_pages" @click="goPage(page + 1)">›</button>
-      </div>
+      <BasePagination :page="page" :total-pages="meta.total_pages" @change="goPage" />
 
       <div class="table-foot" v-if="meta.total">
         Menampilkan {{ (page - 1) * meta.limit + 1 }}–{{ Math.min(page * meta.limit, meta.total) }}
@@ -329,12 +322,6 @@ td { padding: 11px 12px; border-top: 1px solid #f1f5f9; vertical-align: top; }
 .td-error { font-size: 12px; color: #dc2626; max-width: 260px; word-break: break-word; }
 .mono { font-family: monospace; }
 
-/* Pagination */
-.pagination { display: flex; gap: 4px; padding: 12px 16px; justify-content: center; border-top: 1px solid #f1f5f9; align-items: center; }
-.pg-btn { min-width: 32px; height: 32px; padding: 0 8px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
-.pg-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-.pg-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; font-weight: 700; }
-.pg-dots { padding: 0 4px; color: #94a3b8; }
 .table-foot { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
 @media (max-width: 768px) {

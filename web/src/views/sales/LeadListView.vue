@@ -5,6 +5,7 @@ import { useSalesStore, type Lead } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 import { fmtDateShort } from '@/composables/useFormat'
+import BasePagination from '@/components/BasePagination.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -165,10 +166,7 @@ async function hapusLead(id: number, nama: string) {
         </tbody>
       </table>
 
-      <div v-if="sales.leadMeta.total_pages > 1" class="pagination">
-        <button v-for="p in sales.leadMeta.total_pages" :key="p"
-          :class="['page-btn', { active: p === sales.leadMeta.page }]" @click="goPage(p)">{{ p }}</button>
-      </div>
+      <BasePagination :page="page" :total-pages="sales.leadMeta.total_pages" @change="goPage" />
       <div class="table-footer" v-if="sales.leadMeta.total">Total: {{ sales.leadMeta.total }} lead</div>
     </div>
 
@@ -263,9 +261,6 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .badge-green { background: #f0fdf4; color: #15803d; }
 .badge-gray { background: #f1f5f9; color: #64748b; }
 
-.pagination { display: flex; gap: 6px; padding: 14px; justify-content: center; border-top: 1px solid #f1f5f9; }
-.page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
-.page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
 /* Modal */

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useMasterStore, type Vendor } from '@/stores/master'
 import api from '@/services/api'
+import BasePagination from '@/components/BasePagination.vue'
 
 const master = useMasterStore()
 
@@ -239,15 +240,7 @@ async function hapusVendor(vendor: Vendor) {
         </tbody>
       </table>
 
-      <!-- Pagination -->
-      <div v-if="master.vendorMeta.total_pages > 1" class="pagination">
-        <button
-          v-for="p in master.vendorMeta.total_pages"
-          :key="p"
-          :class="['page-btn', { active: p === master.vendorMeta.page }]"
-          @click="goPage(p)"
-        >{{ p }}</button>
-      </div>
+      <BasePagination :page="page" :total-pages="master.vendorMeta.total_pages" @change="goPage" />
       <div class="table-footer" v-if="master.vendorMeta.total">
         Total: {{ master.vendorMeta.total }} vendor
       </div>
@@ -377,9 +370,6 @@ td { padding: 13px 16px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 
 .btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 
-.pagination { display: flex; gap: 6px; padding: 16px; justify-content: center; border-top: 1px solid #f1f5f9; }
-.page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
-.page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
 /* Modal */

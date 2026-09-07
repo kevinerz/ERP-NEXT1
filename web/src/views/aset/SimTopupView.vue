@@ -132,11 +132,7 @@
           </div>
 
           <!-- Pagination -->
-          <div v-if="meta.total_pages > 1" class="pagination">
-            <button :disabled="page === 1" @click="changePage(page - 1)">‹</button>
-            <span>{{ page }} / {{ meta.total_pages }}</span>
-            <button :disabled="page === meta.total_pages" @click="changePage(page + 1)">›</button>
-          </div>
+          <BasePagination :page="page" :total-pages="meta.total_pages" @change="changePage" />
         </div>
       </div>
     </div>
@@ -288,6 +284,7 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
+import BasePagination from '@/components/BasePagination.vue'
 import { fmtRupiah, fmtDateShort } from '@/composables/useFormat'
 
 const auth = useAuthStore()
@@ -588,9 +585,6 @@ tr:hover td { background: #fafafa; }
 .btn-hapus-sm { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-hapus-sm:hover { background: #fee2e2; }
 
-.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px; }
-.pagination button { padding: 4px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; }
-.pagination button:disabled { opacity: .4; cursor: not-allowed; }
 
 .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 20px; }
 .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }

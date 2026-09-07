@@ -3,6 +3,7 @@ import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import DOMPurify from 'dompurify'
 import { useEmailStore } from '@/stores/email'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import BasePagination from '@/components/BasePagination.vue'
 import { fmtDateTime } from '@/composables/useFormat'
 import api from '@/services/api'
 
@@ -346,11 +347,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
               </div>
             </div>
           </div>
-          <div v-if="totalPages > 1" class="pagination">
-            <button class="page-btn" :disabled="page === 1" @click="goPage(page - 1)">‹</button>
-            <span class="page-info">Halaman {{ page }} / {{ totalPages }}</span>
-            <button class="page-btn" :disabled="page === totalPages" @click="goPage(page + 1)">›</button>
-          </div>
+          <BasePagination :page="page" :total-pages="totalPages" @change="goPage" />
         </div>
 
         <div class="detail-pane">
@@ -545,10 +542,6 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .msg-actions { display: flex; gap: 10px; }
 .link-btn { background: none; border: none; padding: 0; font-size: 11px; color: #1d4ed8; cursor: pointer; }
 .link-btn.danger { color: #dc2626; }
-.pagination { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px; border-top: 1px solid #f1f5f9; }
-.page-btn { padding: 4px 10px; border: 1.5px solid #e2e8f0; border-radius: 6px; background: #fff; cursor: pointer; }
-.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.page-info { font-size: 12px; color: #64748b; }
 
 .msg-detail { padding: 20px 24px; }
 .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }

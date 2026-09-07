@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import BasePagination from '@/components/BasePagination.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -172,10 +173,7 @@ const fmtDate = fmtDateShort
         </tbody>
       </table>
 
-      <div v-if="sales.oppMeta.total_pages > 1" class="pagination">
-        <button v-for="p in sales.oppMeta.total_pages" :key="p"
-          :class="['page-btn', { active: p === sales.oppMeta.page }]" @click="goPage(p)">{{ p }}</button>
-      </div>
+      <BasePagination :page="page" :total-pages="sales.oppMeta.total_pages" @change="goPage" />
       <div class="table-footer" v-if="sales.oppMeta.total">Total: {{ sales.oppMeta.total }} opportunity</div>
     </div>
     <ConfirmDialog
@@ -244,9 +242,6 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .kode-badge { background: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
 .tahapan-chip { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 
-.pagination { display: flex; gap: 6px; padding: 14px; justify-content: center; border-top: 1px solid #f1f5f9; }
-.page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
-.page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }

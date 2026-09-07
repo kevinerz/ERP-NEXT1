@@ -6,6 +6,7 @@ import { useProyekStore } from '@/stores/proyek'
 import { printLabelAset } from '@/composables/usePrint'
 import api from '@/services/api'
 import { statusLabel } from '@/composables/useFormat'
+import BasePagination from '@/components/BasePagination.vue'
 
 const router = useRouter()
 const aset = useAsetStore()
@@ -293,10 +294,7 @@ function fmtRupiah(n: number) {
           </tr>
         </tbody>
       </table>
-      <div v-if="aset.meta.total_pages > 1" class="pagination">
-        <button v-for="p in aset.meta.total_pages" :key="p"
-          :class="['page-btn', { active: p === aset.meta.page }]" @click="goPage(p)">{{ p }}</button>
-      </div>
+      <BasePagination :page="page" :total-pages="aset.meta.total_pages" @change="goPage" />
       <div class="table-footer" v-if="aset.meta.total">Total: {{ aset.meta.total }} aset</div>
     </div>
 
@@ -441,9 +439,6 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .center { text-align: center; font-weight: 700; }
 .row-link { cursor: pointer; }
 .row-link:hover td { background: #f8fafc; }
-.pagination { display: flex; gap: 6px; padding: 14px; justify-content: center; border-top: 1px solid #f1f5f9; }
-.page-btn { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
-.page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 

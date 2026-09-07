@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import BasePagination from '@/components/BasePagination.vue'
 
 const router = useRouter()
 
@@ -216,9 +217,7 @@ function fmtDate(d: string | null) {
           </tr>
         </tbody>
       </table>
-      <div v-if="meta.total_pages > 1" class="pagination">
-        <button v-for="p in meta.total_pages" :key="p" :class="['page-btn', { active: p === meta.page }]" @click="goPage(p)">{{ p }}</button>
-      </div>
+      <BasePagination :page="page" :total-pages="meta.total_pages" @change="goPage" />
       <div class="table-footer" v-if="meta.total">Total: {{ meta.total }} PIC</div>
     </div>
 
@@ -377,9 +376,6 @@ td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .badge-rencana { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
 .rencana-yes  { background: #f0fdf4; color: #15803d; }
 .rencana-no   { background: #f8fafc; color: #64748b; }
-.pagination   { display: flex; gap: 6px; padding: 14px; justify-content: center; border-top: 1px solid #f1f5f9; }
-.page-btn     { padding: 6px 12px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
-.page-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }

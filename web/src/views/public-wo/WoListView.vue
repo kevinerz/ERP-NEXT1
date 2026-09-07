@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import BasePagination from '@/components/BasePagination.vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateShort as fmtDate } from '@/composables/useFormat'
@@ -51,6 +52,8 @@ async function fetchSummary() {
     summary.value = data.data
   } catch {}
 }
+
+function goPage(p: number) { page.value = p; fetchList() }
 
 async function fetchList() {
   loading.value = true
@@ -213,11 +216,7 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
       </table>
 
       <!-- Pagination -->
-      <div v-if="meta.total_pages > 1" class="pagination">
-        <button :disabled="page === 1" @click="page--; fetchList()">‹ Prev</button>
-        <span>Hal {{ page }} / {{ meta.total_pages }} ({{ meta.total }} WO)</span>
-        <button :disabled="page >= meta.total_pages" @click="page++; fetchList()">Next ›</button>
-      </div>
+      <BasePagination :page="page" :total-pages="meta.total_pages" @change="goPage" />
     </div>
 
     <!-- Modal Buat WO -->
@@ -327,9 +326,6 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
 .badge-gray   { background: #f1f5f9; color: #64748b; }
 .badge-outline { background: transparent; border: 1px solid #e2e8f0; color: #475569; }
 
-.pagination { display: flex; justify-content: center; align-items: center; gap: 16px; padding: 14px; border-top: 1px solid #f1f5f9; font-size: 13px; color: #64748b; }
-.pagination button { padding: 6px 14px; border: 1.5px solid #e2e8f0; border-radius: 7px; background: #fff; cursor: pointer; font-size: 13px; }
-.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
