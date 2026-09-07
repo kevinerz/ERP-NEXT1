@@ -1076,6 +1076,7 @@ model IntegrationStarsenderConfig {
   id         Int      @id @default(1)
   api_key    String?  @db.Text
   is_active  Boolean  @default(false)
+  templates  String?  @db.Text
   updated_at DateTime @default(now()) @updatedAt
 
   @@map("integration_starsender_config")
@@ -1086,6 +1087,7 @@ model StarsenderInternalGroup {
   group_id   String   @db.VarChar(100)
   nama_group String   @db.VarChar(200)
   is_active  Boolean  @default(true)
+  tipe       String   @default("internal") @db.VarChar(20)
   created_at DateTime @default(now())
 
   @@map("starsender_internal_group")

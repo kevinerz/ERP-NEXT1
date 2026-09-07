@@ -28,6 +28,19 @@ export class StarsenderController {
     return this.svc.testSendGroup(body.group_id);
   }
 
+  // ── Templates ────────────────────────────────────────────────────
+
+  @Get('templates')
+  getTemplates() { return this.svc.getTemplates(); }
+
+  @Patch('templates')
+  updateTemplates(@Body() body: Record<string, string>) {
+    return this.svc.updateTemplates(body);
+  }
+
+  @Post('templates/reset')
+  resetTemplates() { return this.svc.resetTemplates(); }
+
   // ── Internal Groups ──────────────────────────────────────────────
 
   @Get('internal-groups')
@@ -49,5 +62,28 @@ export class StarsenderController {
   @Delete('internal-groups/:id')
   deleteInternalGroup(@Param('id', ParseIntPipe) id: number) {
     return this.svc.deleteInternalGroup(id);
+  }
+
+  // ── Pelanggan / External Groups ──────────────────────────────────
+
+  @Get('pelanggan-groups')
+  getPelangganGroups() { return this.svc.getPelangganGroups(); }
+
+  @Post('pelanggan-groups')
+  addPelangganGroup(@Body() body: { group_id: string; nama_group: string }) {
+    return this.svc.addPelangganGroup(body);
+  }
+
+  @Patch('pelanggan-groups/:id')
+  updatePelangganGroup(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { group_id?: string; nama_group?: string; is_active?: boolean },
+  ) {
+    return this.svc.updatePelangganGroup(id, body);
+  }
+
+  @Delete('pelanggan-groups/:id')
+  deletePelangganGroup(@Param('id', ParseIntPipe) id: number) {
+    return this.svc.deletePelangganGroup(id);
   }
 }
