@@ -127,7 +127,7 @@ onMounted(() => {
 
     <!-- Pagination -->
     <BasePagination :page="page" :total-pages="hris.meta?.total_pages ?? 1" @change="goPage" />
-    <div class="meta-info" v-else-if="!hris.loading">
+    <div class="meta-info" v-if="!hris.loading">
       {{ hris.meta?.total ?? 0 }} karyawan ditemukan
     </div>
   </div>
