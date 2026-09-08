@@ -7,6 +7,8 @@ const sites     = ref<any[]>([])
 const loading   = ref(true)
 const activeTab = ref<'all' | 'open' | 'progress' | 'done'>('all')
 const detail    = ref<any>(null)
+const search    = ref('')
+const filterSite = ref(0)
 
 const showForm = ref(false)
 const saving   = ref(false)
@@ -15,7 +17,7 @@ const form = ref({ id_site: 0, judul_tiket: '', deskripsi_masalah: '' })
 
 onMounted(async () => {
   const [t, s] = await Promise.all([
-    portalApi.get('/portal/tickets', { params: { limit: 100 } }),
+    portalApi.get('/portal/tickets', { params: { limit: 200 } }),
     portalApi.get('/portal/sites'),
   ])
   tickets.value = t.data.data ?? []
@@ -24,17 +26,27 @@ onMounted(async () => {
 })
 
 const filtered = computed(() => {
-  if (activeTab.value === 'open')     return tickets.value.filter(t => t.status === 'Open')
-  if (activeTab.value === 'progress') return tickets.value.filter(t => t.status === 'In Progress')
-  if (activeTab.value === 'done')     return tickets.value.filter(t => ['Resolved','Closed'].includes(t.status))
-  return tickets.value
+  let list = tickets.value
+  if (activeTab.value === 'open')     list = list.filter(t => (t.status ?? t.status_tiket) === 'Open')
+  if (activeTab.value === 'progress') list = list.filter(t => (t.status ?? t.status_tiket) === 'In Progress')
+  if (activeTab.value === 'done')     list = list.filter(t => ['Resolved','Closed'].includes(t.status ?? t.status_tiket))
+  if (filterSite.value)               list = list.filter(t => t.site?.id_site === filterSite.value || t.id_site === filterSite.value)
+  if (search.value.trim()) {
+    const q = search.value.trim().toLowerCase()
+    list = list.filter(t =>
+      (t.nomor_tiket ?? '').toLowerCase().includes(q) ||
+      (t.judul ?? t.judul_tiket ?? '').toLowerCase().includes(q) ||
+      (t.site?.nama_site ?? '').toLowerCase().includes(q)
+    )
+  }
+  return list
 })
 
 const kpi = computed(() => ({
   total:    tickets.value.length,
-  open:     tickets.value.filter(t => t.status === 'Open').length,
-  progress: tickets.value.filter(t => t.status === 'In Progress').length,
-  done:     tickets.value.filter(t => ['Resolved','Closed'].includes(t.status)).length,
+  open:     tickets.value.filter(t => (t.status ?? t.status_tiket) === 'Open').length,
+  progress: tickets.value.filter(t => (t.status ?? t.status_tiket) === 'In Progress').length,
+  done:     tickets.value.filter(t => ['Resolved','Closed'].includes(t.status ?? t.status_tiket)).length,
 }))
 
 async function openDetail(t: any) {
@@ -147,37 +159,72 @@ function waktuSelesai(t: any): string | null {
       </div>
     </div>
 
-    <!-- Tab filter -->
-    <div class="tabs">
-      <button :class="['tab', activeTab==='all'      && 'tab-active']" @click="activeTab='all'">Semua</button>
-      <button :class="['tab', activeTab==='open'     && 'tab-active']" @click="activeTab='open'">Open</button>
-      <button :class="['tab', activeTab==='progress' && 'tab-active']" @click="activeTab='progress'">Diproses</button>
-      <button :class="['tab', activeTab==='done'     && 'tab-active']" @click="activeTab='done'">Selesai</button>
+    <!-- Toolbar: tabs + search + filter -->
+    <div class="toolbar">
+      <div class="tabs">
+        <button :class="['tab', activeTab==='all'      && 'tab-active']" @click="activeTab='all'">
+          Semua <span class="tab-count">{{ kpi.total }}</span>
+        </button>
+        <button :class="['tab', activeTab==='open'     && 'tab-active']" @click="activeTab='open'">
+          Open <span class="tab-count">{{ kpi.open }}</span>
+        </button>
+        <button :class="['tab', activeTab==='progress' && 'tab-active']" @click="activeTab='progress'">
+          Diproses <span class="tab-count">{{ kpi.progress }}</span>
+        </button>
+        <button :class="['tab', activeTab==='done'     && 'tab-active']" @click="activeTab='done'">
+          Selesai <span class="tab-count">{{ kpi.done }}</span>
+        </button>
+      </div>
+
+      <div class="filter-row">
+        <div class="search-wrap">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input v-model="search" class="search-inp" placeholder="Cari nomor, judul, atau site…" />
+          <button v-if="search" class="search-clear" @click="search = ''">✕</button>
+        </div>
+        <select v-model="filterSite" class="site-sel">
+          <option :value="0">Semua Site</option>
+          <option v-for="s in sites" :key="s.id_site" :value="s.id_site">{{ s.nama_site }}</option>
+        </select>
+      </div>
     </div>
 
     <div v-if="loading" class="empty-state">Memuat data tiket…</div>
 
     <!-- Table -->
     <div v-else class="tbl-card">
+      <!-- Info bar -->
+      <div class="tbl-info">
+        <span>{{ filtered.length }} tiket ditampilkan</span>
+        <span v-if="search || filterSite" class="clear-filter" @click="search=''; filterSite=0">
+          Hapus filter ✕
+        </span>
+      </div>
+
       <table class="tbl">
         <thead>
           <tr>
-            <th>No. Tiket</th>
-            <th>Site</th>
+            <th style="width:148px">No. Tiket</th>
+            <th style="width:160px">Site</th>
             <th>Judul</th>
-            <th>Status</th>
-            <th>Prioritas</th>
-            <th>Dibuat</th>
+            <th style="width:110px">Status</th>
+            <th style="width:90px">Prioritas</th>
+            <th style="width:140px">Dilaporkan</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!filtered.length">
-            <td colspan="6" class="empty-row">Tidak ada tiket pada kategori ini</td>
+            <td colspan="6" class="empty-row">
+              <div class="empty-icon">🔍</div>
+              <div>Tidak ada tiket yang sesuai</div>
+            </td>
           </tr>
           <tr v-for="t in filtered" :key="t.id_ticket" class="tbl-row" @click="openDetail(t)">
             <td class="col-no">{{ t.nomor_tiket }}</td>
-            <td class="col-site">{{ t.site?.nama_site ?? '—' }}</td>
-            <td class="col-judul">{{ t.judul ?? t.judul_tiket }}</td>
+            <td class="col-site" :title="t.site?.nama_site">{{ t.site?.nama_site ?? '—' }}</td>
+            <td class="col-judul" :title="t.judul ?? t.judul_tiket">{{ t.judul ?? t.judul_tiket }}</td>
             <td>
               <span class="status-badge"
                 :style="{ background: statusBadge(t.status ?? t.status_tiket).bg, color: statusBadge(t.status ?? t.status_tiket).fg }">
@@ -335,7 +382,7 @@ function waktuSelesai(t: any): string | null {
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-.pg { font-family: 'Inter', system-ui, sans-serif; padding: 28px 32px; max-width: 1000px; background: #f8fafc; min-height: 100%; box-sizing: border-box; }
+.pg { font-family: 'Inter', system-ui, sans-serif; padding: 28px 32px; max-width: 1060px; background: #f8fafc; box-sizing: border-box; }
 
 /* Header */
 .pg-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; }
@@ -352,25 +399,42 @@ function waktuSelesai(t: any): string | null {
 .kpi-l { font-size: 11px; color: #64748b; margin-top: 4px; }
 .kpi-div { width: 1px; height: 36px; background: #e2e8f0; flex-shrink: 0; }
 
-/* Tabs */
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid #e2e8f0; margin-bottom: 16px; }
-.tab { padding: 9px 16px; font-size: 13px; font-weight: 500; color: #64748b; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-family: inherit; margin-bottom: -1px; transition: color .15s; }
+/* Toolbar */
+.toolbar { margin-bottom: 16px; }
+.tabs { display: flex; gap: 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 12px; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 9px 16px; font-size: 13px; font-weight: 500; color: #64748b; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-family: inherit; margin-bottom: -1px; transition: color .15s; }
 .tab-active { color: #0B1D35; border-bottom-color: #0B1D35; font-weight: 600; }
+.tab-count { font-size: 10px; font-weight: 700; background: #f1f5f9; color: #64748b; padding: 1px 6px; border-radius: 8px; }
+.tab-active .tab-count { background: #0B1D35; color: #fff; }
+
+.filter-row { display: flex; gap: 10px; align-items: center; }
+.search-wrap { position: relative; flex: 1; display: flex; align-items: center; }
+.search-icon { position: absolute; left: 11px; color: #94a3b8; pointer-events: none; }
+.search-inp { width: 100%; padding: 9px 32px 9px 34px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-family: inherit; color: #0f172a; background: #fff; outline: none; transition: border-color .15s; }
+.search-inp:focus { border-color: #1A56DB; }
+.search-clear { position: absolute; right: 10px; background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 13px; padding: 0; }
+.search-clear:hover { color: #334155; }
+.site-sel { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-family: inherit; color: #334155; background: #fff; outline: none; cursor: pointer; min-width: 160px; }
+.site-sel:focus { border-color: #1A56DB; }
 
 /* Table */
 .empty-state { color: #94a3b8; padding: 60px; text-align: center; font-size: 14px; }
 .tbl-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
-.tbl { width: 100%; border-collapse: collapse; }
+.tbl-info { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; font-size: 12px; color: #94a3b8; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.clear-filter { color: #1A56DB; cursor: pointer; font-weight: 600; }
+.clear-filter:hover { text-decoration: underline; }
+.tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
 thead tr { background: #f8fafc; }
-th { padding: 10px 16px; font-size: 10px; font-weight: 700; color: #94a3b8; text-align: left; text-transform: uppercase; letter-spacing: .07em; border-bottom: 1px solid #e2e8f0; }
-td { padding: 13px 16px; font-size: 13px; color: #0f172a; border-top: 1px solid #f1f5f9; vertical-align: middle; }
+th { padding: 9px 14px; font-size: 10px; font-weight: 700; color: #94a3b8; text-align: left; text-transform: uppercase; letter-spacing: .07em; border-bottom: 1px solid #e2e8f0; }
+td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid #f1f5f9; vertical-align: middle; }
 .tbl-row { cursor: pointer; transition: background .1s; }
-.tbl-row:hover td { background: #f8fafc; }
+.tbl-row:hover td { background: #f0f6ff; }
 .empty-row { text-align: center; color: #94a3b8; padding: 48px; }
+.empty-icon { font-size: 28px; margin-bottom: 8px; }
 
-.col-no   { font-family: 'Courier New', monospace; font-size: 12px; color: #334155; font-weight: 600; white-space: nowrap; }
-.col-site { color: #334155; font-weight: 500; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.col-judul{ max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-no   { font-family: 'Courier New', monospace; font-size: 11.5px; color: #334155; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.col-site { color: #334155; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-judul{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-pri  { font-size: 12px; font-weight: 600; }
 .col-date { color: #94a3b8; font-size: 12px; white-space: nowrap; }
 
