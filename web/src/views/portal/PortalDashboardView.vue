@@ -160,7 +160,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
           <span class="mon-text">
             <template v-if="monitorStatus(site) === 'up'">Jaringan Online</template>
             <template v-else-if="monitorStatus(site) === 'down'">Jaringan Down</template>
-            <template v-else-if="monitorStatus(site) === 'registered'">Terdaftar di {{ site.monitoring?.sumber }} — status belum diketahui</template>
+            <template v-else-if="monitorStatus(site) === 'registered'">Dipantau via {{ site.monitoring?.sumber }}<span v-if="site.monitoring?.sensor" class="mon-device"> · {{ site.monitoring.sensor }}</span></template>
             <template v-else>Tidak Dipantau</template>
           </span>
           <span v-if="site.monitoring?.last_change" class="mon-since">
@@ -469,6 +469,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   background: currentColor;
 }
 .mon-text { flex: 1; }
+.mon-device { opacity: 0.7; font-weight: 500; }
 .mon-since {
   font-size: 10px;
   font-weight: 500;
