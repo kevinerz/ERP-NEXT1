@@ -33,14 +33,7 @@ async function handleLogin() {
       <div class="brand-inner">
         <!-- Logo mark -->
         <div class="logo-mark">
-          <svg width="56" height="52" viewBox="0 0 148 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- Teal N: left-up → diagonal-down → right-up -->
-            <path d="M 12,108 L 12,10 L 64,108 L 64,10" stroke="#13c2c2" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            <!-- Gray arrow pointing upper-right -->
-            <path d="M 86,108 L 86,34 L 120,4" stroke="#8a8fa8" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            <!-- Arrowhead top-right corner -->
-            <path d="M 94,4 L 120,4 L 120,30" stroke="#8a8fa8" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          </svg>
+          <img src="/logo-nextone.png" alt="NextOne" class="logo-img" />
           <div>
             <div class="logo-name"><span style="color:#13c2c2">Next</span><span style="color:#e2e8f0">One</span></div>
             <div class="logo-tagline">Network Solutions</div>
@@ -80,11 +73,7 @@ async function handleLogin() {
 
         <!-- Mobile logo -->
         <div class="mobile-logo">
-          <svg width="44" height="40" viewBox="0 0 148 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M 12,108 L 12,10 L 64,108 L 64,10" stroke="#13c2c2" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            <path d="M 86,108 L 86,34 L 120,4" stroke="#4b5563" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-            <path d="M 94,4 L 120,4 L 120,30" stroke="#4b5563" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          </svg>
+          <img src="/logo-nextone.png" alt="NextOne" class="logo-img-mobile" />
           <span class="mobile-logo-name"><span style="color:#0f766e">Next</span><span style="color:#374151">One</span></span>
         </div>
 
@@ -195,6 +184,8 @@ async function handleLogin() {
 .brand-inner { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; }
 
 .logo-mark { display: flex; align-items: center; gap: 14px; margin-bottom: 56px; }
+.logo-img { height: 52px; width: auto; object-fit: contain; }
+.logo-img-mobile { height: 36px; width: auto; object-fit: contain; }
 .logo-name { font-size: 15px; font-weight: 800; color: #fff; letter-spacing: .08em; }
 .logo-tagline { font-size: 10px; font-weight: 500; color: rgba(255,255,255,.5); letter-spacing: .1em; margin-top: 2px; text-transform: uppercase; }
 
