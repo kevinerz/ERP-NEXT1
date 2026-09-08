@@ -69,12 +69,14 @@ async function modalChangeHours(h: number) {
   if (modalSensor.value) await fetchModalGraph(modalSensor.value.id_site, modalSensor.value.objid, h)
 }
 
-function monitorStatus(site: any): 'up' | 'down' | 'warn' | 'none' {
+function monitorStatus(site: any): 'up' | 'down' | 'registered' | 'none' {
   if (!site.monitoring) return 'none'
+  // status: null = terdaftar di monitor tapi status belum diketahui
+  if (!site.monitoring.status) return 'registered'
   const st = (site.monitoring.status || '').toLowerCase()
   if (st === 'up' || st === 'online' || st === '3') return 'up'
   if (st === 'down' || st === 'offline' || st === '4' || st === '5') return 'down'
-  return 'warn'
+  return 'registered'
 }
 
 function fmtDate(d: string | null) {
@@ -85,6 +87,7 @@ function fmtDate(d: string | null) {
 const totalSite  = computed(() => sites.value.length)
 const totalUp    = computed(() => sites.value.filter(s => monitorStatus(s) === 'up').length)
 const totalDown  = computed(() => sites.value.filter(s => monitorStatus(s) === 'down').length)
+
 const totalTiket = computed(() => sites.value.reduce((a, s) => a + (s.tiket_aktif || 0), 0))
 
 const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.sensors?.length || 0), 0))
@@ -157,7 +160,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
           <span class="mon-text">
             <template v-if="monitorStatus(site) === 'up'">Jaringan Online</template>
             <template v-else-if="monitorStatus(site) === 'down'">Jaringan Down</template>
-            <template v-else-if="monitorStatus(site) === 'warn'">Perhatian — {{ site.monitoring?.status }}</template>
+            <template v-else-if="monitorStatus(site) === 'registered'">Terdaftar di {{ site.monitoring?.sumber }} — status belum diketahui</template>
             <template v-else>Tidak Dipantau</template>
           </span>
           <span v-if="site.monitoring?.last_change" class="mon-since">
@@ -373,6 +376,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
   gap: 16px;
+  align-items: start;
 }
 
 /* ── Site card ────────────────────────────────────────────── */
@@ -386,10 +390,10 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   overflow: hidden;
   box-shadow: 0 1px 4px rgba(11,29,53,0.05);
 }
-.stripe-up   { border-left-color: #0B7C4B; }
-.stripe-down { border-left-color: #C41E1E; }
-.stripe-warn { border-left-color: #D97706; }
-.stripe-none { border-left-color: #CBD5E1; }
+.stripe-up         { border-left-color: #0B7C4B; }
+.stripe-down       { border-left-color: #C41E1E; }
+.stripe-registered { border-left-color: #1456A6; }
+.stripe-none       { border-left-color: #CBD5E1; }
 
 .card-head {
   display: flex;
@@ -454,10 +458,10 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   font-size: 12px;
   font-weight: 600;
 }
-.mon-up   { background: #F0FDF4; color: #065F46; }
-.mon-down { background: #FEF2F2; color: #991B1B; }
-.mon-warn { background: #FFFBEB; color: #92400E; }
-.mon-none { background: #F8FAFC; color: #7A8FA6; }
+.mon-up         { background: #F0FDF4; color: #065F46; }
+.mon-down       { background: #FEF2F2; color: #991B1B; }
+.mon-registered { background: #EFF6FF; color: #1E40AF; }
+.mon-none       { background: #F8FAFC; color: #7A8FA6; }
 .mon-indicator {
   width: 7px; height: 7px;
   border-radius: 50%;
