@@ -131,7 +131,7 @@ const TEMPLATE_KEYS = [
 type Templates = Record<string, string>
 const templates    = ref<Templates>({})
 const placeholders = {
-  tiket:   ['{nomor_tiket}','{judul}','{nama_site}','{nama_pelanggan}','{status_ke}','{status_dari}','{label_status}','{emoji}','{root_cause}','{tindakan}','{teknisi}','{root_cause_line}','{tindakan_line}','{teknisi_line}'],
+  tiket:   ['{nomor_tiket}','{judul}','{nama_site}','{nama_pelanggan}','{alamat_site}','{waktu_down}','{tipe_perangkat}','{sensor_detail}','{koordinat_site}','{no_hp_pic}','{tipe_perangkat_line}','{sensor_line}','{koordinat_site_line}','{no_hp_pic_line}','{status_ke}','{status_dari}','{label_status}','{emoji}','{root_cause}','{tindakan}','{teknisi}','{root_cause_line}','{tindakan_line}','{teknisi_line}'],
   monitor: ['{sumber}','{nama}','{nama_site}','{detail}','{site_line}','{detail_line}'],
 }
 const tplLoading   = ref(false)

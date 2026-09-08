@@ -171,7 +171,7 @@ export class PrtgService {
     return semua.find((s) => lower.includes(s.nama_site.toLowerCase())) ?? null;
   }
 
-  @Cron('*/5 * * * *')
+  @Cron('*/1 * * * *')
   async poll() {
     // PAUSE TOTAL: polling PRTG MATI kecuali env PRTG_POLL_ENABLED=true.
     // Dicek DULUAN sebelum menyentuh DB/API — jadi saat DB/resource bermasalah,
@@ -236,13 +236,7 @@ export class PrtgService {
         }).catch(() => {});
       } else {
         hasil.tanpa_site++;
-        this.notif.notifyForModul('operations', {
-          tipe: 'tiket_baru',
-          judul: `🔴 [PRTG] ${device} DOWN — site tidak dikenali`,
-          deskripsi: `${sensors.map(s => s.sensor).join(', ')}: tidak cocok dgn nama site, buat tiket manual`,
-          url: '/operations',
-        }).catch(() => {});
-        // tidak kirim WA untuk device yang belum di-mapping ke site
+        // Device belum di-mapping ke site — tidak buat notif (mengurangi noise)
       }
 
       // Buat 1 baris webhook per sensor (semua menunjuk tiket yang sama)
@@ -376,21 +370,38 @@ export class PrtgService {
       url: `/operations/${ticket.id_ticket}`,
     }).catch(() => {});
 
-    // WA notif ke grup pelanggan (ambil id_pelanggan dari site)
-    this.prisma.sitePelanggan.findUnique({
-      where: { id_site: site.id_site },
-      select: { id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } },
-    }).then((sp) => {
+    // WA notif ke grup pelanggan (ambil data site lengkap)
+    (async () => {
+      const sp = await this.prisma.sitePelanggan.findUnique({
+        where: { id_site: site.id_site },
+        select: {
+          id_pelanggan: true,
+          alamat_lengkap: true,
+          koordinat_gps: true,
+          pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } },
+          pic: { where: { is_utama: true }, select: { no_kontak: true }, take: 1 },
+        },
+      });
       if (!sp) return;
-      this.wa.notifTiketBaru({
+      const waktuDown = now.toLocaleDateString('id-ID', {
+        timeZone: 'Asia/Jakarta', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+      }) + ' ' + now.toLocaleTimeString('id-ID', {
+        timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit',
+      }) + ' WIB';
+      await this.wa.notifTiketBaru({
         nomor_tiket: nomor,
         judul: `[PRTG] ${info.device} — ${info.sensor} DOWN`,
         nama_site: site.nama_site,
         nama_pelanggan: sp.pelanggan?.nama_pelanggan ?? '',
         id_pelanggan: sp.id_pelanggan,
         no_hp_customer: sp.pelanggan?.no_hp_pic_utama,
+        alamat_site: sp.alamat_lengkap ?? '',
+        koordinat_site: sp.koordinat_gps ?? '',
+        no_hp_pic: sp.pic[0]?.no_kontak ?? '',
+        sensor_detail: info.sensor,
+        waktu_down: waktuDown,
       });
-    }).catch(() => {});
+    })().catch(() => {});
 
     return ticket;
   }

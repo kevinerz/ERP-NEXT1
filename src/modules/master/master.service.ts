@@ -390,6 +390,16 @@ export class MasterService {
       await tx.integrationJurnalAr.deleteMany({ where: { id_site: id } });
       await tx.simTopup.deleteMany({ where: { id_site: id } });
 
+      // PRTG & Uptime Kuma mapping
+      await tx.integrationPrtgMapping.deleteMany({ where: { id_site: id } });
+      await tx.integrationUptimeKumaMapping.deleteMany({ where: { id_site: id } });
+
+      // Instalasi (foto/log/bast cascade dari instalasiOrder)
+      await tx.instalasiBASTSign.deleteMany({ where: { instalasi: { id_site: id } } });
+      await tx.instalasiLog.deleteMany({ where: { instalasi: { id_site: id } } });
+      await tx.instalasiPhoto.deleteMany({ where: { instalasi: { id_site: id } } });
+      await tx.instalasiOrder.deleteMany({ where: { id_site: id } });
+
       // Kontrak, lalu site (perangkat/pic/sumber ikut cascade)
       await tx.kontrakLayanan.deleteMany({ where: { id_site: id } });
       await tx.sitePelanggan.delete({ where: { id_site: id } });

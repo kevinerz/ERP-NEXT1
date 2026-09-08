@@ -6,14 +6,16 @@ import { StarsenderClient } from './starsender.client';
 // Tiket: {nomor_tiket} {judul} {nama_site} {nama_pelanggan} {status_ke} {status_dari} {root_cause} {tindakan} {teknisi}
 // Monitor: {sumber} {nama} {nama_site} {detail}
 
+const SEP = '━━━━━━━━━━━━━━━━━━━━';
+
 const DEFAULT_TEMPLATES = {
-  tiket_baru_pelanggan: `🎫 *Tiket Baru — {nomor_tiket}*\n\n📌 *{judul}*\n📍 Site: {nama_site}\n\nTim dukungan kami telah menerima laporan Anda dan akan segera menindaklanjuti.\nTerima kasih atas kepercayaan Anda kepada kami.`,
-  tiket_baru_pelanggan_hp: `Halo *{nama_pelanggan}*,\n\nTiket dukungan Anda telah berhasil dibuat.\n\n🎫 *{nomor_tiket}*\n📌 {judul}\n📍 Site: {nama_site}\n\nTim kami akan menghubungi Anda dalam waktu dekat. Terima kasih.`,
-  tiket_baru_internal: `🎫 *Tiket Baru*\nNo: {nomor_tiket}\nJudul: {judul}\nSite: {nama_site}\nPelanggan: {nama_pelanggan}`,
-  tiket_update_pelanggan: `{emoji} *Update Tiket — {nomor_tiket}*\n\nTiket Anda *{label_status}*.\n📌 {judul}\n📍 Site: {nama_site}\n{root_cause_line}{tindakan_line}\nHubungi kami jika ada pertanyaan lebih lanjut.`,
-  tiket_update_internal: `{emoji} *Update Tiket*\nNo: {nomor_tiket}\nStatus: {status_dari} → {status_ke}\nJudul: {judul}\nSite: {nama_site}{root_cause_line}{tindakan_line}{teknisi_line}`,
-  monitor_down: `🔴 *ALERT: Jaringan DOWN*\nSumber: {sumber}\nPerangkat: {nama}{site_line}{detail_line}\n\nSegera periksa kondisi jaringan!`,
-  monitor_up: `✅ *Jaringan Kembali UP*\nSumber: {sumber}\nPerangkat: {nama}{site_line}`,
+  tiket_baru_pelanggan: `🎫 *Tiket Baru — {nomor_tiket}*\n${SEP}\n📌 *{judul}*\n${SEP}\n📍 *{nama_site}* — {alamat_site}\n⏰ Down: {waktu_down}\n{tipe_perangkat_line}\n{sensor_line}\n{koordinat_site_line}\n{no_hp_pic_line}\n${SEP}\nTim NOC kami telah menerima laporan Anda dan akan segera menindaklanjuti.\nTerima kasih atas kepercayaan Anda kepada kami. 🙏`,
+  tiket_baru_pelanggan_hp: `Halo *{nama_pelanggan}*,\n\nTiket dukungan Anda telah berhasil dibuat.\n\n🎫 *{nomor_tiket}*\n📌 {judul}\n📍 Site: {nama_site}\n⏰ Down: {waktu_down}\n\nTim kami akan menghubungi Anda dalam waktu dekat. Terima kasih. 🙏`,
+  tiket_baru_internal: `🎫 *Tiket Baru*\n${SEP}\nNo     : {nomor_tiket}\nJudul  : {judul}\nSite   : {nama_site}\nClient : {nama_pelanggan}\n⏰ Down: {waktu_down}\n{tipe_perangkat_line}\n{sensor_line}`,
+  tiket_update_pelanggan: `{emoji} *Update Tiket — {nomor_tiket}*\n${SEP}\nStatus tiket Anda: *{label_status}*\n📌 {judul}\n📍 {nama_site}\n{root_cause_line}\n{tindakan_line}\n${SEP}\nHubungi kami jika ada pertanyaan lebih lanjut.`,
+  tiket_update_internal: `{emoji} *Update Tiket*\n${SEP}\nNo     : {nomor_tiket}\nStatus : {status_dari} → {status_ke}\nJudul  : {judul}\nSite   : {nama_site}\n{root_cause_line}\n{tindakan_line}\n{teknisi_line}`,
+  monitor_down: `🔴 *ALERT: Jaringan DOWN*\n${SEP}\nSumber   : {sumber}\nPerangkat: {nama}\n{site_line}\n{detail_line}\n${SEP}\nSegera periksa kondisi jaringan!`,
+  monitor_up: `✅ *Jaringan Kembali UP*\n${SEP}\nSumber   : {sumber}\nPerangkat: {nama}\n{site_line}`,
 };
 
 @Injectable()
@@ -38,7 +40,7 @@ export class StarsenderService {
   async getTemplates() {
     const tpl = await this.loadTemplates();
     return { data: tpl, placeholders: {
-      tiket: ['{nomor_tiket}', '{judul}', '{nama_site}', '{nama_pelanggan}', '{status_ke}', '{status_dari}', '{label_status}', '{emoji}', '{root_cause}', '{tindakan}', '{teknisi}', '{root_cause_line}', '{tindakan_line}', '{teknisi_line}'],
+      tiket: ['{nomor_tiket}', '{judul}', '{nama_site}', '{nama_pelanggan}', '{alamat_site}', '{waktu_down}', '{tipe_perangkat}', '{sensor_detail}', '{koordinat_site}', '{no_hp_pic}', '{tipe_perangkat_line}', '{sensor_line}', '{koordinat_site_line}', '{no_hp_pic_line}', '{status_ke}', '{status_dari}', '{label_status}', '{emoji}', '{root_cause}', '{tindakan}', '{teknisi}', '{root_cause_line}', '{tindakan_line}', '{teknisi_line}'],
       monitor: ['{sumber}', '{nama}', '{nama_site}', '{detail}', '{site_line}', '{detail_line}'],
     }};
   }
@@ -184,11 +186,18 @@ export class StarsenderService {
   }
 
   private fill(tpl: string, vars: Record<string, string>): string {
-    let result = tpl;
-    for (const [key, val] of Object.entries(vars)) {
-      result = result.split(`{${key}}`).join(val);
-    }
-    return result;
+    return tpl.split('\n')
+      .map(line => {
+        let filled = line;
+        for (const [key, val] of Object.entries(vars)) {
+          filled = filled.split(`{${key}}`).join(val);
+        }
+        // Hapus baris jika semula hanya placeholder dan hasilnya kosong
+        if (filled.trim() === '' && /^\{[\w_]+\}$/.test(line.trim())) return null;
+        return filled;
+      })
+      .filter((line): line is string => line !== null)
+      .join('\n');
   }
 
   // ── Notifikasi Tiket ─────────────────────────────────────────────
@@ -196,30 +205,44 @@ export class StarsenderService {
   async notifTiketBaru(params: {
     nomor_tiket: string; judul: string; nama_site: string;
     nama_pelanggan: string; id_pelanggan?: number; no_hp_customer?: string | null;
+    alamat_site?: string; koordinat_site?: string; tipe_perangkat?: string;
+    sensor_detail?: string; waktu_down?: string; no_hp_pic?: string;
   }) {
-    const { nomor_tiket, judul, nama_site, nama_pelanggan, id_pelanggan, no_hp_customer } = params;
+    const { nomor_tiket, judul, nama_site, nama_pelanggan, id_pelanggan, no_hp_customer,
+            alamat_site, koordinat_site, tipe_perangkat, sensor_detail, waktu_down, no_hp_pic } = params;
     const tpl = await this.loadTemplates();
 
-    // Ke pelanggan — coba external groups dulu, lalu individual group per pelanggan, lalu no HP
+    const tipe_perangkat_line = tipe_perangkat ? `🖥️ Perangkat: ${tipe_perangkat}` : '';
+    const sensor_line         = sensor_detail  ? `📡 Sensor: ${sensor_detail}`      : '';
+    const koordinat_site_line = koordinat_site ? `🗺️ Koordinat: ${koordinat_site}`  : '';
+    const no_hp_pic_line      = no_hp_pic      ? `📞 PIC: ${no_hp_pic}`             : '';
+
+    const vars = {
+      nomor_tiket, judul, nama_site, nama_pelanggan,
+      alamat_site: alamat_site ?? '', koordinat_site: koordinat_site ?? '',
+      tipe_perangkat: tipe_perangkat ?? '', sensor_detail: sensor_detail ?? '',
+      waktu_down: waktu_down ?? '', no_hp_pic: no_hp_pic ?? '',
+      tipe_perangkat_line, sensor_line, koordinat_site_line, no_hp_pic_line,
+    };
+
     const sentToExternalGroups = await this.sendToPelangganGroups(
-      this.fill(tpl.tiket_baru_pelanggan, { nomor_tiket, judul, nama_site, nama_pelanggan })
+      this.fill(tpl.tiket_baru_pelanggan, vars)
     );
 
     if (!sentToExternalGroups) {
       if (id_pelanggan) {
         const pel = await this.prisma.pelanggan.findUnique({ where: { id_pelanggan }, select: { wa_group_id: true } });
         if (pel?.wa_group_id) {
-          this.client.send(pel.wa_group_id, this.fill(tpl.tiket_baru_pelanggan, { nomor_tiket, judul, nama_site, nama_pelanggan })).catch(() => {});
+          this.client.send(pel.wa_group_id, this.fill(tpl.tiket_baru_pelanggan, vars)).catch(() => {});
         } else if (no_hp_customer) {
-          this.client.send(no_hp_customer, this.fill(tpl.tiket_baru_pelanggan_hp, { nomor_tiket, judul, nama_site, nama_pelanggan })).catch(() => {});
+          this.client.send(no_hp_customer, this.fill(tpl.tiket_baru_pelanggan_hp, vars)).catch(() => {});
         }
       } else if (no_hp_customer) {
-        this.client.send(no_hp_customer, this.fill(tpl.tiket_baru_pelanggan_hp, { nomor_tiket, judul, nama_site, nama_pelanggan })).catch(() => {});
+        this.client.send(no_hp_customer, this.fill(tpl.tiket_baru_pelanggan_hp, vars)).catch(() => {});
       }
     }
 
-    // Ke internal
-    await this.sendToInternal(this.fill(tpl.tiket_baru_internal, { nomor_tiket, judul, nama_site, nama_pelanggan }));
+    await this.sendToInternal(this.fill(tpl.tiket_baru_internal, vars));
   }
 
   async notifTiketUpdate(params: {
@@ -240,9 +263,9 @@ export class StarsenderService {
     const emoji = emojiStatus[status_ke] ?? '📋';
     const label_status = labelStatus[status_ke] ?? `diupdate ke ${status_ke}`;
 
-    const root_cause_line = root_cause ? `\n🔍 Root Cause: ${root_cause}` : '';
-    const tindakan_line = tindakan ? `\n🔧 Tindakan: ${tindakan}` : '';
-    const teknisi_line = teknisi ? `\n👤 Teknisi: ${teknisi}` : '';
+    const root_cause_line = root_cause ? `🔍 Root Cause: ${root_cause}` : '';
+    const tindakan_line = tindakan ? `🔧 Tindakan: ${tindakan}` : '';
+    const teknisi_line = teknisi ? `👤 Teknisi: ${teknisi}` : '';
 
     const vars = { nomor_tiket, judul, nama_site, nama_pelanggan, status_ke, status_dari, label_status, emoji, root_cause_line, tindakan_line, teknisi_line, root_cause: root_cause ?? '', tindakan: tindakan ?? '', teknisi: teknisi ?? '' };
 
@@ -274,8 +297,8 @@ export class StarsenderService {
   async notifMonitorDown(params: { sumber: string; nama: string; nama_site?: string; msg?: string }) {
     const { sumber, nama, nama_site, msg } = params;
     const tpl = await this.loadTemplates();
-    const site_line = nama_site ? `\n📍 Site: ${nama_site}` : '';
-    const detail_line = msg ? `\nInfo: ${msg}` : '';
+    const site_line = nama_site ? `📍 Site: ${nama_site}` : '';
+    const detail_line = msg ? `Info: ${msg}` : '';
     const pesan = this.fill(tpl.monitor_down, { sumber, nama, site_line, detail_line, nama_site: nama_site ?? '', detail: msg ?? '' });
     await this.sendToInternal(pesan);
   }
@@ -283,7 +306,7 @@ export class StarsenderService {
   async notifMonitorUp(params: { sumber: string; nama: string; nama_site?: string }) {
     const { sumber, nama, nama_site } = params;
     const tpl = await this.loadTemplates();
-    const site_line = nama_site ? `\n📍 Site: ${nama_site}` : '';
+    const site_line = nama_site ? `📍 Site: ${nama_site}` : '';
     const pesan = this.fill(tpl.monitor_up, { sumber, nama, site_line, nama_site: nama_site ?? '' });
     await this.sendToInternal(pesan);
   }

@@ -157,19 +157,43 @@ export class OperationsService {
         }).catch(() => {});
 
         // WA notifikasi tiket baru
-        this.prisma.sitePelanggan.findUnique({
-          where: { id_site: dto.id_site },
-          select: { nama_site: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } },
-        }).then((site) => {
+        (async () => {
+          const site = await this.prisma.sitePelanggan.findUnique({
+            where: { id_site: dto.id_site },
+            select: {
+              nama_site: true, id_pelanggan: true, alamat_lengkap: true, koordinat_gps: true,
+              pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } },
+              pic: { where: { is_utama: true }, select: { no_kontak: true }, take: 1 },
+            },
+          });
           if (!site) return;
-          this.wa.notifTiketBaru({
+          const perangkat = (dto as any).id_perangkat ? await this.prisma.perangkatSite.findUnique({
+            where: { id_perangkat: (dto as any).id_perangkat },
+            select: { jenis_perangkat: true, merk: true, tipe_model: true },
+          }) : null;
+          const tipePerangkat = perangkat
+            ? [perangkat.jenis_perangkat, perangkat.merk, perangkat.tipe_model].filter(Boolean).join(' / ')
+            : '';
+          const now = new Date();
+          const waktuDown = now.toLocaleDateString('id-ID', {
+            timeZone: 'Asia/Jakarta', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+          }) + ' ' + now.toLocaleTimeString('id-ID', {
+            timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit',
+          }) + ' WIB';
+          await this.wa.notifTiketBaru({
             nomor_tiket, judul: dto.judul_tiket,
             nama_site: site.nama_site,
             nama_pelanggan: site.pelanggan?.nama_pelanggan ?? '',
             id_pelanggan: site.id_pelanggan,
             no_hp_customer: site.pelanggan?.no_hp_pic_utama,
+            alamat_site: site.alamat_lengkap ?? '',
+            koordinat_site: site.koordinat_gps ?? '',
+            no_hp_pic: site.pic[0]?.no_kontak ?? '',
+            tipe_perangkat: tipePerangkat,
+            sensor_detail: (dto as any).deskripsi_masalah ?? '',
+            waktu_down: waktuDown,
           });
-        }).catch(() => {});
+        })().catch(() => {});
 
         return { data, message: `Tiket ${nomor_tiket} dibuat` };
       } catch (e: any) {
