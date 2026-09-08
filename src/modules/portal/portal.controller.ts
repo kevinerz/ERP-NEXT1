@@ -50,6 +50,13 @@ export class PortalController {
     return { success: true, ...data };
   }
 
+  @Post('tickets')
+  @UseGuards(AuthGuard('customer-jwt'))
+  async createTicket(@Req() req: any, @Body() body: { id_site: number; judul_tiket: string; deskripsi_masalah?: string }) {
+    const data = await this.service.createTicket(req.user.id_pelanggan, body);
+    return { success: true, data, message: 'Tiket berhasil dibuat' };
+  }
+
   @Get('tickets/:id')
   @UseGuards(AuthGuard('customer-jwt'))
   async getTicketDetail(@Req() req: any, @Param('id', ParseIntPipe) id: number) {

@@ -380,4 +380,64 @@ export class PortalService {
     await this.prisma.customerUser.delete({ where: { id_user: id } });
     return { message: 'Akun portal dihapus' };
   }
+
+  // ── Buat tiket dari portal pelanggan ─────────────────────
+
+  async createTicket(id_pelanggan: number, dto: { id_site: number; judul_tiket: string; deskripsi_masalah?: string }) {
+    // Pastikan site milik pelanggan ini
+    const site = await this.prisma.sitePelanggan.findFirst({
+      where: { id_site: dto.id_site, id_pelanggan },
+      select: {
+        id_site: true, nama_site: true, alamat_lengkap: true, koordinat_gps: true,
+        pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } },
+        pic: { where: { is_utama: true }, select: { no_kontak: true }, take: 1 },
+      },
+    });
+    if (!site) throw new NotFoundException('Site tidak ditemukan');
+
+    // Generate nomor tiket
+    const now = new Date();
+    const prefix = `TKT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const last = await this.prisma.operationTicket.findFirst({
+      where: { nomor_tiket: { startsWith: prefix } },
+      orderBy: { nomor_tiket: 'desc' },
+    });
+    const seq = (last ? (parseInt(last.nomor_tiket.split('-')[2], 10) || 0) : 0) + 1;
+    const nomor_tiket = `${prefix}-${String(seq).padStart(4, '0')}`;
+
+    const ticket = await this.prisma.operationTicket.create({
+      data: {
+        nomor_tiket,
+        id_site: dto.id_site,
+        judul_tiket: dto.judul_tiket,
+        deskripsi_masalah: dto.deskripsi_masalah || null,
+        prioritas: 'Medium',
+        sumber_tiket: 'Portal',
+        sla_due: new Date(now.getTime() + 8 * 3600_000), // 8 jam SLA Medium
+      },
+    });
+
+    await this.prisma.operationTicketLog.create({
+      data: { id_ticket: ticket.id_ticket, status_ke: 'Open', catatan: 'Tiket dibuat melalui Portal Pelanggan' },
+    });
+
+    // Notif in-app ke tim operasional
+    await this.prisma.notification.createMany({
+      data: (await this.prisma.coreUser.findMany({
+        where: { is_aktif: true },
+        select: { id_user: true, modul_akses: true },
+      })).filter(u => {
+        if (!u.modul_akses) return true;
+        try { return JSON.parse(u.modul_akses).includes('operations'); } catch { return false; }
+      }).map(u => ({
+        id_user: u.id_user,
+        tipe: 'tiket_baru',
+        judul: `[Portal] Tiket Baru dari Pelanggan`,
+        deskripsi: `${nomor_tiket} — ${dto.judul_tiket}`,
+        url: `/operations/${ticket.id_ticket}`,
+      })),
+    }).catch(() => {});
+
+    return { nomor_tiket, id_ticket: ticket.id_ticket };
+  }
 }
