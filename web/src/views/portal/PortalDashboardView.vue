@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePortalAuthStore } from '@/stores/portalAuth'
 import portalApi from '@/services/portalApi'
@@ -7,50 +7,48 @@ import portalApi from '@/services/portalApi'
 const auth   = usePortalAuthStore()
 const router = useRouter()
 
-const sites   = ref<any[]>([])
-const loading = ref(true)
+const sites     = ref<any[]>([])
+const loading   = ref(true)
 const loadError = ref('')
 
-// Sensor expand state
-const expandedSite   = ref<number | null>(null)
-const expandedSensor = ref<number | null>(null)
-const sensorData     = ref<{ device_name: string; sensors: any[] } | null>(null)
-const sensorLoading  = ref(false)
-const graphHours     = ref(0)
+// Sensor state — expanded per site, sensorDevices is the array from API
+const expandedSite    = ref<number | null>(null)
+const sensorDevices   = ref<{ device_name: string; sensors: any[] }[]>([])
+const sensorLoading   = ref(false)
+const graphHours      = ref(0)
+
+// Modal
+const modalSensor       = ref<{ id_site: number; objid: number; name: string } | null>(null)
+const modalHours        = ref(0)
+const modalGraphUrl     = ref<string | null>(null)
+const modalGraphLoading = ref(false)
 
 onMounted(async () => {
   try {
     const res = await portalApi.get('/portal/sites')
     sites.value = res.data.data
   } catch (e: any) {
-    loadError.value = e?.response?.data?.message || 'Gagal memuat data site. Periksa koneksi Anda.'
+    loadError.value = e?.response?.data?.message || 'Gagal memuat data site.'
   } finally { loading.value = false }
 })
 
 async function toggleSensors(id_site: number) {
   if (expandedSite.value === id_site) {
-    expandedSite.value = null; sensorData.value = null; expandedSensor.value = null; histData.value = []
+    expandedSite.value = null; sensorDevices.value = []
     return
   }
-  expandedSite.value = id_site; sensorLoading.value = true; sensorData.value = null; expandedSensor.value = null
+  expandedSite.value = id_site; sensorLoading.value = true; sensorDevices.value = []
   try {
     const r = await portalApi.get(`/portal/sites/${id_site}/sensors`)
-    // { device_name, sensors[] } — semua sensor apa adanya dari PRTG
-    sensorData.value = r.data.data
-  } catch {} finally { sensorLoading.value = false }
+    // API returns { data: [{device_name, sensors}] } — array of devices
+    sensorDevices.value = Array.isArray(r.data.data) ? r.data.data : []
+  } catch { sensorDevices.value = [] }
+  finally { sensorLoading.value = false }
 }
 
-const histData = ref<any[]>([])
-
-// Modal popup
-const modalSensor      = ref<{ id_site: number; objid: number; name: string } | null>(null)
-const modalGraphUrl    = ref<string | null>(null)
-const modalGraphLoading = ref(false)
-const modalHours       = ref(0)
-
 async function openModal(id_site: number, objid: number, name: string) {
-  modalSensor.value   = { id_site, objid, name }
-  modalHours.value    = graphHours.value
+  modalSensor.value = { id_site, objid, name }
+  modalHours.value  = graphHours.value
   await fetchModalGraph(id_site, objid, graphHours.value)
 }
 
@@ -59,8 +57,7 @@ async function fetchModalGraph(id_site: number, objid: number, graphid: number) 
   modalGraphLoading.value = true
   try {
     const r = await portalApi.get(`/portal/sites/${id_site}/sensor/${objid}/graph.png`, {
-      params: { graphid },
-      responseType: 'blob',
+      params: { graphid }, responseType: 'blob',
     })
     modalGraphUrl.value = URL.createObjectURL(r.data)
   } catch { modalGraphUrl.value = null }
@@ -72,18 +69,12 @@ async function modalChangeHours(h: number) {
   if (modalSensor.value) await fetchModalGraph(modalSensor.value.id_site, modalSensor.value.objid, h)
 }
 
-
-function statusMonitor(s: any) {
-  if (!s.monitoring) return { label: 'Tidak Dipantau', cls: 'mon-none' }
-  const st = (s.monitoring.status || '').toLowerCase()
-  if (st === 'up' || st === 'online' || st === '3') return { label: 'Online', cls: 'mon-up' }
-  if (st === 'down' || st === 'offline' || st === '4' || st === '5') return { label: 'Down', cls: 'mon-down' }
-  return { label: s.monitoring.status, cls: 'mon-warn' }
-}
-
-function statusSite(s: string) {
-  const map: Record<string, string> = { Aktif: 'site-aktif', Prospek: 'site-prospek', Terminasi: 'site-terminasi' }
-  return map[s] || 'site-prospek'
+function monitorStatus(site: any): 'up' | 'down' | 'warn' | 'none' {
+  if (!site.monitoring) return 'none'
+  const st = (site.monitoring.status || '').toLowerCase()
+  if (st === 'up' || st === 'online' || st === '3') return 'up'
+  if (st === 'down' || st === 'offline' || st === '4' || st === '5') return 'down'
+  return 'warn'
 }
 
 function fmtDate(d: string | null) {
@@ -91,155 +82,194 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-const totalUp   = () => sites.value.filter(s => statusMonitor(s).cls === 'mon-up').length
-const totalDown = () => sites.value.filter(s => statusMonitor(s).cls === 'mon-down').length
-const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif || 0), 0)
+const totalSite  = computed(() => sites.value.length)
+const totalUp    = computed(() => sites.value.filter(s => monitorStatus(s) === 'up').length)
+const totalDown  = computed(() => sites.value.filter(s => monitorStatus(s) === 'down').length)
+const totalTiket = computed(() => sites.value.reduce((a, s) => a + (s.tiket_aktif || 0), 0))
+
+const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.sensors?.length || 0), 0))
 </script>
 
 <template>
-  <div class="page">
-    <div class="page-header">
-      <div>
-        <h2>Status Site</h2>
-        <p class="sub">{{ auth.user?.pelanggan?.nama_pelanggan }}</p>
+  <div class="dashboard">
+
+    <!-- Page title -->
+    <div class="page-title-bar">
+      <div class="page-title-inner">
+        <div>
+          <div class="page-eyebrow">PORTAL MONITORING</div>
+          <h1 class="page-heading">{{ auth.user?.pelanggan?.nama_pelanggan || 'Dashboard' }}</h1>
+        </div>
+        <div class="page-meta">Kode: <strong>{{ auth.user?.pelanggan?.kode_pelanggan }}</strong></div>
       </div>
     </div>
 
-    <!-- Summary cards -->
-    <div class="summary-row">
-      <div class="summary-card">
-        <div class="snum">{{ sites.length }}</div>
-        <div class="slabel">Total Site</div>
+    <!-- KPI Strip -->
+    <div class="kpi-strip">
+      <div class="kpi-card">
+        <div class="kpi-value">{{ totalSite }}</div>
+        <div class="kpi-label">Total Site</div>
       </div>
-      <div class="summary-card green">
-        <div class="snum">{{ totalUp() }}</div>
-        <div class="slabel">Online</div>
+      <div class="kpi-card kpi-up">
+        <div class="kpi-value">{{ totalUp }}</div>
+        <div class="kpi-label">Online</div>
       </div>
-      <div class="summary-card red" v-if="totalDown() > 0">
-        <div class="snum">{{ totalDown() }}</div>
-        <div class="slabel">Down</div>
+      <div class="kpi-card" :class="totalDown > 0 ? 'kpi-down' : ''">
+        <div class="kpi-value">{{ totalDown }}</div>
+        <div class="kpi-label">Down</div>
       </div>
-      <div class="summary-card amber" v-if="totalTiketAktif() > 0">
-        <div class="snum">{{ totalTiketAktif() }}</div>
-        <div class="slabel">Tiket Aktif</div>
+      <div class="kpi-card" :class="totalTiket > 0 ? 'kpi-warn' : ''">
+        <div class="kpi-value">{{ totalTiket }}</div>
+        <div class="kpi-label">Tiket Aktif</div>
       </div>
     </div>
 
-    <div v-if="loadError" class="error-banner">⚠ {{ loadError }}</div>
-    <div v-if="loading" class="loading">Memuat data site...</div>
+    <div v-if="loadError" class="alert-error">{{ loadError }}</div>
+    <div v-if="loading" class="state-loading">
+      <span class="spinner"></span> Memuat data…
+    </div>
 
-    <div class="site-grid" v-else>
-      <div v-for="site in sites" :key="site.id_site" class="site-card">
-        <div class="site-card-header">
-          <div>
+    <!-- Site grid -->
+    <div class="site-grid" v-else-if="sites.length">
+      <div
+        v-for="site in sites" :key="site.id_site"
+        :class="['site-card', `stripe-${monitorStatus(site)}`]"
+      >
+        <!-- Card header -->
+        <div class="card-head">
+          <div class="card-head-left">
             <div class="site-name">{{ site.nama_site }}</div>
-            <div class="site-kode">{{ site.kode_site }} · {{ site.layanan?.nama_layanan }}</div>
+            <div class="site-meta">{{ site.kode_site }}&ensp;·&ensp;{{ site.layanan?.nama_layanan }}</div>
           </div>
-          <div class="site-badges">
-            <span :class="['badge-site', statusSite(site.status_site)]">{{ site.status_site }}</span>
-            <span v-if="site.tiket_aktif" class="badge-tiket" @click="router.push({ path: '/portal/tickets', query: { id_site: site.id_site } })">
-              {{ site.tiket_aktif }} tiket
-            </span>
+          <div class="card-head-right">
+            <span :class="['pill-status', `pill-${site.status_site?.toLowerCase()}`]">{{ site.status_site }}</span>
+            <span
+              v-if="site.tiket_aktif"
+              class="pill-tiket"
+              @click="router.push({ path: '/portal/tickets', query: { id_site: site.id_site } })"
+            >{{ site.tiket_aktif }} Tiket</span>
           </div>
         </div>
 
-        <!-- Monitoring status -->
-        <div :class="['monitor-bar', statusMonitor(site).cls]">
-          <span class="mon-dot"></span>
-          <span class="mon-label">{{ statusMonitor(site).label }}</span>
-          <span v-if="site.monitoring?.sensor" class="mon-sensor">· {{ site.monitoring.sensor }}</span>
-          <span v-if="site.monitoring?.last_change" class="mon-time">
+        <!-- Monitor status row -->
+        <div :class="['monitor-row', `mon-${monitorStatus(site)}`]">
+          <span class="mon-indicator"></span>
+          <span class="mon-text">
+            <template v-if="monitorStatus(site) === 'up'">Jaringan Online</template>
+            <template v-else-if="monitorStatus(site) === 'down'">Jaringan Down</template>
+            <template v-else-if="monitorStatus(site) === 'warn'">Perhatian — {{ site.monitoring?.status }}</template>
+            <template v-else>Tidak Dipantau</template>
+          </span>
+          <span v-if="site.monitoring?.last_change" class="mon-since">
             sejak {{ fmtDate(site.monitoring.last_change) }}
           </span>
         </div>
 
-        <!-- Alamat -->
-        <div class="site-info">
-          <span class="info-icon">📍</span>
-          <span class="info-text">{{ site.kota || '' }}{{ site.kota && site.provinsi ? ', ' : '' }}{{ site.provinsi || site.alamat }}</span>
-        </div>
-
-        <!-- Perangkat utama -->
-        <div class="perangkat-list" v-if="site.perangkat?.length">
-          <div v-for="(p, i) in site.perangkat.slice(0, 3)" :key="i" class="perangkat-item">
-            <span class="p-type">{{ p.jenis_perangkat }}</span>
-            <span class="p-name">{{ [p.merk, p.tipe_model].filter(Boolean).join(' ') || '—' }}</span>
-            <span v-if="p.ip_address" class="p-ip">{{ p.ip_address }}</span>
-            <span :class="['p-status', p.status_perangkat === 'Aktif' ? 'p-aktif' : 'p-na']">{{ p.status_perangkat }}</span>
+        <!-- Info rows -->
+        <div class="info-section">
+          <div class="info-row" v-if="site.kota || site.provinsi || site.alamat">
+            <span class="info-key">Lokasi</span>
+            <span class="info-val">{{ [site.kota, site.provinsi].filter(Boolean).join(', ') || site.alamat || '—' }}</span>
           </div>
-          <div v-if="site.perangkat.length > 3" class="perangkat-more">+{{ site.perangkat.length - 3 }} perangkat lainnya</div>
+          <div class="info-row">
+            <span class="info-key">Aktif Sejak</span>
+            <span class="info-val">{{ fmtDate(site.tgl_aktif) }}</span>
+          </div>
         </div>
-        <div class="no-perangkat" v-else>Tidak ada data perangkat</div>
 
-        <!-- Aktif sejak + tombol sensor -->
-        <div class="site-footer">
-          <span>Aktif sejak {{ fmtDate(site.tgl_aktif) }}</span>
-          <button class="btn-sensor" @click="toggleSensors(site.id_site)">
-            {{ expandedSite === site.id_site ? '▲ Sembunyikan' : '📈 Ping & Traffic' }}
+        <!-- Device table -->
+        <div class="device-section" v-if="site.perangkat?.length">
+          <table class="device-table">
+            <tbody>
+              <tr v-for="(p, i) in site.perangkat.slice(0, 3)" :key="i">
+                <td><span class="dev-type">{{ p.jenis_perangkat }}</span></td>
+                <td class="dev-name">{{ [p.merk, p.tipe_model].filter(Boolean).join(' ') || '—' }}</td>
+                <td class="dev-ip">{{ p.ip_address || '' }}</td>
+                <td><span :class="['dev-status', p.status_perangkat === 'Aktif' ? 'dev-aktif' : 'dev-na']">{{ p.status_perangkat }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="site.perangkat.length > 3" class="dev-more">+{{ site.perangkat.length - 3 }} perangkat lainnya</div>
+        </div>
+        <div class="device-empty" v-else>Tidak ada data perangkat terdaftar</div>
+
+        <!-- Sensor toggle -->
+        <div class="card-footer">
+          <button
+            :class="['btn-sensor', expandedSite === site.id_site ? 'btn-sensor-active' : '']"
+            @click="toggleSensors(site.id_site)"
+          >
+            <span class="sensor-icon">{{ expandedSite === site.id_site ? '▲' : '▼' }}</span>
+            {{ expandedSite === site.id_site ? 'Sembunyikan Monitor' : 'Lihat Monitor PRTG' }}
           </button>
         </div>
 
-        <!-- Sensor Panel -->
+        <!-- Sensor panel -->
         <div v-if="expandedSite === site.id_site" class="sensor-panel">
-          <div v-if="sensorLoading" class="sensor-loading">Memuat sensor...</div>
-          <div v-else-if="!sensorData" class="sensor-empty">Tidak ada data sensor</div>
+          <div v-if="sensorLoading" class="sensor-state">Memuat data sensor dari PRTG…</div>
+          <div v-else-if="!sensorDevices.length" class="sensor-state sensor-empty-state">
+            Tidak ada perangkat PRTG yang terdaftar untuk site ini.<br>
+            <span class="sensor-empty-hint">Hubungi tim teknis untuk pengaturan monitoring.</span>
+          </div>
           <template v-else>
-            <p class="sensor-device">Device: <strong>{{ sensorData.device_name }}</strong> · {{ sensorData.sensors?.length ?? 0 }} sensor</p>
-
-            <!-- Pilih rentang -->
-            <div class="sensor-hours">
-              <span>Rentang:</span>
-              <button v-for="[gid, lbl] in [[0,'Live'],[1,'48j'],[2,'30h'],[3,'365h']]" :key="(gid as number)"
-                :class="['hour-btn', {active: graphHours === (gid as number)}]"
-                @click="graphHours = (gid as number); expandedSensor = null; histData = []">
-                {{ lbl }}
-              </button>
-            </div>
-
-            <!-- Semua sensor dynamic dari PRTG -->
-            <div v-if="sensorData.sensors?.length" class="sensor-group">
-              <div v-for="s in sensorData.sensors" :key="s.objid" class="sensor-item"
-                @click="openModal(site.id_site, s.objid, s.sensor)">
-                <span class="s-name">{{ s.sensor }}</span>
-                <span :class="['s-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
-                <span class="s-graph-hint">📈 lihat graph</span>
+            <!-- Rentang waktu -->
+            <div class="sensor-toolbar">
+              <span class="sensor-toolbar-label">RENTANG</span>
+              <div class="time-tabs">
+                <button v-for="[gid, lbl] in [[0,'Live'],[1,'48 Jam'],[2,'30 Hari'],[3,'1 Tahun']]" :key="(gid as number)"
+                  :class="['time-tab', { active: graphHours === (gid as number) }]"
+                  @click="graphHours = (gid as number)">{{ lbl }}</button>
               </div>
+              <span class="sensor-summary">{{ totalSensors }} sensor · {{ sensorDevices.length }} device</span>
             </div>
-            <p v-else class="sensor-empty">Tidak ada sensor terpantau untuk site ini di PRTG</p>
+
+            <!-- Per device -->
+            <div v-for="dev in sensorDevices" :key="dev.device_name" class="sensor-device-block">
+              <div class="sensor-device-name">{{ dev.device_name }}</div>
+              <div v-if="dev.sensors?.length" class="sensor-list">
+                <div
+                  v-for="s in dev.sensors" :key="s.objid"
+                  class="sensor-row"
+                  @click="openModal(site.id_site, s.objid, s.sensor)"
+                >
+                  <span :class="['sensor-dot', s.status_raw <= 3 ? 'dot-up' : 'dot-down']"></span>
+                  <span class="sensor-name">{{ s.sensor }}</span>
+                  <span :class="['sensor-status-label', s.status_raw <= 3 ? 'lbl-up' : 'lbl-down']">{{ s.status }}</span>
+                  <span class="sensor-cta">Lihat Grafik →</span>
+                </div>
+              </div>
+              <div v-else class="sensor-state">Tidak ada sensor untuk device ini</div>
+            </div>
           </template>
         </div>
       </div>
     </div>
 
-    <div v-if="!loading && !sites.length" class="empty">Tidak ada site terdaftar untuk akun ini.</div>
+    <div v-else-if="!loading" class="state-empty">
+      Tidak ada site yang terdaftar pada akun ini.
+    </div>
   </div>
 
-  <!-- Modal Graph -->
+  <!-- Graph Modal -->
   <Teleport to="body">
-    <div v-if="modalSensor" class="graph-modal-overlay" @click.self="modalSensor = null">
-      <div class="graph-modal">
-        <div class="graph-modal-header">
+    <div v-if="modalSensor" class="modal-overlay" @click.self="modalSensor = null">
+      <div class="modal-box">
+        <div class="modal-head">
           <div>
-            <div class="graph-modal-title">{{ modalSensor.name }}</div>
-            <div class="graph-modal-sub">Sensor ID: {{ modalSensor.objid }}</div>
+            <div class="modal-sensor-name">{{ modalSensor.name }}</div>
+            <div class="modal-sensor-id">Sensor ID {{ modalSensor.objid }}</div>
           </div>
-          <button class="graph-modal-close" @click="modalSensor = null">✕</button>
+          <button class="modal-close" @click="modalSensor = null">✕</button>
         </div>
-
-        <div class="graph-modal-hours">
-          <button v-for="[gid, label] in [[0,'Live'],[1,'48 jam'],[2,'30 hari'],[3,'365 hari']]" :key="gid"
-            :class="['hour-btn', { active: modalHours === gid }]"
-            @click="modalChangeHours(gid as number)">
-            {{ label }}
-          </button>
+        <div class="modal-time-bar">
+          <button v-for="[gid, label] in [[0,'Live'],[1,'48 Jam'],[2,'30 Hari'],[3,'1 Tahun']]" :key="gid"
+            :class="['time-tab', { active: modalHours === gid }]"
+            @click="modalChangeHours(gid as number)">{{ label }}</button>
         </div>
-
-        <div class="graph-modal-body">
-          <div v-if="modalGraphLoading" class="graph-modal-loading">Memuat graph dari PRTG...</div>
-          <div v-else-if="modalGraphUrl" class="graph-dark-wrap">
-            <img :src="modalGraphUrl" class="graph-modal-img" />
-          </div>
-          <div v-else class="graph-modal-loading">Graph tidak tersedia untuk sensor ini</div>
+        <div class="modal-body">
+          <div v-if="modalGraphLoading" class="modal-loading">Memuat grafik dari PRTG…</div>
+          <img v-else-if="modalGraphUrl" :src="modalGraphUrl" class="modal-graph-img" />
+          <div v-else class="modal-loading">Grafik tidak tersedia untuk sensor ini.</div>
         </div>
       </div>
     </div>
@@ -247,100 +277,505 @@ const totalTiketAktif = () => sites.value.reduce((a, s) => a + (s.tiket_aktif ||
 </template>
 
 <style scoped>
-.page        { padding: 28px 32px; max-width: 1200px; }
-.page-header { margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; font-weight: 800; }
-.sub         { margin: 0; font-size: 13px; color: #64748b; }
-.error-banner { margin: 16px 0; padding: 12px 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #b91c1c; font-size: 14px; font-weight: 500; }
-.loading     { padding: 60px; text-align: center; color: #94a3b8; }
-.empty       { padding: 60px; text-align: center; color: #94a3b8; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-.summary-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 22px; }
-.summary-card { background: #fff; border-radius: 10px; padding: 14px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
-.summary-card.green { border-left: 4px solid #16a34a; }
-.summary-card.red   { border-left: 4px solid #dc2626; }
-.summary-card.amber { border-left: 4px solid #d97706; }
-.snum  { font-size: 28px; font-weight: 800; color: #0f172a; }
-.slabel{ font-size: 12px; color: #64748b; }
+/* ── Reset / base ─────────────────────────────────────────── */
+* { box-sizing: border-box; }
+.dashboard {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #F0F4F9;
+  min-height: 100vh;
+  padding: 0 0 48px;
+  color: #0B1D35;
+}
 
-.site-grid   { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
-.site-card   { background: #fff; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); display: flex; flex-direction: column; gap: 12px; }
-.site-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-.site-name   { font-size: 15px; font-weight: 700; color: #0f172a; }
-.site-kode   { font-size: 12px; color: #64748b; margin-top: 2px; }
-.site-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
-.badge-site  { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
-.site-aktif  { background: #f0fdf4; color: #15803d; }
-.site-prospek{ background: #fefce8; color: #854d0e; }
-.site-terminasi { background: #fef2f2; color: #991b1b; }
-.badge-tiket { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fef3c7; color: #92400e; cursor: pointer; }
-.badge-tiket:hover { opacity: 0.8; }
+/* ── Page title bar ───────────────────────────────────────── */
+.page-title-bar {
+  background: #0B1D35;
+  padding: 24px 0 20px;
+  margin-bottom: 0;
+}
+.page-title-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.page-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #5A8ED4;
+  margin-bottom: 6px;
+}
+.page-heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: -0.3px;
+}
+.page-meta {
+  font-size: 12px;
+  color: #7A9EC4;
+}
+.page-meta strong { color: #A8C4E0; }
 
-.monitor-bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
-.mon-up      { background: #f0fdf4; }
-.mon-down    { background: #fef2f2; }
-.mon-warn    { background: #fefce8; }
-.mon-none    { background: #f8fafc; }
-.mon-dot     { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-.mon-up .mon-dot   { color: #16a34a; }
-.mon-down .mon-dot { color: #dc2626; }
-.mon-warn .mon-dot { color: #d97706; }
-.mon-none .mon-dot { color: #94a3b8; }
-.mon-label   { font-weight: 700; flex-shrink: 0; }
-.mon-up .mon-label   { color: #15803d; }
-.mon-down .mon-label { color: #dc2626; }
-.mon-warn .mon-label { color: #b45309; }
-.mon-none .mon-label { color: #64748b; }
-.mon-sensor  { color: #64748b; font-size: 12px; }
-.mon-time    { color: #94a3b8; font-size: 11px; margin-left: auto; }
+/* ── KPI Strip ────────────────────────────────────────────── */
+.kpi-strip {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  gap: 0;
+  background: #ffffff;
+  border-bottom: 1px solid #E3EAF3;
+  box-shadow: 0 1px 3px rgba(11,29,53,0.06);
+}
+.kpi-card {
+  flex: 1;
+  padding: 18px 24px;
+  border-right: 1px solid #E3EAF3;
+  border-left: 3px solid transparent;
+  transition: background 0.15s;
+}
+.kpi-card:last-child { border-right: none; }
+.kpi-up   { border-left-color: #0B7C4B; }
+.kpi-down { border-left-color: #C41E1E; }
+.kpi-warn { border-left-color: #B45309; }
+.kpi-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #0B1D35;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+}
+.kpi-up   .kpi-value { color: #0B7C4B; }
+.kpi-down .kpi-value { color: #C41E1E; }
+.kpi-warn .kpi-value { color: #B45309; }
+.kpi-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #7A8FA6;
+  margin-top: 5px;
+}
 
-.site-info   { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
-.info-icon   { font-size: 14px; }
+/* ── Layout ───────────────────────────────────────────────── */
+.site-grid {
+  max-width: 1200px;
+  margin: 28px auto 0;
+  padding: 0 32px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
+  gap: 16px;
+}
 
-.perangkat-list { display: flex; flex-direction: column; gap: 4px; }
-.perangkat-item { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 0; border-top: 1px solid #f1f5f9; }
-.perangkat-item:first-child { border-top: none; }
-.p-type { font-size: 10px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 1px 6px; border-radius: 4px; flex-shrink: 0; }
-.p-name { color: #374151; font-weight: 500; flex: 1; }
-.p-ip   { color: #94a3b8; font-family: monospace; font-size: 11px; }
-.p-status { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
-.p-aktif  { background: #f0fdf4; color: #15803d; }
-.p-na     { background: #f8fafc; color: #64748b; }
-.perangkat-more { font-size: 11px; color: #94a3b8; padding-top: 4px; }
-.no-perangkat   { font-size: 12px; color: #94a3b8; font-style: italic; }
+/* ── Site card ────────────────────────────────────────────── */
+.site-card {
+  background: #fff;
+  border: 1px solid #E3EAF3;
+  border-radius: 4px;
+  border-left: 4px solid #CBD5E1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(11,29,53,0.05);
+}
+.stripe-up   { border-left-color: #0B7C4B; }
+.stripe-down { border-left-color: #C41E1E; }
+.stripe-warn { border-left-color: #D97706; }
+.stripe-none { border-left-color: #CBD5E1; }
 
-.site-footer { font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 10px; display: flex; justify-content: space-between; align-items: center; }
-.btn-sensor { padding: 4px 10px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.btn-sensor:hover { background: #dbeafe; }
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid #F0F4F9;
+}
+.card-head-left { flex: 1; min-width: 0; }
+.site-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0B1D35;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.site-meta {
+  font-size: 11px;
+  color: #7A8FA6;
+  margin-top: 2px;
+  letter-spacing: 0.2px;
+}
+.card-head-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+.pill-status {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 2px;
+}
+.pill-aktif      { background: #ECFDF5; color: #065F46; }
+.pill-prospek    { background: #FFFBEB; color: #92400E; }
+.pill-terminasi  { background: #FEF2F2; color: #991B1B; }
+.pill-tiket {
+  font-size: 10px;
+  font-weight: 700;
+  background: #FEF3C7;
+  color: #92400E;
+  padding: 2px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+.pill-tiket:hover { background: #FDE68A; }
 
-.sensor-panel { border-top: 1px solid #f1f5f9; padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
-.sensor-device { margin: 0; font-size: 12px; color: #64748b; }
-.sensor-hours  { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
-.hour-btn { padding: 3px 8px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 5px; font-size: 11px; font-weight: 600; cursor: pointer; color: #374151; }
-.hour-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
-.sensor-loading { font-size: 12px; color: #94a3b8; text-align: center; padding: 8px; }
-.sensor-empty   { font-size: 12px; color: #94a3b8; text-align: center; padding: 8px; }
-.sensor-group { display: flex; flex-direction: column; }
-.sensor-item  { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-top: 1px solid #f1f5f9; cursor: pointer; border-radius: 8px; transition: background 0.1s; }
-.sensor-item:first-child { border-top: none; }
-.sensor-item:hover { background: #f0f9ff; }
-.s-name       { flex: 1; font-size: 13px; font-weight: 600; color: #0f172a; }
-.s-status     { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 8px; flex-shrink: 0; }
-.st-up        { background: #dcfce7; color: #15803d; }
-.st-down      { background: #fee2e2; color: #dc2626; }
-.s-graph-hint { font-size: 11px; color: #3b82f6; font-weight: 600; flex-shrink: 0; }
-.graph-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999; display: flex; align-items: center; justify-content: center; padding: 20px; }
-.graph-modal         { background: #ffffff; border-radius: 16px; width: 100%; max-width: 900px; box-shadow: 0 25px 80px rgba(0,0,0,0.35); overflow: hidden; }
-.graph-modal-header  { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px 24px 14px; border-bottom: 1px solid #e2e8f0; }
-.graph-modal-title   { font-size: 18px; font-weight: 800; color: #0f172a; }
-.graph-modal-sub     { font-size: 12px; color: #64748b; margin-top: 2px; }
-.graph-modal-close   { background: #f1f5f9; border: none; border-radius: 8px; color: #475569; font-size: 14px; padding: 6px 10px; cursor: pointer; flex-shrink: 0; }
-.graph-modal-close:hover { background: #e2e8f0; color: #0f172a; }
-.graph-modal-hours   { display: flex; gap: 8px; padding: 12px 24px; border-bottom: 1px solid #e2e8f0; }
-.hour-btn            { padding: 5px 14px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; background: transparent; color: #64748b; }
-.hour-btn.active     { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
-.graph-modal-body    { padding: 16px 24px 24px; min-height: 200px; display: flex; align-items: center; justify-content: center; }
-.graph-dark-wrap     { width: 100%; background: #f8fafc; border-radius: 10px; padding: 8px; border: 1px solid #e2e8f0; }
-.graph-modal-img     { width: 100%; display: block; border-radius: 6px; }
-.graph-modal-loading { color: #94a3b8; font-size: 14px; text-align: center; padding: 40px; }
+/* ── Monitor row ──────────────────────────────────────────── */
+.monitor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.mon-up   { background: #F0FDF4; color: #065F46; }
+.mon-down { background: #FEF2F2; color: #991B1B; }
+.mon-warn { background: #FFFBEB; color: #92400E; }
+.mon-none { background: #F8FAFC; color: #7A8FA6; }
+.mon-indicator {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+.mon-text { flex: 1; }
+.mon-since {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.7;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── Info section ─────────────────────────────────────────── */
+.info-section {
+  padding: 10px 18px;
+  border-bottom: 1px solid #F0F4F9;
+  display: flex;
+  gap: 24px;
+}
+.info-row { display: flex; flex-direction: column; gap: 2px; }
+.info-key {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #9EB3C9;
+}
+.info-val { font-size: 12px; font-weight: 500; color: #2D4A6A; }
+
+/* ── Device table ─────────────────────────────────────────── */
+.device-section { padding: 0 18px 2px; }
+.device-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.device-table tr { border-top: 1px solid #F0F4F9; }
+.device-table tr:first-child { border-top: none; }
+.device-table td { padding: 7px 4px; vertical-align: middle; }
+.dev-type {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #5A7184;
+  background: #EEF2F7;
+  padding: 2px 6px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.dev-name { color: #1E3A5C; font-weight: 500; padding-left: 8px; }
+.dev-ip   { color: #9EB3C9; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; padding-left: 8px; }
+.dev-status {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.dev-aktif { background: #ECFDF5; color: #065F46; }
+.dev-na    { background: #F1F5F9; color: #64748B; }
+.dev-more  { font-size: 11px; color: #9EB3C9; padding: 4px 0 8px; }
+.device-empty { padding: 10px 18px 12px; font-size: 11px; color: #9EB3C9; font-style: italic; }
+
+/* ── Card footer ──────────────────────────────────────────── */
+.card-footer {
+  padding: 10px 18px;
+  border-top: 1px solid #F0F4F9;
+  margin-top: auto;
+}
+.btn-sensor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border-radius: 3px;
+  border: 1.5px solid #C5D4E8;
+  background: #fff;
+  color: #1456A6;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-sensor:hover { background: #EEF4FF; border-color: #1456A6; }
+.btn-sensor-active { background: #EEF4FF; border-color: #1456A6; }
+.sensor-icon { font-size: 8px; }
+
+/* ── Sensor panel ─────────────────────────────────────────── */
+.sensor-panel {
+  border-top: 2px solid #EEF2F7;
+  background: #F8FAFC;
+}
+.sensor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #E3EAF3;
+}
+.sensor-toolbar-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #9EB3C9;
+}
+.time-tabs { display: flex; gap: 4px; }
+.time-tab {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border: 1.5px solid #D1DCE8;
+  border-radius: 2px;
+  background: #fff;
+  color: #5A7184;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.time-tab.active {
+  background: #0B1D35;
+  border-color: #0B1D35;
+  color: #fff;
+}
+.time-tab:not(.active):hover { border-color: #1456A6; color: #1456A6; }
+.sensor-summary {
+  margin-left: auto;
+  font-size: 11px;
+  color: #9EB3C9;
+  font-variant-numeric: tabular-nums;
+}
+
+.sensor-device-block { border-bottom: 1px solid #E3EAF3; }
+.sensor-device-block:last-child { border-bottom: none; }
+.sensor-device-name {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #5A7184;
+  padding: 8px 18px 4px;
+  background: #EEF2F7;
+  border-bottom: 1px solid #E3EAF3;
+}
+
+.sensor-list { display: flex; flex-direction: column; }
+.sensor-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #F0F4F9;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.sensor-row:last-child { border-bottom: none; }
+.sensor-row:hover { background: #EEF4FF; }
+.sensor-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-up   { background: #0B7C4B; }
+.dot-down { background: #C41E1E; }
+.sensor-name { flex: 1; font-size: 13px; font-weight: 500; color: #1E3A5C; }
+.sensor-status-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.lbl-up   { background: #ECFDF5; color: #065F46; }
+.lbl-down { background: #FEF2F2; color: #991B1B; }
+.sensor-cta {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1456A6;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+
+.sensor-state {
+  padding: 20px 18px;
+  font-size: 12px;
+  color: #9EB3C9;
+  text-align: center;
+  line-height: 1.6;
+}
+.sensor-empty-state { color: #7A8FA6; }
+.sensor-empty-hint  { font-size: 11px; color: #9EB3C9; display: block; margin-top: 4px; }
+
+/* ── State: loading / empty / error ──────────────────────── */
+.alert-error {
+  max-width: 1200px;
+  margin: 20px auto 0;
+  padding: 0 32px;
+}
+.alert-error > * {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-left: 4px solid #C41E1E;
+  border-radius: 3px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #7F1D1D;
+  font-weight: 500;
+}
+.alert-error {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-left: 4px solid #C41E1E;
+  border-radius: 3px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #7F1D1D;
+  font-weight: 500;
+  max-width: 1200px;
+  margin: 20px auto 0;
+}
+.state-loading, .state-empty {
+  max-width: 1200px;
+  margin: 60px auto;
+  padding: 0 32px;
+  text-align: center;
+  font-size: 13px;
+  color: #9EB3C9;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid #C5D4E8;
+  border-top-color: #1456A6;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Graph Modal ──────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11,29,53,0.7);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  backdrop-filter: blur(2px);
+}
+.modal-box {
+  background: #fff;
+  border-radius: 4px;
+  width: 100%;
+  max-width: 920px;
+  box-shadow: 0 24px 80px rgba(11,29,53,0.35);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px;
+  background: #0B1D35;
+}
+.modal-sensor-name { font-size: 16px; font-weight: 700; color: #fff; }
+.modal-sensor-id   { font-size: 11px; color: #7A9EC4; margin-top: 3px; }
+.modal-close {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 3px;
+  color: #A8C4E0;
+  font-size: 14px;
+  padding: 6px 10px;
+  cursor: pointer;
+  line-height: 1;
+}
+.modal-close:hover { background: rgba(255,255,255,0.2); color: #fff; }
+.modal-time-bar {
+  display: flex;
+  gap: 6px;
+  padding: 12px 24px;
+  background: #F0F4F9;
+  border-bottom: 1px solid #E3EAF3;
+}
+.modal-body {
+  padding: 20px 24px 24px;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #FAFBFC;
+}
+.modal-graph-img {
+  width: 100%;
+  display: block;
+  border-radius: 3px;
+  border: 1px solid #E3EAF3;
+}
+.modal-loading {
+  font-size: 13px;
+  color: #9EB3C9;
+  text-align: center;
+  padding: 40px;
+}
 </style>
