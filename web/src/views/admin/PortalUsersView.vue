@@ -45,6 +45,12 @@ async function resetPw(u: any) {
   alert('Password berhasil direset')
 }
 
+async function deleteUser(u: any) {
+  if (!confirm(`Hapus akun portal "${u.email}"?\nAksi ini tidak dapat dibatalkan.`)) return
+  await api.delete(`/portal/admin/users/${u.id_user}`)
+  users.value = users.value.filter(x => x.id_user !== u.id_user)
+}
+
 function fmtDate(d: string | null) {
   if (!d) return '—'
   return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -94,6 +100,7 @@ function fmtDate(d: string | null) {
               <div style="display:flex;gap:6px">
                 <button class="act-btn" @click="toggleUser(u)">{{ u.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
                 <button class="act-btn" @click="resetPw(u)">Reset PW</button>
+                <button class="act-btn act-btn-danger" @click="deleteUser(u)">Hapus</button>
               </div>
             </td>
           </tr>
@@ -157,6 +164,8 @@ td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .badge-inaktif{ background: #f8fafc; color: #94a3b8; }
 .act-btn { padding: 5px 10px; background: #f1f5f9; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; color: #374151; }
 .act-btn:hover { background: #e2e8f0; }
+.act-btn-danger { color: #dc2626; }
+.act-btn-danger:hover { background: #fee2e2; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 480px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }

@@ -373,4 +373,11 @@ export class PortalService {
     await this.prisma.customerUser.update({ where: { id_user: id }, data: { password_hash } });
     return { message: 'Password direset' };
   }
+
+  async deleteUser(id: number) {
+    const user = await this.prisma.customerUser.findUnique({ where: { id_user: id } });
+    if (!user) throw new NotFoundException('Akun tidak ditemukan');
+    await this.prisma.customerUser.delete({ where: { id_user: id } });
+    return { message: 'Akun portal dihapus' };
+  }
 }

@@ -136,4 +136,12 @@ export class PortalController {
     const data = await this.service.resetUserPassword(id, body.password);
     return { success: true, data };
   }
+
+  @Delete('admin/users/:id')
+  @AdminGuard()
+  @Roles('Admin', 'Manager_Ops', 'Director')
+  async deleteUser(@Param('id', ParseIntPipe) id: number) {
+    const data = await this.service.deleteUser(id);
+    return { success: true, data };
+  }
 }
