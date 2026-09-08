@@ -33,13 +33,16 @@ async function handleLogin() {
       <div class="brand-inner">
         <!-- Logo mark -->
         <div class="logo-mark">
-          <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
-            <rect width="44" height="44" rx="12" fill="rgba(255,255,255,0.15)"/>
-            <path d="M10 22 L22 10 L34 22 L22 34 Z" stroke="white" stroke-width="2.5" fill="none"/>
-            <circle cx="22" cy="22" r="5" fill="white"/>
+          <svg width="52" height="48" viewBox="0 0 130 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Teal N ribbon -->
+            <path d="M8 100 C8 100 8 20 8 18 C8 12 14 8 20 10 C26 12 30 20 34 30 C42 52 50 72 54 82 C54 82 54 20 54 18 C54 12 60 6 66 8" stroke="#1aafaf" stroke-width="18" stroke-linecap="round" fill="none"/>
+            <path d="M66 8 C72 10 76 18 76 24 C76 30 76 95 76 100" stroke="#1aafaf" stroke-width="18" stroke-linecap="round" fill="none"/>
+            <!-- Gray arrow/1 -->
+            <path d="M90 100 L90 30 L118 4" stroke="#6b7280" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M96 4 L118 4 L118 26" stroke="#6b7280" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
           </svg>
           <div>
-            <div class="logo-name">NEXT ONE</div>
+            <div class="logo-name"><span style="color:#1aafaf">Next</span><span style="color:#e2e8f0">One</span></div>
             <div class="logo-tagline">Network Solutions</div>
           </div>
         </div>
@@ -77,12 +80,13 @@ async function handleLogin() {
 
         <!-- Mobile logo -->
         <div class="mobile-logo">
-          <svg width="32" height="32" viewBox="0 0 44 44" fill="none">
-            <rect width="44" height="44" rx="12" fill="#0B1D35"/>
-            <path d="M10 22 L22 10 L34 22 L22 34 Z" stroke="white" stroke-width="2.5" fill="none"/>
-            <circle cx="22" cy="22" r="5" fill="white"/>
+          <svg width="40" height="36" viewBox="0 0 130 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 100 C8 100 8 20 8 18 C8 12 14 8 20 10 C26 12 30 20 34 30 C42 52 50 72 54 82 C54 82 54 20 54 18 C54 12 60 6 66 8" stroke="#1aafaf" stroke-width="18" stroke-linecap="round" fill="none"/>
+            <path d="M66 8 C72 10 76 18 76 24 C76 30 76 95 76 100" stroke="#1aafaf" stroke-width="18" stroke-linecap="round" fill="none"/>
+            <path d="M90 100 L90 30 L118 4" stroke="#4b5563" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M96 4 L118 4 L118 26" stroke="#4b5563" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
           </svg>
-          <span class="mobile-logo-name">NEXT ONE</span>
+          <span class="mobile-logo-name"><span style="color:#0f766e">Next</span><span style="color:#374151">One</span></span>
         </div>
 
         <div class="form-header">

@@ -29,7 +29,7 @@ const router = createRouter({
       path: '/portal/login',
       name: 'portal-login',
       component: () => import('@/views/portal/PortalLoginView.vue'),
-      meta: { portalPublic: true },
+      meta: { portalPublic: true, title: 'Masuk — Portal NextOne' },
     },
     {
       path: '/portal',
@@ -37,9 +37,9 @@ const router = createRouter({
       meta: { portal: true },
       children: [
         { path: '', redirect: '/portal/dashboard' },
-        { path: 'dashboard', name: 'portal-dashboard', component: () => import('@/views/portal/PortalDashboardView.vue') },
-        { path: 'tickets',   name: 'portal-tickets',   component: () => import('@/views/portal/PortalTicketsView.vue') },
-        { path: 'sla',       name: 'portal-sla',       component: () => import('@/views/portal/PortalSlaView.vue') },
+        { path: 'dashboard', name: 'portal-dashboard', component: () => import('@/views/portal/PortalDashboardView.vue'), meta: { portal: true, title: 'Status Site — Portal NextOne' } },
+        { path: 'tickets',   name: 'portal-tickets',   component: () => import('@/views/portal/PortalTicketsView.vue'),   meta: { portal: true, title: 'Tiket Support — Portal NextOne' } },
+        { path: 'sla',       name: 'portal-sla',       component: () => import('@/views/portal/PortalSlaView.vue'),       meta: { portal: true, title: 'Laporan SLA — Portal NextOne' } },
       ],
     },
 
@@ -56,15 +56,8 @@ const router = createRouter({
       path: '/',
       component: () => import('@/layouts/AppLayout.vue'),
       children: [
-        {
-          path: '',
-          redirect: '/dashboard',
-        },
-        {
-          path: 'dashboard',
-          name: 'dashboard',
-          component: () => import('@/views/DashboardView.vue'),
-        },
+        { path: '', redirect: '/dashboard' },
+        { path: 'dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { title: 'Dashboard — NextOne ERP' } },
         // HRIS
         {
           path: 'hris/karyawan',
@@ -432,6 +425,62 @@ router.beforeEach((to) => {
     const adminPages = ['admin-users', 'admin-logs', 'admin-email-log', 'admin-portal-users']
     if (adminPages.includes(to.name as string) && !auth.hasRole('Admin') && !auth.hasRole('Director') && !auth.hasRole('Manager_Ops')) return '/dashboard'
   }
+})
+
+// ── Dynamic page title ───────────────────────────────────────
+const ROUTE_TITLE: Record<string, string> = {
+  'login':                 'Masuk — NextOne ERP',
+  'dashboard':             'Dashboard — NextOne ERP',
+  'hris-list':             'Karyawan — NextOne ERP',
+  'hris-detail':           'Detail Karyawan — NextOne ERP',
+  'hris-tambah':           'Tambah Karyawan — NextOne ERP',
+  'hris-edit':             'Edit Karyawan — NextOne ERP',
+  'hris-undangan':         'Undangan — NextOne ERP',
+  'master-index':          'Master Data — NextOne ERP',
+  'master-pelanggan':      'Pelanggan — NextOne ERP',
+  'master-site':           'Site — NextOne ERP',
+  'master-site-detail':    'Detail Site — NextOne ERP',
+  'master-layanan':        'Layanan — NextOne ERP',
+  'master-vendor':         'Vendor — NextOne ERP',
+  'sales-dashboard':       'Sales — NextOne ERP',
+  'sales-lead-list':       'Lead — NextOne ERP',
+  'sales-lead-detail':     'Detail Lead — NextOne ERP',
+  'sales-opp-list':        'Opportunity — NextOne ERP',
+  'sales-opp-detail':      'Detail Opportunity — NextOne ERP',
+  'sales-quotation-list':  'Quotation — NextOne ERP',
+  'sales-quotation-detail':'Detail Quotation — NextOne ERP',
+  'tiket-list':            'Tiket Operasional — NextOne ERP',
+  'tiket-detail':          'Detail Tiket — NextOne ERP',
+  'noc-board':             'NOC Board — NextOne ERP',
+  'instalasi-list':        'Instalasi — NextOne ERP',
+  'instalasi-detail':      'Detail Instalasi — NextOne ERP',
+  'proyek-list':           'Proyek — NextOne ERP',
+  'proyek-detail':         'Detail Proyek — NextOne ERP',
+  'kontrak-list':          'Kontrak — NextOne ERP',
+  'kontrak-detail':        'Detail Kontrak — NextOne ERP',
+  'finance-dashboard':     'Finance — NextOne ERP',
+  'invoice-list':          'Invoice — NextOne ERP',
+  'invoice-detail':        'Detail Invoice — NextOne ERP',
+  'aset-list':             'Aset — NextOne ERP',
+  'aset-detail':           'Detail Aset — NextOne ERP',
+  'laporan':               'Laporan — NextOne ERP',
+  'laporan-sla':           'Laporan SLA — NextOne ERP',
+  'prtg-settings':         'Integrasi PRTG — NextOne ERP',
+  'starsender-settings':   'Integrasi StarSender — NextOne ERP',
+  'admin-users':           'Manajemen User — NextOne ERP',
+  'admin-portal-users':    'Portal Users — NextOne ERP',
+  'notifications':         'Notifikasi — NextOne ERP',
+  'profile':               'Profil — NextOne ERP',
+  'portal-login':          'Masuk — Portal NextOne',
+  'portal-dashboard':      'Status Site — Portal NextOne',
+  'portal-tickets':        'Tiket Support — Portal NextOne',
+  'portal-sla':            'Laporan SLA — Portal NextOne',
+}
+
+router.afterEach((to) => {
+  const name = to.name as string | undefined
+  const meta = to.meta?.title as string | undefined
+  document.title = meta || (name && ROUTE_TITLE[name]) || 'NextOne ERP'
 })
 
 export default router
