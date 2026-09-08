@@ -65,11 +65,8 @@ async function handleLogin() {
       </svg>
 
       <div class="hero-brand">
-        <div class="logo-box logo-box-hero">
-          <img v-if="cfg.settings.company_logo_url" :src="cfg.settings.company_logo_url" alt="logo" class="logo-img" />
-          <span v-else class="logo-text logo-text-hero">{{ (cfg.settings.company_brand || 'N1').slice(0, 2).toUpperCase() }}</span>
-        </div>
-        <span class="hero-brand-name">ERP {{ cfg.settings.company_brand || 'NEXT1' }}</span>
+        <img src="/logo-nextone.png" alt="NextOne" class="hero-logo-img" />
+        <span class="hero-brand-name">ERP <span style="color:#13c2c2">NEXT</span><span style="opacity:.7">ONE</span></span>
       </div>
 
       <div class="hero-content">
@@ -212,6 +209,7 @@ async function handleLogin() {
   position: absolute; top: 44px; left: 60px; z-index: 2;
   display: flex; align-items: center; gap: 12px;
 }
+.hero-logo-img { height: 38px; width: auto; object-fit: contain; filter: brightness(0) invert(1); }
 .hero-brand-name { font-size: 15px; font-weight: 700; letter-spacing: 0.3px; color: #e2e8f0; }
 .hero-title {
   font-size: 34px; font-weight: 800; line-height: 1.25; margin: 0 0 16px;

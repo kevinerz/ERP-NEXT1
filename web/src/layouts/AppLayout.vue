@@ -213,12 +213,9 @@ const initials = computed(() => {
 
       <!-- Brand -->
       <div class="sidebar-brand">
-        <div class="brand-logo">
-          <img v-if="cfg.settings.company_logo_url" :src="cfg.settings.company_logo_url" alt="logo" class="brand-logo-img" />
-          <span v-else>{{ (cfg.settings.company_brand || 'N1').slice(0, 2).toUpperCase() }}</span>
-        </div>
+        <img src="/logo-nextone.png" alt="NextOne" class="brand-logo-img-main" />
         <Transition name="fade-text">
-          <span v-if="sidebarOpen || mobileNavOpen" class="brand-name">ERP {{ cfg.settings.company_brand || 'NEXT1' }}</span>
+          <span v-if="sidebarOpen || mobileNavOpen" class="brand-name">ERP <span style="color:#13c2c2">NEXT</span><span style="color:#94a3b8">ONE</span></span>
         </Transition>
       </div>
 
@@ -427,6 +424,12 @@ const initials = computed(() => {
   border-bottom: 1px solid rgba(255,255,255,0.06);
   flex-shrink: 0;
 }
+.brand-logo-img-main {
+  height: 32px; width: auto; object-fit: contain; flex-shrink: 0;
+  filter: brightness(0) invert(1);
+  transition: opacity .2s;
+}
+.sidebar.collapsed .brand-logo-img-main { height: 28px; }
 .brand-logo {
   width: 34px; height: 34px; flex-shrink: 0;
   background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
