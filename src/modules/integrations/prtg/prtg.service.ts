@@ -171,16 +171,21 @@ export class PrtgService {
     return semua.find((s) => lower.includes(s.nama_site.toLowerCase())) ?? null;
   }
 
+  /** Ambil durasi konfirmasi dari DB config (default 10 menit jika belum ada). */
+  private async getDurasiKonfirmasi(): Promise<number> {
+    try {
+      const row = await this.prisma.integrationPrtgConfig.findUnique({ where: { id: 1 } });
+      return row?.durasi_konfirmasi_menit ?? 10;
+    } catch { return 10; }
+  }
+
   @Cron('*/1 * * * *')
   async poll() {
     // PAUSE TOTAL: polling PRTG MATI kecuali env PRTG_POLL_ENABLED=true.
-    // Dicek DULUAN sebelum menyentuh DB/API — jadi saat DB/resource bermasalah,
-    // cron ini benar-benar tidak melakukan apa pun (nol query, nol fetch).
-    // Aktifkan lagi: set PRTG_POLL_ENABLED=true di .env server + restart.
     if (process.env.PRTG_POLL_ENABLED !== 'true') return { data: null, message: 'Polling PRTG dimatikan (PRTG_POLL_ENABLED != true)' };
-    // Jeda manual (tombol nonaktif) — berhenti sebelum sentuh API/DB apa pun.
     if (!(await this.isEnabled())) return { data: null, message: 'Polling PRTG sedang dijeda' };
     if (!(await this.prtg.isConfigured())) return;
+
     let downSensors: PrtgSensor[];
     try {
       downSensors = await this.prtg.getDownSensors();
@@ -189,23 +194,32 @@ export class PrtgService {
       return;
     }
 
-    const hasil = { tiket_dibuat: 0, dilewati: 0, auto_resolved: 0, tanpa_site: 0 };
+    const durasiKonfirmasiMenit = await this.getDurasiKonfirmasi();
+    const hasil = { tiket_dibuat: 0, pending_baru: 0, false_alarm: 0, dilewati: 0, auto_resolved: 0, tanpa_site: 0 };
+    const now = new Date();
+    const downDevices = new Set(downSensors.map((s) => s.device));
 
-    // ── 1. Group sensor DOWN per device — 1 device = 1 tiket ──────────
-    // Kumpulkan semua sensor ID yang sudah ada entri aktif (tiket aktif atau
-    // tanpa-tiket dalam 24 jam) agar kita tidak re-query per sensor.
+    // ── 1. Kumpulkan semua entri aktif (tiket confirmed + pending grace period)
     const activeEntries = await this.prisma.integrationPrtgWebhook.findMany({
       where: {
         OR: [
           { ticket: { status_tiket: { in: STATUS_TIKET_AKTIF } } },
-          { id_ticket_terbentuk: null, diterima_pada: { gte: new Date(Date.now() - 15 * 60_000) } },
+          // Pending dalam grace period — sudah dicatat, belum dapat tiket
+          { id_ticket_terbentuk: null, is_pending: true, first_seen_at: { gte: new Date(now.getTime() - (durasiKonfirmasiMenit + 5) * 60_000) } },
+          // Tanpa tiket & tanpa site — entri lama (max 24 jam)
+          { id_ticket_terbentuk: null, is_pending: false, diterima_pada: { gte: new Date(now.getTime() - 24 * 3600_000) } },
         ],
       },
-      select: { prtg_sensor_id: true, prtg_device_name: true, id_ticket_terbentuk: true },
+      select: { id_webhook: true, prtg_sensor_id: true, prtg_device_name: true, id_ticket_terbentuk: true, is_pending: true, first_seen_at: true },
     });
     const activeDevices = new Set(activeEntries.map((e) => e.prtg_device_name));
+    // Device pending yang sudah melewati grace period
+    const pendingEntries = activeEntries.filter(
+      (e) => e.is_pending && !e.id_ticket_terbentuk &&
+        (now.getTime() - new Date(e.first_seen_at).getTime()) >= durasiKonfirmasiMenit * 60_000,
+    );
 
-    // Group sensor yang benar-benar baru (device-nya belum ada entri aktif)
+    // ── 2. Sensor pertama kali Down — masuk grace period (belum tiket, belum WA)
     const byDevice = new Map<string, PrtgSensor[]>();
     for (const s of downSensors) {
       if (activeDevices.has(s.device)) { hasil.dilewati++; continue; }
@@ -215,31 +229,7 @@ export class PrtgService {
     }
 
     for (const [device, sensors] of byDevice) {
-      const site = await this.cariSite(device);
-      let ticketId: number | null = null;
-
-      if (site) {
-        const sensorNames = sensors.map((s) => s.sensor).join(', ');
-        const ticket = await this.buatTiketPrtg(
-          { sensorId: String(sensors[0].objid), device, sensor: sensorNames, message: sensors[0].message_raw },
-          site,
-        );
-        ticketId = ticket.id_ticket;
-        hasil.tiket_dibuat++;
-        // Acknowledge alarm di PRTG — semua sensor device ini, fire-and-forget
-        for (const s of sensors) {
-          this.prtg.acknowledgeAlarm(s.objid, `Tiket ${ticket.nomor_tiket} dibuat oleh sistem ERP`).catch(() => {});
-        }
-        this.wa.notifMonitorDown({
-          sumber: 'PRTG', nama: device, nama_site: site.nama_site,
-          msg: sensorNames,
-        }).catch(() => {});
-      } else {
-        hasil.tanpa_site++;
-        // Device belum di-mapping ke site — tidak buat notif (mengurangi noise)
-      }
-
-      // Buat 1 baris webhook per sensor (semua menunjuk tiket yang sama)
+      // Buat entri pending — TIDAK buat tiket, TIDAK kirim WA dulu
       for (const s of sensors) {
         await this.prisma.integrationPrtgWebhook.create({
           data: {
@@ -248,25 +238,77 @@ export class PrtgService {
             prtg_sensor_name: s.sensor,
             status_sensor: s.status,
             pesan_alert: s.message_raw,
-            id_ticket_terbentuk: ticketId,
+            is_pending: true,
+            first_seen_at: now,
           },
+        });
+      }
+      hasil.pending_baru++;
+      this.logger.log(`PRTG grace period mulai: ${device} (konfirmasi dalam ${durasiKonfirmasiMenit} menit)`);
+    }
+
+    // ── 3. Cek device yang pending & sudah melewati grace period ──────────
+    // Group pending entries by device_name (bisa >1 sensor per device)
+    const pendingByDevice = new Map<string, typeof pendingEntries>();
+    for (const e of pendingEntries) {
+      const d = e.prtg_device_name ?? '';
+      const arr = pendingByDevice.get(d) ?? [];
+      arr.push(e);
+      pendingByDevice.set(d, arr);
+    }
+
+    for (const [device, entries] of pendingByDevice) {
+      if (!downDevices.has(device)) {
+        // Device sudah UP dalam grace period → false alarm, hapus entri
+        for (const e of entries) {
+          await this.prisma.integrationPrtgWebhook.delete({ where: { id_webhook: e.id_webhook } }).catch(() => {});
+        }
+        hasil.false_alarm++;
+        this.logger.log(`PRTG false alarm dihindari: ${device} kembali UP dalam grace period`);
+        continue;
+      }
+
+      // Masih Down setelah grace period → buat tiket + kirim WA sekarang
+      const site = await this.cariSite(device);
+      const firstEntry = entries[0];
+      const downSensorList = downSensors.filter((s) => s.device === device);
+      const sensorNames = downSensorList.map((s) => s.sensor).join(', ') || 'Sensor';
+
+      let ticketId: number | null = null;
+      if (site) {
+        const ticket = await this.buatTiketPrtg(
+          { sensorId: firstEntry.prtg_sensor_id ?? '', device, sensor: sensorNames, message: firstEntry.prtg_sensor_id },
+          site,
+        );
+        ticketId = ticket.id_ticket;
+        hasil.tiket_dibuat++;
+        for (const s of downSensorList) {
+          this.prtg.acknowledgeAlarm(s.objid, `Tiket ${ticket.nomor_tiket} dibuat oleh sistem ERP`).catch(() => {});
+        }
+      } else {
+        hasil.tanpa_site++;
+      }
+
+      // Update semua entri pending jadi confirmed
+      for (const e of entries) {
+        await this.prisma.integrationPrtgWebhook.update({
+          where: { id_webhook: e.id_webhook },
+          data: { is_pending: false, id_ticket_terbentuk: ticketId },
         });
       }
     }
 
-    // ── 2. Device kembali UP → resolve tiket saat SEMUA sensornya UP ──
-    const downDevices = new Set(downSensors.map((s) => s.device));
+    // ── 4. Device kembali UP → resolve tiket saat SEMUA sensornya UP ──────
     const aktifPrtg = await this.prisma.integrationPrtgWebhook.findMany({
-      where: { ticket: { status_tiket: { in: STATUS_TIKET_AKTIF }, sumber_tiket: 'PRTG' } },
+      where: { is_pending: false, ticket: { status_tiket: { in: STATUS_TIKET_AKTIF }, sumber_tiket: 'PRTG' } },
       include: { ticket: { select: { id_ticket: true, nomor_tiket: true, status_tiket: true } } },
     });
-    // Group by tiket — resolve hanya kalau semua sensornya sudah UP
     const tiketSensors = new Map<number, { ticket: typeof aktifPrtg[0]['ticket']; devices: string[]; allUp: boolean }>();
     for (const w of aktifPrtg) {
       if (!w.ticket) continue;
       const entry = tiketSensors.get(w.ticket.id_ticket) ?? { ticket: w.ticket, devices: [], allUp: true };
       entry.devices.push(w.prtg_device_name ?? '');
-      if (w.prtg_sensor_id && downDevices.has(w.prtg_device_name ?? '')) entry.allUp = false;
+      if (downDevices.has(w.prtg_device_name ?? '')) entry.allUp = false;
       tiketSensors.set(w.ticket.id_ticket, entry);
     }
     for (const { ticket, devices, allUp } of tiketSensors.values()) {
@@ -290,7 +332,6 @@ export class PrtgService {
       const deviceName = devices[0] ?? '';
       this.wa.notifMonitorUp({ sumber: 'PRTG', nama: deviceName }).catch(() => {});
 
-      // WA notif ke grup pelanggan — device kembali UP
       this.prisma.operationTicket.findUnique({
         where: { id_ticket: ticket.id_ticket },
         select: { nomor_tiket: true, judul_tiket: true, id_site: true, site: { select: { nama_site: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } } } },
@@ -309,25 +350,22 @@ export class PrtgService {
       }).catch(() => {});
     }
 
-    // ── 3. Device UP tanpa tiket (site tak dikenali) — bersihkan penanda ──
-    const tanpaTiket = await this.prisma.integrationPrtgWebhook.findMany({
-      where: {
-        id_ticket_terbentuk: null,
-        diterima_pada: { gte: new Date(Date.now() - 24 * 3600_000) },
-      },
+    // ── 5. Bersihkan entri pending lama yang devicenya sudah UP (tanpa tiket) ──
+    const oldPending = await this.prisma.integrationPrtgWebhook.findMany({
+      where: { id_ticket_terbentuk: null, is_pending: false, diterima_pada: { gte: new Date(now.getTime() - 24 * 3600_000) } },
     });
-    for (const w of tanpaTiket) {
-      if (!w.prtg_sensor_id || downDevices.has(w.prtg_device_name ?? '')) continue;
+    for (const w of oldPending) {
+      if (downDevices.has(w.prtg_device_name ?? '')) continue;
       await this.prisma.notification.deleteMany({
         where: { is_read: false, judul: { contains: `[PRTG] ${w.prtg_device_name} DOWN` } },
       }).catch(() => {});
       await this.prisma.integrationPrtgWebhook.delete({ where: { id_webhook: w.id_webhook } }).catch(() => {});
     }
 
-    if (hasil.tiket_dibuat || hasil.auto_resolved || hasil.tanpa_site) {
+    if (hasil.tiket_dibuat || hasil.auto_resolved || hasil.false_alarm || hasil.pending_baru) {
       this.logger.log(`PRTG poll: ${JSON.stringify(hasil)}`);
     }
-    return { data: hasil, message: `Poll selesai: ${hasil.tiket_dibuat} tiket dibuat, ${hasil.auto_resolved} auto-resolved, ${hasil.tanpa_site} site tak dikenali` };
+    return { data: hasil, message: `Poll selesai: ${hasil.pending_baru} pending, ${hasil.tiket_dibuat} tiket dibuat, ${hasil.false_alarm} false alarm dihindari, ${hasil.auto_resolved} auto-resolved` };
   }
 
   private async genNomorTiket(now: Date): Promise<string> {
@@ -415,12 +453,12 @@ export class PrtgService {
         base_url: row?.base_url || '',
         username: row?.username || '',
         has_passhash: !!row?.passhash,
+        durasi_konfirmasi_menit: row?.durasi_konfirmasi_menit ?? 10,
       },
     };
   }
 
-  async updateConfig(dto: { base_url?: string; username?: string; passhash?: string }) {
-    const existing = await this.prisma.integrationPrtgConfig.findUnique({ where: { id: 1 } });
+  async updateConfig(dto: { base_url?: string; username?: string; passhash?: string; durasi_konfirmasi_menit?: number }) {
     await this.prisma.integrationPrtgConfig.upsert({
       where: { id: 1 },
       create: {
@@ -428,15 +466,36 @@ export class PrtgService {
         base_url: dto.base_url || null,
         username: dto.username || null,
         passhash: dto.passhash ? this.crypto.encrypt(dto.passhash) : null,
+        durasi_konfirmasi_menit: dto.durasi_konfirmasi_menit ?? 10,
       },
       update: {
         base_url: dto.base_url !== undefined ? dto.base_url : undefined,
         username: dto.username !== undefined ? dto.username : undefined,
-        // Passhash kosong dari form (tidak diubah user) jangan menimpa yang sudah ada
         passhash: dto.passhash ? this.crypto.encrypt(dto.passhash) : undefined,
+        durasi_konfirmasi_menit: dto.durasi_konfirmasi_menit !== undefined ? dto.durasi_konfirmasi_menit : undefined,
       },
     });
     return { message: 'Konfigurasi PRTG disimpan' };
+  }
+
+  /** Daftar device yang sedang dalam grace period (belum jadi tiket) */
+  async getPendingDevices() {
+    const rows = await this.prisma.integrationPrtgWebhook.findMany({
+      where: { is_pending: true, id_ticket_terbentuk: null },
+      orderBy: { first_seen_at: 'desc' },
+      distinct: ['prtg_device_name'],
+    });
+    const dur = await this.getDurasiKonfirmasi();
+    const now = Date.now();
+    return {
+      data: rows.map((r) => ({
+        device_name: r.prtg_device_name,
+        sensor_name: r.prtg_sensor_name,
+        first_seen_at: r.first_seen_at,
+        sisa_detik: Math.max(0, Math.round(dur * 60 - (now - new Date(r.first_seen_at).getTime()) / 1000)),
+        durasi_konfirmasi_menit: dur,
+      })),
+    };
   }
 
   // ─── MAPPING DEVICE → SITE ──────────────────────────────────────

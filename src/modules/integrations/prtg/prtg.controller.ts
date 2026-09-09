@@ -35,9 +35,12 @@ export class PrtgController {
 
   @Roles('Admin', 'Director')
   @Patch('config')
-  updateConfig(@Body() dto: { base_url?: string; username?: string; passhash?: string }) {
+  updateConfig(@Body() dto: { base_url?: string; username?: string; passhash?: string; durasi_konfirmasi_menit?: number }) {
     return this.prtgService.updateConfig(dto);
   }
+
+  @Get('pending')
+  getPendingDevices() { return this.prtgService.getPendingDevices(); }
 
   // ─── MAPPING DEVICE → SITE ────────────────────────────────────────
 

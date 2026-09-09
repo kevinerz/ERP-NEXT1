@@ -30,10 +30,18 @@ async function toggleAktif() {
 }
 
 // ─── KONEKSI ──────────────────────────────────────────────────
-const configForm = ref({ base_url: '', username: '', passhash: '' })
+const configForm = ref({ base_url: '', username: '', passhash: '', durasi_konfirmasi_menit: 10 })
 const configHasPasshash = ref(false)
 const savingConfig = ref(false)
 const configMsg = ref('')
+
+const DURASI_OPTIONS = [
+  { value: 3,  label: '3 menit — koneksi sangat stabil' },
+  { value: 5,  label: '5 menit — cukup untuk VPN reconnect singkat' },
+  { value: 10, label: '10 menit — rekomendasi (VPN bisa reconnect ~5 menit)' },
+  { value: 15, label: '15 menit — koneksi sering flap' },
+  { value: 20, label: '20 menit — koneksi sangat tidak stabil' },
+]
 
 async function fetchConfig() {
   try {
@@ -41,6 +49,7 @@ async function fetchConfig() {
     configForm.value.base_url = d.base_url
     configForm.value.username = d.username
     configHasPasshash.value = d.has_passhash
+    configForm.value.durasi_konfirmasi_menit = d.durasi_konfirmasi_menit ?? 10
   } catch {}
 }
 async function saveConfig() {
@@ -52,6 +61,27 @@ async function saveConfig() {
     await Promise.all([fetchConfig(), fetchStatus()])
   } catch (e: any) { configMsg.value = e.response?.data?.message || 'Gagal menyimpan' }
   finally { savingConfig.value = false }
+}
+
+// ─── PENDING (grace period) ───────────────────────────────────
+const pendingList = ref<any[]>([])
+const pendingLoading = ref(false)
+let pendingInterval: ReturnType<typeof setInterval> | null = null
+
+async function fetchPending() {
+  pendingLoading.value = true
+  try { pendingList.value = (await api.get('/prtg/pending')).data.data ?? [] }
+  catch {} finally { pendingLoading.value = false }
+}
+
+function fmtSisa(sisa: number) {
+  if (sisa <= 0) return 'Segera diproses...'
+  const m = Math.floor(sisa / 60), s = sisa % 60
+  return m > 0 ? `${m}m ${s}s` : `${s}s`
+}
+function fmtTime(d: string) {
+  if (!d) return '—'
+  return new Date(d).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 // ─── MAPPING ──────────────────────────────────────────────────
@@ -225,8 +255,13 @@ function lastVal(points: any[], key: string) {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchStatus(), fetchConfig(), fetchMapping(), proyek.fetchSiteList()])
+  await Promise.all([fetchStatus(), fetchConfig(), fetchMapping(), proyek.fetchSiteList(), fetchPending()])
+  // Refresh pending list tiap 15 detik (tampilkan countdown live)
+  pendingInterval = setInterval(fetchPending, 15_000)
 })
+
+import { onUnmounted } from 'vue'
+onUnmounted(() => { if (pendingInterval) clearInterval(pendingInterval) })
 </script>
 
 <template>
@@ -243,6 +278,26 @@ onMounted(async () => {
         :disabled="toggling" @click="toggleAktif">
         {{ toggling ? '...' : (status.is_aktif ? '⏸ Jeda Polling' : '▶ Aktifkan Polling') }}
       </button>
+    </div>
+
+    <!-- Grace period banner -->
+    <div v-if="pendingList.length" class="pending-banner">
+      <div class="pending-banner-head">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <strong>{{ pendingList.length }} device dalam grace period</strong>
+        <span class="pending-sub"> — menunggu konfirmasi sebelum tiket & WA dibuat (anti false alarm)</span>
+      </div>
+      <div class="pending-items">
+        <div v-for="p in pendingList" :key="p.device_name" class="pending-item">
+          <span class="pending-device">{{ p.device_name }}</span>
+          <span class="pending-sensor">{{ p.sensor_name }}</span>
+          <span class="pending-dot"></span>
+          <span class="pending-since">Down sejak {{ fmtTime(p.first_seen_at) }}</span>
+          <span class="pending-sisa" :class="p.sisa_detik <= 0 ? 'sisa-segera' : ''">
+            {{ p.sisa_detik <= 0 ? '⚡ Segera diproses...' : `⏱ ${fmtSisa(p.sisa_detik)} lagi` }}
+          </span>
+        </div>
+      </div>
     </div>
 
     <div class="tabs">
@@ -366,8 +421,34 @@ onMounted(async () => {
           <label>Passhash {{ configHasPasshash ? '(sudah tersimpan — isi hanya jika ingin ganti)' : '' }}</label>
           <input v-model="configForm.passhash" type="password" :placeholder="configHasPasshash ? '••••••••' : 'Passhash PRTG'" />
         </div>
+      </div>
+
+      <div class="card">
+        <h3>Anti False Alarm — Grace Period</h3>
+        <p class="hint">
+          Sensor harus bertahan Down selama durasi ini sebelum tiket dibuat dan notifikasi WA dikirim.
+          Jika sensor kembali Up dalam waktu ini, dianggap false alarm — tidak ada tiket, tidak ada WA.
+          Ideal untuk kondisi akses VPN ke perangkat site yang bisa disconnect singkat.
+        </p>
+        <div class="field">
+          <label>Durasi Konfirmasi Down</label>
+          <select v-model.number="configForm.durasi_konfirmasi_menit">
+            <option v-for="o in DURASI_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+          </select>
+        </div>
+        <div class="durasi-preview">
+          <div class="durasi-flow">
+            <div class="dp-step dp-warn">Sensor Down Terdeteksi</div>
+            <div class="dp-arrow">→ tunggu {{ configForm.durasi_konfirmasi_menit }} menit →</div>
+            <div class="dp-split">
+              <div class="dp-step dp-ok">Masih Down ✓<br><small>Buat tiket + kirim WA</small></div>
+              <div class="dp-step dp-silent">Sudah Up ✗<br><small>False alarm — tidak ada notif</small></div>
+            </div>
+          </div>
+        </div>
+
         <button class="btn-submit" @click="saveConfig" :disabled="savingConfig">
-          {{ savingConfig ? 'Menyimpan...' : 'Simpan Koneksi' }}
+          {{ savingConfig ? 'Menyimpan...' : 'Simpan Konfigurasi' }}
         </button>
         <p v-if="configMsg" class="msg">{{ configMsg }}</p>
       </div>
@@ -439,6 +520,31 @@ onMounted(async () => {
 .page { padding: 28px 32px; max-width: 1100px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0 0 16px; font-size: 13px; color: #64748b; }
+
+/* Grace period banner */
+.pending-banner { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
+.pending-banner-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #92400e; margin-bottom: 8px; }
+.pending-sub { font-weight: 400; }
+.pending-items { display: flex; flex-direction: column; gap: 5px; }
+.pending-item { display: flex; align-items: center; gap: 8px; font-size: 12px; background: rgba(255,255,255,.7); border-radius: 6px; padding: 6px 10px; }
+.pending-device { font-weight: 700; color: #334155; font-family: monospace; }
+.pending-sensor { color: #64748b; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pending-dot { width: 5px; height: 5px; border-radius: 50%; background: #f59e0b; flex-shrink: 0; animation: blink 1s infinite; }
+.pending-since { color: #94a3b8; white-space: nowrap; }
+.pending-sisa { font-weight: 700; color: #b45309; white-space: nowrap; }
+.sisa-segera { color: #dc2626; animation: blink .5s infinite; }
+@keyframes blink { 0%,100% { opacity:1 } 50% { opacity:.4 } }
+
+/* Durasi flow preview */
+.durasi-preview { margin: 16px 0; }
+.durasi-flow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dp-step { padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; text-align: center; }
+.dp-warn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.dp-ok { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.dp-silent { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+.dp-arrow { font-size: 12px; color: #94a3b8; white-space: nowrap; font-weight: 600; }
+.dp-split { display: flex; flex-direction: column; gap: 6px; }
+.dp-step small { font-weight: 400; display: block; margin-top: 2px; }
 
 .status-bar { display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; color: #334155; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; }

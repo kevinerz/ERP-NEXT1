@@ -1037,6 +1037,9 @@ model IntegrationPrtgWebhook {
   pesan_alert         String?  @db.Text
   id_ticket_terbentuk Int?
   diterima_pada       DateTime @default(now())
+  // Anti false-alarm: sensor Down harus bertahan X menit sebelum tiket & WA dibuat
+  is_pending          Boolean  @default(false) // true = dalam grace period, belum ada tiket
+  first_seen_at       DateTime @default(now()) // kapan pertama kali terdeteksi Down
 
   ticket OperationTicket? @relation(fields: [id_ticket_terbentuk], references: [id_ticket])
 
@@ -1047,12 +1050,13 @@ model IntegrationPrtgWebhook {
 // endpoint publik untuk branding login, kredensial PRTG tidak boleh ikut bocor
 // di sana). Single-row, selalu id=1. Fallback ke env var kalau row belum ada.
 model IntegrationPrtgConfig {
-  id         Int      @id @default(1)
-  base_url   String?  @db.VarChar(255)
-  username   String?  @db.VarChar(100)
-  passhash   String?  @db.VarChar(100)
-  is_aktif   Boolean  @default(true) // false = polling 5-menit dijeda (hemat resource)
-  updated_at DateTime @default(now()) @updatedAt
+  id                      Int      @id @default(1)
+  base_url                String?  @db.VarChar(255)
+  username                String?  @db.VarChar(100)
+  passhash                String?  @db.VarChar(100)
+  is_aktif                Boolean  @default(true)  // false = polling dijeda (hemat resource)
+  durasi_konfirmasi_menit Int      @default(10)    // menit Down sebelum tiket + WA dibuat (anti false alarm)
+  updated_at              DateTime @default(now()) @updatedAt
 
   @@map("integration_prtg_config")
 }
