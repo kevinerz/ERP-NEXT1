@@ -96,9 +96,10 @@ export class AssetsController {
     return this.svc.selesaikanPengajuan(id, dto, req.user?.id_user);
   }
 
+  @Roles('Admin')
   @Delete('pengajuan/:id')
-  removePengajuan(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
-    return this.svc.removePengajuan(id, req.user?.id_user);
+  removePengajuan(@Param('id', ParseIntPipe) id: number) {
+    return this.svc.removePengajuan(id);
   }
 
   // ─── ASET CRUD ────────────────────────────────────────────────

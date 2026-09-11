@@ -13,6 +13,7 @@ const auth = useAuthStore()
 
 const id = Number(route.params.id)
 const bisaApprove = computed(() => auth.hasRole('Director') || auth.hasRole('Manager_Ops'))
+const isAdmin = computed(() => auth.hasRole('Admin'))
 
 const processing = ref(false)
 const catatanApproval = ref('')
@@ -71,12 +72,13 @@ async function submitSelesai() {
   finally { processing.value = false }
 }
 
-async function batalkan() {
-  if (!confirm('Batalkan pengajuan ini?')) return
+async function hapusAdmin() {
+  const nama = p.value?.nama_item ?? `#${id}`
+  if (!confirm(`Hapus pengajuan "${nama}" secara permanen?\n\nTindakan ini tidak bisa dibatalkan.`)) return
   try {
     await aset.removePengajuan(id)
     router.push('/assets/pengajuan')
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal membatalkan pengajuan') }
+  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus pengajuan') }
 }
 </script>
 
@@ -91,7 +93,7 @@ async function batalkan() {
         </span>
       </div>
       <div class="actions">
-        <button v-if="p.status_pengajuan === 'Diajukan'" class="btn-secondary" @click="batalkan">Batalkan</button>
+        <button v-if="isAdmin" class="btn-hapus" @click="hapusAdmin" :disabled="processing">🗑 Hapus</button>
         <template v-if="p.status_pengajuan === 'Diajukan' && bisaApprove">
           <button class="btn-reject" @click="approve('Ditolak')" :disabled="processing">Tolak</button>
           <button class="btn-approve" @click="approve('Disetujui')" :disabled="processing">Setujui</button>
@@ -172,6 +174,9 @@ async function batalkan() {
 .actions { display: flex; gap: 10px; }
 .btn-primary { padding: 10px 18px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-secondary { padding: 10px 18px; background: #fff; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-hapus { padding: 10px 18px; background: #fff; color: #7f1d1d; border: 1.5px solid #fca5a5; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-hapus:hover { background: #fef2f2; }
+.btn-hapus:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-approve { padding: 10px 18px; background: #15803d; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-approve:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-reject { padding: 10px 18px; background: #fff; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }

@@ -4,6 +4,7 @@ import { CreateAsetDto, UpdateAsetDto, CreateMutasiDto } from './dto/aset.dto';
 import { CreateStokOpnameDto, ScanStokOpnameDto } from './dto/stok-opname.dto';
 import { CreatePengajuanAsetDto, ApprovePengajuanAsetDto, SelesaikanPengajuanAsetDto } from './dto/pengajuan-aset.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StarsenderService } from '../integrations/starsender/starsender.service';
 
 const ASET_INCLUDE = {
   site: { select: { kode_site: true, nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
@@ -11,9 +12,16 @@ const ASET_INCLUDE = {
   _count: { select: { mutasi: true } },
 };
 
+// Nama karyawan yang selalu menerima notif pengajuan aset
+const NOTIF_TARGETS_ASET = ['Fajar Fatahillah', 'Sigit Suryahadi'];
+
 @Injectable()
 export class AssetsService {
-  constructor(private prisma: PrismaService, private notifService: NotificationsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notifService: NotificationsService,
+    private wa: StarsenderService,
+  ) {}
 
   // ─── ASET ────────────────────────────────────────────────────
 
@@ -698,22 +706,59 @@ export class AssetsService {
   };
 
   async createPengajuan(dto: CreatePengajuanAsetDto, userId: number) {
-    const data = await this.prisma.pengajuanAset.create({
-      data: {
-        ...dto,
-        jumlah: dto.jumlah ?? 1,
-        estimasi_harga: dto.estimasi_harga ?? 0,
-        id_pemohon: userId,
-      },
-      include: this.PENGAJUAN_INCLUDE,
-    });
+    const [data, pemohonUser] = await Promise.all([
+      this.prisma.pengajuanAset.create({
+        data: {
+          ...dto,
+          jumlah: dto.jumlah ?? 1,
+          estimasi_harga: dto.estimasi_harga ?? 0,
+          id_pemohon: userId,
+        },
+        include: this.PENGAJUAN_INCLUDE,
+      }),
+      this.prisma.coreUser.findUnique({
+        where: { id_user: userId },
+        include: { karyawan: { select: { nama_lengkap: true } } },
+      }),
+    ]);
+    const namaPemohon = pemohonUser?.karyawan?.nama_lengkap ?? 'User';
+    // Web notif ke Director/Manager_Ops
     this.notifService.notifyForRoles(['Director', 'Manager_Ops'], {
       tipe: 'pengajuan_aset_approval',
-      judul: 'Pengajuan Aset Menunggu Approval',
-      deskripsi: `${dto.nama_item} (x${dto.jumlah ?? 1}) diajukan — perlu disetujui`,
+      judul: '📋 Pengajuan Aset Menunggu Approval',
+      deskripsi: `${dto.nama_item} (x${dto.jumlah ?? 1}) oleh ${namaPemohon}`,
       url: `/assets/pengajuan/${data.id_pengajuan}`,
     }).catch(() => {});
+    // Notif targeted ke Fajar & Sigit + WA
+    this.kirimNotifPengajuanBaru(data, dto, namaPemohon).catch(() => {});
     return { data, message: `Pengajuan aset "${dto.nama_item}" dibuat, menunggu approval` };
+  }
+
+  private async kirimNotifPengajuanBaru(data: any, dto: CreatePengajuanAsetDto, namaPemohon: string) {
+    try {
+      const targets = await this.prisma.coreUser.findMany({
+        where: { is_aktif: true, karyawan: { nama_lengkap: { in: NOTIF_TARGETS_ASET } } },
+        include: { karyawan: { select: { nama_lengkap: true, no_hp: true } } },
+      });
+      for (const u of targets) {
+        this.prisma.notification.create({
+          data: {
+            id_user: u.id_user,
+            tipe: 'pengajuan_aset_approval',
+            judul: '📋 Pengajuan Aset Menunggu Review',
+            deskripsi: `${dto.nama_item} (x${dto.jumlah ?? 1}) oleh ${namaPemohon}`,
+            url: `/assets/pengajuan/${data.id_pengajuan}`,
+          },
+        }).catch(() => {});
+      }
+      const phones = targets.map((u) => u.karyawan?.no_hp).filter(Boolean) as string[];
+      if (phones.length) {
+        const SEP = '━━━━━━━━━━━━━━━━━━━━';
+        const harga = Number(dto.estimasi_harga ?? 0).toLocaleString('id-ID');
+        const pesan = `📋 *Pengajuan Aset Baru*\n${SEP}\nBarang  : ${dto.nama_item} (x${dto.jumlah ?? 1})\nKategori: ${dto.kategori}\nEstimasi: Rp ${harga}\nAlasan  : ${dto.alasan}\nPemohon : ${namaPemohon}\n${SEP}\nMohon review & approval di ERP.`;
+        await this.wa.sendToPhones(phones, pesan);
+      }
+    } catch {}
   }
 
   async findAllPengajuan(query: { status_pengajuan?: string; page?: number; limit?: number }) {
@@ -767,6 +812,13 @@ export class AssetsService {
       deskripsi: `${p.nama_item} — ${dto.status_approval}`,
       url: `/assets/pengajuan/${id}`,
     }).catch(() => {});
+    // Notif + WA ke pemohon, Fajar, Sigit
+    const approverUser = await this.prisma.coreUser.findUnique({
+      where: { id_user: approverId },
+      include: { karyawan: { select: { nama_lengkap: true } } },
+    });
+    const namaApprover = approverUser?.karyawan?.nama_lengkap ?? 'Tim Management';
+    this.kirimNotifHasilApproval(p, dto, namaApprover).catch(() => {});
     return { data, message: `Pengajuan ${dto.status_approval}` };
   }
 
@@ -801,12 +853,47 @@ export class AssetsService {
     return { data, message: `Barang diterima — aset ${asetResult.data.kode_aset} tercatat` };
   }
 
-  async removePengajuan(id: number, userId?: number) {
+  async removePengajuan(id: number) {
     const p = await this.prisma.pengajuanAset.findUnique({ where: { id_pengajuan: id } });
     if (!p) throw new NotFoundException('Pengajuan tidak ditemukan');
-    if (p.status_pengajuan !== 'Diajukan')
-      throw new BadRequestException('Hanya pengajuan berstatus Diajukan yang bisa dibatalkan');
     await this.prisma.pengajuanAset.delete({ where: { id_pengajuan: id } });
-    return { message: 'Pengajuan dibatalkan' };
+    return { message: `Pengajuan #${id} "${p.nama_item}" dihapus` };
+  }
+
+  private async kirimNotifHasilApproval(p: any, dto: ApprovePengajuanAsetDto, namaApprover: string) {
+    try {
+      const emoji = dto.status_approval === 'Disetujui' ? '✅' : '❌';
+      // Web notif ke pemohon
+      this.prisma.notification.create({
+        data: {
+          id_user: p.id_pemohon,
+          tipe: 'pengajuan_aset_hasil',
+          judul: `${emoji} Pengajuan Aset ${dto.status_approval}`,
+          deskripsi: `${p.nama_item} — ${dto.status_approval} oleh ${namaApprover}`,
+          url: `/assets/pengajuan/${p.id_pengajuan}`,
+        },
+      }).catch(() => {});
+      // Cari Fajar & Sigit + pemohon untuk WA
+      const [targets, pemohon] = await Promise.all([
+        this.prisma.coreUser.findMany({
+          where: { is_aktif: true, karyawan: { nama_lengkap: { in: NOTIF_TARGETS_ASET } } },
+          include: { karyawan: { select: { no_hp: true } } },
+        }),
+        this.prisma.coreUser.findUnique({
+          where: { id_user: p.id_pemohon },
+          include: { karyawan: { select: { no_hp: true } } },
+        }),
+      ]);
+      const phones = [
+        ...targets.map((u) => u.karyawan?.no_hp).filter(Boolean),
+        pemohon?.karyawan?.no_hp,
+      ].filter(Boolean) as string[];
+      if (phones.length) {
+        const SEP = '━━━━━━━━━━━━━━━━━━━━';
+        const catatanLine = dto.catatan_approval ? `\nCatatan : ${dto.catatan_approval}` : '';
+        const pesan = `${emoji} *Pengajuan Aset ${dto.status_approval}*\n${SEP}\nBarang  : ${p.nama_item} (x${p.jumlah})\nOleh    : ${namaApprover}${catatanLine}\n${SEP}\nLihat detail di ERP.`;
+        await this.wa.sendToPhones(phones, pesan);
+      }
+    } catch {}
   }
 }

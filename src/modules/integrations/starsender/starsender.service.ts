@@ -166,6 +166,15 @@ export class StarsenderService {
       .map((u) => u.karyawan!.no_hp!);
   }
 
+  async sendToPhones(phones: string[], pesan: string): Promise<void> {
+    if (!phones.length) return;
+    try {
+      const cfg = await this.prisma.integrationStarsenderConfig.findUnique({ where: { id: 1 }, select: { is_active: true } });
+      if (!cfg?.is_active) return;
+      this.client.sendMany(phones, pesan).catch(() => {});
+    } catch {}
+  }
+
   private async sendToInternal(pesan: string) {
     const groupIds = await this.getInternalGroupIds();
     if (groupIds.length) {
