@@ -876,7 +876,8 @@ model PengajuanAset {
   jumlah           Int       @default(1)
   alasan           String    @db.Text
   estimasi_harga   Decimal   @default(0) @db.Decimal(15, 2)
-  id_gudang_tujuan Int?
+  id_gudang_tujuan  Int?
+  link_marketplace  String?   @db.VarChar(500)
   status_pengajuan String    @default("Diajukan") @db.VarChar(20)
   id_pemohon       Int
   id_approver      Int?

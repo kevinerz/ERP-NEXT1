@@ -108,6 +108,10 @@ async function hapusAdmin() {
       <div class="info-row"><span class="info-label">Estimasi Harga</span><span>{{ fmtRupiah(p.estimasi_harga) }}</span></div>
       <div class="info-row"><span class="info-label">Gudang Tujuan</span><span>{{ p.gudang_tujuan?.nama_gudang || '— Belum ditentukan —' }}</span></div>
       <div class="info-row full"><span class="info-label">Alasan</span><p class="alasan">{{ p.alasan }}</p></div>
+      <div class="info-row" v-if="p.link_marketplace">
+        <span class="info-label">Link Marketplace</span>
+        <a :href="p.link_marketplace" target="_blank" rel="noopener" class="link">{{ p.link_marketplace }}</a>
+      </div>
       <div class="info-row"><span class="info-label">Pemohon</span><span>{{ p.pemohon?.karyawan?.nama_lengkap || '—' }}</span></div>
       <div class="info-row"><span class="info-label">Tgl Diajukan</span><span>{{ fmtDateTime(p.tgl_diajukan) }}</span></div>
       <template v-if="p.tgl_approval">

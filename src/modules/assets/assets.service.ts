@@ -5,6 +5,7 @@ import { CreateStokOpnameDto, ScanStokOpnameDto } from './dto/stok-opname.dto';
 import { CreatePengajuanAsetDto, ApprovePengajuanAsetDto, SelesaikanPengajuanAsetDto } from './dto/pengajuan-aset.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StarsenderService } from '../integrations/starsender/starsender.service';
+import { MailerService } from '../../common/mailer/mailer.service';
 
 const ASET_INCLUDE = {
   site: { select: { kode_site: true, nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
@@ -21,6 +22,7 @@ export class AssetsService {
     private prisma: PrismaService,
     private notifService: NotificationsService,
     private wa: StarsenderService,
+    private mailer: MailerService,
   ) {}
 
   // ─── ASET ────────────────────────────────────────────────────
@@ -738,7 +740,7 @@ export class AssetsService {
     try {
       const targets = await this.prisma.coreUser.findMany({
         where: { is_aktif: true, karyawan: { nama_lengkap: { in: NOTIF_TARGETS_ASET } } },
-        include: { karyawan: { select: { nama_lengkap: true, no_hp: true } } },
+        include: { karyawan: { select: { nama_lengkap: true, no_hp: true, email: true } } },
       });
       for (const u of targets) {
         this.prisma.notification.create({
@@ -751,12 +753,39 @@ export class AssetsService {
           },
         }).catch(() => {});
       }
+      const harga = Number(dto.estimasi_harga ?? 0).toLocaleString('id-ID');
+      const linkLine = dto.link_marketplace ? `\nLink    : ${dto.link_marketplace}` : '';
       const phones = targets.map((u) => u.karyawan?.no_hp).filter(Boolean) as string[];
       if (phones.length) {
         const SEP = '━━━━━━━━━━━━━━━━━━━━';
-        const harga = Number(dto.estimasi_harga ?? 0).toLocaleString('id-ID');
-        const pesan = `📋 *Pengajuan Aset Baru*\n${SEP}\nBarang  : ${dto.nama_item} (x${dto.jumlah ?? 1})\nKategori: ${dto.kategori}\nEstimasi: Rp ${harga}\nAlasan  : ${dto.alasan}\nPemohon : ${namaPemohon}\n${SEP}\nMohon review & approval di ERP.`;
+        const pesan = `📋 *Pengajuan Aset Baru*\n${SEP}\nBarang  : ${dto.nama_item} (x${dto.jumlah ?? 1})\nKategori: ${dto.kategori}\nEstimasi: Rp ${harga}\nAlasan  : ${dto.alasan}\nPemohon : ${namaPemohon}${linkLine}\n${SEP}\nMohon review & approval di ERP.`;
         await this.wa.sendToPhones(phones, pesan);
+      }
+      // Email ke Fajar & Sigit
+      if (this.mailer.isConfigured()) {
+        const emails = targets.map((u) => u.karyawan?.email).filter(Boolean) as string[];
+        if (emails.length) {
+          const linkHtml = dto.link_marketplace
+            ? `<tr><td style="color:#64748b;padding:6px 0;width:120px;">Link Marketplace</td><td><a href="${dto.link_marketplace}" style="color:#1d4ed8;">${dto.link_marketplace}</a></td></tr>`
+            : '';
+          await this.mailer.broadcast(emails, {
+            subject: `📋 Pengajuan Aset: ${dto.nama_item} — Menunggu Approval`,
+            modul: 'pengajuan_aset',
+            html: `
+              <p>Halo,</p>
+              <p>Ada pengajuan aset baru yang memerlukan review dan approval Anda.</p>
+              <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+                <tr><td style="color:#64748b;padding:6px 0;width:120px;">Barang</td><td><strong>${dto.nama_item} (x${dto.jumlah ?? 1})</strong></td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;">Kategori</td><td>${dto.kategori}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;">Estimasi Harga</td><td>Rp ${harga}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;">Alasan</td><td>${dto.alasan}</td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;">Pemohon</td><td>${namaPemohon}</td></tr>
+                ${linkHtml}
+              </table>
+              <p>Silakan buka ERP untuk melakukan review dan approval.</p>
+            `,
+          }).catch(() => {});
+        }
       }
     } catch {}
   }
@@ -873,15 +902,15 @@ export class AssetsService {
           url: `/assets/pengajuan/${p.id_pengajuan}`,
         },
       }).catch(() => {});
-      // Cari Fajar & Sigit + pemohon untuk WA
+      // Cari Fajar & Sigit + pemohon untuk WA & email
       const [targets, pemohon] = await Promise.all([
         this.prisma.coreUser.findMany({
           where: { is_aktif: true, karyawan: { nama_lengkap: { in: NOTIF_TARGETS_ASET } } },
-          include: { karyawan: { select: { no_hp: true } } },
+          include: { karyawan: { select: { no_hp: true, email: true, nama_lengkap: true } } },
         }),
         this.prisma.coreUser.findUnique({
           where: { id_user: p.id_pemohon },
-          include: { karyawan: { select: { no_hp: true } } },
+          include: { karyawan: { select: { no_hp: true, email: true, nama_lengkap: true } } },
         }),
       ]);
       const phones = [
@@ -893,6 +922,33 @@ export class AssetsService {
         const catatanLine = dto.catatan_approval ? `\nCatatan : ${dto.catatan_approval}` : '';
         const pesan = `${emoji} *Pengajuan Aset ${dto.status_approval}*\n${SEP}\nBarang  : ${p.nama_item} (x${p.jumlah})\nOleh    : ${namaApprover}${catatanLine}\n${SEP}\nLihat detail di ERP.`;
         await this.wa.sendToPhones(phones, pesan);
+      }
+      // Email ke pemohon + Fajar & Sigit
+      if (this.mailer.isConfigured()) {
+        const allEmails = [
+          pemohon?.karyawan?.email,
+          ...targets.map((u) => u.karyawan?.email),
+        ].filter(Boolean) as string[];
+        if (allEmails.length) {
+          const catatanHtml = dto.catatan_approval
+            ? `<tr><td style="color:#64748b;padding:6px 0;width:120px;">Catatan</td><td>${dto.catatan_approval}</td></tr>`
+            : '';
+          await this.mailer.broadcast(allEmails, {
+            subject: `${emoji} Pengajuan Aset ${dto.status_approval}: ${p.nama_item}`,
+            modul: 'pengajuan_aset',
+            html: `
+              <p>Halo,</p>
+              <p>Pengajuan aset berikut telah <strong>${dto.status_approval}</strong> oleh ${namaApprover}.</p>
+              <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+                <tr><td style="color:#64748b;padding:6px 0;width:120px;">Barang</td><td><strong>${p.nama_item} (x${p.jumlah})</strong></td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;">Status</td><td><strong style="color:${dto.status_approval === 'Disetujui' ? '#15803d' : '#dc2626'}">${dto.status_approval}</strong></td></tr>
+                <tr><td style="color:#64748b;padding:6px 0;">Diproses oleh</td><td>${namaApprover}</td></tr>
+                ${catatanHtml}
+              </table>
+              <p>Silakan buka ERP untuk melihat detail pengajuan.</p>
+            `,
+          }).catch(() => {});
+        }
       }
     } catch {}
   }

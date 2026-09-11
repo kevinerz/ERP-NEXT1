@@ -21,7 +21,7 @@ const gudangList = ref<GudangOpt[]>([])
 const showModal = ref(false)
 const submitting = ref(false)
 const formError = ref('')
-const form = ref({ nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0 })
+const form = ref({ nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0, link_marketplace: '' })
 
 onMounted(async () => {
   await fetchGudang()
@@ -41,7 +41,7 @@ function doFilter() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
 function resetForm() {
-  form.value = { nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0 }
+  form.value = { nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0, link_marketplace: '' }
 }
 
 async function handleSubmit() {
@@ -52,6 +52,7 @@ async function handleSubmit() {
   try {
     const payload: any = { ...form.value }
     if (!payload.id_gudang_tujuan) delete payload.id_gudang_tujuan
+    if (!payload.link_marketplace) delete payload.link_marketplace
     const result = await aset.createPengajuan(payload)
     showModal.value = false
     router.push(`/assets/pengajuan/${result.id_pengajuan}`)
@@ -151,6 +152,11 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
           <input v-model.number="form.estimasi_harga" type="number" min="0" placeholder="0" />
         </div>
         <div class="field">
+          <label>Link Marketplace (opsional)</label>
+          <input v-model="form.link_marketplace" placeholder="https://tokopedia.com/..., shopee.co.id/..." />
+          <span class="field-hint">Isi bila ada referensi produk di toko online</span>
+        </div>
+        <div class="field">
           <label>Gudang Tujuan (opsional)</label>
           <select v-model.number="form.id_gudang_tujuan">
             <option :value="0">— Belum ditentukan —</option>
@@ -210,6 +216,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .req { color: #ef4444; }
 .field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
+.field-hint { font-size: 11px; color: #94a3b8; }
 .form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 8px 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }

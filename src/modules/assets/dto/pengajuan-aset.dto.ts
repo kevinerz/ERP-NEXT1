@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsNumber, IsDateString, Min } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsNumber, IsDateString, IsUrl, Min } from 'class-validator';
 
 export class CreatePengajuanAsetDto {
   @IsString() nama_item: string;
@@ -7,6 +7,7 @@ export class CreatePengajuanAsetDto {
   @IsString() alasan: string;
   @IsOptional() @IsNumber() @Min(0) estimasi_harga?: number;
   @IsOptional() @IsInt() id_gudang_tujuan?: number;
+  @IsOptional() @IsString() link_marketplace?: string;
 }
 
 export class ApprovePengajuanAsetDto {
