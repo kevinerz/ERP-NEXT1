@@ -33,6 +33,12 @@ function logout() {
         <RouterLink to="/portal/dashboard" class="nav-item" active-class="active">
           <span class="nav-icon">📡</span> Status Site
         </RouterLink>
+        <RouterLink to="/portal/map" class="nav-item" active-class="active">
+          <span class="nav-icon">🗺️</span> Peta Jaringan
+        </RouterLink>
+        <RouterLink to="/portal/sites" class="nav-item" active-class="active">
+          <span class="nav-icon">🏢</span> Data Site
+        </RouterLink>
         <RouterLink to="/portal/tickets" class="nav-item" active-class="active">
           <span class="nav-icon">🎫</span> Tiket Support
         </RouterLink>

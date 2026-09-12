@@ -38,6 +38,8 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/portal/dashboard' },
         { path: 'dashboard', name: 'portal-dashboard', component: () => import('@/views/portal/PortalDashboardView.vue'), meta: { portal: true, title: 'Status Site — Portal NextOne' } },
+        { path: 'map',       name: 'portal-map',       component: () => import('@/views/portal/PortalMapView.vue'),       meta: { portal: true, title: 'Peta Jaringan — Portal NextOne' } },
+        { path: 'sites',     name: 'portal-sites',     component: () => import('@/views/portal/PortalSiteListView.vue'),  meta: { portal: true, title: 'Daftar Site — Portal NextOne' } },
         { path: 'tickets',   name: 'portal-tickets',   component: () => import('@/views/portal/PortalTicketsView.vue'),   meta: { portal: true, title: 'Tiket Support — Portal NextOne' } },
         { path: 'sla',       name: 'portal-sla',       component: () => import('@/views/portal/PortalSlaView.vue'),       meta: { portal: true, title: 'Laporan SLA — Portal NextOne' } },
       ],

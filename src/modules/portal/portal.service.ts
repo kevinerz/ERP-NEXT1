@@ -66,19 +66,107 @@ export class PortalService {
     });
 
     return sites.map((s: any) => ({
-      id_site:     s.id_site,
-      kode_site:   s.kode_site,
-      nama_site:   s.nama_site,
-      alamat:      s.alamat_lengkap,
-      kota:        s.kota,
-      provinsi:    s.provinsi,
-      status_site: s.status_site,
-      tgl_aktif:   s.tgl_aktif,
-      layanan:     s.layanan,
-      tiket_aktif: s.tickets.length,
-      perangkat:   s.perangkat,
-      monitoring:  this.resolveMonitorStatus(s.prtg_mapping[0] ?? null, s.uptimekuma_mapping[0] ?? null),
+      id_site:       s.id_site,
+      kode_site:     s.kode_site,
+      nama_site:     s.nama_site,
+      alamat:        s.alamat_lengkap,
+      kota:          s.kota,
+      provinsi:      s.provinsi,
+      koordinat_gps: s.koordinat_gps ?? null,
+      status_site:   s.status_site,
+      tgl_aktif:     s.tgl_aktif,
+      layanan:       s.layanan,
+      tiket_aktif:   s.tickets.length,
+      perangkat:     s.perangkat,
+      monitoring:    this.resolveMonitorStatus(s.prtg_mapping[0] ?? null, s.uptimekuma_mapping[0] ?? null),
     }));
+  }
+
+  async getSiteList(id_pelanggan: number) {
+    const sites = await this.prisma.sitePelanggan.findMany({
+      where: { id_pelanggan },
+      orderBy: { nama_site: 'asc' },
+      include: {
+        layanan:  { select: { nama_layanan: true, kode_layanan: true } },
+        perangkat: {
+          select: { jenis_perangkat: true, merk: true, tipe_model: true,
+                    ip_address: true, mac_address: true, serial_number: true,
+                    status_perangkat: true, tgl_pasang: true },
+          orderBy: { jenis_perangkat: 'asc' },
+        },
+        pic: {
+          select: { nama_pic: true, jabatan: true, no_kontak: true, email: true, is_utama: true },
+          orderBy: [{ is_utama: 'desc' }, { nama_pic: 'asc' }],
+        },
+        kontrak: {
+          where: { status_kontrak: 'Aktif' },
+          select: { nomor_kontrak: true, tgl_mulai: true, tgl_berakhir: true,
+                    harga_mrc: true, harga_otc: true, status_kontrak: true },
+          take: 1,
+          orderBy: { tgl_mulai: 'desc' },
+        },
+      },
+    });
+
+    return sites.map((s: any) => ({
+      id_site:       s.id_site,
+      kode_site:     s.kode_site,
+      nama_site:     s.nama_site,
+      alamat:        s.alamat_lengkap,
+      kota:          s.kota,
+      provinsi:      s.provinsi,
+      koordinat_gps: s.koordinat_gps ?? null,
+      status_site:   s.status_site,
+      tgl_aktif:     s.tgl_aktif,
+      tgl_terminasi: s.tgl_terminasi,
+      catatan:       s.catatan,
+      layanan:       s.layanan,
+      perangkat:     s.perangkat,
+      pic:           s.pic,
+      kontrak:       s.kontrak[0] ?? null,
+    }));
+  }
+
+  async getSiteDownStatus(id_pelanggan: number) {
+    // Ambil semua mapping PRTG untuk site milik pelanggan ini
+    const mappings = await this.prisma.integrationPrtgMapping.findMany({
+      where: { site: { id_pelanggan } },
+      select: { id_site: true, device_name: true },
+    });
+    if (!mappings.length) return [];
+
+    const deviceNames = mappings.map((m) => m.device_name);
+    // Webhook yang masih DOWN dan sudah jadi tiket (bukan pending)
+    const webhooks = await this.prisma.integrationPrtgWebhooks.findMany({
+      where: {
+        prtg_device_name: { in: deviceNames },
+        status_sensor: 'Down',
+        is_pending: false,
+        id_ticket_terbentuk: { not: null },
+      },
+      select: { prtg_device_name: true, prtg_sensor_name: true, id_ticket_terbentuk: true },
+    });
+
+    // Cek tiket masih Open / In_Progress
+    const ticketIds = [...new Set(webhooks.map((w) => w.id_ticket_terbentuk!))];
+    const openTickets = await this.prisma.operationTicket.findMany({
+      where: { id_ticket: { in: ticketIds }, status_tiket: { in: ['Open', 'In_Progress'] } },
+      select: { id_ticket: true },
+    });
+    const openSet = new Set(openTickets.map((t) => t.id_ticket));
+
+    // Kelompokkan per site
+    const byDevice = new Map(mappings.map((m) => [m.device_name, m.id_site]));
+    const downBySite = new Map<number, string[]>();
+    for (const w of webhooks) {
+      if (!openSet.has(w.id_ticket_terbentuk!)) continue;
+      const siteId = byDevice.get(w.prtg_device_name);
+      if (!siteId) continue;
+      if (!downBySite.has(siteId)) downBySite.set(siteId, []);
+      downBySite.get(siteId)!.push(w.prtg_sensor_name || w.prtg_device_name);
+    }
+
+    return [...downBySite.entries()].map(([id_site, sensors]) => ({ id_site, sensors }));
   }
 
   private resolveMonitorStatus(prtg: any, uptime: any) {

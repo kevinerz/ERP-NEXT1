@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useAuthStore } from '@/stores/auth'
@@ -18,18 +18,35 @@ const bisaApprove = computed(() => auth.hasRole('Director') || auth.hasRole('Man
 interface GudangOpt { id_gudang: number; kode_gudang: string; nama_gudang: string; kota?: string | null }
 const gudangList = ref<GudangOpt[]>([])
 
+interface KaryawanOpt { id_user: number; nama_lengkap: string; jabatan?: string | null; departemen?: string | null }
+const karyawanList = ref<KaryawanOpt[]>([])
+const karyawanSearch = ref('')
+const karyawanFiltered = computed(() => {
+  const q = karyawanSearch.value.toLowerCase()
+  return q ? karyawanList.value.filter(k => k.nama_lengkap.toLowerCase().includes(q) || (k.jabatan ?? '').toLowerCase().includes(q)) : karyawanList.value
+})
+
 const showModal = ref(false)
 const submitting = ref(false)
 const formError = ref('')
-const form = ref({ nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0, link_marketplace: '' })
+const form = ref({ nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0, link_marketplace: '', id_pemohon: 0 })
 
 onMounted(async () => {
-  await fetchGudang()
+  await Promise.all([fetchGudang(), fetchKaryawan()])
   fetchData()
 })
 
 async function fetchGudang() {
   try { gudangList.value = (await api.get('/master/gudang')).data.data } catch {}
+}
+
+async function fetchKaryawan() {
+  try {
+    const r = await api.get('/hris/karyawan', { params: { status_aktif: true, limit: 300 } })
+    karyawanList.value = (r.data.data as any[])
+      .filter((k: any) => k.user?.id_user)
+      .map((k: any) => ({ id_user: k.user.id_user, nama_lengkap: k.nama_lengkap, jabatan: k.jabatan, departemen: k.departemen }))
+  } catch {}
 }
 
 function fetchData() {
@@ -41,10 +58,14 @@ function doFilter() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
 function resetForm() {
-  form.value = { nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0, link_marketplace: '' }
+  karyawanSearch.value = ''
+  form.value = { nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0, link_marketplace: '', id_pemohon: auth.user?.id_user ?? 0 }
 }
 
 async function handleSubmit() {
+  if (!form.value.id_pemohon) {
+    formError.value = 'Pilih pengaju terlebih dahulu'; return
+  }
   if (!form.value.nama_item || !form.value.kategori || !form.value.alasan) {
     formError.value = 'Nama barang, kategori, dan alasan wajib diisi'; return
   }
@@ -53,6 +74,7 @@ async function handleSubmit() {
     const payload: any = { ...form.value }
     if (!payload.id_gudang_tujuan) delete payload.id_gudang_tujuan
     if (!payload.link_marketplace) delete payload.link_marketplace
+    if (!payload.id_pemohon) delete payload.id_pemohon
     const result = await aset.createPengajuan(payload)
     showModal.value = false
     router.push(`/assets/pengajuan/${result.id_pengajuan}`)
@@ -136,6 +158,16 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
         <h3>Ajukan Pembelian Aset Baru</h3>
         <p class="modal-desc" v-if="bisaApprove">Sebagai Director/Manager Ops, pengajuanmu sendiri tetap perlu disetujui pihak lain yang berwenang.</p>
         <div class="field">
+          <label>Pengaju <span class="req">*</span></label>
+          <input v-model="karyawanSearch" placeholder="Cari nama karyawan..." class="search-input" />
+          <select v-model.number="form.id_pemohon">
+            <option :value="0" disabled>— Pilih pengaju —</option>
+            <option v-for="k in karyawanFiltered" :key="k.id_user" :value="k.id_user">
+              {{ k.nama_lengkap }}{{ k.jabatan ? ` — ${k.jabatan}` : '' }}
+            </option>
+          </select>
+        </div>
+        <div class="field">
           <label>Nama Barang <span class="req">*</span></label>
           <input v-model="form.nama_item" placeholder="Mikrotik hEX S, Switch 24 Port, ..." />
         </div>
@@ -217,6 +249,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
 .field-hint { font-size: 11px; color: #94a3b8; }
+.search-input { margin-bottom: 4px; }
 .form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 8px 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }

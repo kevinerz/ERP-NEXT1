@@ -133,7 +133,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
     </div>
 
     <!-- Site grid -->
-    <div class="site-grid" v-else-if="sites.length">
+    <div class="site-grid" v-if="!loading && sites.length">
       <div
         v-for="site in sites" :key="site.id_site"
         :class="['site-card', `stripe-${monitorStatus(site)}`]"
@@ -248,7 +248,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
       </div>
     </div>
 
-    <div v-else-if="!loading" class="state-empty">
+    <div v-if="!loading && !sites.length" class="state-empty">
       Tidak ada site yang terdaftar pada akun ini.
     </div>
   </div>
@@ -783,4 +783,5 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   text-align: center;
   padding: 40px;
 }
+
 </style>

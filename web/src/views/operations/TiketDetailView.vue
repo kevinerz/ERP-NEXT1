@@ -129,9 +129,9 @@ async function fetchPrtgSensors() {
   prtgError.value = ''
   try {
     const { data } = await api.get(`/prtg/site/${siteId}/sensors`)
-    const r = data.data ?? data
-    prtgDeviceName.value = r.device_name || ''
-    prtgSensors.value = r.sensors || []
+    const results: any[] = Array.isArray(data.data) ? data.data : (data.data ? [data.data] : [])
+    prtgDeviceName.value = results.map((r: any) => r.device_name).filter(Boolean).join(', ')
+    prtgSensors.value = results.flatMap((r: any) => r.sensors || [])
     if (prtgSensors.value.length && !selectedSensorId.value) {
       const ping = prtgSensors.value.find((s: any) => s.sensor?.toLowerCase().includes('ping'))
       selectedSensorId.value = ping?.objid ?? prtgSensors.value[0]?.objid

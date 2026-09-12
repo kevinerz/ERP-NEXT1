@@ -8,6 +8,7 @@ export class CreatePengajuanAsetDto {
   @IsOptional() @IsNumber() @Min(0) estimasi_harga?: number;
   @IsOptional() @IsInt() id_gudang_tujuan?: number;
   @IsOptional() @IsString() link_marketplace?: string;
+  @IsOptional() @IsInt() @Min(1) id_pemohon?: number;
 }
 
 export class ApprovePengajuanAsetDto {

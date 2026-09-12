@@ -708,18 +708,20 @@ export class AssetsService {
   };
 
   async createPengajuan(dto: CreatePengajuanAsetDto, userId: number) {
+    const pemohonId = dto.id_pemohon ?? userId;
+    const { id_pemohon: _omit, ...dtoRest } = dto;
     const [data, pemohonUser] = await Promise.all([
       this.prisma.pengajuanAset.create({
         data: {
-          ...dto,
-          jumlah: dto.jumlah ?? 1,
-          estimasi_harga: dto.estimasi_harga ?? 0,
-          id_pemohon: userId,
+          ...dtoRest,
+          jumlah: dtoRest.jumlah ?? 1,
+          estimasi_harga: dtoRest.estimasi_harga ?? 0,
+          id_pemohon: pemohonId,
         },
         include: this.PENGAJUAN_INCLUDE,
       }),
       this.prisma.coreUser.findUnique({
-        where: { id_user: userId },
+        where: { id_user: pemohonId },
         include: { karyawan: { select: { nama_lengkap: true } } },
       }),
     ]);

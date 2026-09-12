@@ -43,6 +43,20 @@ export class PortalController {
     return { success: true, data };
   }
 
+  @Get('sites/list')
+  @UseGuards(AuthGuard('customer-jwt'))
+  async getSiteList(@Req() req: any) {
+    const data = await this.service.getSiteList(req.user.id_pelanggan);
+    return { success: true, data };
+  }
+
+  @Get('sites/down-status')
+  @UseGuards(AuthGuard('customer-jwt'))
+  async getSiteDownStatus(@Req() req: any) {
+    const data = await this.service.getSiteDownStatus(req.user.id_pelanggan);
+    return { success: true, data };
+  }
+
   @Get('tickets')
   @UseGuards(AuthGuard('customer-jwt'))
   async getTickets(@Req() req: any, @Query() query: any) {
