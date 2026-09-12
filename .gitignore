@@ -5,7 +5,7 @@
 
 # Build output
 dist/
-public/
+/public/
 
 # Dependencies
 node_modules/
