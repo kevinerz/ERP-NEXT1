@@ -402,7 +402,7 @@ const initials = computed(() => {
 /* ── Sidebar ── */
 .sidebar {
   width: 232px;
-  background: #0b1120;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -411,7 +411,8 @@ const initials = computed(() => {
   z-index: 50;
   transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
-  border-right: 1px solid rgba(255,255,255,0.04);
+  border-right: 1px solid #e2e8f0;
+  box-shadow: 2px 0 8px rgba(0,0,0,0.04);
 }
 .sidebar.collapsed { width: 60px; }
 
@@ -421,12 +422,11 @@ const initials = computed(() => {
   align-items: center;
   gap: 10px;
   padding: 16px 14px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
 .brand-logo-img-main {
   height: 32px; width: auto; object-fit: contain; flex-shrink: 0;
-  filter: brightness(0) invert(1);
   transition: opacity .2s;
 }
 .sidebar.collapsed .brand-logo-img-main { height: 28px; }
@@ -441,7 +441,7 @@ const initials = computed(() => {
 }
 .brand-logo-img { width: 100%; height: 100%; object-fit: cover; }
 .brand-name {
-  font-weight: 700; font-size: 14px; color: #f1f5f9;
+  font-weight: 700; font-size: 14px; color: #0f172a;
   white-space: nowrap; letter-spacing: 0.3px;
 }
 
@@ -457,7 +457,7 @@ const initials = computed(() => {
 }
 .sidebar-nav::-webkit-scrollbar { width: 2px; }
 .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
-.sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
 
 /* Group label */
 .nav-group-label {
@@ -467,7 +467,7 @@ const initials = computed(() => {
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 1.1px;
-  color: #3d4f6a;
+  color: #94a3b8;
   padding: 12px 8px 4px;
   white-space: nowrap;
   text-transform: uppercase;
@@ -481,7 +481,7 @@ const initials = computed(() => {
 }
 .nav-group-divider-mini {
   height: 1px;
-  background: rgba(255,255,255,0.05);
+  background: #e2e8f0;
   margin: 6px 8px;
 }
 
@@ -492,7 +492,7 @@ const initials = computed(() => {
   gap: 10px;
   padding: 7.5px 10px;
   border-radius: 7px;
-  color: #64748b;
+  color: #475569;
   text-decoration: none;
   font-size: 13px;
   font-weight: 500;
@@ -503,12 +503,12 @@ const initials = computed(() => {
   margin-bottom: 1px;
 }
 .nav-item:hover {
-  background: rgba(255,255,255,0.06);
-  color: #cbd5e1;
+  background: #f1f5f9;
+  color: #0f172a;
 }
 .nav-item.active {
-  background: rgba(255,255,255,0.07);
-  color: #f1f5f9;
+  background: #eff6ff;
+  color: #1d4ed8;
   font-weight: 600;
 }
 .nav-item.active::before {
@@ -535,14 +535,14 @@ const initials = computed(() => {
   align-items: center;
   gap: 6px;
   padding: 8px 20px;
-  opacity: 0.4;
+  opacity: 0.5;
   text-decoration: none;
   cursor: pointer;
   transition: opacity 0.15s;
   flex-shrink: 0;
 }
-.sidebar-version:hover { opacity: 0.9; }
-.ver-text { font-size: 11px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
+.sidebar-version:hover { opacity: 1; }
+.ver-text { font-size: 11px; font-weight: 700; color: #475569; letter-spacing: 0.5px; }
 .ver-hash { font-size: 10px; color: #94a3b8; font-family: monospace; }
 
 /* Sidebar toggle */
@@ -553,8 +553,8 @@ const initials = computed(() => {
   padding: 11px 14px;
   background: none;
   border: none;
-  border-top: 1px solid rgba(255,255,255,0.07);
-  color: #475569;
+  border-top: 1px solid #e2e8f0;
+  color: #94a3b8;
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
@@ -564,7 +564,7 @@ const initials = computed(() => {
   flex-shrink: 0;
   width: 100%;
 }
-.sidebar-toggle:hover { color: #94a3b8; }
+.sidebar-toggle:hover { color: #475569; }
 .toggle-icon { font-size: 12px; flex-shrink: 0; }
 .toggle-label { white-space: nowrap; }
 
@@ -840,7 +840,7 @@ const initials = computed(() => {
     transform: translateX(-100%);
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .sidebar.mobile-open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35); }
+  .sidebar.mobile-open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.15); }
   /* Di mobile sidebar selalu tampil penuh (label kelihatan) */
   .sidebar.collapsed { width: 250px !important; }
   .sidebar-toggle { display: none; }
