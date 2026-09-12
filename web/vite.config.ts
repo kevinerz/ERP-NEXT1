@@ -60,7 +60,14 @@ export default defineConfig({
     __APP_CHANGELOG__: JSON.stringify(changelog),
   },
   plugins: [
-    vue(),
+    vue({
+      template: {
+        transformAssetUrls: {
+          base: null,
+          includeAbsolute: false,
+        },
+      },
+    }),
     vueDevTools(),
   ],
   resolve: {
