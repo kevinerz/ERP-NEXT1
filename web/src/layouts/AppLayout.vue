@@ -401,7 +401,7 @@ const initials = computed(() => {
 
 /* ── Sidebar ── */
 .sidebar {
-  width: 232px;
+  width: 260px;
   background: #ffffff;
   display: flex;
   flex-direction: column;
@@ -412,28 +412,28 @@ const initials = computed(() => {
   transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
   border-right: 1px solid #e2e8f0;
-  box-shadow: 2px 0 8px rgba(0,0,0,0.04);
+  box-shadow: 2px 0 12px rgba(0,0,0,0.05);
 }
-.sidebar.collapsed { width: 60px; }
+.sidebar.collapsed { width: 64px; }
 
 /* Brand */
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 16px 14px 14px;
-  border-bottom: 1px solid #e2e8f0;
+  gap: 12px;
+  padding: 20px 18px 18px;
+  border-bottom: 1px solid #f1f5f9;
   flex-shrink: 0;
 }
 .brand-logo-img-main {
-  height: 32px; width: auto; object-fit: contain; flex-shrink: 0;
+  height: 36px; width: auto; object-fit: contain; flex-shrink: 0;
   transition: opacity .2s;
 }
-.sidebar.collapsed .brand-logo-img-main { height: 28px; }
+.sidebar.collapsed .brand-logo-img-main { height: 30px; }
 .brand-logo {
-  width: 34px; height: 34px; flex-shrink: 0;
+  width: 36px; height: 36px; flex-shrink: 0;
   background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
-  border-radius: 9px;
+  border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 13px; color: #fff;
   box-shadow: 0 0 0 1px rgba(59,130,246,0.3), 0 4px 12px rgba(59,130,246,0.3);
@@ -441,69 +441,69 @@ const initials = computed(() => {
 }
 .brand-logo-img { width: 100%; height: 100%; object-fit: cover; }
 .brand-name {
-  font-weight: 700; font-size: 14px; color: #0f172a;
+  font-weight: 700; font-size: 15px; color: #0f172a;
   white-space: nowrap; letter-spacing: 0.3px;
 }
 
 /* Nav */
 .sidebar-nav {
   flex: 1;
-  padding: 8px 8px 4px;
+  padding: 10px 10px 6px;
   display: flex;
   flex-direction: column;
   gap: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
-.sidebar-nav::-webkit-scrollbar { width: 2px; }
+.sidebar-nav::-webkit-scrollbar { width: 3px; }
 .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
-.sidebar-nav::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 3px; }
 
 /* Group label */
 .nav-group-label {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 9.5px;
+  gap: 7px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 1.1px;
+  letter-spacing: 1px;
   color: #94a3b8;
-  padding: 12px 8px 4px;
+  padding: 16px 10px 5px;
   white-space: nowrap;
   text-transform: uppercase;
 }
 .nav-group-label.admin-group { margin-top: 4px; }
 .group-dot {
-  width: 5px; height: 5px;
+  width: 6px; height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
-  opacity: 0.8;
+  opacity: 0.9;
 }
 .nav-group-divider-mini {
   height: 1px;
-  background: #e2e8f0;
-  margin: 6px 8px;
+  background: #f1f5f9;
+  margin: 8px 10px;
 }
 
 /* Nav item */
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7.5px 10px;
-  border-radius: 7px;
+  gap: 11px;
+  padding: 9px 12px;
+  border-radius: 8px;
   color: #475569;
   text-decoration: none;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 500;
   transition: background 0.13s, color 0.13s;
   white-space: nowrap;
   overflow: hidden;
   position: relative;
-  margin-bottom: 1px;
+  margin-bottom: 2px;
 }
 .nav-item:hover {
-  background: #f1f5f9;
+  background: #f8fafc;
   color: #0f172a;
 }
 .nav-item.active {
@@ -514,16 +514,16 @@ const initials = computed(() => {
 .nav-item.active::before {
   content: '';
   position: absolute;
-  left: 0; top: 20%; bottom: 20%;
+  left: 0; top: 18%; bottom: 18%;
   width: 3px;
-  border-radius: 0 2px 2px 0;
+  border-radius: 0 3px 3px 0;
   background: var(--group-accent, #3b82f6);
 }
 
 .nav-emoji {
-  font-size: 15px;
+  font-size: 16px;
   flex-shrink: 0;
-  width: 20px;
+  width: 22px;
   text-align: center;
   line-height: 1;
 }
@@ -534,15 +534,15 @@ const initials = computed(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 20px;
-  opacity: 0.5;
+  padding: 10px 20px;
+  opacity: 0.45;
   text-decoration: none;
   cursor: pointer;
   transition: opacity 0.15s;
   flex-shrink: 0;
 }
 .sidebar-version:hover { opacity: 1; }
-.ver-text { font-size: 11px; font-weight: 700; color: #475569; letter-spacing: 0.5px; }
+.ver-text { font-size: 11.5px; font-weight: 700; color: #475569; letter-spacing: 0.5px; }
 .ver-hash { font-size: 10px; color: #94a3b8; font-family: monospace; }
 
 /* Sidebar toggle */
@@ -550,13 +550,13 @@ const initials = computed(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 11px 14px;
+  padding: 13px 18px;
   background: none;
   border: none;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid #f1f5f9;
   color: #94a3b8;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   transition: color 0.15s;
   white-space: nowrap;
@@ -572,13 +572,13 @@ const initials = computed(() => {
 .main-wrapper {
   flex: 1;
   min-width: 0;
-  margin-left: 232px;
+  margin-left: 260px;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
   transition: margin-left 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.sidebar.collapsed ~ .main-wrapper { margin-left: 60px; }
+.sidebar.collapsed ~ .main-wrapper { margin-left: 64px; }
 
 /* ── Topbar ── */
 .topbar {
@@ -836,13 +836,13 @@ const initials = computed(() => {
 /* ── Mobile (≤768px): sidebar jadi drawer, konten full-width ── */
 @media (max-width: 768px) {
   .sidebar {
-    width: 250px !important;
+    width: 270px !important;
     transform: translateX(-100%);
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .sidebar.mobile-open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.15); }
   /* Di mobile sidebar selalu tampil penuh (label kelihatan) */
-  .sidebar.collapsed { width: 250px !important; }
+  .sidebar.collapsed { width: 270px !important; }
   .sidebar-toggle { display: none; }
 
   .mobile-backdrop {
