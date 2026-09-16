@@ -114,6 +114,29 @@ model Pelanggan {
   mekari_customer_uid String?  @db.VarChar(100)
   created_at          DateTime @default(now())
 
+  // Informasi Perusahaan
+  jenis_usaha         String?  @db.VarChar(100)
+  kota                String?  @db.VarChar(100)
+  nama_pemilik        String?  @db.VarChar(150)
+  jabatan_pemilik     String?  @db.VarChar(100)
+  no_ktp_pemilik      String?  @db.VarChar(30)
+  no_ponsel_pemilik   String?  @db.VarChar(30)
+
+  // Penanggung Jawab Teknis
+  nama_pic_teknis     String?  @db.VarChar(150)
+  jabatan_pic_teknis  String?  @db.VarChar(100)
+  no_telp_pic_teknis  String?  @db.VarChar(30)
+  no_ponsel_pic_teknis String? @db.VarChar(30)
+  email_pic_teknis    String?  @db.VarChar(150)
+
+  // Penanggung Jawab Keuangan
+  nama_pic_keuangan     String?  @db.VarChar(150)
+  jabatan_pic_keuangan  String?  @db.VarChar(100)
+  no_telp_pic_keuangan  String?  @db.VarChar(30)
+  no_ponsel_pic_keuangan String? @db.VarChar(30)
+  email_pic_keuangan    String?  @db.VarChar(150)
+  alamat_penagihan      String?  @db.Text
+
   sites          SitePelanggan[]
   customer_users CustomerUser[]
 
