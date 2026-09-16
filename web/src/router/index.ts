@@ -253,6 +253,12 @@ const router = createRouter({
           name: 'settings',
           component: () => import('@/views/settings/SettingsView.vue'),
         },
+        // Tools
+        {
+          path: 'tools/network',
+          name: 'tools-network',
+          component: () => import('@/views/tools/NetworkToolView.vue'),
+        },
         // Laporan
         {
           path: 'reports',

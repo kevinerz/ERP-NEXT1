@@ -46,6 +46,7 @@ import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.m
 import { StarsenderModule } from './modules/integrations/starsender/starsender.module';
 import { MobileModule } from './modules/mobile/mobile.module';
 import { InstalasiModule } from './modules/instalasi/instalasi.module';
+import { ToolsModule } from './modules/tools/tools.module';
 
 @Module({
   imports: [
@@ -103,6 +104,7 @@ import { InstalasiModule } from './modules/instalasi/instalasi.module';
     StarsenderModule,
     MobileModule,
     InstalasiModule,
+    ToolsModule,
   ],
   controllers: [HealthController],
   providers: [

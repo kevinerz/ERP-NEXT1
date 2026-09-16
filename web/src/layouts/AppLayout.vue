@@ -132,6 +132,7 @@ const adminMenu = [
   { label: 'Uptime Kuma',    emoji: '🟢', to: '/integrations/uptime-kuma' },
   { label: 'StarSender WA',  emoji: '💬', to: '/integrations/starsender' },
   { label: 'Pengaturan',     emoji: '⚙️', to: '/settings' },
+  { label: 'Network Tools',  emoji: '🔧', to: '/tools/network' },
 ]
 
 const visibleGroups = computed(() =>
@@ -192,6 +193,7 @@ const PAGE_TITLES: Record<string, string> = {
   "starsender-settings":  "StarSender — WhatsApp",
   "email-inbox":          "Email",
   "changelog":            "Changelog",
+  "tools-network":        "Network Tools",
 }
 
 const pageTitle = computed(() => PAGE_TITLES[route.name as string] || "ERP NEXT1")
