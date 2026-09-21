@@ -192,7 +192,7 @@ const statusSummary = computed(() => {
             <th style="width:110px">Kota</th>
             <th style="width:100px">Status</th>
             <th style="width:110px">Tgl Aktif</th>
-            <th style="width:140px"></th>
+            <th style="width:100px"></th>
           </tr>
         </thead>
         <tbody>
@@ -205,7 +205,7 @@ const statusSummary = computed(() => {
               </div>
             </td>
           </tr>
-          <tr v-for="s in master.siteList" :key="s.id_site" class="table-row">
+          <tr v-for="s in master.siteList" :key="s.id_site" class="table-row clickable-row" @click="router.push('/master/site/' + s.id_site)">
             <td class="fw700">{{ s.kode_site }}</td>
             <td>{{ s.nama_site }}</td>
             <td class="text-gray">{{ s.pelanggan?.nama_pelanggan }}</td>
@@ -220,9 +220,8 @@ const statusSummary = computed(() => {
             <td class="text-gray text-sm">{{ fmtDate(s.tgl_aktif) }}</td>
             <td>
               <div class="row-actions">
-                <button class="btn-detail-sm" @click="router.push('/master/site/' + s.id_site)">Detail</button>
-                <button class="btn-edit-sm" @click="openEdit(s)">Edit</button>
-                <button class="btn-hapus-sm" @click="hapusSite(s)">Hapus</button>
+                <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
+                <button class="btn-hapus-sm" @click.stop="hapusSite(s)">Hapus</button>
               </div>
             </td>
           </tr>
@@ -336,6 +335,8 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .empty-desc { font-size: 13px; color: #94a3b8; }
 .loading { padding: 40px; text-align: center; color: #94a3b8; }
 .fw700 { font-weight: 700; color: #1d4ed8; font-size: 13px; }
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { background: #f0f4ff; }
 .text-gray { color: #64748b; }
 .text-sm { font-size: 12px; }
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }

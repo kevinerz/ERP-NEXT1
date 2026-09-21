@@ -258,6 +258,13 @@ const router = createRouter({
           path: 'tools/network',
           name: 'tools-network',
           component: () => import('@/views/tools/NetworkToolView.vue'),
+          meta: { title: 'Network Tools — NextOne ERP' },
+        },
+        {
+          path: 'tools/mikrotik',
+          name: 'tools-mikrotik',
+          component: () => import('@/views/tools/MikrotikView.vue'),
+          meta: { title: 'Remote Mikrotik — NextOne ERP' },
         },
         // Laporan
         {

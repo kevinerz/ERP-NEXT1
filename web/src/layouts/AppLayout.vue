@@ -109,8 +109,11 @@ const menuGroups = [
   {
     label: 'INFRASTRUKTUR', accent: '#0ea5e9',
     items: [
-      { label: 'Aset',        emoji: '🖥️', to: '/assets',          modul: 'assets' },
-      { label: 'SIM Topup',   emoji: '📱', to: '/assets/sim-topup', modul: 'assets' },
+      { label: 'Aset',          emoji: '🖥️', to: '/assets',          modul: 'assets' },
+      { label: 'SIM Topup',     emoji: '📱', to: '/assets/sim-topup', modul: 'assets' },
+      { label: 'Network Tools', emoji: '🔧', to: '/tools/network',    modul: null },
+      { label: 'NOC Board',     emoji: '📺', to: '/operations/noc',    modul: null },
+      { label: 'Remote Mikrotik', emoji: '🔌', to: '/tools/mikrotik', modul: null },
     ],
   },
   {
@@ -132,7 +135,6 @@ const adminMenu = [
   { label: 'Uptime Kuma',    emoji: '🟢', to: '/integrations/uptime-kuma' },
   { label: 'StarSender WA',  emoji: '💬', to: '/integrations/starsender' },
   { label: 'Pengaturan',     emoji: '⚙️', to: '/settings' },
-  { label: 'Network Tools',  emoji: '🔧', to: '/tools/network' },
 ]
 
 const visibleGroups = computed(() =>
@@ -194,6 +196,7 @@ const PAGE_TITLES: Record<string, string> = {
   "email-inbox":          "Email",
   "changelog":            "Changelog",
   "tools-network":        "Network Tools",
+  "tools-mikrotik":       "Remote Mikrotik",
 }
 
 const pageTitle = computed(() => PAGE_TITLES[route.name as string] || "ERP NEXT1")

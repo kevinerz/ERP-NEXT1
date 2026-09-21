@@ -482,6 +482,45 @@ export class OperationsService {
     return { message: `Tiket ${row.nomor_tiket} dihapus` };
   }
 
+  async getNocDevices() {
+    const perangkat = await this.prisma.perangkatSite.findMany({
+      include: {
+        site: {
+          select: {
+            nama_site: true, kota: true,
+            pelanggan: { select: { nama_pelanggan: true } },
+          },
+        },
+      },
+      orderBy: [{ site: { pelanggan: { nama_pelanggan: 'asc' } } }, { id_perangkat: 'asc' }],
+    });
+
+    let syslogDevices: any[] = [];
+    try {
+      const resp = await fetch('http://103.12.28.10:8080/api/devices', {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (resp.ok) syslogDevices = await resp.json();
+    } catch {}
+
+    const syslogByIp = new Map<string, any>(syslogDevices.map((d: any) => [d.ip, d]));
+
+    return {
+      perangkat: perangkat.map(p => ({
+        id_perangkat: p.id_perangkat,
+        jenis_perangkat: p.jenis_perangkat,
+        merk: p.merk,
+        tipe_model: p.tipe_model,
+        ip_address: p.ip_address,
+        mac_address: p.mac_address,
+        status_perangkat: p.status_perangkat,
+        site: p.site,
+        syslog: p.ip_address ? (syslogByIp.get(p.ip_address) ?? null) : null,
+      })),
+      syslogDevices,
+    };
+  }
+
   async getTeknisiList() {
     const data = await this.prisma.hrisKaryawan.findMany({
       where: {

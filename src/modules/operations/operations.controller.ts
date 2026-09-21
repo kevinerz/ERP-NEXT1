@@ -10,10 +10,11 @@ import { Roles } from '../../common/decorators/roles.decorator';
 export class OperationsController {
   constructor(private readonly operationsService: OperationsService) {}
 
-  @Get('summary')     getSummary()                            { return this.operationsService.getStatusSummary(); }
-  @Get('teknisi-list') getTeknisiList()                      { return this.operationsService.getTeknisiList(); }
-  @Get('noc-board')   getNocBoard()                          { return this.operationsService.getNocBoard(); }
-  @Get('metrics')     getMetrics(@Query() q: any)            { return this.operationsService.getMetrics(q); }
+  @Get('summary')        getSummary()                            { return this.operationsService.getStatusSummary(); }
+  @Get('teknisi-list')   getTeknisiList()                      { return this.operationsService.getTeknisiList(); }
+  @Get('noc-board')      getNocBoard()                          { return this.operationsService.getNocBoard(); }
+  @Get('noc-board/devices') getNocDevices()                    { return this.operationsService.getNocDevices(); }
+  @Get('metrics')        getMetrics(@Query() q: any)            { return this.operationsService.getMetrics(q); }
 
   @Get()    findAll(@Query() q: any)                         { return this.operationsService.findAll(q); }
   @Get(':id') findOne(@Param('id', ParseIntPipe) id: number) { return this.operationsService.findOne(id); }

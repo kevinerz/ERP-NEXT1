@@ -3,6 +3,27 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 
+interface SyslogDevice {
+  id: number
+  ip: string
+  hostname: string
+  type: string | null
+  location: string | null
+  updatedAt: string
+  _count: { logs: number }
+}
+
+interface NocPerangkat {
+  id_perangkat: number
+  jenis_perangkat: string
+  merk: string | null
+  tipe_model: string | null
+  ip_address: string | null
+  status_perangkat: string
+  site: { nama_site: string; kota?: string | null; pelanggan?: { nama_pelanggan: string } | null } | null
+  syslog: SyslogDevice | null
+}
+
 interface NocTiket {
   id_ticket: number
   nomor_tiket: string
@@ -45,6 +66,10 @@ const lastUpdate = ref('')
 const now = ref(Date.now())
 const isFullscreen = ref(false)
 
+const perangkat = ref<NocPerangkat[]>([])
+const syslogDevices = ref<SyslogDevice[]>([])
+const devicesLoading = ref(false)
+
 let fetchTimer: ReturnType<typeof setInterval> | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
@@ -66,6 +91,16 @@ async function fetchData() {
   } finally {
     loading.value = false
   }
+}
+
+async function fetchDevices() {
+  devicesLoading.value = true
+  try {
+    const r = await api.get('/operations/noc-board/devices')
+    perangkat.value = r.data.data?.perangkat ?? []
+    syslogDevices.value = r.data.data?.syslogDevices ?? []
+  } catch {}
+  devicesLoading.value = false
 }
 
 const prioColors: Record<string, string> = {
@@ -116,6 +151,25 @@ function openTicket(id: number) {
   router.push('/operations/' + id)
 }
 
+function syslogStatus(dev: SyslogDevice | null): { text: string; cls: string } {
+  if (!dev) return { text: 'Tidak ada data', cls: 'sl-none' }
+  const diff = now.value - new Date(dev.updatedAt).getTime()
+  if (diff < 3600 * 1000) return { text: 'Online', cls: 'sl-online' }
+  if (diff < 24 * 3600 * 1000) return { text: 'Warning', cls: 'sl-warn' }
+  return { text: 'Offline', cls: 'sl-offline' }
+}
+
+function fmtSyslogTime(ts: string): string {
+  const diff = now.value - new Date(ts).getTime()
+  if (isNaN(diff)) return '—'
+  const m = Math.floor(diff / 60000)
+  const h = Math.floor(m / 60)
+  const d = Math.floor(h / 24)
+  if (d > 0) return `${d}h ${h % 24}j lalu`
+  if (h > 0) return `${h}j ${m % 60}m lalu`
+  return `${m}m lalu`
+}
+
 async function toggleFullscreen() {
   try {
     if (document.fullscreenElement) await document.exitFullscreen()
@@ -129,6 +183,7 @@ function onFsChange() {
 
 onMounted(() => {
   fetchData()
+  fetchDevices()
   fetchTimer = setInterval(fetchData, 30000)
   clockTimer = setInterval(() => { now.value = Date.now() }, 1000)
   document.addEventListener('fullscreenchange', onFsChange)
@@ -283,6 +338,84 @@ onUnmounted(() => {
     </template>
 
     <div v-else-if="loading" class="noc-loading">Memuat data NOC…</div>
+
+    <!-- Perangkat + Syslog -->
+    <div class="devices-section">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Perangkat di Site Pelanggan</span>
+          <span class="panel-count" v-if="perangkat.length">{{ perangkat.length }}</span>
+          <span class="syslog-source" v-if="syslogDevices.length">
+            🟢 {{ syslogDevices.length }} device syslog aktif
+          </span>
+        </div>
+
+        <div v-if="devicesLoading" class="empty-wo" style="padding:20px 0">Memuat perangkat…</div>
+        <div v-else-if="!perangkat.length" class="empty-wo">Belum ada perangkat terdaftar</div>
+        <div v-else class="dev-table-wrap">
+          <table class="dev-table">
+            <thead>
+              <tr>
+                <th>Pelanggan / Site</th>
+                <th>Perangkat</th>
+                <th>IP Address</th>
+                <th>Status ERP</th>
+                <th>Syslog</th>
+                <th class="th-right">Log Terakhir</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in perangkat" :key="d.id_perangkat">
+                <td>
+                  <div class="tk-pelanggan">{{ d.site?.pelanggan?.nama_pelanggan || '—' }}</div>
+                  <div class="tk-site">{{ d.site?.nama_site || '—' }}<span v-if="d.site?.kota"> · {{ d.site.kota }}</span></div>
+                </td>
+                <td>
+                  <div class="dev-jenis">{{ d.jenis_perangkat }}</div>
+                  <div class="dev-model" v-if="d.merk || d.tipe_model">{{ [d.merk, d.tipe_model].filter(Boolean).join(' ') }}</div>
+                </td>
+                <td class="dev-ip">{{ d.ip_address || '—' }}</td>
+                <td>
+                  <span :class="['dev-status', d.status_perangkat === 'Aktif' ? 'ds-aktif' : 'ds-nonaktif']">
+                    {{ d.status_perangkat }}
+                  </span>
+                </td>
+                <td>
+                  <span v-if="d.syslog" :class="['sl-badge', syslogStatus(d.syslog).cls]">
+                    {{ syslogStatus(d.syslog).text }}
+                  </span>
+                  <span v-else class="sl-badge sl-none">Tidak ada data</span>
+                </td>
+                <td class="td-right dev-last-log">
+                  <span v-if="d.syslog">{{ fmtSyslogTime(d.syslog.updatedAt) }}</span>
+                  <span v-else class="sla-none">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Syslog device list (unregistered) -->
+      <div class="panel" v-if="syslogDevices.length">
+        <div class="panel-head">
+          <span class="panel-title">Syslog Devices</span>
+          <span class="panel-count">{{ syslogDevices.length }}</span>
+        </div>
+        <div class="wo-list">
+          <div v-for="d in syslogDevices" :key="d.id" class="wo-card">
+            <div class="wo-top">
+              <span class="wo-nama">{{ d.hostname || d.ip }}</span>
+              <span :class="['wo-status', syslogStatus(d).cls === 'sl-online' ? 'wo-onsite' : 'wo-dispatch']">
+                {{ syslogStatus(d).text }}
+              </span>
+            </div>
+            <div class="wo-detail">IP: {{ d.ip }} · {{ d._count.logs }} log</div>
+            <div class="wo-site">{{ d.type ? '📡 ' + d.type : '📡 Unknown' }} · {{ fmtSyslogTime(d.updatedAt) }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -565,6 +698,62 @@ onUnmounted(() => {
 .empty-sub { color: #94a3b8; font-size: 0.85rem; margin-top: 4px; }
 .empty-wo { text-align: center; color: #94a3b8; padding: 32px 0; font-size: 0.9rem; }
 .empty-icon-sm { font-size: 1.6rem; margin-bottom: 8px; opacity: 0.5; }
+
+/* ── Devices section ────────────────────── */
+.devices-section {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+.syslog-source {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: #16a34a;
+  font-weight: 600;
+}
+.dev-table-wrap { overflow-x: auto; }
+.dev-table { width: 100%; border-collapse: collapse; }
+.dev-table th {
+  text-align: left;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 6px 10px;
+}
+.dev-table td {
+  padding: 9px 10px;
+  border-top: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+.dev-jenis { font-weight: 600; color: #0f172a; font-size: 0.88rem; }
+.dev-model { color: #94a3b8; font-size: 0.78rem; }
+.dev-ip { font-family: monospace; font-size: 0.84rem; color: #334155; white-space: nowrap; min-width: 110px; }
+.dev-last-log { color: #64748b; font-size: 0.82rem; white-space: nowrap; }
+
+.dev-status {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.ds-aktif   { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.ds-nonaktif { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+
+.sl-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sl-online  { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.sl-warn    { background: #fef9c3; color: #a16207; border: 1px solid #fde68a; }
+.sl-offline { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.sl-none    { background: #f1f5f9; color: #94a3b8; border: 1px solid #e2e8f0; }
 
 /* ── WO cards ───────────────────────────── */
 .wo-list { display: flex; flex-direction: column; gap: 8px; }

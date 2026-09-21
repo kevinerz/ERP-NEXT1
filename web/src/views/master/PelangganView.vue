@@ -243,7 +243,7 @@ async function doHapusPelanggan() {
           <div class="form-grid">
             <div class="field">
               <label>Kode Pelanggan <span class="req">*</span></label>
-              <input v-model="form.kode_pelanggan" placeholder="PLG-001" :disabled="!!editId" />
+              <input v-model="form.kode_pelanggan" placeholder="PLG-001" />
             </div>
             <div class="field">
               <label>Nama Perusahaan <span class="req">*</span></label>

@@ -35,6 +35,7 @@ export class CreatePelangganDto {
 }
 
 export class UpdatePelangganDto {
+  @IsOptional() @IsString() kode_pelanggan?: string;
   @IsOptional() @IsString() nama_pelanggan?: string;
   @IsOptional() @IsString() npwp?: string;
   @IsOptional() @IsString() alamat_kantor?: string;

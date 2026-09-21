@@ -92,7 +92,6 @@ function slaInfo(t: any): { label: string; cls: string } {
         <p class="sub">Manajemen tiket helpdesk & troubleshoot</p>
       </div>
       <div style="display:flex; gap:8px">
-        <button class="btn-noc" @click="router.push('/operations/noc')">📺 NOC Board</button>
         <button class="btn-primary" @click="showModal = true; formError = ''">+ Buat Tiket</button>
       </div>
     </div>
@@ -269,7 +268,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .text-gray { color: #64748b; }
 .text-sm { font-size: 12px; }
 .center { text-align: center; font-weight: 700; }
-.judul { font-weight: 600; font-size: 14px; }
+.judul { font-weight: 600; font-size: 14px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .sumber { font-size: 11px; color: #94a3b8; }
 .prioritas-dot { font-size: 10px; margin-right: 4px; }
 .sla-badge { padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }

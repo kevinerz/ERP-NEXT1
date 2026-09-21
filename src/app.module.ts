@@ -47,6 +47,7 @@ import { StarsenderModule } from './modules/integrations/starsender/starsender.m
 import { MobileModule } from './modules/mobile/mobile.module';
 import { InstalasiModule } from './modules/instalasi/instalasi.module';
 import { ToolsModule } from './modules/tools/tools.module';
+import { MikrotikModule } from './modules/mikrotik/mikrotik.module';
 
 @Module({
   imports: [
@@ -105,6 +106,7 @@ import { ToolsModule } from './modules/tools/tools.module';
     MobileModule,
     InstalasiModule,
     ToolsModule,
+    MikrotikModule,
   ],
   controllers: [HealthController],
   providers: [

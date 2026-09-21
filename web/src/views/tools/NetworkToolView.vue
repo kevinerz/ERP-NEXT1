@@ -12,12 +12,15 @@ const tabs: { key: Tab; label: string; emoji: string; desc: string }[] = [
   { key: 'port',       label: 'Port Check', emoji: '🔌', desc: 'Cek apakah port TCP terbuka' },
 ]
 
-const activeTab = ref<Tab>('ping')
-const host      = ref('')
-const portNum   = ref('')
-const pingCount = ref('5')
-const maxHops   = ref('30')
-const dnsType   = ref('A')
+const activeTab    = ref<Tab>('ping')
+const host         = ref('')
+const portNum      = ref('')
+const pingCount    = ref('5')
+const maxHops      = ref('20')
+const dnsType      = ref('A')
+const trProtocol   = ref('udp')
+const trPort       = ref('80')
+const trNoDns      = ref(false)
 
 const loading   = ref(false)
 const result    = ref<any>(null)
@@ -52,7 +55,9 @@ async function run() {
     if (activeTab.value === 'ping') {
       res = await api.get('/tools/ping', { params: { host: h, count: pingCount.value } })
     } else if (activeTab.value === 'traceroute') {
-      res = await api.get('/tools/traceroute', { params: { host: h, maxhops: maxHops.value } })
+      res = await api.get('/tools/traceroute', {
+        params: { host: h, maxhops: maxHops.value, protocol: trProtocol.value, nodns: String(trNoDns.value), port: trPort.value },
+      })
     } else if (activeTab.value === 'mtr') {
       res = await api.get('/tools/mtr', { params: { host: h } })
     } else if (activeTab.value === 'dns') {
@@ -60,7 +65,7 @@ async function run() {
     } else if (activeTab.value === 'port') {
       res = await api.get('/tools/port', { params: { host: h, port: portNum.value } })
     }
-    result.value = res.data
+    result.value = res.data.data
   } catch (e: any) {
     error.value = e.response?.data?.message || 'Request gagal'
   } finally {
@@ -130,7 +135,21 @@ function quickSet(h: string, p?: string) {
 
           <div v-if="activeTab === 'traceroute'" class="field-wrap narrow">
             <label>Max Hops</label>
-            <input v-model="maxHops" type="number" min="5" max="64" class="narrow-input" />
+            <input v-model="maxHops" type="number" min="5" max="30" class="narrow-input" />
+          </div>
+
+          <div v-if="activeTab === 'traceroute'" class="field-wrap narrow">
+            <label>Protokol</label>
+            <select v-model="trProtocol" class="narrow-input">
+              <option value="udp">UDP</option>
+              <option value="tcp">TCP</option>
+              <option value="icmp">ICMP</option>
+            </select>
+          </div>
+
+          <div v-if="activeTab === 'traceroute' && (trProtocol === 'tcp' || trProtocol === 'udp')" class="field-wrap narrow">
+            <label>Port</label>
+            <input v-model="trPort" type="number" min="1" max="65535" placeholder="80" class="narrow-input" />
           </div>
 
           <div v-if="activeTab === 'dns'" class="field-wrap narrow">
@@ -161,6 +180,22 @@ function quickSet(h: string, p?: string) {
           <button v-if="activeTab === 'port'" class="qbtn" @click="quickSet('', '80')">Port 80</button>
           <button v-if="activeTab === 'port'" class="qbtn" @click="quickSet('', '443')">Port 443</button>
           <button v-if="activeTab === 'port'" class="qbtn" @click="quickSet('', '3306')">Port 3306</button>
+          <button v-if="activeTab === 'traceroute'" class="qbtn" @click="trPort = '80'">Port 80</button>
+          <button v-if="activeTab === 'traceroute'" class="qbtn" @click="trPort = '443'">Port 443</button>
+          <button v-if="activeTab === 'traceroute'" class="qbtn" @click="trPort = '22'">Port 22</button>
+        </div>
+
+        <!-- Traceroute extra options -->
+        <div v-if="activeTab === 'traceroute'" class="tr-options">
+          <label class="tr-check">
+            <input type="checkbox" v-model="trNoDns" />
+            <span>Skip DNS (lebih cepat)</span>
+          </label>
+          <span class="tr-info">
+            <span v-if="trProtocol === 'udp'">UDP — mode default, cocok untuk routing umum</span>
+            <span v-else-if="trProtocol === 'tcp'">TCP — via tcptraceroute, cocok untuk cek firewall per-port</span>
+            <span v-else-if="trProtocol === 'icmp'">ICMP — mirip ping per hop, sering diblokir firewall</span>
+          </span>
         </div>
       </div>
 
@@ -275,6 +310,12 @@ function quickSet(h: string, p?: string) {
 .quick-label { font-size: 11.5px; color: #94a3b8; font-weight: 600; }
 .qbtn { padding: 3px 10px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc; font-size: 12px; color: #475569; cursor: pointer; }
 .qbtn:hover { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+
+/* Traceroute options row */
+.tr-options { display: flex; align-items: center; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
+.tr-check { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #475569; cursor: pointer; user-select: none; }
+.tr-check input[type=checkbox] { accent-color: #3b82f6; width: 14px; height: 14px; cursor: pointer; }
+.tr-info { font-size: 12px; color: #94a3b8; font-style: italic; }
 
 /* Loading */
 .terminal-loading { display: flex; align-items: center; gap: 12px; padding: 28px 20px; color: #64748b; font-size: 14px; }

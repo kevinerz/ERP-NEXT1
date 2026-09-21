@@ -236,6 +236,10 @@ export class MasterService {
   async updatePelanggan(id: number, dto: UpdatePelangganDto) {
     const row = await this.prisma.pelanggan.findUnique({ where: { id_pelanggan: id } });
     if (!row) throw new NotFoundException('Pelanggan tidak ditemukan');
+    if (dto.kode_pelanggan && dto.kode_pelanggan !== row.kode_pelanggan) {
+      const conflict = await this.prisma.pelanggan.findUnique({ where: { kode_pelanggan: dto.kode_pelanggan } });
+      if (conflict) throw new ConflictException('Kode pelanggan sudah digunakan');
+    }
     const data = await this.prisma.pelanggan.update({ where: { id_pelanggan: id }, data: dto });
     return { data, message: 'Pelanggan diperbarui' };
   }

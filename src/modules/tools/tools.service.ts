@@ -31,14 +31,47 @@ export class ToolsService {
     }
   }
 
-  async runTraceroute(rawHost: string, maxhops: number): Promise<{ host: string; output: string }> {
+  async runTraceroute(
+    rawHost: string,
+    maxhops: number,
+    protocol: string,
+    noDns: boolean,
+    port: number,
+  ): Promise<{ host: string; output: string }> {
     const host = validateHost(rawHost);
-    const cmd = await hasCommand('traceroute') ? `traceroute -m ${maxhops} -w 2 ${host}` : `tracepath -m ${maxhops} ${host}`;
+    const hops = Math.min(maxhops, 20);
+    const dns = noDns ? '-n' : '';
+
+    let cmd: string;
+    if (protocol === 'tcp') {
+      const hasTcptr = await hasCommand('tcptraceroute');
+      if (hasTcptr) {
+        cmd = `tcptraceroute -m ${hops} -w 1 ${dns} ${host} ${port}`;
+      } else {
+        cmd = `traceroute -T -p ${port} -m ${hops} -w 1 ${dns} ${host}`;
+      }
+    } else if (protocol === 'icmp') {
+      cmd = `traceroute -I -m ${hops} -w 1 ${dns} ${host}`;
+    } else {
+      // UDP default
+      cmd = `traceroute -m ${hops} -w 1 ${dns} ${host}`;
+    }
+
     try {
-      const { stdout, stderr } = await execAsync(cmd, { timeout: 120000 });
-      return { host, output: stdout + (stderr || '') };
+      const { stdout, stderr } = await execAsync(cmd, { timeout: 150000 });
+      return { host, output: stdout + (stderr || ''), protocol };
     } catch (e: any) {
-      return { host, output: e.stdout || e.message || 'Traceroute gagal' };
+      // fallback: if raw socket error, try tracepath
+      if ((e.message || '').includes('Operation not permitted')) {
+        try {
+          const timeoutSec = hops * 4;
+          const { stdout } = await execAsync(`timeout ${timeoutSec} tracepath -m ${hops} ${host}`, { timeout: 150000 });
+          return { host, output: stdout, protocol: 'tracepath' };
+        } catch (e2: any) {
+          return { host, output: e2.stdout || e2.message || 'Traceroute gagal', protocol };
+        }
+      }
+      return { host, output: e.stdout || e.message || 'Traceroute gagal', protocol };
     }
   }
 
@@ -46,7 +79,7 @@ export class ToolsService {
     const host = validateHost(rawHost);
     const hasMtr = await hasCommand('mtr');
     if (!hasMtr) {
-      return this.runTraceroute(rawHost, 30);
+      return this.runTraceroute(rawHost, 20, 'udp', false, 80);
     }
     try {
       const { stdout, stderr } = await execAsync(
