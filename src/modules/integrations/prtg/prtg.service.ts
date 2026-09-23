@@ -277,7 +277,7 @@ export class PrtgService {
       let ticketId: number | null = null;
       if (site) {
         const ticket = await this.buatTiketPrtg(
-          { sensorId: firstEntry.prtg_sensor_id ?? '', device, sensor: sensorNames, message: firstEntry.prtg_sensor_id },
+          { sensorId: firstEntry.prtg_sensor_id ?? '', device, sensor: sensorNames, message: firstEntry.pesan_alert },
           site,
         );
         ticketId = ticket.id_ticket;

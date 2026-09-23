@@ -390,7 +390,11 @@ function slaInfo(t: any): { label: string; cls: string } {
 }
 
 function ageHours(d: string) {
-  const h = Math.floor((Date.now() - new Date(d).getTime()) / 3600000)
+  const t = ops.current
+  const endMs = (t && (t.status_tiket === 'Resolved' || t.status_tiket === 'Closed') && t.tgl_resolved)
+    ? new Date(t.tgl_resolved).getTime()
+    : Date.now()
+  const h = Math.floor((endMs - new Date(d).getTime()) / 3600000)
   return h < 24 ? `${h} jam` : `${Math.floor(h / 24)} hari`
 }
 
@@ -451,7 +455,7 @@ function journeyStep(t: any) {
         </div>
         <div class="info-chip">
           <span class="ic-label">Site</span>
-          <span class="ic-value">{{ ops.current.site?.nama_site }} <span class="text-gray">· {{ ops.current.site?.kota }}</span></span>
+          <span class="ic-value">{{ ops.current.site?.nama_site }}<span v-if="ops.current.site?.kota" class="text-gray"> · {{ ops.current.site?.kota }}</span></span>
         </div>
         <div class="info-chip">
           <span class="ic-label">Layanan</span>
