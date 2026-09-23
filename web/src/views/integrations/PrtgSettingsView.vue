@@ -7,7 +7,7 @@ import api from '@/services/api'
 const proyek = useProyekStore()
 const auth = useAuthStore()
 const bisaKelolaKoneksi = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
-const tab = ref<'koneksi' | 'mapping' | 'audit' | 'graph'>('mapping')
+const tab = ref<'koneksi' | 'mapping' | 'audit' | 'graph' | 'provision'>('mapping')
 
 // ─── STATUS ───────────────────────────────────────────────────
 const status = ref<any>(null)
@@ -262,6 +262,84 @@ onMounted(async () => {
 
 import { onUnmounted } from 'vue'
 onUnmounted(() => { if (pendingInterval) clearInterval(pendingInterval) })
+
+// ─── PROVISION ────────────────────────────────────────────────
+const provisionList     = ref<any[]>([])
+const provisionLoading  = ref(false)
+const provisionError    = ref('')
+const provisionSearch   = ref('')
+const showUnprovisioned = ref(true)
+
+const provModal           = ref(false)
+const provSelected        = ref<any>(null)
+const provForm            = ref({ jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: '', ip_address: '' })
+const provSubmitting      = ref(false)
+const provMsg             = ref('')
+const provAsetFound       = ref<any>(null)
+const provAsetLookupLoad  = ref(false)
+const linkAset            = ref(false)
+
+const JENIS_OPTIONS = ['CPE', 'Router', 'Switch', 'ONU', 'ONT', 'Server', 'Access Point', 'Firewall', 'Lainnya']
+
+async function fetchProvision() {
+  provisionLoading.value = true; provisionError.value = ''
+  try { provisionList.value = (await api.get('/prtg/provision/preview')).data.data ?? [] }
+  catch (e: any) { provisionError.value = e.response?.data?.message || 'Gagal memuat data provision' }
+  finally { provisionLoading.value = false }
+}
+
+const filteredProvision = computed(() => {
+  let list = provisionList.value
+  if (showUnprovisioned.value) list = list.filter((d: any) => !d.sudah_ada)
+  const q = provisionSearch.value.trim().toLowerCase()
+  if (q) list = list.filter((d: any) =>
+    d.device_name.toLowerCase().includes(q) || (d.nama_site ?? '').toLowerCase().includes(q) || (d.nama_pelanggan ?? '').toLowerCase().includes(q)
+  )
+  return list
+})
+
+function openProvModal(device: any) {
+  provSelected.value = device
+  provForm.value = { jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: '', ip_address: device.ip_address ?? '' }
+  provAsetFound.value = null
+  linkAset.value = false
+  provMsg.value = ''
+  provModal.value = true
+}
+
+async function lookupAset() {
+  if (!provForm.value.serial_number) return
+  provAsetLookupLoad.value = true; provAsetFound.value = null
+  try {
+    const r = await api.get('/prtg/aset/lookup', { params: { sn: provForm.value.serial_number } })
+    provAsetFound.value = r.data.data
+    if (provAsetFound.value) linkAset.value = true
+  } catch {} finally { provAsetLookupLoad.value = false }
+}
+
+async function submitProvision() {
+  if (!provSelected.value || !provForm.value.jenis_perangkat) {
+    provMsg.value = 'Jenis perangkat wajib dipilih'; return
+  }
+  provSubmitting.value = true; provMsg.value = ''
+  try {
+    const payload: any = {
+      device_name: provSelected.value.device_name,
+      id_site: provSelected.value.id_site,
+      ip_address: provForm.value.ip_address,
+      jenis_perangkat: provForm.value.jenis_perangkat,
+      merk: provForm.value.merk || undefined,
+      tipe_model: provForm.value.tipe_model || undefined,
+      serial_number: provForm.value.serial_number || undefined,
+    }
+    if (linkAset.value && provAsetFound.value) payload.id_aset = provAsetFound.value.id_aset
+    await api.post('/prtg/provision', payload)
+    provModal.value = false
+    await fetchProvision()
+  } catch (e: any) {
+    provMsg.value = e.response?.data?.message || 'Gagal menambahkan perangkat'
+  } finally { provSubmitting.value = false }
+}
 </script>
 
 <template>
@@ -304,6 +382,7 @@ onUnmounted(() => { if (pendingInterval) clearInterval(pendingInterval) })
       <button :class="['tab', { active: tab === 'mapping' }]" @click="tab = 'mapping'">🔗 Mapping Device → Site</button>
       <button :class="['tab', { active: tab === 'audit' }]" @click="tab = 'audit'; fetchDevices()">🔍 Audit Sensor</button>
       <button :class="['tab', { active: tab === 'graph' }]" @click="tab = 'graph'">📈 Ping & Traffic</button>
+      <button :class="['tab', { active: tab === 'provision' }]" @click="tab = 'provision'; fetchProvision()">⚡ Provision Perangkat</button>
       <button v-if="bisaKelolaKoneksi" :class="['tab', { active: tab === 'koneksi' }]" @click="tab = 'koneksi'">⚙️ Koneksi</button>
     </div>
 
@@ -513,6 +592,148 @@ onUnmounted(() => { if (pendingInterval) clearInterval(pendingInterval) })
         </template>
       </template>
     </div>
+
+    <!-- ─── TAB: PROVISION ─── -->
+    <div v-if="tab === 'provision'" class="tab-content">
+      <div class="card">
+        <div class="prov-header">
+          <div>
+            <h3>⚡ Provision Perangkat dari PRTG</h3>
+            <p class="hint">Device PRTG yang sudah di-mapping ke site akan muncul di sini. Klik Provision untuk menambahkan ke Perangkat Terpasang dan update status Aset.</p>
+          </div>
+          <div class="prov-toolbar">
+            <label class="toggle-label">
+              <input type="checkbox" v-model="showUnprovisioned" />
+              Hanya belum ter-provision
+            </label>
+            <input class="search-prov" v-model="provisionSearch" placeholder="Cari device / site..." />
+            <button class="btn-refresh" @click="fetchProvision" :disabled="provisionLoading">
+              {{ provisionLoading ? '⏳' : '🔄' }} Refresh
+            </button>
+          </div>
+        </div>
+
+        <div v-if="provisionLoading" class="loading">Memuat data PRTG...</div>
+        <div v-else-if="provisionError" class="msg err">{{ provisionError }}</div>
+        <div v-else-if="!filteredProvision.length" class="empty-prov">
+          <p>{{ showUnprovisioned ? 'Semua device sudah di-provision ✓' : 'Belum ada device dengan mapping aktif' }}</p>
+        </div>
+        <div v-else class="prov-table-wrap">
+          <table class="prov-table">
+            <thead>
+              <tr>
+                <th>Device PRTG</th>
+                <th>IP Address</th>
+                <th>Site Pelanggan</th>
+                <th>Perangkat Terpasang</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in filteredProvision" :key="d.device_name" :class="{ 'row-done': d.sudah_ada }">
+                <td class="mono">{{ d.device_name }}</td>
+                <td class="mono ip-cell">{{ d.ip_address || '—' }}</td>
+                <td>
+                  <span class="site-name">{{ d.nama_site || '—' }}</span>
+                  <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
+                </td>
+                <td>
+                  <span v-if="d.existing_perangkat?.length" class="existing-list">
+                    <span v-for="p in d.existing_perangkat" :key="p.id_perangkat" class="existing-chip">
+                      {{ p.jenis_perangkat }} — {{ p.ip_address || '?' }}
+                    </span>
+                  </span>
+                  <span v-else class="empty-cell">—</span>
+                </td>
+                <td>
+                  <span :class="d.sudah_ada ? 'badge-done' : 'badge-pending'">
+                    {{ d.sudah_ada ? '✓ Sudah ada' : 'Belum' }}
+                  </span>
+                </td>
+                <td>
+                  <button v-if="!d.sudah_ada" class="btn-prov" @click="openProvModal(d)">Provision</button>
+                  <button v-else class="btn-prov-again" @click="openProvModal(d)">+ Tambah lagi</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Modal Provision -->
+      <div v-if="provModal" class="modal-overlay" @click.self="provModal = false">
+        <div class="modal-box">
+          <div class="modal-head">
+            <h4>Provision Perangkat</h4>
+            <button class="modal-close" @click="provModal = false">✕</button>
+          </div>
+
+          <div class="modal-info">
+            <div class="info-row"><span>Device PRTG</span><span class="mono">{{ provSelected?.device_name }}</span></div>
+            <div class="info-row"><span>Site</span><span>{{ provSelected?.nama_site }}</span></div>
+          </div>
+
+          <div class="modal-form">
+            <div class="field">
+              <label>IP Address <span class="req">*</span></label>
+              <input v-model="provForm.ip_address" placeholder="IP dari PRTG (bisa diubah)" />
+            </div>
+            <div class="field">
+              <label>Jenis Perangkat <span class="req">*</span></label>
+              <select v-model="provForm.jenis_perangkat">
+                <option v-for="j in JENIS_OPTIONS" :key="j" :value="j">{{ j }}</option>
+              </select>
+            </div>
+            <div class="form-row2">
+              <div class="field">
+                <label>Merk / Vendor</label>
+                <input v-model="provForm.merk" placeholder="Misal: MikroTik, Huawei..." />
+              </div>
+              <div class="field">
+                <label>Tipe / Model</label>
+                <input v-model="provForm.tipe_model" placeholder="Misal: RB4011, MA5671A..." />
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Serial Number</label>
+              <div class="sn-row">
+                <input v-model="provForm.serial_number" placeholder="S/N untuk lookup aset di gudang" />
+                <button class="btn-lookup" @click="lookupAset" :disabled="provAsetLookupLoad || !provForm.serial_number">
+                  {{ provAsetLookupLoad ? '...' : 'Cari Aset' }}
+                </button>
+              </div>
+            </div>
+
+            <div v-if="provAsetFound !== null" class="aset-result">
+              <div v-if="provAsetFound" class="aset-found">
+                <span class="aset-icon">📦</span>
+                <div>
+                  <div class="aset-name">{{ provAsetFound.nama_aset }}</div>
+                  <div class="aset-sub">{{ provAsetFound.merk }} {{ provAsetFound.tipe_model }} — S/N: {{ provAsetFound.serial_number }}</div>
+                  <div class="aset-sub">Status: {{ provAsetFound.status_aset }}</div>
+                </div>
+                <label class="link-label">
+                  <input type="checkbox" v-model="linkAset" />
+                  Update status → <strong>Terpasang</strong>
+                </label>
+              </div>
+              <div v-else class="aset-notfound">S/N tidak ditemukan di Gudang Aset</div>
+            </div>
+
+            <p v-if="provMsg" class="msg err">{{ provMsg }}</p>
+
+            <div class="modal-actions">
+              <button class="btn-secondary" @click="provModal = false">Batal</button>
+              <button class="btn-submit" @click="submitProvision" :disabled="provSubmitting">
+                {{ provSubmitting ? 'Menyimpan...' : '⚡ Provision Sekarang' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -635,4 +856,56 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .spark-label { font-size: 12px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .spark-last  { font-size: 12px; font-weight: 700; color: #0f172a; font-family: monospace; text-align: right; }
 .spark-chart { overflow: hidden; border-radius: 4px; }
+
+/* ─── Provision tab ─── */
+.prov-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.prov-header h3 { margin: 0 0 4px; }
+.prov-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.toggle-label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; cursor: pointer; white-space: nowrap; }
+.search-prov { padding: 7px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; outline: none; background: #f8fafc; color: #0f172a; min-width: 180px; }
+.search-prov:focus { border-color: #3b82f6; background: #fff; }
+.btn-refresh { padding: 7px 14px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-refresh:disabled { opacity: 0.5; }
+.empty-prov { text-align: center; padding: 32px; color: #94a3b8; font-size: 14px; }
+.prov-table-wrap { overflow-x: auto; }
+.prov-table { width: 100%; border-collapse: collapse; }
+.prov-table th { padding: 9px 12px; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; background: #f8fafc; text-align: left; }
+.prov-table td { padding: 10px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid #f1f5f9; vertical-align: top; }
+.row-done td { background: #f0fdf4; }
+.ip-cell { color: #1d4ed8; }
+.site-name { display: block; font-weight: 600; }
+.pelanggan-sub { display: block; font-size: 11px; color: #94a3b8; }
+.existing-list { display: flex; flex-direction: column; gap: 3px; }
+.existing-chip { font-size: 11px; background: #eff6ff; color: #1d4ed8; border-radius: 6px; padding: 2px 7px; display: inline-block; }
+.empty-cell { color: #94a3b8; }
+.badge-done { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #dcfce7; color: #15803d; }
+.badge-pending { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fef9c3; color: #a16207; }
+.btn-prov { padding: 5px 12px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-prov-again { padding: 5px 12px; background: #f1f5f9; color: #374151; border: 1px solid #e2e8f0; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 999; }
+.modal-box { background: #fff; border-radius: 14px; padding: 24px; width: 520px; max-width: calc(100vw - 32px); box-shadow: 0 8px 40px rgba(0,0,0,0.15); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.modal-head h4 { margin: 0; font-size: 16px; color: #0f172a; }
+.modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; }
+.modal-info { background: #f8fafc; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
+.info-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #374151; }
+.modal-form { display: flex; flex-direction: column; gap: 8px; }
+.form-row2 { display: flex; gap: 12px; flex-wrap: wrap; }
+.form-row2 .field { flex: 1; min-width: 160px; }
+.req { color: #dc2626; }
+.sn-row { display: flex; gap: 8px; }
+.sn-row input { flex: 1; }
+.btn-lookup { padding: 8px 14px; background: #eff6ff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; color: #1d4ed8; cursor: pointer; white-space: nowrap; }
+.btn-lookup:disabled { opacity: 0.5; cursor: not-allowed; }
+.aset-result { margin: 4px 0 8px; }
+.aset-found { display: flex; align-items: flex-start; gap: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; }
+.aset-icon { font-size: 20px; }
+.aset-name { font-size: 13px; font-weight: 700; color: #0f172a; }
+.aset-sub { font-size: 12px; color: #64748b; }
+.link-label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; margin-top: 6px; cursor: pointer; }
+.aset-notfound { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #c2410c; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+.modal-actions .btn-submit { margin-bottom: 0; }
 </style>

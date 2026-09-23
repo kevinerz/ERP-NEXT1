@@ -12,6 +12,14 @@ export interface PrtgSensor {
   message_raw?: string;
 }
 
+export interface PrtgDevice {
+  objid: number;
+  device: string;
+  host: string;
+  status: string;
+  status_raw: number;
+}
+
 export interface PrtgChannel {
   name: string;
   lastvalue: string;
@@ -88,6 +96,17 @@ export class PrtgClient {
     if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
     const json: any = await res.json();
     return (json.sensors ?? []) as PrtgSensor[];
+  }
+
+  // Semua device dari PRTG dengan field host (IP address)
+  async getDevices(): Promise<PrtgDevice[]> {
+    const url = await this.authedUrl(
+      `/api/table.json?content=devices&columns=objid,device,host,status&count=${PrtgClient.MAX_COUNT}`,
+    );
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
+    const json: any = await res.json();
+    return (json.devices ?? []) as PrtgDevice[];
   }
 
   // Semua sensor tanpa filter status — buat halaman audit/daftar device

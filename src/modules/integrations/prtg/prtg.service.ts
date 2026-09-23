@@ -5,6 +5,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { StarsenderService } from '../starsender/starsender.service';
 import { SLA_JAM } from '../../operations/operations.service';
 import { PrtgClient, PrtgSensor } from './prtg.client';
+import { BadRequestException } from '@nestjs/common';
 import { SecretCryptoService } from '../../../common/crypto/secret-crypto.service';
 
 const STATUS_TIKET_AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
@@ -620,6 +621,123 @@ export class PrtgService {
   }
 
   // ─── AUDIT DAFTAR SENSOR/DEVICE ─────────────────────────────────
+
+  // ─── PROVISION: match PRTG device → PerangkatSite + GudangAset ──
+
+  // Preview: semua device yang sudah ter-mapping manual, lengkap dgn IP PRTG
+  // dan daftar perangkat existing di site tersebut
+  async getProvisionPreview() {
+    if (!(await this.prtg.isConfigured())) return { data: [] };
+
+    const [prtgDevices, mappings] = await Promise.all([
+      this.prtg.getDevices(),
+      this.prisma.integrationPrtgMapping.findMany({
+        include: {
+          site: {
+            select: {
+              id_site: true, kode_site: true, nama_site: true,
+              pelanggan: { select: { nama_pelanggan: true } },
+              perangkat: {
+                orderBy: { tgl_pasang: 'desc' },
+                select: {
+                  id_perangkat: true, jenis_perangkat: true, merk: true, tipe_model: true,
+                  ip_address: true, serial_number: true, status_perangkat: true,
+                  aset: { select: { kode_aset: true, nama_perangkat: true, status_aset: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const ipByDevice = new Map<string, string>();
+    for (const d of prtgDevices) {
+      // host bisa berupa IP atau hostname; simpan apa adanya
+      if (d.device && d.host) ipByDevice.set(d.device, d.host);
+    }
+
+    const data = mappings.map((m) => {
+      const ip = ipByDevice.get(m.device_name) ?? null;
+      const perangkat = m.site.perangkat ?? [];
+      const sudahAda = ip ? perangkat.some((p) => p.ip_address === ip) : false;
+      return {
+        id_mapping: m.id_mapping,
+        device_name: m.device_name,
+        ip_address: ip,
+        id_site: m.site.id_site,
+        kode_site: m.site.kode_site,
+        nama_site: m.site.nama_site,
+        nama_pelanggan: m.site.pelanggan?.nama_pelanggan ?? null,
+        existing_perangkat: perangkat,
+        sudah_ada: sudahAda,
+      };
+    });
+    data.sort((a, b) => a.nama_site.localeCompare(b.nama_site));
+    return { data };
+  }
+
+  // Provision satu device: buat PerangkatSite (IP dari PRTG) + opsional update GudangAset
+  async provisionDevice(dto: {
+    device_name: string;
+    id_site: number;
+    ip_address: string;
+    jenis_perangkat: string;
+    merk?: string;
+    tipe_model?: string;
+    serial_number?: string;
+    id_aset?: number;
+  }) {
+    // Cegah duplikat IP di site yang sama
+    if (dto.ip_address) {
+      const dup = await this.prisma.perangkatSite.findFirst({
+        where: { id_site: dto.id_site, ip_address: dto.ip_address },
+      });
+      if (dup) throw new BadRequestException(`IP ${dto.ip_address} sudah terdaftar di site ini (ID perangkat: ${dup.id_perangkat})`);
+    }
+
+    // Buat PerangkatSite
+    const perangkat = await this.prisma.perangkatSite.create({
+      data: {
+        id_site: dto.id_site,
+        id_aset: dto.id_aset ?? null,
+        jenis_perangkat: dto.jenis_perangkat,
+        merk: dto.merk || null,
+        tipe_model: dto.tipe_model || null,
+        serial_number: dto.serial_number || null,
+        ip_address: dto.ip_address || null,
+        status_perangkat: 'Aktif',
+        tgl_pasang: new Date(),
+      },
+      include: { site: { select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } } },
+    });
+
+    // Jika ada id_aset: update GudangAset → Terpasang, link ke site & perangkat
+    let aset = null;
+    if (dto.id_aset) {
+      aset = await this.prisma.gudangAset.update({
+        where: { id_aset: dto.id_aset },
+        data: { status_aset: 'Terpasang', id_site: dto.id_site },
+      });
+      // pastikan perangkat.id_aset sudah terset (sudah di create, tapi update untuk konsistensi)
+      await this.prisma.perangkatSite.update({
+        where: { id_perangkat: perangkat.id_perangkat },
+        data: { id_aset: dto.id_aset },
+      });
+    }
+
+    return { perangkat, aset };
+  }
+
+  // Lookup GudangAset by serial number (untuk autocomplete di form provision)
+  async lookupAsetBySN(sn: string) {
+    if (!sn || sn.length < 3) return { data: null };
+    const aset = await this.prisma.gudangAset.findFirst({
+      where: { serial_number: sn.trim() },
+      include: { site: { select: { nama_site: true } } },
+    });
+    return { data: aset };
+  }
 
   async getDeviceOverview() {
     if (!(await this.prtg.isConfigured())) return { data: [] };

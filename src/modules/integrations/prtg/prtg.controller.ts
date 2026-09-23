@@ -94,4 +94,22 @@ export class PrtgController {
     res!.setHeader('Cache-Control', 'public, max-age=60');
     res!.send(buffer);
   }
+
+  // ── Provision: sinkronisasi PRTG device → PerangkatSite + GudangAset ──
+
+  @Get('provision/preview')
+  getProvisionPreview() {
+    return this.prtgService.getProvisionPreview();
+  }
+
+  @Post('provision')
+  async provisionDevice(@Body() body: any) {
+    const data = await this.prtgService.provisionDevice(body);
+    return { success: true, data, message: 'Perangkat berhasil ditambahkan ke site' };
+  }
+
+  @Get('aset/lookup')
+  lookupAset(@Query('sn') sn: string) {
+    return this.prtgService.lookupAsetBySN(sn);
+  }
 }
