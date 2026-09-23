@@ -287,8 +287,11 @@ const JENIS_OPTIONS = ['CPE', 'Router', 'Switch', 'ONU', 'ONT', 'Server', 'Acces
 
 async function fetchProvision() {
   provisionLoading.value = true; provisionError.value = ''; bulkResult.value = null
-  try { provisionList.value = (await api.get('/prtg/provision/preview')).data.data ?? [] }
-  catch (e: any) { provisionError.value = e.response?.data?.message || 'Gagal memuat data provision' }
+  try {
+    provisionList.value = (await api.get('/prtg/provision/preview')).data.data ?? []
+    // Auto-provision langsung semua yang 100% match tanpa interaksi user
+    if (bulkCandidates.value.length) await doBulkProvision()
+  } catch (e: any) { provisionError.value = e.response?.data?.message || 'Gagal memuat data provision' }
   finally { provisionLoading.value = false }
 }
 
@@ -339,7 +342,9 @@ async function doBulkProvision() {
     }))
     const r = await api.post('/prtg/provision/bulk', { items })
     bulkResult.value = r.data
-    await fetchProvision()
+    // Refresh list tanpa re-trigger bulk (pakai flag internal)
+    const fresh = (await api.get('/prtg/provision/preview')).data.data ?? []
+    provisionList.value = fresh
   } catch (e: any) {
     bulkResult.value = { error: e.response?.data?.message || 'Gagal bulk provision' }
   } finally { bulkSubmitting.value = false }
@@ -659,45 +664,25 @@ async function submitProvision() {
       <div v-else-if="provisionError" class="card"><p class="msg err">{{ provisionError }}</p></div>
       <template v-else>
 
-        <!-- ── SECTION 1: 100% MATCH — BULK ── -->
-        <div v-if="filteredBulk.length || bulkResult" class="card section-bulk">
+        <!-- ── SECTION 1: 100% MATCH — AUTO PROVISIONED ── -->
+        <div v-if="bulkSubmitting || bulkResult" class="card section-bulk">
           <div class="section-head">
             <div>
               <span class="section-badge badge-bulk">100% cocok</span>
-              <strong>Auto-Provision Massal</strong>
-              <span class="section-sub"> — {{ filteredBulk.length }} device siap, jenis default CPE, bisa di-edit setelah provision</span>
+              <strong>Auto-Provision</strong>
+              <span v-if="bulkSubmitting" class="section-sub"> — sedang memproses...</span>
             </div>
-            <button v-if="filteredBulk.length" class="btn-bulk" @click="doBulkProvision" :disabled="bulkSubmitting">
-              {{ bulkSubmitting ? '⏳ Memproses...' : `⚡ Provision Semua (${filteredBulk.length})` }}
-            </button>
+            <span v-if="bulkSubmitting" class="bulk-spinner">⏳</span>
           </div>
-
           <!-- Hasil bulk -->
           <div v-if="bulkResult" class="bulk-result">
             <div v-if="bulkResult.error" class="br-row br-err">❌ {{ bulkResult.error }}</div>
             <template v-else>
-              <div class="br-row br-ok">✓ {{ bulkResult.provisioned_count }} berhasil di-provision</div>
-              <div v-if="bulkResult.skipped_count" class="br-row br-skip">⟳ {{ bulkResult.skipped_count }} dilewati (sudah ada / no IP)</div>
+              <div v-if="bulkResult.provisioned_count" class="br-row br-ok">✓ {{ bulkResult.provisioned_count }} device berhasil di-provision otomatis</div>
+              <div v-if="bulkResult.skipped_count" class="br-row br-skip">⟳ {{ bulkResult.skipped_count }} dilewati (IP sudah terdaftar)</div>
               <div v-if="bulkResult.error_count" class="br-row br-err">❌ {{ bulkResult.error_count }} error</div>
+              <div v-if="!bulkResult.provisioned_count && !bulkResult.error_count" class="br-row br-skip">Semua device 100% sudah ter-provision sebelumnya</div>
             </template>
-          </div>
-
-          <div class="prov-table-wrap">
-            <table class="prov-table">
-              <thead><tr><th>Device PRTG</th><th>IP</th><th>Site Pelanggan</th><th></th></tr></thead>
-              <tbody>
-                <tr v-for="d in filteredBulk" :key="d.device_name">
-                  <td><span class="mono">{{ d.device_name }}</span></td>
-                  <td class="mono ip-cell">{{ d.ip_address }}</td>
-                  <td>
-                    <span class="site-name">{{ d.nama_site }}</span>
-                    <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
-                    <span v-if="d.match_source === 'manual'" class="badge-manual-map">manual</span>
-                  </td>
-                  <td><button class="btn-prov-sm" @click="openProvModal(d)">Edit & Provision</button></td>
-                </tr>
-              </tbody>
-            </table>
           </div>
         </div>
 
@@ -1010,8 +995,8 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .section-sub { font-size: 12px; font-weight: 400; color: #64748b; }
 
 .section-bulk { border-left: 3px solid #22c55e; }
-.btn-bulk { padding: 9px 20px; background: linear-gradient(135deg, #15803d, #22c55e); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.btn-bulk:disabled { opacity: 0.5; cursor: not-allowed; }
+.bulk-spinner { font-size: 18px; animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .bulk-result { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
 .br-row { padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; }
