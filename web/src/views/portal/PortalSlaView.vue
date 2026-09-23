@@ -256,7 +256,7 @@ function prioritasCls(p: string) {
             />
             <text
               :x="CHART_W - 4"
-              :y="thresholdY() - 4"
+              :y="thresholdY() + 10"
               text-anchor="end"
               font-size="9"
               fill="#d97706"
