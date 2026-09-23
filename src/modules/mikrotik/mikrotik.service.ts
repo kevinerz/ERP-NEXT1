@@ -14,7 +14,6 @@ export class MikrotikService {
   async getDevices() {
     const rows = await this.prisma.perangkatSite.findMany({
       where: {
-        status_perangkat: 'Aktif',
         AND: [{ ip_address: { not: null } }, { ip_address: { not: '' } }],
         OR: [
           { jenis_perangkat: { contains: 'Mikrotik' } },
