@@ -139,16 +139,29 @@ export class MikrotikService {
             return done({ success: false, output: '', error: err.message });
           }
           let out = '';
-          stream.on('data', (d: Buffer) => { out += d.toString(); });
-          stream.on('close', () => {
+          let finished = false;
+          let idleTimer: ReturnType<typeof setTimeout>;
+
+          const finish = () => {
+            if (finished) return;
+            finished = true;
             clearTimeout(timeout);
-            conn.end();
-            // Hapus ANSI escape codes yang muncul karena PTY
+            clearTimeout(idleTimer);
+            try { conn.destroy(); } catch {}
             const clean = out
               .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
               .replace(/\r/g, '');
             done({ success: true, output: clean });
-          });
+          };
+
+          const resetIdle = () => {
+            clearTimeout(idleTimer);
+            // Tidak ada data 1,5 detik → command selesai
+            idleTimer = setTimeout(finish, 1500);
+          };
+
+          stream.on('data', (d: Buffer) => { out += d.toString(); resetIdle(); });
+          stream.on('close', finish);
         });
       });
 
