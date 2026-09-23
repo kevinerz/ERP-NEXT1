@@ -765,6 +765,59 @@ export class PrtgService {
     return { data };
   }
 
+  /** Bulk provision: provision semua device yang 100% match sekaligus.
+   *  Skip device yang sudah ada (duplikat IP di site), skip yang tidak punya IP.
+   *  Default jenis_perangkat = CPE kecuali ditentukan per item.
+   */
+  async bulkProvision(items: Array<{
+    device_name: string;
+    id_site: number;
+    ip_address: string;
+    jenis_perangkat?: string;
+  }>) {
+    // Ambil semua IP yang sudah ada di site-site terkait sekaligus
+    const siteIds = [...new Set(items.map((i) => i.id_site))];
+    const existing = await this.prisma.perangkatSite.findMany({
+      where: { id_site: { in: siteIds } },
+      select: { id_site: true, ip_address: true },
+    });
+    const existingSet = new Set(existing.map((e) => `${e.id_site}:${e.ip_address}`));
+
+    const provisioned: string[] = [];
+    const skipped: string[] = [];
+    const errors: Array<{ device_name: string; reason: string }> = [];
+
+    for (const item of items) {
+      if (!item.ip_address) { skipped.push(`${item.device_name} (no IP)`); continue; }
+      const key = `${item.id_site}:${item.ip_address}`;
+      if (existingSet.has(key)) { skipped.push(`${item.device_name} (sudah ada)`); continue; }
+      try {
+        await this.prisma.perangkatSite.create({
+          data: {
+            id_site: item.id_site,
+            jenis_perangkat: item.jenis_perangkat || 'CPE',
+            ip_address: item.ip_address,
+            status_perangkat: 'Aktif',
+            tgl_pasang: new Date(),
+          },
+        });
+        existingSet.add(key); // cegah duplikat dalam 1 batch
+        provisioned.push(item.device_name);
+      } catch (e: any) {
+        errors.push({ device_name: item.device_name, reason: e.message });
+      }
+    }
+
+    return {
+      provisioned_count: provisioned.length,
+      skipped_count: skipped.length,
+      error_count: errors.length,
+      provisioned,
+      skipped,
+      errors,
+    };
+  }
+
   // Provision satu device: buat PerangkatSite (IP dari PRTG) + opsional update GudangAset
   async provisionDevice(dto: {
     device_name: string;

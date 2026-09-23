@@ -270,6 +270,9 @@ const provisionError    = ref('')
 const provisionSearch   = ref('')
 const showUnprovisioned = ref(true)
 
+const bulkSubmitting  = ref(false)
+const bulkResult      = ref<any>(null)
+
 const provModal           = ref(false)
 const provSelected        = ref<any>(null)
 const provSiteId          = ref<number>(0)
@@ -283,21 +286,64 @@ const linkAset            = ref(false)
 const JENIS_OPTIONS = ['CPE', 'Router', 'Switch', 'ONU', 'ONT', 'Server', 'Access Point', 'Firewall', 'Lainnya']
 
 async function fetchProvision() {
-  provisionLoading.value = true; provisionError.value = ''
+  provisionLoading.value = true; provisionError.value = ''; bulkResult.value = null
   try { provisionList.value = (await api.get('/prtg/provision/preview')).data.data ?? [] }
   catch (e: any) { provisionError.value = e.response?.data?.message || 'Gagal memuat data provision' }
   finally { provisionLoading.value = false }
 }
 
-const filteredProvision = computed(() => {
-  let list = provisionList.value
-  if (showUnprovisioned.value) list = list.filter((d: any) => !d.sudah_ada && d.ip_address)
+// Semua device yang 100% match dan belum ter-provision — kandidat bulk
+const bulkCandidates = computed(() =>
+  provisionList.value.filter((d: any) => d.match_score === 100 && !d.sudah_ada && d.ip_address && d.id_site)
+)
+
+// Device 50-99% (auto partial) belum provision
+const partialCandidates = computed(() =>
+  filterBySearch(provisionList.value.filter((d: any) =>
+    d.match_score !== null && d.match_score < 100 && !d.sudah_ada && d.ip_address && d.id_site
+  ))
+)
+
+// Device tanpa match — perlu pilih site manual
+const unmatchedCandidates = computed(() =>
+  filterBySearch(provisionList.value.filter((d: any) => !d.id_site && d.ip_address))
+)
+
+// Device sudah ter-provision
+const doneList = computed(() =>
+  filterBySearch(provisionList.value.filter((d: any) => d.sudah_ada))
+)
+
+function filterBySearch(list: any[]) {
   const q = provisionSearch.value.trim().toLowerCase()
-  if (q) list = list.filter((d: any) =>
-    d.device_name.toLowerCase().includes(q) || (d.nama_site ?? '').toLowerCase().includes(q) || (d.nama_pelanggan ?? '').toLowerCase().includes(q) || (d.ip_address ?? '').includes(q)
+  if (!q) return list
+  return list.filter((d: any) =>
+    d.device_name.toLowerCase().includes(q) ||
+    (d.nama_site ?? '').toLowerCase().includes(q) ||
+    (d.nama_pelanggan ?? '').toLowerCase().includes(q) ||
+    (d.ip_address ?? '').includes(q)
   )
-  return list
-})
+}
+
+const filteredBulk = computed(() => filterBySearch(bulkCandidates.value))
+
+async function doBulkProvision() {
+  if (!bulkCandidates.value.length) return
+  bulkSubmitting.value = true; bulkResult.value = null
+  try {
+    const items = bulkCandidates.value.map((d: any) => ({
+      device_name: d.device_name,
+      id_site: d.id_site,
+      ip_address: d.ip_address,
+      jenis_perangkat: 'CPE',
+    }))
+    const r = await api.post('/prtg/provision/bulk', { items })
+    bulkResult.value = r.data
+    await fetchProvision()
+  } catch (e: any) {
+    bulkResult.value = { error: e.response?.data?.message || 'Gagal bulk provision' }
+  } finally { bulkSubmitting.value = false }
+}
 
 function openProvModal(device: any) {
   provSelected.value = device
@@ -600,73 +646,145 @@ async function submitProvision() {
 
     <!-- ─── TAB: PROVISION ─── -->
     <div v-if="tab === 'provision'" class="tab-content">
-      <div class="card">
-        <div class="prov-header">
-          <div>
-            <h3>⚡ Provision Perangkat dari PRTG</h3>
-            <p class="hint">Device PRTG yang sudah di-mapping ke site akan muncul di sini. Klik Provision untuk menambahkan ke Perangkat Terpasang dan update status Aset.</p>
-          </div>
-          <div class="prov-toolbar">
-            <label class="toggle-label">
-              <input type="checkbox" v-model="showUnprovisioned" />
-              Hanya belum ter-provision
-            </label>
-            <input class="search-prov" v-model="provisionSearch" placeholder="Cari device / site..." />
-            <button class="btn-refresh" @click="fetchProvision" :disabled="provisionLoading">
-              {{ provisionLoading ? '⏳' : '🔄' }} Refresh
+
+      <!-- Toolbar -->
+      <div class="prov-toolbar-bar">
+        <input class="search-prov" v-model="provisionSearch" placeholder="🔍 Cari device / site / IP..." />
+        <button class="btn-refresh" @click="fetchProvision" :disabled="provisionLoading">
+          {{ provisionLoading ? '⏳' : '🔄' }} Refresh
+        </button>
+      </div>
+
+      <div v-if="provisionLoading" class="loading">Memuat data PRTG...</div>
+      <div v-else-if="provisionError" class="card"><p class="msg err">{{ provisionError }}</p></div>
+      <template v-else>
+
+        <!-- ── SECTION 1: 100% MATCH — BULK ── -->
+        <div v-if="filteredBulk.length || bulkResult" class="card section-bulk">
+          <div class="section-head">
+            <div>
+              <span class="section-badge badge-bulk">100% cocok</span>
+              <strong>Auto-Provision Massal</strong>
+              <span class="section-sub"> — {{ filteredBulk.length }} device siap, jenis default CPE, bisa di-edit setelah provision</span>
+            </div>
+            <button v-if="filteredBulk.length" class="btn-bulk" @click="doBulkProvision" :disabled="bulkSubmitting">
+              {{ bulkSubmitting ? '⏳ Memproses...' : `⚡ Provision Semua (${filteredBulk.length})` }}
             </button>
+          </div>
+
+          <!-- Hasil bulk -->
+          <div v-if="bulkResult" class="bulk-result">
+            <div v-if="bulkResult.error" class="br-row br-err">❌ {{ bulkResult.error }}</div>
+            <template v-else>
+              <div class="br-row br-ok">✓ {{ bulkResult.provisioned_count }} berhasil di-provision</div>
+              <div v-if="bulkResult.skipped_count" class="br-row br-skip">⟳ {{ bulkResult.skipped_count }} dilewati (sudah ada / no IP)</div>
+              <div v-if="bulkResult.error_count" class="br-row br-err">❌ {{ bulkResult.error_count }} error</div>
+            </template>
+          </div>
+
+          <div class="prov-table-wrap">
+            <table class="prov-table">
+              <thead><tr><th>Device PRTG</th><th>IP</th><th>Site Pelanggan</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="d in filteredBulk" :key="d.device_name">
+                  <td><span class="mono">{{ d.device_name }}</span></td>
+                  <td class="mono ip-cell">{{ d.ip_address }}</td>
+                  <td>
+                    <span class="site-name">{{ d.nama_site }}</span>
+                    <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
+                    <span v-if="d.match_source === 'manual'" class="badge-manual-map">manual</span>
+                  </td>
+                  <td><button class="btn-prov-sm" @click="openProvModal(d)">Edit & Provision</button></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <div v-if="provisionLoading" class="loading">Memuat data PRTG...</div>
-        <div v-else-if="provisionError" class="msg err">{{ provisionError }}</div>
-        <div v-else-if="!filteredProvision.length" class="empty-prov">
-          <p>{{ showUnprovisioned ? 'Semua device sudah di-provision ✓' : 'Belum ada device dengan mapping aktif' }}</p>
+        <!-- ── SECTION 2: PARTIAL MATCH — MANUAL CONFIRM ── -->
+        <div v-if="partialCandidates.length" class="card">
+          <div class="section-head">
+            <div>
+              <span class="section-badge badge-partial">50–99% cocok</span>
+              <strong>Perlu Konfirmasi Site</strong>
+              <span class="section-sub"> — {{ partialCandidates.length }} device, site sudah di-tebak, periksa sebelum provision</span>
+            </div>
+          </div>
+          <div class="prov-table-wrap">
+            <table class="prov-table">
+              <thead><tr><th>Device PRTG</th><th>IP</th><th>Site Tebakan</th><th>Skor</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="d in partialCandidates" :key="d.device_name">
+                  <td>
+                    <span class="mono">{{ d.device_name }}</span>
+                    <span v-if="d.prtg_status" :class="['prtg-st', d.prtg_status?.toLowerCase().includes('up') ? 'prtg-up' : 'prtg-dn']">{{ d.prtg_status }}</span>
+                  </td>
+                  <td class="mono ip-cell">{{ d.ip_address }}</td>
+                  <td>
+                    <span class="site-name">{{ d.nama_site }}</span>
+                    <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
+                  </td>
+                  <td><span class="badge-auto-match">~{{ d.match_score }}%</span></td>
+                  <td><button class="btn-prov" @click="openProvModal(d)">Provision</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div v-else class="prov-table-wrap">
-          <table class="prov-table">
-            <thead>
-              <tr>
-                <th>Device PRTG</th>
-                <th>IP Address</th>
-                <th>Site Pelanggan</th>
-                <th>Status Provision</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="d in filteredProvision" :key="d.device_name" :class="{ 'row-done': d.sudah_ada }">
-                <td>
-                  <span class="mono">{{ d.device_name }}</span>
-                  <span v-if="d.prtg_status" :class="['prtg-st', d.prtg_status?.toLowerCase().includes('up') ? 'prtg-up' : 'prtg-dn']">
-                    {{ d.prtg_status }}
-                  </span>
-                </td>
-                <td class="mono ip-cell">{{ d.ip_address || '—' }}</td>
-                <td>
-                  <span v-if="d.nama_site" class="site-name">{{ d.nama_site }}</span>
-                  <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
-                  <span v-if="d.match_source === 'auto'" class="badge-auto-match" :title="`Skor auto-match: ${d.match_score}%`">
-                    ~auto {{ d.match_score }}%
-                  </span>
-                  <span v-if="d.match_source === 'manual'" class="badge-manual-map">manual</span>
-                  <span v-if="!d.id_site" class="badge-no-map">Belum cocok</span>
-                </td>
-                <td>
-                  <span :class="d.sudah_ada ? 'badge-done' : (d.id_site ? 'badge-pending' : 'badge-no-map')">
-                    {{ d.sudah_ada ? '✓ Ter-provision' : (d.id_site ? 'Siap' : 'Pilih site') }}
-                  </span>
-                </td>
-                <td>
-                  <button class="btn-prov" @click="openProvModal(d)">
-                    {{ d.sudah_ada ? '+ Lagi' : 'Provision' }}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+
+        <!-- ── SECTION 3: TIDAK COCOK — PILIH MANUAL ── -->
+        <div v-if="unmatchedCandidates.length" class="card">
+          <div class="section-head">
+            <div>
+              <span class="section-badge badge-no-map">Tidak cocok</span>
+              <strong>Pilih Site Manual</strong>
+              <span class="section-sub"> — {{ unmatchedCandidates.length }} device, silakan pilih site di form provision</span>
+            </div>
+          </div>
+          <div class="prov-table-wrap">
+            <table class="prov-table">
+              <thead><tr><th>Device PRTG</th><th>IP</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="d in unmatchedCandidates" :key="d.device_name">
+                  <td>
+                    <span class="mono">{{ d.device_name }}</span>
+                    <span v-if="d.prtg_status" :class="['prtg-st', d.prtg_status?.toLowerCase().includes('up') ? 'prtg-up' : 'prtg-dn']">{{ d.prtg_status }}</span>
+                  </td>
+                  <td class="mono ip-cell">{{ d.ip_address }}</td>
+                  <td><button class="btn-prov" @click="openProvModal(d)">Provision</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+
+        <!-- ── SECTION 4: SUDAH TER-PROVISION (COLLAPSIBLE) ── -->
+        <details v-if="doneList.length" class="card done-section">
+          <summary class="done-summary">✓ Sudah ter-provision ({{ doneList.length }})</summary>
+          <div class="prov-table-wrap">
+            <table class="prov-table">
+              <thead><tr><th>Device PRTG</th><th>IP</th><th>Site</th><th></th></tr></thead>
+              <tbody>
+                <tr v-for="d in doneList" :key="d.device_name" class="row-done">
+                  <td class="mono">{{ d.device_name }}</td>
+                  <td class="mono ip-cell">{{ d.ip_address }}</td>
+                  <td>
+                    <span class="site-name">{{ d.nama_site || '—' }}</span>
+                    <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
+                  </td>
+                  <td><button class="btn-prov-sm" @click="openProvModal(d)">+ Lagi</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+
+        <div v-if="!filteredBulk.length && !partialCandidates.length && !unmatchedCandidates.length && !doneList.length" class="card">
+          <p class="empty-prov">Tidak ada device PRTG ditemukan. Periksa koneksi PRTG di tab Koneksi.</p>
+        </div>
+
+      </template>
+    </div>
 
       <!-- Modal Provision -->
       <div v-if="provModal" class="modal-overlay" @click.self="provModal = false">
@@ -878,38 +996,52 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .spark-chart { overflow: hidden; border-radius: 4px; }
 
 /* ─── Provision tab ─── */
-.prov-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
-.prov-header h3 { margin: 0 0 4px; }
-.prov-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.toggle-label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; cursor: pointer; white-space: nowrap; }
-.search-prov { padding: 7px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; outline: none; background: #f8fafc; color: #0f172a; min-width: 180px; }
+.prov-toolbar-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.search-prov { flex: 1; padding: 9px 14px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
 .search-prov:focus { border-color: #3b82f6; background: #fff; }
-.btn-refresh { padding: 7px 14px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-refresh { padding: 9px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-refresh:disabled { opacity: 0.5; }
 .empty-prov { text-align: center; padding: 32px; color: #94a3b8; font-size: 14px; }
+
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+.section-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; margin-right: 8px; }
+.badge-bulk    { background: #dcfce7; color: #15803d; }
+.badge-partial { background: #ede9fe; color: #6d28d9; }
+.section-sub { font-size: 12px; font-weight: 400; color: #64748b; }
+
+.section-bulk { border-left: 3px solid #22c55e; }
+.btn-bulk { padding: 9px 20px; background: linear-gradient(135deg, #15803d, #22c55e); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn-bulk:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.bulk-result { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
+.br-row { padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; }
+.br-ok   { background: #f0fdf4; color: #15803d; }
+.br-skip { background: #fef9c3; color: #a16207; }
+.br-err  { background: #fef2f2; color: #dc2626; }
+
 .prov-table-wrap { overflow-x: auto; }
 .prov-table { width: 100%; border-collapse: collapse; }
 .prov-table th { padding: 9px 12px; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; background: #f8fafc; text-align: left; }
-.prov-table td { padding: 10px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid #f1f5f9; vertical-align: top; }
+.prov-table td { padding: 9px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid #f1f5f9; vertical-align: middle; }
 .row-done td { background: #f0fdf4; }
 .ip-cell { color: #1d4ed8; }
 .site-name { display: block; font-weight: 600; }
 .pelanggan-sub { display: block; font-size: 11px; color: #94a3b8; }
-.existing-list { display: flex; flex-direction: column; gap: 3px; }
-.existing-chip { font-size: 11px; background: #eff6ff; color: #1d4ed8; border-radius: 6px; padding: 2px 7px; display: inline-block; }
-.empty-cell { color: #94a3b8; }
-.badge-done { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #dcfce7; color: #15803d; }
+
+.badge-done    { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #dcfce7; color: #15803d; }
 .badge-pending { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fef9c3; color: #a16207; }
-.badge-no-map { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #64748b; }
-.badge-auto-match { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #ede9fe; color: #6d28d9; margin-top: 2px; }
-.badge-manual-map { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #eff6ff; color: #1d4ed8; margin-top: 2px; }
+.badge-no-map  { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #64748b; }
+.badge-auto-match  { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #ede9fe; color: #6d28d9; }
+.badge-manual-map  { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #eff6ff; color: #1d4ed8; }
 .auto-match-note { background: #faf5ff; border-radius: 6px; padding: 4px 8px; }
 .field-hint { font-size: 11px; font-weight: 400; color: #a16207; }
-.btn-prov { padding: 5px 12px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-.btn-prov-again { padding: 5px 12px; background: #f1f5f9; color: #374151; border: 1px solid #e2e8f0; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-prov    { padding: 5px 12px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-prov-sm { padding: 4px 10px; background: #f1f5f9; color: #374151; border: 1px solid #e2e8f0; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .prtg-st { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
 .prtg-up { background: #dcfce7; color: #15803d; }
 .prtg-dn { background: #fef2f2; color: #dc2626; }
+.done-section { border: none; box-shadow: none; background: #f8fafc; }
+.done-summary { font-size: 13px; font-weight: 600; color: #64748b; cursor: pointer; padding: 12px 24px; }
 
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 999; }

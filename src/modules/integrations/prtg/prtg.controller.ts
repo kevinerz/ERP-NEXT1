@@ -108,6 +108,12 @@ export class PrtgController {
     return { success: true, data, message: 'Perangkat berhasil ditambahkan ke site' };
   }
 
+  @Post('provision/bulk')
+  async bulkProvision(@Body() body: { items: any[] }) {
+    const result = await this.prtgService.bulkProvision(body.items ?? []);
+    return { success: true, ...result };
+  }
+
   @Get('aset/lookup')
   lookupAset(@Query('sn') sn: string) {
     return this.prtgService.lookupAsetBySN(sn);
