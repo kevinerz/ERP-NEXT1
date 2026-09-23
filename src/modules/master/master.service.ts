@@ -271,7 +271,7 @@ export class MasterService {
       ];
     }
     if (query.id_pelanggan) where.id_pelanggan = Number(query.id_pelanggan);
-    const [data, total] = await Promise.all([
+    const [data, total, statusGroups] = await Promise.all([
       this.prisma.sitePelanggan.findMany({
         where, skip, take: limit,
         orderBy: { nama_site: 'asc' },
@@ -281,8 +281,15 @@ export class MasterService {
         },
       }),
       this.prisma.sitePelanggan.count({ where }),
+      this.prisma.sitePelanggan.groupBy({
+        by: ['status_site'],
+        _count: { status_site: true },
+        where: query.id_pelanggan ? { id_pelanggan: Number(query.id_pelanggan) } : {},
+      }),
     ]);
-    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
+    const status_counts: Record<string, number> = { Prospek: 0, Aktif: 0, Terminasi: 0, Suspend: 0 };
+    statusGroups.forEach((g: any) => { status_counts[g.status_site] = g._count.status_site; });
+    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit), status_counts } };
   }
 
   async createSite(dto: CreateSiteDto) {

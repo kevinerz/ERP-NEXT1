@@ -135,6 +135,8 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 }
 
 const statusSummary = computed(() => {
+  const sc = master.siteMeta.status_counts
+  if (sc && Object.values(sc).some(v => v > 0)) return sc
   const counts: Record<string, number> = {}
   STATUS_SITE.forEach(s => counts[s] = 0)
   master.siteList.forEach((s: any) => {

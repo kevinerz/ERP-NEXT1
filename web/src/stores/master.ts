@@ -82,7 +82,7 @@ export const useMasterStore = defineStore('master', {
     pelangganLoading: false,
 
     siteList: [] as SitePelanggan[],
-    siteMeta: { total: 0, page: 1, limit: 20, total_pages: 0 },
+    siteMeta: { total: 0, page: 1, limit: 20, total_pages: 0, status_counts: { Prospek: 0, Aktif: 0, Terminasi: 0, Suspend: 0 } as Record<string, number> },
     siteLoading: false,
 
     error: '',
