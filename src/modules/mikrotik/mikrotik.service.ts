@@ -130,7 +130,9 @@ export class MikrotikService {
       });
 
       conn.on('ready', () => {
-        conn.exec(command, (err: Error | undefined, stream: any) => {
+        // PTY cols=220 supaya RouterOS tidak potong kolom (default 80 tanpa PTY)
+        // rows=9999 supaya tidak ada paginasi "Press any key"
+        conn.exec(command, { pty: { cols: 220, rows: 9999, term: 'vt100' } }, (err: Error | undefined, stream: any) => {
           if (err) {
             clearTimeout(timeout);
             conn.end();
@@ -138,11 +140,14 @@ export class MikrotikService {
           }
           let out = '';
           stream.on('data', (d: Buffer) => { out += d.toString(); });
-          stream.stderr.on('data', (d: Buffer) => { out += d.toString(); });
           stream.on('close', () => {
             clearTimeout(timeout);
             conn.end();
-            done({ success: true, output: out });
+            // Hapus ANSI escape codes yang muncul karena PTY
+            const clean = out
+              .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+              .replace(/\r/g, '');
+            done({ success: true, output: clean });
           });
         });
       });
