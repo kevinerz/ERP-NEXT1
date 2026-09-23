@@ -130,10 +130,10 @@ export class MikrotikService {
       });
 
       conn.on('ready', () => {
-        // Shell channel + PTY cols=220 supaya RouterOS tidak potong kolom.
-        // exec+PTY menyisakan banyak control code; shell lebih clean karena
-        // kita bisa deteksi prompt RouterOS dan stop tepat waktu.
-        conn.shell({ cols: 220, rows: 9999, term: 'dumb' }, (err: Error | undefined, stream: any) => {
+        // exec+PTY cols=220: RouterOS melebar output kolom, tidak ada banner login.
+        // Stream exec+PTY tidak close sendiri → idle timer 1500ms setelah data terakhir.
+        // shell channel terbukti tidak menerima input setelah banner dikirim (RouterOS behavior).
+        conn.exec(command, { pty: { cols: 220, rows: 9999, term: 'dumb' } }, (err: Error | undefined, stream: any) => {
           if (err) {
             clearTimeout(timeout);
             conn.end();
@@ -151,49 +151,24 @@ export class MikrotikService {
             clearTimeout(idleTimer);
             try { conn.destroy(); } catch {}
 
-            // Strip semua ANSI / terminal control codes
-            const stripped = raw
-              .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
-              .replace(/\x1b[()#][0-9]*/g, '')
-              .replace(/\x1b[>=\-M78]/g, '')
+            // Strip komprehensif: CSI sequences, lalu sisa ESC+char (termasuk \x1bZ), lalu control chars
+            const output = raw
+              .replace(/\x1b\[[^@-~]*[@-~]/g, '')
+              .replace(/\x1b./g, '')
               .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
-              .replace(/\r/g, '');
-
-            // Buang baris yang merupakan echo command atau prompt RouterOS
-            const lines = stripped.split('\n');
-            const cmdFirst = command.trim().split('\n')[0].trim();
-            const clean = lines
-              .filter(l => {
-                const t = l.trim();
-                // Hapus prompt: "[admin@Host] > " atau "[admin@Host] /ip> "
-                if (/^\[.*\]\s+[/>]/.test(t)) return false;
-                // Hapus echo dari command yang dikirim
-                if (t === cmdFirst) return false;
-                return true;
-              })
-              .join('\n')
+              .replace(/\r/g, '')
               .trim();
 
-            done({ success: true, output: clean });
+            done({ success: true, output });
           };
 
-          stream.on('data', (d: Buffer) => {
-            raw += d.toString();
-            // Deteksi prompt RouterOS → command selesai
-            const clean = raw.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
-            if (/\[.*?\]\s+[>\/][^]*?>\s*$/.test(clean)) {
-              clearTimeout(idleTimer);
-              idleTimer = setTimeout(finish, 300);
-            } else {
-              clearTimeout(idleTimer);
-              idleTimer = setTimeout(finish, 2000);
-            }
-          });
+          const resetIdle = () => {
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(finish, 1500);
+          };
 
+          stream.on('data', (d: Buffer) => { raw += d.toString(); resetIdle(); });
           stream.on('close', finish);
-
-          // Kirim command ke shell, lalu exit supaya koneksi tutup
-          stream.write(command.trim() + '\n');
         });
       });
 
