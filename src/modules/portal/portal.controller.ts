@@ -30,12 +30,16 @@ export class PortalController {
   }
 
   // ── Portal endpoints (customer JWT) ─────────────────────
+  // @Public() diperlukan agar global JwtAuthGuard (jwt strategy) tidak menolak
+  // token customer sebelum AuthGuard('customer-jwt') sempat memvalidasinya.
+  @Public()
   @Get('me')
   @UseGuards(AuthGuard('customer-jwt'))
   getMe(@Req() req: any) {
     return { success: true, data: req.user };
   }
 
+  @Public()
   @Get('sites')
   @UseGuards(AuthGuard('customer-jwt'))
   async getSites(@Req() req: any) {
@@ -43,6 +47,7 @@ export class PortalController {
     return { success: true, data };
   }
 
+  @Public()
   @Get('sites/list')
   @UseGuards(AuthGuard('customer-jwt'))
   async getSiteList(@Req() req: any) {
@@ -50,6 +55,7 @@ export class PortalController {
     return { success: true, data };
   }
 
+  @Public()
   @Get('sites/down-status')
   @UseGuards(AuthGuard('customer-jwt'))
   async getSiteDownStatus(@Req() req: any) {
@@ -57,6 +63,7 @@ export class PortalController {
     return { success: true, data };
   }
 
+  @Public()
   @Get('tickets')
   @UseGuards(AuthGuard('customer-jwt'))
   async getTickets(@Req() req: any, @Query() query: any) {
@@ -64,6 +71,7 @@ export class PortalController {
     return { success: true, ...data };
   }
 
+  @Public()
   @Post('tickets')
   @UseGuards(AuthGuard('customer-jwt'))
   async createTicket(@Req() req: any, @Body() body: { id_site: number; judul_tiket: string; deskripsi_masalah?: string }) {
@@ -71,6 +79,7 @@ export class PortalController {
     return { success: true, data, message: 'Tiket berhasil dibuat' };
   }
 
+  @Public()
   @Get('tickets/:id')
   @UseGuards(AuthGuard('customer-jwt'))
   async getTicketDetail(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
@@ -80,6 +89,7 @@ export class PortalController {
 
   // ── Sensor Ping & Traffic (customer) ─────────────────────
 
+  @Public()
   @Get('sites/:siteId/sensors')
   @UseGuards(AuthGuard('customer-jwt'))
   async getSiteSensors(@Req() req: any, @Param('siteId', ParseIntPipe) siteId: number) {
@@ -87,6 +97,7 @@ export class PortalController {
     return { success: true, ...data };
   }
 
+  @Public()
   @Get('sites/:siteId/sensor/:objid/history')
   @UseGuards(AuthGuard('customer-jwt'))
   async getSensorHistory(
@@ -99,6 +110,7 @@ export class PortalController {
     return { success: true, ...data };
   }
 
+  @Public()
   @Get('sites/:siteId/sensor/:objid/graph.png')
   @UseGuards(AuthGuard('customer-jwt'))
   async getSensorGraph(
@@ -118,6 +130,7 @@ export class PortalController {
     res!.send(buffer);
   }
 
+  @Public()
   @Get('sla')
   @UseGuards(AuthGuard('customer-jwt'))
   async getSla(@Req() req: any, @Query() q: any) {
