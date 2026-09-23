@@ -626,10 +626,55 @@ export class PrtgService {
 
   // Preview: semua device yang sudah ter-mapping manual, lengkap dgn IP PRTG
   // dan daftar perangkat existing di site tersebut
+  /** Normalisasi string untuk matching: lowercase, hapus karakter non-alfanumerik, pisah token. */
+  private nameTokens(s: string): string[] {
+    const STOPWORDS = new Set(['the', 'and', 'atau', 'ke', 'di', 'di', 'dari', 'untuk', 'sc', 'fo', 'm2m', 'site']);
+    return s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length > 1 && !STOPWORDS.has(t));
+  }
+
+  /**
+   * Skor kemiripan nama device PRTG vs nama site (0–1).
+   * Strategi berlapis:
+   * 1. Exact substring: nama_site muncul di device_name atau sebaliknya → skor tinggi
+   * 2. Token overlap: berapa persen token nama_site ada di device_name
+   * 3. Skor kode_site: jika device_name diawali kode_site (misal "CT " → Chatime)
+   */
+  private matchScore(deviceName: string, site: { kode_site: string; nama_site: string }): number {
+    const dn = deviceName.toLowerCase();
+    const sn = site.nama_site.toLowerCase();
+
+    // Exact substring
+    if (dn.includes(sn) || sn.includes(dn)) return 1.0;
+
+    // Skor kode_site: device_name dimulai dengan kode_site
+    const kode = site.kode_site.toLowerCase();
+    if (kode.length >= 2 && (dn.startsWith(kode + ' ') || dn.startsWith(kode + '-') || dn === kode)) return 0.9;
+
+    // Token overlap
+    const dt = this.nameTokens(deviceName);
+    const st = this.nameTokens(site.nama_site);
+    if (!dt.length || !st.length) return 0;
+
+    // Hitung berapa token site yang muncul di device (substring dari token device)
+    let matches = 0;
+    for (const s of st) {
+      if (dt.some((d) => d.includes(s) || s.includes(d))) matches++;
+    }
+    const tokenScore = matches / st.length;
+
+    // Bonus: token pertama (nama brand) sama persis
+    const firstMatch = st[0] && dt[0] && (st[0] === dt[0] || dt[0].startsWith(st[0]) || st[0].startsWith(dt[0]));
+    return firstMatch ? Math.max(tokenScore, 0.5) : tokenScore;
+  }
+
   async getProvisionPreview() {
     if (!(await this.prtg.isConfigured())) return { data: [] };
 
-    const [prtgDevices, mappings, allPerangkat] = await Promise.all([
+    const [prtgDevices, mappings, allSites, allPerangkat] = await Promise.all([
       this.prtg.getDevices(),
       this.prisma.integrationPrtgMapping.findMany({
         include: {
@@ -641,9 +686,15 @@ export class PrtgService {
           },
         },
       }),
-      // Load semua PerangkatSite sekaligus — cek duplikat IP per site di memori
+      this.prisma.sitePelanggan.findMany({
+        where: { status_site: { in: ['Aktif', 'aktif'] } },
+        select: {
+          id_site: true, kode_site: true, nama_site: true,
+          pelanggan: { select: { nama_pelanggan: true } },
+        },
+      }),
       this.prisma.perangkatSite.findMany({
-        select: { id_site: true, ip_address: true, id_perangkat: true, jenis_perangkat: true },
+        select: { id_site: true, ip_address: true, id_perangkat: true },
       }),
     ]);
 
@@ -657,27 +708,58 @@ export class PrtgService {
       if (p.ip_address) perangkatSet.add(`${p.id_site}:${p.ip_address}`);
     }
 
+    const AUTO_THRESHOLD = 0.5; // skor minimum untuk dianggap auto-match
+
     const data = prtgDevices.map((d) => {
       const mapping = mappingByDevice.get(d.device) ?? null;
       const ip = d.host || null;
-      const sudahAda = mapping && ip ? perangkatSet.has(`${mapping.site.id_site}:${ip}`) : false;
+
+      let id_site: number | null = mapping?.site.id_site ?? null;
+      let kode_site: string | null = mapping?.site.kode_site ?? null;
+      let nama_site: string | null = mapping?.site.nama_site ?? null;
+      let nama_pelanggan: string | null = mapping?.site.pelanggan?.nama_pelanggan ?? null;
+      let match_source: 'manual' | 'auto' | null = mapping ? 'manual' : null;
+      let match_score: number | null = null;
+
+      // Auto-match jika tidak ada manual mapping
+      if (!mapping) {
+        let best = 0;
+        let bestSite: typeof allSites[0] | null = null;
+        for (const s of allSites) {
+          const score = this.matchScore(d.device, s);
+          if (score > best) { best = score; bestSite = s; }
+        }
+        if (bestSite && best >= AUTO_THRESHOLD) {
+          id_site = bestSite.id_site;
+          kode_site = bestSite.kode_site;
+          nama_site = bestSite.nama_site;
+          nama_pelanggan = bestSite.pelanggan?.nama_pelanggan ?? null;
+          match_source = 'auto';
+          match_score = Math.round(best * 100);
+        }
+      }
+
+      const sudahAda = id_site && ip ? perangkatSet.has(`${id_site}:${ip}`) : false;
       return {
         device_name: d.device,
         ip_address: ip,
         prtg_status: d.status,
         id_mapping: mapping?.id_mapping ?? null,
-        id_site: mapping?.site.id_site ?? null,
-        kode_site: mapping?.site.kode_site ?? null,
-        nama_site: mapping?.site.nama_site ?? null,
-        nama_pelanggan: mapping?.site.pelanggan?.nama_pelanggan ?? null,
+        id_site,
+        kode_site,
+        nama_site,
+        nama_pelanggan,
+        match_source,
+        match_score,
         sudah_ada: sudahAda,
       };
     });
 
-    // Urutkan: device yang sudah termapping dulu, lalu alfabetis device_name
+    // Urutkan: manual mapping → auto match → belum match, lalu nama
     data.sort((a, b) => {
-      if (a.id_site && !b.id_site) return -1;
-      if (!a.id_site && b.id_site) return 1;
+      const rank = (x: typeof data[0]) => x.match_source === 'manual' ? 0 : x.match_source === 'auto' ? 1 : 2;
+      const r = rank(a) - rank(b);
+      if (r !== 0) return r;
       return a.device_name.localeCompare(b.device_name);
     });
     return { data };

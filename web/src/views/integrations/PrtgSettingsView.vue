@@ -646,16 +646,20 @@ async function submitProvision() {
                 <td>
                   <span v-if="d.nama_site" class="site-name">{{ d.nama_site }}</span>
                   <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
-                  <span v-if="!d.id_site" class="badge-no-map">Belum di-mapping</span>
+                  <span v-if="d.match_source === 'auto'" class="badge-auto-match" :title="`Skor auto-match: ${d.match_score}%`">
+                    ~auto {{ d.match_score }}%
+                  </span>
+                  <span v-if="d.match_source === 'manual'" class="badge-manual-map">manual</span>
+                  <span v-if="!d.id_site" class="badge-no-map">Belum cocok</span>
                 </td>
                 <td>
                   <span :class="d.sudah_ada ? 'badge-done' : (d.id_site ? 'badge-pending' : 'badge-no-map')">
-                    {{ d.sudah_ada ? '✓ Sudah ter-provision' : (d.id_site ? 'Siap di-provision' : 'Perlu pilih site') }}
+                    {{ d.sudah_ada ? '✓ Ter-provision' : (d.id_site ? 'Siap' : 'Pilih site') }}
                   </span>
                 </td>
                 <td>
                   <button class="btn-prov" @click="openProvModal(d)">
-                    {{ d.sudah_ada ? '+ Tambah lagi' : 'Provision' }}
+                    {{ d.sudah_ada ? '+ Lagi' : 'Provision' }}
                   </button>
                 </td>
               </tr>
@@ -675,11 +679,17 @@ async function submitProvision() {
           <div class="modal-info">
             <div class="info-row"><span>Device PRTG</span><span class="mono">{{ provSelected?.device_name }}</span></div>
             <div class="info-row"><span>IP Address</span><span class="mono ip-cell">{{ provSelected?.ip_address || '—' }}</span></div>
+            <div v-if="provSelected?.match_source === 'auto'" class="info-row auto-match-note">
+              <span>Auto-match</span>
+              <span class="badge-auto-match">~{{ provSelected?.match_score }}% mirip "{{ provSelected?.nama_site }}"</span>
+            </div>
           </div>
 
           <div class="modal-form">
             <div class="field">
-              <label>Site Pelanggan <span class="req">*</span></label>
+              <label>Site Pelanggan <span class="req">*</span>
+                <span v-if="provSelected?.match_source === 'auto'" class="field-hint"> — terisi otomatis, periksa sebelum provision</span>
+              </label>
               <select v-model.number="provSiteId">
                 <option :value="0">— Pilih site —</option>
                 <option v-for="s in proyek.siteList" :key="s.id_site" :value="s.id_site">[{{ s.kode_site }}] {{ s.nama_site }}</option>
@@ -891,6 +901,10 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .badge-done { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #dcfce7; color: #15803d; }
 .badge-pending { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fef9c3; color: #a16207; }
 .badge-no-map { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #64748b; }
+.badge-auto-match { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #ede9fe; color: #6d28d9; margin-top: 2px; }
+.badge-manual-map { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #eff6ff; color: #1d4ed8; margin-top: 2px; }
+.auto-match-note { background: #faf5ff; border-radius: 6px; padding: 4px 8px; }
+.field-hint { font-size: 11px; font-weight: 400; color: #a16207; }
 .btn-prov { padding: 5px 12px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-prov-again { padding: 5px 12px; background: #f1f5f9; color: #374151; border: 1px solid #e2e8f0; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .prtg-st { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
