@@ -629,7 +629,7 @@ export class PrtgService {
   async getProvisionPreview() {
     if (!(await this.prtg.isConfigured())) return { data: [] };
 
-    const [prtgDevices, mappings] = await Promise.all([
+    const [prtgDevices, mappings, allPerangkat] = await Promise.all([
       this.prtg.getDevices(),
       this.prisma.integrationPrtgMapping.findMany({
         include: {
@@ -637,43 +637,49 @@ export class PrtgService {
             select: {
               id_site: true, kode_site: true, nama_site: true,
               pelanggan: { select: { nama_pelanggan: true } },
-              perangkat: {
-                orderBy: { tgl_pasang: 'desc' },
-                select: {
-                  id_perangkat: true, jenis_perangkat: true, merk: true, tipe_model: true,
-                  ip_address: true, serial_number: true, status_perangkat: true,
-                  aset: { select: { kode_aset: true, nama_perangkat: true, status_aset: true } },
-                },
-              },
             },
           },
         },
       }),
+      // Load semua PerangkatSite sekaligus — cek duplikat IP per site di memori
+      this.prisma.perangkatSite.findMany({
+        select: { id_site: true, ip_address: true, id_perangkat: true, jenis_perangkat: true },
+      }),
     ]);
 
-    const ipByDevice = new Map<string, string>();
-    for (const d of prtgDevices) {
-      // host bisa berupa IP atau hostname; simpan apa adanya
-      if (d.device && d.host) ipByDevice.set(d.device, d.host);
+    // Index mapping by device_name
+    const mappingByDevice = new Map<string, typeof mappings[0]>();
+    for (const m of mappings) mappingByDevice.set(m.device_name, m);
+
+    // Index perangkat by "id_site:ip_address"
+    const perangkatSet = new Set<string>();
+    for (const p of allPerangkat) {
+      if (p.ip_address) perangkatSet.add(`${p.id_site}:${p.ip_address}`);
     }
 
-    const data = mappings.map((m) => {
-      const ip = ipByDevice.get(m.device_name) ?? null;
-      const perangkat = m.site.perangkat ?? [];
-      const sudahAda = ip ? perangkat.some((p) => p.ip_address === ip) : false;
+    const data = prtgDevices.map((d) => {
+      const mapping = mappingByDevice.get(d.device) ?? null;
+      const ip = d.host || null;
+      const sudahAda = mapping && ip ? perangkatSet.has(`${mapping.site.id_site}:${ip}`) : false;
       return {
-        id_mapping: m.id_mapping,
-        device_name: m.device_name,
+        device_name: d.device,
         ip_address: ip,
-        id_site: m.site.id_site,
-        kode_site: m.site.kode_site,
-        nama_site: m.site.nama_site,
-        nama_pelanggan: m.site.pelanggan?.nama_pelanggan ?? null,
-        existing_perangkat: perangkat,
+        prtg_status: d.status,
+        id_mapping: mapping?.id_mapping ?? null,
+        id_site: mapping?.site.id_site ?? null,
+        kode_site: mapping?.site.kode_site ?? null,
+        nama_site: mapping?.site.nama_site ?? null,
+        nama_pelanggan: mapping?.site.pelanggan?.nama_pelanggan ?? null,
         sudah_ada: sudahAda,
       };
     });
-    data.sort((a, b) => a.nama_site.localeCompare(b.nama_site));
+
+    // Urutkan: device yang sudah termapping dulu, lalu alfabetis device_name
+    data.sort((a, b) => {
+      if (a.id_site && !b.id_site) return -1;
+      if (!a.id_site && b.id_site) return 1;
+      return a.device_name.localeCompare(b.device_name);
+    });
     return { data };
   }
 

@@ -272,6 +272,7 @@ const showUnprovisioned = ref(true)
 
 const provModal           = ref(false)
 const provSelected        = ref<any>(null)
+const provSiteId          = ref<number>(0)
 const provForm            = ref({ jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: '', ip_address: '' })
 const provSubmitting      = ref(false)
 const provMsg             = ref('')
@@ -290,16 +291,17 @@ async function fetchProvision() {
 
 const filteredProvision = computed(() => {
   let list = provisionList.value
-  if (showUnprovisioned.value) list = list.filter((d: any) => !d.sudah_ada)
+  if (showUnprovisioned.value) list = list.filter((d: any) => !d.sudah_ada && d.ip_address)
   const q = provisionSearch.value.trim().toLowerCase()
   if (q) list = list.filter((d: any) =>
-    d.device_name.toLowerCase().includes(q) || (d.nama_site ?? '').toLowerCase().includes(q) || (d.nama_pelanggan ?? '').toLowerCase().includes(q)
+    d.device_name.toLowerCase().includes(q) || (d.nama_site ?? '').toLowerCase().includes(q) || (d.nama_pelanggan ?? '').toLowerCase().includes(q) || (d.ip_address ?? '').includes(q)
   )
   return list
 })
 
 function openProvModal(device: any) {
   provSelected.value = device
+  provSiteId.value = device.id_site ?? 0
   provForm.value = { jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: '', ip_address: device.ip_address ?? '' }
   provAsetFound.value = null
   linkAset.value = false
@@ -321,11 +323,14 @@ async function submitProvision() {
   if (!provSelected.value || !provForm.value.jenis_perangkat) {
     provMsg.value = 'Jenis perangkat wajib dipilih'; return
   }
+  if (!provSiteId.value) {
+    provMsg.value = 'Site pelanggan wajib dipilih'; return
+  }
   provSubmitting.value = true; provMsg.value = ''
   try {
     const payload: any = {
       device_name: provSelected.value.device_name,
-      id_site: provSelected.value.id_site,
+      id_site: provSiteId.value,
       ip_address: provForm.value.ip_address,
       jenis_perangkat: provForm.value.jenis_perangkat,
       merk: provForm.value.merk || undefined,
@@ -625,35 +630,33 @@ async function submitProvision() {
                 <th>Device PRTG</th>
                 <th>IP Address</th>
                 <th>Site Pelanggan</th>
-                <th>Perangkat Terpasang</th>
-                <th>Status</th>
+                <th>Status Provision</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="d in filteredProvision" :key="d.device_name" :class="{ 'row-done': d.sudah_ada }">
-                <td class="mono">{{ d.device_name }}</td>
+                <td>
+                  <span class="mono">{{ d.device_name }}</span>
+                  <span v-if="d.prtg_status" :class="['prtg-st', d.prtg_status?.toLowerCase().includes('up') ? 'prtg-up' : 'prtg-dn']">
+                    {{ d.prtg_status }}
+                  </span>
+                </td>
                 <td class="mono ip-cell">{{ d.ip_address || '—' }}</td>
                 <td>
-                  <span class="site-name">{{ d.nama_site || '—' }}</span>
+                  <span v-if="d.nama_site" class="site-name">{{ d.nama_site }}</span>
                   <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
+                  <span v-if="!d.id_site" class="badge-no-map">Belum di-mapping</span>
                 </td>
                 <td>
-                  <span v-if="d.existing_perangkat?.length" class="existing-list">
-                    <span v-for="p in d.existing_perangkat" :key="p.id_perangkat" class="existing-chip">
-                      {{ p.jenis_perangkat }} — {{ p.ip_address || '?' }}
-                    </span>
-                  </span>
-                  <span v-else class="empty-cell">—</span>
-                </td>
-                <td>
-                  <span :class="d.sudah_ada ? 'badge-done' : 'badge-pending'">
-                    {{ d.sudah_ada ? '✓ Sudah ada' : 'Belum' }}
+                  <span :class="d.sudah_ada ? 'badge-done' : (d.id_site ? 'badge-pending' : 'badge-no-map')">
+                    {{ d.sudah_ada ? '✓ Sudah ter-provision' : (d.id_site ? 'Siap di-provision' : 'Perlu pilih site') }}
                   </span>
                 </td>
                 <td>
-                  <button v-if="!d.sudah_ada" class="btn-prov" @click="openProvModal(d)">Provision</button>
-                  <button v-else class="btn-prov-again" @click="openProvModal(d)">+ Tambah lagi</button>
+                  <button class="btn-prov" @click="openProvModal(d)">
+                    {{ d.sudah_ada ? '+ Tambah lagi' : 'Provision' }}
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -671,10 +674,17 @@ async function submitProvision() {
 
           <div class="modal-info">
             <div class="info-row"><span>Device PRTG</span><span class="mono">{{ provSelected?.device_name }}</span></div>
-            <div class="info-row"><span>Site</span><span>{{ provSelected?.nama_site }}</span></div>
+            <div class="info-row"><span>IP Address</span><span class="mono ip-cell">{{ provSelected?.ip_address || '—' }}</span></div>
           </div>
 
           <div class="modal-form">
+            <div class="field">
+              <label>Site Pelanggan <span class="req">*</span></label>
+              <select v-model.number="provSiteId">
+                <option :value="0">— Pilih site —</option>
+                <option v-for="s in proyek.siteList" :key="s.id_site" :value="s.id_site">[{{ s.kode_site }}] {{ s.nama_site }}</option>
+              </select>
+            </div>
             <div class="field">
               <label>IP Address <span class="req">*</span></label>
               <input v-model="provForm.ip_address" placeholder="IP dari PRTG (bisa diubah)" />
@@ -880,8 +890,12 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .empty-cell { color: #94a3b8; }
 .badge-done { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #dcfce7; color: #15803d; }
 .badge-pending { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fef9c3; color: #a16207; }
+.badge-no-map { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #f1f5f9; color: #64748b; }
 .btn-prov { padding: 5px 12px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-prov-again { padding: 5px 12px; background: #f1f5f9; color: #374151; border: 1px solid #e2e8f0; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.prtg-st { display: inline-block; margin-left: 6px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
+.prtg-up { background: #dcfce7; color: #15803d; }
+.prtg-dn { background: #fef2f2; color: #dc2626; }
 
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 999; }
