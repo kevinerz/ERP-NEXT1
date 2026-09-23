@@ -15,14 +15,6 @@ export class MikrotikService {
     const rows = await this.prisma.perangkatSite.findMany({
       where: {
         AND: [{ ip_address: { not: null } }, { ip_address: { not: '' } }],
-        OR: [
-          { jenis_perangkat: { contains: 'Mikrotik' } },
-          { jenis_perangkat: { contains: 'mikrotik' } },
-          { jenis_perangkat: { contains: 'Router' } },
-          { jenis_perangkat: { contains: 'router' } },
-          { merk: { contains: 'Mikrotik' } },
-          { merk: { contains: 'mikrotik' } },
-        ],
       },
       include: {
         site: {
