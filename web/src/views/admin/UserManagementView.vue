@@ -191,9 +191,7 @@ function modulLabel(m: string) {
             <td class="text-sm text-gray">{{ fmtDt(u.last_login) }}</td>
             <td>
               <div v-if="u.modul_akses.length === 0" class="modul-all">Semua Modul</div>
-              <div v-else class="modul-tags">
-                <span v-for="m in u.modul_akses" :key="m" class="modul-tag">{{ modulLabel(m) }}</span>
-              </div>
+              <div v-else class="modul-count">{{ u.modul_akses.length }} modul</div>
             </td>
             <td>
               <div class="action-row">
@@ -330,8 +328,7 @@ td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .status-dot.nonaktif { background: #f1f5f9; color: #64748b; }
 
 .modul-all { font-size: 12px; color: #1d4ed8; font-weight: 600; background: #eff6ff; padding: 2px 8px; border-radius: 10px; display: inline-block; }
-.modul-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.modul-tag { font-size: 11px; padding: 2px 7px; background: #f1f5f9; color: #374151; border-radius: 8px; font-weight: 600; }
+.modul-count { font-size: 12px; color: #374151; font-weight: 600; background: #f1f5f9; padding: 2px 8px; border-radius: 10px; display: inline-block; white-space: nowrap; }
 
 .action-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .btn-action { padding: 5px 10px; border: 1.5px solid #e2e8f0; background: #fff; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; color: #374151; }
