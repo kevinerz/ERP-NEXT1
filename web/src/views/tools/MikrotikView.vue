@@ -653,9 +653,9 @@ onMounted(() => {
   font-size: 12.5px;
   color: #1e293b;
   background: #f8fafc;
-  white-space: pre-wrap;
-  word-break: break-all;
+  white-space: pre;
   max-height: 350px;
+  overflow-x: auto;
   overflow-y: auto;
   line-height: 1.5;
 }
