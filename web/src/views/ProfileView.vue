@@ -176,11 +176,17 @@ const MODUL_LABEL: Record<string, string> = {
   hris: 'HRIS',
   master: 'Master Data',
   sales: 'Sales',
+  crm: 'CRM',
   projects: 'Proyek',
   operations: 'Operations',
   assets: 'Aset',
   contracts: 'Kontrak',
+  finance: 'Finance',
   reports: 'Reports',
+  notifications: 'Notifikasi',
+  'public-wo': 'Work Order',
+  prtg: 'PRTG',
+  mekari: 'Mekari Jurnal',
 }
 
 // ─── STATE ────────────────────────────────────────────
