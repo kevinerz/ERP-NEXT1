@@ -170,11 +170,11 @@ const activity = computed(() => {
         <div class="header-date">{{ today }}</div>
       </div>
       <div class="quick-actions">
-        <button class="qa-btn" @click="router.push('/operations/create')">
+        <button class="qa-btn" @click="router.push('/operations')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
           Buat Tiket
         </button>
-        <button class="qa-btn qa-outline" @click="router.push('/sales/leads/create')">
+        <button class="qa-btn qa-outline" @click="router.push('/sales/lead')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Tambah Lead
         </button>
@@ -211,7 +211,7 @@ const activity = computed(() => {
       <!-- ── KPI Cards ──────────────────────────────────────────── -->
       <div class="kpi-grid">
 
-        <div class="kpi-card" @click="router.push('/customers')">
+        <div class="kpi-card" @click="router.push('/master/pelanggan')">
           <div class="kpi-icon" style="background:#eff6ff">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
@@ -395,7 +395,7 @@ const activity = computed(() => {
             <button class="chart-link" @click="router.push('/sales')">Lihat semua →</button>
           </div>
           <div class="pipeline-funnel">
-            <div class="pip-item" @click="router.push('/sales/leads')">
+            <div class="pip-item" @click="router.push('/sales/lead')">
               <div class="pip-bar-wrap">
                 <div class="pip-bar" style="background:#e0e7ff; width:100%"></div>
               </div>
@@ -405,7 +405,7 @@ const activity = computed(() => {
               </div>
             </div>
             <div class="pip-arrow-down">↓</div>
-            <div class="pip-item" @click="router.push('/sales/opportunities')">
+            <div class="pip-item" @click="router.push('/sales/opportunity')">
               <div class="pip-bar-wrap">
                 <div class="pip-bar" :style="{ background: '#bfdbfe', width: pipeline.leads ? (pipeline.opportunities / pipeline.leads * 100)+'%' : '0%' }"></div>
               </div>
