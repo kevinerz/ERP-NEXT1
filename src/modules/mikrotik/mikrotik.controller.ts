@@ -18,8 +18,8 @@ export class MikrotikController {
   }
 
   @Put('config')
-  saveConfig(@Body() body: { user: string; password?: string; port?: number }) {
-    return this.svc.saveConfig(body.user, body.password ?? '', body.port ?? 22);
+  saveConfig(@Body() body: { user: string; password?: string; apiPort?: number }) {
+    return this.svc.saveConfig(body.user, body.password ?? '', body.apiPort ?? 8728);
   }
 
   @Post('ping')

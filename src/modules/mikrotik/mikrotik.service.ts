@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 const CRED_KEYS = {
   user: 'mikrotik_ssh_user',
   pass: 'mikrotik_ssh_password',
-  port: 'mikrotik_ssh_port',
+  apiPort: 'mikrotik_api_port',
 };
 
 @Injectable()
@@ -46,11 +46,11 @@ export class MikrotikService {
     return {
       user: map[CRED_KEYS.user] || 'admin',
       hasPassword: !!(map[CRED_KEYS.pass]),
-      port: Number(map[CRED_KEYS.port] || 22),
+      apiPort: Number(map[CRED_KEYS.apiPort] || 8728),
     };
   }
 
-  async saveConfig(user: string, password: string, port: number) {
+  async saveConfig(user: string, password: string, apiPort: number) {
     const upsert = (key: string, value: string) =>
       this.prisma.appSetting.upsert({
         where: { key },
@@ -59,7 +59,7 @@ export class MikrotikService {
       });
     await upsert(CRED_KEYS.user, user || 'admin');
     if (password) await upsert(CRED_KEYS.pass, password);
-    await upsert(CRED_KEYS.port, String(port || 22));
+    await upsert(CRED_KEYS.apiPort, String(apiPort || 8728));
     return { message: 'Konfigurasi disimpan' };
   }
 
@@ -68,7 +68,7 @@ export class MikrotikService {
       where: { key: { in: Object.values(CRED_KEYS) } },
     });
     const map = Object.fromEntries(settings.map(s => [s.key, s.value ?? '']));
-    const port = Number(map[CRED_KEYS.port] || 22);
+    const port = Number(map[CRED_KEYS.apiPort] || 8728);
     return Promise.all(ips.map(ip => this.tcpPing(ip, port)));
   }
 
@@ -93,86 +93,103 @@ export class MikrotikService {
     });
   }
 
-  async runCommand(ips: string[], command: string, port?: number, user?: string) {
+  async runCommand(ips: string[], command: string) {
     const settings = await this.prisma.appSetting.findMany({
       where: { key: { in: Object.values(CRED_KEYS) } },
     });
     const map = Object.fromEntries(settings.map(s => [s.key, s.value ?? '']));
-    const sshUser = user || map[CRED_KEYS.user] || 'admin';
-    const sshPass = map[CRED_KEYS.pass] || '';
-    const sshPort = port || Number(map[CRED_KEYS.port] || 22);
+    const user = map[CRED_KEYS.user] || 'admin';
+    const pass = map[CRED_KEYS.pass] || '';
+    const apiPort = Number(map[CRED_KEYS.apiPort] || 8728);
 
-    const results = await Promise.all(
-      ips.map(ip => this.sshExec(ip, sshPort, sshUser, sshPass, command)),
-    );
-    return results;
+    return Promise.all(ips.map(ip => this.apiExec(ip, apiPort, user, pass, command)));
   }
 
-  private sshExec(ip: string, port: number, username: string, password: string, command: string) {
-    return new Promise<{ ip: string; success: boolean; output: string; duration: number; error?: string }>(resolve => {
-      const start = Date.now();
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { Client } = require('ssh2');
-      const conn = new Client();
+  // Convert CLI-style command to RouterOS API path
+  // "/ip address print" → "/ip/address/print"
+  private cliToApiPath(cmd: string): string {
+    return '/' + cmd.trim().replace(/^\//, '').split(/\s+/).join('/');
+  }
 
-      const done = (result: { success: boolean; output: string; error?: string }) => {
-        resolve({ ip, ...result, duration: Date.now() - start });
-      };
+  private formatApiResponse(data: any[]): string {
+    if (!data || data.length === 0) return '';
 
-      const timeout = setTimeout(() => {
-        try { conn.destroy(); } catch {}
-        done({ success: false, output: '', error: 'Timeout (15 detik)' });
-      }, 15000);
+    const allKeys = [...new Set(data.flatMap((d: any) => Object.keys(d)))];
 
-      conn.on('error', (err: Error) => {
-        clearTimeout(timeout);
-        done({ success: false, output: '', error: err.message });
-      });
+    // Single-item (e.g. /system/resource/print, /system/identity/print): key-value pairs
+    if (data.length === 1) {
+      return allKeys
+        .filter(k => k !== '.id')
+        .map(k => `${k}: ${data[0][k] ?? ''}`)
+        .join('\n');
+    }
 
-      conn.on('ready', () => {
-        // exec+PTY cols=220: RouterOS melebar output kolom, tidak ada banner login.
-        // Stream exec+PTY tidak close sendiri → idle timer 1500ms setelah data terakhir.
-        // shell channel terbukti tidak menerima input setelah banner dikirim (RouterOS behavior).
-        conn.exec(command, { pty: { cols: 220, rows: 9999, term: 'dumb' } }, (err: Error | undefined, stream: any) => {
-          if (err) {
-            clearTimeout(timeout);
-            conn.end();
-            return done({ success: false, output: '', error: err.message });
-          }
+    // Multi-row: table with flag column + data columns
+    const FLAG_MAP: Record<string, string> = {
+      disabled: 'X', dynamic: 'D', invalid: 'I',
+      running: 'R', active: 'A', blocked: 'B', radius: 'Z', slave: 'S',
+    };
+    const flagKeys = Object.keys(FLAG_MAP).filter(f =>
+      allKeys.includes(f) && data.some((d: any) => d[f] === 'true' || d[f] === 'false'),
+    );
+    const skipKeys = new Set(['.id', ...flagKeys]);
+    const dataKeys = allKeys.filter(k => !skipKeys.has(k));
 
-          let raw = '';
-          let finished = false;
-          let idleTimer: ReturnType<typeof setTimeout>;
+    const widths = dataKeys.map(k =>
+      Math.max(k.length, ...data.map((d: any) => String(d[k] ?? '').length)),
+    );
 
-          const finish = () => {
-            if (finished) return;
-            finished = true;
-            clearTimeout(timeout);
-            clearTimeout(idleTimer);
-            try { conn.destroy(); } catch {}
+    const flagChars = flagKeys.map(f => FLAG_MAP[f]);
+    const flagDesc = flagKeys.map(f => `${FLAG_MAP[f]} - ${f}`).join(', ');
+    const colHeader = dataKeys.map((k, i) => k.toUpperCase().padEnd(widths[i])).join('  ');
+    const fullHeader = flagChars.length
+      ? `${flagChars.join('').padEnd(flagChars.length + 2)}${colHeader}`
+      : colHeader;
 
-            // Strip komprehensif: CSI sequences, lalu sisa ESC+char (termasuk \x1bZ), lalu control chars
-            const output = raw
-              .replace(/\x1b\[[^@-~]*[@-~]/g, '')
-              .replace(/\x1b./g, '')
-              .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
-              .replace(/\r/g, '')
-              .trim();
-
-            done({ success: true, output });
-          };
-
-          const resetIdle = () => {
-            clearTimeout(idleTimer);
-            idleTimer = setTimeout(finish, 1500);
-          };
-
-          stream.on('data', (d: Buffer) => { raw += d.toString(); resetIdle(); });
-          stream.on('close', finish);
-        });
-      });
-
-      conn.connect({ host: ip, port, username, password, readyTimeout: 10000, algorithms: { serverHostKey: ['ssh-rsa', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521', 'ssh-dss', 'ssh-ed25519'] } });
+    const rows = data.map((item: any) => {
+      const flags = flagChars.length
+        ? flagKeys.map(f => item[f] === 'true' ? FLAG_MAP[f] : ' ').join('').padEnd(flagChars.length + 2)
+        : '';
+      const cols = dataKeys.map((k, i) => String(item[k] ?? '').padEnd(widths[i])).join('  ');
+      return flags + cols;
     });
+
+    const lines: string[] = [];
+    if (flagDesc) lines.push(`Flags: ${flagDesc}`);
+    lines.push(fullHeader);
+    lines.push(...rows);
+    return lines.join('\n');
+  }
+
+  private async apiExec(
+    ip: string,
+    apiPort: number,
+    user: string,
+    password: string,
+    command: string,
+  ): Promise<{ ip: string; success: boolean; output: string; duration: number; error?: string }> {
+    const start = Date.now();
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { RouterOSAPI } = require('node-routeros');
+
+    const conn = new RouterOSAPI({
+      host: ip,
+      port: apiPort,
+      user,
+      password,
+      timeout: 10,
+    });
+
+    try {
+      await conn.connect();
+      const apiPath = this.cliToApiPath(command);
+      const data = await conn.write(apiPath);
+      await conn.close();
+      const output = this.formatApiResponse(data);
+      return { ip, success: true, output, duration: Date.now() - start };
+    } catch (err: any) {
+      try { await conn.close(); } catch {}
+      return { ip, success: false, output: '', error: err.message || String(err), duration: Date.now() - start };
+    }
   }
 }

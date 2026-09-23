@@ -37,7 +37,7 @@ const pingLatency = ref<Map<string, number>>(new Map())
 const showConfig = ref(false)
 const cfgUser = ref('admin')
 const cfgPass = ref('')
-const cfgPort = ref(22)
+const cfgPort = ref(8728)
 const cfgHasPass = ref(false)
 const cfgSaving = ref(false)
 const cfgMsg = ref('')
@@ -138,7 +138,7 @@ async function loadConfig() {
   try {
     const r = await api.get('/mikrotik/config')
     cfgUser.value = r.data.data?.user || 'admin'
-    cfgPort.value = r.data.data?.port || 22
+    cfgPort.value = r.data.data?.apiPort || 8728
     cfgHasPass.value = r.data.data?.hasPassword || false
   } catch {}
 }
@@ -150,7 +150,7 @@ async function saveConfig() {
     const r = await api.put('/mikrotik/config', {
       user: cfgUser.value,
       password: cfgPass.value || undefined,
-      port: cfgPort.value,
+      apiPort: cfgPort.value,
     })
     cfgMsg.value = r.data.data?.message || 'Disimpan'
     cfgHasPass.value = !!(cfgPass.value || cfgHasPass.value)
@@ -218,7 +218,7 @@ onMounted(() => {
           <input v-model="cfgPass" type="password" :placeholder="cfgHasPass ? '••••••••' : 'password'" class="inp" />
         </div>
         <div class="field" style="max-width:120px">
-          <label>Port</label>
+          <label>API Port</label>
           <input v-model.number="cfgPort" type="number" class="inp" />
         </div>
         <div class="field" style="align-self:flex-end">
