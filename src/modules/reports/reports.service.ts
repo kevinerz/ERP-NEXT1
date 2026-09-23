@@ -393,6 +393,7 @@ export class ReportsService {
       mrcRow,
       tiketOpen,
       tiketInProgress,
+      tiketPending,
       proyekBerjalan,
       kontrakAkanBerakhir,
       asetDiGudang,
@@ -400,6 +401,12 @@ export class ReportsService {
       salesPipeline,
       tiketTerbaru,
       quotationTerbaru,
+      totalSite,
+      woAktif,
+      karyawanAktif,
+      invoiceOverdue,
+      slaMonthData,
+      woTerbaru,
     ] = await Promise.all([
       this.prisma.pelanggan.count(),
       this.prisma.kontrakLayanan.count({ where: { status_kontrak: 'Aktif' } }),
@@ -409,6 +416,7 @@ export class ReportsService {
       }),
       this.prisma.operationTicket.count({ where: { status_tiket: 'Open' } }),
       this.prisma.operationTicket.count({ where: { status_tiket: 'In_Progress' } }),
+      this.prisma.operationTicket.count({ where: { status_tiket: 'Pending' } }),
       this.prisma.projectDelivery.count({ where: { status_project: { in: ['Kickoff', 'Instalasi', 'Testing'] } } }),
       this.prisma.kontrakLayanan.count({ where: { status_kontrak: 'Aktif', tgl_berakhir: { lte: in30, gte: now } } }),
       this.prisma.gudangAset.count({ where: { status_aset: 'Di_Gudang' } }),
@@ -438,22 +446,50 @@ export class ReportsService {
           sales_pic: { select: { nama_lengkap: true } },
         },
       }),
+      this.prisma.sitePelanggan.count({ where: { status_site: { in: ['Aktif', 'aktif'] } } }),
+      this.prisma.workOrder.count({ where: { status_wo: { in: ['Open', 'In_Progress', 'Dispatched'] } } }),
+      this.prisma.hrisKaryawan.count({ where: { status_aktif: true } }),
+      this.prisma.invoice.count({ where: { status: 'Jatuh_Tempo' } }),
+      Promise.all([
+        this.prisma.operationTicket.count({ where: { tgl_open: { gte: startMonth } } }),
+        this.prisma.operationTicket.count({ where: { tgl_open: { gte: startMonth }, sla_breached: true } }),
+      ]),
+      this.prisma.workOrder.findMany({
+        take: 4,
+        orderBy: { created_at: 'desc' },
+        where: { status_wo: { in: ['Open', 'In_Progress', 'Dispatched'] } },
+        include: {
+          site: { select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } },
+        },
+      }),
     ]);
 
     const [leads, opportunities, quotationDraft, quotationApproved] = salesPipeline;
+    const [tiketBulanIni, slaBreach] = slaMonthData;
+    const slaCompliancePct = tiketBulanIni > 0
+      ? Math.round(((tiketBulanIni - slaBreach) / tiketBulanIni) * 1000) / 10
+      : 100.0;
 
     return {
       data: {
         kpi: {
           total_pelanggan: totalPelanggan,
+          total_site: totalSite,
           kontrak_aktif: kontrakAktif,
           total_mrc_aktif: Number(mrcRow._sum.harga_mrc) || 0,
           tiket_aktif: tiketOpen + tiketInProgress,
           tiket_open: tiketOpen,
           tiket_in_progress: tiketInProgress,
+          tiket_pending: tiketPending,
           proyek_berjalan: proyekBerjalan,
           kontrak_akan_berakhir: kontrakAkanBerakhir,
           aset_di_gudang: asetDiGudang,
+          wo_aktif: woAktif,
+          karyawan_aktif: karyawanAktif,
+          invoice_overdue: invoiceOverdue,
+          sla_compliance_pct: slaCompliancePct,
+          sla_breach_bulan_ini: slaBreach,
+          tiket_bulan_ini: tiketBulanIni,
         },
         tiket_by_status: tiketByStatus.map((r) => ({
           status: r.status_tiket,
@@ -462,6 +498,7 @@ export class ReportsService {
         sales_pipeline: { leads, opportunities, quotation_draft: quotationDraft, quotation_approved: quotationApproved },
         tiket_terbaru: tiketTerbaru,
         quotation_terbaru: quotationTerbaru,
+        wo_terbaru: woTerbaru,
       },
     };
   }
