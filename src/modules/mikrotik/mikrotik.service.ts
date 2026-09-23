@@ -63,6 +63,36 @@ export class MikrotikService {
     return { message: 'Konfigurasi disimpan' };
   }
 
+  async pingDevices(ips: string[]) {
+    const settings = await this.prisma.appSetting.findMany({
+      where: { key: { in: Object.values(CRED_KEYS) } },
+    });
+    const map = Object.fromEntries(settings.map(s => [s.key, s.value ?? '']));
+    const port = Number(map[CRED_KEYS.port] || 22);
+    return Promise.all(ips.map(ip => this.tcpPing(ip, port)));
+  }
+
+  private tcpPing(ip: string, port: number): Promise<{ ip: string; reachable: boolean; latency: number }> {
+    return new Promise(resolve => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const net = require('net');
+      const start = Date.now();
+      const socket = new net.Socket();
+      let done = false;
+      const finish = (reachable: boolean) => {
+        if (done) return;
+        done = true;
+        socket.destroy();
+        resolve({ ip, reachable, latency: Date.now() - start });
+      };
+      socket.setTimeout(3000);
+      socket.on('connect', () => finish(true));
+      socket.on('timeout', () => finish(false));
+      socket.on('error', () => finish(false));
+      socket.connect(port, ip);
+    });
+  }
+
   async runCommand(ips: string[], command: string, port?: number, user?: string) {
     const settings = await this.prisma.appSetting.findMany({
       where: { key: { in: Object.values(CRED_KEYS) } },

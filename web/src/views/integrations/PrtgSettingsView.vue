@@ -857,7 +857,6 @@ async function submitProvision() {
         </div>
       </div>
     </div>
-  </div>
 </template>
 
 <style scoped>

@@ -11,6 +11,8 @@ interface Device {
   site: { nama_site: string; kota?: string | null; pelanggan?: { nama_pelanggan: string } | null } | null
 }
 
+type PingStatus = 'unknown' | 'checking' | 'up' | 'down'
+
 interface RunResult {
   ip: string
   success: boolean
@@ -27,6 +29,9 @@ const running = ref(false)
 const results = ref<RunResult[]>([])
 const loadingDevices = ref(true)
 const devError = ref('')
+
+const pingStatus = ref<Map<string, PingStatus>>(new Map())
+const pingLatency = ref<Map<string, number>>(new Map())
 
 // Config
 const showConfig = ref(false)
@@ -48,6 +53,9 @@ const quickCmds = [
   { label: 'ARP', cmd: '/ip arp print' },
   { label: 'DNS', cmd: '/ip dns print' },
   { label: 'Firewall', cmd: '/ip firewall filter print' },
+  { label: 'NAT', cmd: '/ip firewall nat print' },
+  { label: 'DHCP Leases', cmd: '/ip dhcp-server lease print' },
+  { label: 'PPP', cmd: '/ppp secret print' },
   { label: 'Uptime', cmd: '/system clock print' },
 ]
 
@@ -90,10 +98,39 @@ async function loadDevices() {
   try {
     const r = await api.get('/mikrotik/devices')
     devices.value = r.data.data ?? []
+    pingAllDevices()
   } catch (e: any) {
     devError.value = e?.response?.data?.message || 'Gagal memuat perangkat'
   } finally {
     loadingDevices.value = false
+  }
+}
+
+async function pingAllDevices() {
+  const ips = devices.value.map(d => d.ip_address).filter(Boolean) as string[]
+  if (!ips.length) return
+
+  // Mark all as checking
+  const map = new Map<string, PingStatus>()
+  ips.forEach(ip => map.set(ip, 'checking'))
+  pingStatus.value = new Map(map)
+
+  // Batch in chunks of 30 to avoid flooding
+  const CHUNK = 30
+  for (let i = 0; i < ips.length; i += CHUNK) {
+    const batch = ips.slice(i, i + CHUNK)
+    try {
+      const r = await api.post('/mikrotik/ping', { ips: batch })
+      const results: { ip: string; reachable: boolean; latency: number }[] = r.data.data ?? []
+      for (const res of results) {
+        map.set(res.ip, res.reachable ? 'up' : 'down')
+        if (res.reachable) pingLatency.value.set(res.ip, res.latency)
+      }
+      pingStatus.value = new Map(map)
+    } catch {
+      batch.forEach(ip => map.set(ip, 'unknown'))
+      pingStatus.value = new Map(map)
+    }
   }
 }
 
@@ -217,18 +254,27 @@ onMounted(() => {
             <input type="checkbox" :checked="allSelected" readonly />
             <span>{{ allSelected ? 'Batalkan Semua' : 'Pilih Semua' }} ({{ filteredDevices.length }})</span>
           </div>
-          <div
-            v-for="d in filteredDevices"
-            :key="d.id_perangkat"
-            :class="['device-item', { selected: selected.has(d.ip_address || '') }]"
-            @click="toggleDevice(d.ip_address || '')"
-          >
-            <input type="checkbox" :checked="selected.has(d.ip_address || '')" readonly class="dev-chk" />
-            <div class="dev-info">
-              <div class="dev-ip">{{ d.ip_address }}</div>
-              <div class="dev-site">{{ d.site?.nama_site || '—' }}</div>
-              <div class="dev-pelanggan">{{ d.site?.pelanggan?.nama_pelanggan || '' }}</div>
-              <div class="dev-model" v-if="d.merk">{{ d.merk }} {{ d.tipe_model }}</div>
+          <div class="dp-list">
+            <div
+              v-for="d in filteredDevices"
+              :key="d.id_perangkat"
+              :class="['device-item', { selected: selected.has(d.ip_address || '') }]"
+              @click="toggleDevice(d.ip_address || '')"
+            >
+              <input type="checkbox" :checked="selected.has(d.ip_address || '')" readonly class="dev-chk" />
+              <span
+                :class="['ping-dot', `ping-${pingStatus.get(d.ip_address || '') ?? 'unknown'}`]"
+                :title="pingStatus.get(d.ip_address || '') === 'up'
+                  ? `SSH OK (${pingLatency.get(d.ip_address || '')}ms)`
+                  : pingStatus.get(d.ip_address || '') === 'down' ? 'Tidak bisa diremote'
+                  : pingStatus.get(d.ip_address || '') === 'checking' ? 'Mengecek...' : 'Belum dicek'"
+              ></span>
+              <div class="dev-info">
+                <div class="dev-ip">{{ d.ip_address }}</div>
+                <div class="dev-site">{{ d.site?.nama_site || '—' }}</div>
+                <div class="dev-pelanggan">{{ d.site?.pelanggan?.nama_pelanggan || '' }}</div>
+                <div class="dev-model" v-if="d.merk">{{ d.merk }} {{ d.tipe_model }}</div>
+              </div>
             </div>
           </div>
         </template>
@@ -387,6 +433,10 @@ onMounted(() => {
   flex-direction: column;
   max-height: calc(100vh - 220px);
 }
+.dp-list {
+  flex: 1;
+  overflow-y: auto;
+}
 .dp-header {
   display: flex;
   align-items: center;
@@ -444,6 +494,25 @@ onMounted(() => {
 .device-item.selected { background: #eff6ff; }
 .device-item:last-child { border-bottom: none; }
 .dev-chk { margin-top: 2px; flex-shrink: 0; }
+
+/* Ping status dot */
+.ping-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+  transition: background 0.3s;
+}
+.ping-unknown  { background: #cbd5e1; }
+.ping-checking { background: #fbbf24; animation: blink-ping 0.8s infinite; }
+.ping-up       { background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.5); }
+.ping-down     { background: #ef4444; }
+
+@keyframes blink-ping {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
 .dev-info { flex: 1; min-width: 0; }
 .dev-ip { font-weight: 700; color: #1d4ed8; font-family: monospace; font-size: 13px; }
 .dev-site { font-size: 12.5px; color: #0f172a; margin-top: 1px; }
@@ -599,6 +668,7 @@ onMounted(() => {
 @media (max-width: 768px) {
   .mtk-page { padding: 16px; }
   .mtk-main { grid-template-columns: 1fr; }
-  .device-panel { max-height: 300px; overflow-y: auto; }
+  .device-panel { max-height: 300px; }
+  .dp-list { max-height: 200px; }
 }
 </style>
