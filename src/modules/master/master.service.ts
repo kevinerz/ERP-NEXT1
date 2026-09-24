@@ -329,7 +329,12 @@ export class MasterService {
         where, skip, take: limit,
         orderBy: { nama_site: 'asc' },
         include: {
-          pelanggan: { select: { nama_pelanggan: true, kode_pelanggan: true } },
+          pelanggan: {
+            select: {
+              id_pelanggan: true, nama_pelanggan: true, kode_pelanggan: true, id_grup: true,
+              grup: { select: { id_grup: true, kode_grup: true, nama_grup: true } },
+            },
+          },
           layanan: { select: { kode_layanan: true, nama_layanan: true } },
         },
       }),

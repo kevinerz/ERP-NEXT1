@@ -95,7 +95,13 @@ export interface SitePelanggan {
   tgl_aktif?: string
   tgl_terminasi?: string
   catatan?: string
-  pelanggan?: { nama_pelanggan: string; kode_pelanggan: string }
+  pelanggan?: {
+    id_pelanggan: number
+    nama_pelanggan: string
+    kode_pelanggan: string
+    id_grup?: number | null
+    grup?: { id_grup: number; kode_grup: string; nama_grup: string } | null
+  }
   layanan?: { kode_layanan: string; nama_layanan: string }
 }
 
@@ -120,6 +126,8 @@ export const useMasterStore = defineStore('master', {
     siteList: [] as SitePelanggan[],
     siteMeta: { total: 0, page: 1, limit: 20, total_pages: 0, status_counts: { Prospek: 0, Aktif: 0, Terminasi: 0, Suspend: 0 } as Record<string, number> },
     siteLoading: false,
+    siteAllList: [] as SitePelanggan[],
+    siteAllLoading: false,
 
     error: '',
   }),
@@ -250,6 +258,15 @@ export const useMasterStore = defineStore('master', {
     },
 
     // ─── SITE ─────────────────────────────────────────────────
+    async fetchSiteAll() {
+      this.siteAllLoading = true
+      try {
+        const { data } = await api.get('/master/site', { params: { limit: 2000 } })
+        this.siteAllList = data.data ?? []
+      } catch (e: any) { this.error = e.response?.data?.message || 'Gagal memuat semua site' }
+      finally { this.siteAllLoading = false }
+    },
+
     async fetchSite(params: Record<string, any> = {}) {
       this.siteLoading = true; this.error = ''
       try {
