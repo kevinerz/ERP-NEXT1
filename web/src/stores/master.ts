@@ -34,18 +34,52 @@ export interface VendorMeta {
   total_pages: number
 }
 
+export interface GrupPelanggan {
+  id_grup: number
+  kode_grup: string
+  nama_grup: string
+  deskripsi?: string
+  pelanggan?: Array<{
+    id_pelanggan: number
+    kode_pelanggan: string
+    nama_pelanggan: string
+    kota?: string
+    jenis_usaha?: string
+    _count?: { sites: number }
+  }>
+}
+
 export interface Pelanggan {
   id_pelanggan: number
   kode_pelanggan: string
+  id_grup?: number | null
   nama_pelanggan: string
+  jenis_usaha?: string
   npwp?: string
   alamat_kantor?: string
-  email_billing?: string
+  kota?: string
   no_telp?: string
+  nama_pemilik?: string
+  jabatan_pemilik?: string
+  no_ktp_pemilik?: string
+  no_ponsel_pemilik?: string
+  nama_pic_teknis?: string
+  jabatan_pic_teknis?: string
+  no_telp_pic_teknis?: string
+  no_ponsel_pic_teknis?: string
+  email_pic_teknis?: string
+  nama_pic_keuangan?: string
+  jabatan_pic_keuangan?: string
+  no_telp_pic_keuangan?: string
+  no_ponsel_pic_keuangan?: string
+  email_pic_keuangan?: string
+  alamat_penagihan?: string
+  email_billing?: string
   nama_pic_utama?: string
   no_hp_pic_utama?: string
   created_at: string
   _count?: { sites: number }
+  grup?: { id_grup: number; kode_grup: string; nama_grup: string } | null
 }
 
 export interface SitePelanggan {
@@ -80,6 +114,8 @@ export const useMasterStore = defineStore('master', {
     pelangganMeta: { total: 0, page: 1, limit: 20, total_pages: 0 },
     pelangganDropdown: [] as { id_pelanggan: number; kode_pelanggan: string; nama_pelanggan: string }[],
     pelangganLoading: false,
+    grupList: [] as GrupPelanggan[],
+    grupLoading: false,
 
     siteList: [] as SitePelanggan[],
     siteMeta: { total: 0, page: 1, limit: 20, total_pages: 0, status_counts: { Prospek: 0, Aktif: 0, Terminasi: 0, Suspend: 0 } as Record<string, number> },
@@ -158,6 +194,30 @@ export const useMasterStore = defineStore('master', {
         const { data } = await api.get('/master/vendor/tipe-list')
         this.tipeVendorList = data.data ?? []
       } catch { /* silent */ }
+    },
+
+    // ─── GRUP PELANGGAN ───────────────────────────────────────
+    async fetchGrupPelanggan() {
+      this.grupLoading = true
+      try {
+        const { data } = await api.get('/master/grup')
+        this.grupList = data.data ?? []
+      } catch (e: any) { this.error = e.response?.data?.message || 'Gagal memuat grup' }
+      finally { this.grupLoading = false }
+    },
+
+    async createGrup(payload: { kode_grup: string; nama_grup: string; deskripsi?: string }) {
+      const { data } = await api.post('/master/grup', payload)
+      return data.data
+    },
+
+    async updateGrup(id: number, payload: { kode_grup?: string; nama_grup?: string; deskripsi?: string }) {
+      const { data } = await api.patch(`/master/grup/${id}`, payload)
+      return data.data
+    },
+
+    async removeGrup(id: number) {
+      await api.delete(`/master/grup/${id}`)
     },
 
     // ─── PELANGGAN ────────────────────────────────────────────

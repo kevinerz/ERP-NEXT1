@@ -98,9 +98,23 @@ model HrisInvitation {
   @@map("hris_invitations")
 }
 
+model GrupPelanggan {
+  id_grup    Int       @id @default(autoincrement())
+  kode_grup  String    @unique @db.VarChar(10)
+  nama_grup  String    @db.VarChar(100)
+  deskripsi  String?   @db.VarChar(255)
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+
+  pelanggan  Pelanggan[]
+
+  @@map("grup_pelanggan")
+}
+
 model Pelanggan {
   id_pelanggan        Int      @id @default(autoincrement())
   kode_pelanggan      String   @unique @db.VarChar(20)
+  id_grup             Int?
   nama_pelanggan      String   @db.VarChar(200)
   npwp                String?  @db.VarChar(30)
   alamat_kantor       String?  @db.Text
@@ -137,6 +151,7 @@ model Pelanggan {
   email_pic_keuangan    String?  @db.VarChar(150)
   alamat_penagihan      String?  @db.Text
 
+  grup           GrupPelanggan?  @relation(fields: [id_grup], references: [id_grup])
   sites          SitePelanggan[]
   customer_users CustomerUser[]
 

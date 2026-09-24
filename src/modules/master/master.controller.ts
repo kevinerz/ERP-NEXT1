@@ -103,6 +103,26 @@ export class MasterController {
 
   // ─── PELANGGAN ──────────────────────────────────────────────
 
+  @Get('grup')
+  findAllGrup() {
+    return this.masterService.findAllGrup();
+  }
+
+  @Post('grup')
+  createGrup(@Body() dto: { kode_grup: string; nama_grup: string; deskripsi?: string }) {
+    return this.masterService.createGrup(dto);
+  }
+
+  @Patch('grup/:id')
+  updateGrup(@Param('id', ParseIntPipe) id: number, @Body() dto: { kode_grup?: string; nama_grup?: string; deskripsi?: string }) {
+    return this.masterService.updateGrup(id, dto);
+  }
+
+  @Delete('grup/:id')
+  removeGrup(@Param('id', ParseIntPipe) id: number) {
+    return this.masterService.removeGrup(id);
+  }
+
   @Get('pelanggan')
   findAllPelanggan(@Query() q: { search?: string; page?: number; limit?: number }) {
     return this.masterService.findAllPelanggan(q);

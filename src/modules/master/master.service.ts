@@ -204,6 +204,56 @@ export class MasterService {
 
   // ─── PELANGGAN ───────────────────────────────────────────────
 
+  async findAllGrup() {
+    const data = await this.prisma.grupPelanggan.findMany({
+      orderBy: { kode_grup: 'asc' },
+      include: {
+        pelanggan: {
+          select: {
+            id_pelanggan: true,
+            kode_pelanggan: true,
+            nama_pelanggan: true,
+            kota: true,
+            jenis_usaha: true,
+            _count: { select: { sites: true } },
+          },
+          orderBy: { kode_pelanggan: 'asc' },
+        },
+      },
+    });
+    return { data };
+  }
+
+  async createGrup(dto: { kode_grup: string; nama_grup: string; deskripsi?: string }) {
+    const existing = await this.prisma.grupPelanggan.findUnique({ where: { kode_grup: dto.kode_grup } });
+    if (existing) throw new ConflictException(`Kode grup "${dto.kode_grup}" sudah digunakan`);
+    const data = await this.prisma.grupPelanggan.create({ data: dto });
+    return { data };
+  }
+
+  async updateGrup(id: number, dto: { kode_grup?: string; nama_grup?: string; deskripsi?: string }) {
+    const grp = await this.prisma.grupPelanggan.findUnique({ where: { id_grup: id } });
+    if (!grp) throw new NotFoundException('Grup tidak ditemukan');
+    if (dto.kode_grup && dto.kode_grup !== grp.kode_grup) {
+      const existing = await this.prisma.grupPelanggan.findUnique({ where: { kode_grup: dto.kode_grup } });
+      if (existing) throw new ConflictException(`Kode grup "${dto.kode_grup}" sudah digunakan`);
+    }
+    const data = await this.prisma.grupPelanggan.update({ where: { id_grup: id }, data: dto });
+    return { data };
+  }
+
+  async removeGrup(id: number) {
+    const grp = await this.prisma.grupPelanggan.findUnique({
+      where: { id_grup: id },
+      include: { _count: { select: { pelanggan: true } } },
+    });
+    if (!grp) throw new NotFoundException('Grup tidak ditemukan');
+    if (grp._count.pelanggan > 0)
+      throw new BadRequestException(`Grup masih memiliki ${grp._count.pelanggan} pelanggan. Pindahkan dulu sebelum menghapus.`);
+    await this.prisma.grupPelanggan.delete({ where: { id_grup: id } });
+    return { message: 'Grup berhasil dihapus' };
+  }
+
   async findAllPelanggan(query: { search?: string; page?: number; limit?: number }) {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;
@@ -219,7 +269,10 @@ export class MasterService {
       this.prisma.pelanggan.findMany({
         where, skip, take: limit,
         orderBy: { nama_pelanggan: 'asc' },
-        include: { _count: { select: { sites: true } } },
+        include: {
+          _count: { select: { sites: true } },
+          grup: { select: { id_grup: true, kode_grup: true, nama_grup: true } },
+        },
       }),
       this.prisma.pelanggan.count({ where }),
     ]);
