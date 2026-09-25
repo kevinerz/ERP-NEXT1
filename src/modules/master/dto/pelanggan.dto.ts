@@ -1,8 +1,10 @@
-import { IsString, IsOptional, IsEmail, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsEmail, MaxLength, IsInt } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreatePelangganDto {
   @IsString() kode_pelanggan: string;
   @IsString() nama_pelanggan: string;
+  @IsOptional() @IsInt() @Type(() => Number) id_grup?: number;
   @IsOptional() @IsString() npwp?: string;
   @IsOptional() @IsString() alamat_kantor?: string;
   @IsOptional() @IsEmail() @MaxLength(150) email_billing?: string;
@@ -37,6 +39,7 @@ export class CreatePelangganDto {
 export class UpdatePelangganDto {
   @IsOptional() @IsString() kode_pelanggan?: string;
   @IsOptional() @IsString() nama_pelanggan?: string;
+  @IsOptional() @IsInt() @Type(() => Number) id_grup?: number;
   @IsOptional() @IsString() npwp?: string;
   @IsOptional() @IsString() alamat_kantor?: string;
   @IsOptional() @IsEmail() @MaxLength(150) email_billing?: string;
