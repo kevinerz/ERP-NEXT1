@@ -286,6 +286,15 @@ export class MasterService {
     return { data, message: 'Pelanggan berhasil ditambahkan' };
   }
 
+  async findOnePelanggan(id: number) {
+    const data = await this.prisma.pelanggan.findUnique({
+      where: { id_pelanggan: id },
+      include: { grup: { select: { id_grup: true, kode_grup: true, nama_grup: true } } },
+    });
+    if (!data) throw new NotFoundException('Pelanggan tidak ditemukan');
+    return { data };
+  }
+
   async updatePelanggan(id: number, dto: UpdatePelangganDto) {
     const row = await this.prisma.pelanggan.findUnique({ where: { id_pelanggan: id } });
     if (!row) throw new NotFoundException('Pelanggan tidak ditemukan');

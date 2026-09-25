@@ -133,6 +133,11 @@ export class MasterController {
     return this.masterService.getPelangganDropdown();
   }
 
+  @Get('pelanggan/:id')
+  findOnePelanggan(@Param('id', ParseIntPipe) id: number) {
+    return this.masterService.findOnePelanggan(id);
+  }
+
   @Post('pelanggan')
   createPelanggan(@Body() dto: CreatePelangganDto) {
     return this.masterService.createPelanggan(dto);

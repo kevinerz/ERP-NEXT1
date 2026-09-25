@@ -186,12 +186,14 @@ function openEdit(p: any) {
 
 // Edit dari grup view (hanya punya id)
 async function openEditById(id: number) {
+  const found = master.pelangganList.find(p => p.id_pelanggan === id)
+  if (found) { openEdit(found); return }
   try {
-    const found = master.pelangganList.find(p => p.id_pelanggan === id)
-    if (found) { openEdit(found); return }
     const { data } = await api.get(`/master/pelanggan/${id}`)
     openEdit(data.data ?? data)
-  } catch {}
+  } catch (e: any) {
+    master.error = e.response?.data?.message || 'Gagal memuat data pelanggan'
+  }
 }
 
 async function handleSubmit() {
