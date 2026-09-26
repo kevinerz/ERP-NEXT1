@@ -46,10 +46,17 @@ export class SmtpClientService {
   }
 
   async testConnection(creds: SmtpCreds): Promise<void> {
+    const label = `${creds.smtp_host}:${creds.smtp_port}`;
     try {
       await this.transporter(creds).verify();
     } catch (e: any) {
-      throw new BadRequestException(`Gagal konek SMTP: ${e.message}`);
+      // Retry sekali — koneksi SMTP ke shared hosting sesekali gagal pada percobaan pertama
+      // karena server load atau grey-listing; retry biasanya langsung berhasil.
+      try {
+        await this.transporter(creds).verify();
+      } catch (e2: any) {
+        throw new BadRequestException(`Gagal konek SMTP (${label}): ${e2.message}`);
+      }
     }
   }
 
@@ -71,7 +78,7 @@ export class SmtpClientService {
         attachments: input.attachments,
       });
     } catch (e: any) {
-      throw new BadRequestException(`Gagal kirim email: ${e.message}`);
+      throw new BadRequestException(`Gagal kirim email (${creds.smtp_host}:${creds.smtp_port}): ${e.message}`);
     }
   }
 

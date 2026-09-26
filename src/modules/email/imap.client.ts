@@ -73,6 +73,16 @@ export class ImapClientService implements OnModuleDestroy {
   private connecting = new Map<string, Promise<ImapFlow>>();
   private folderCache = new Map<string, string>();
   private static readonly IDLE_TIMEOUT_MS = 4 * 60 * 1000;
+  private static readonly CONNECT_TIMEOUT_MS = 15_000;
+  private static readonly OP_TIMEOUT_MS = 30_000;
+
+  /** Promise.race dengan timeout — menghindari request hanging selamanya. */
+  private raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`Timeout ${label} (${ms / 1000}s)`)), ms);
+      p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+    });
+  }
 
   private poolKey(creds: ImapCreds) { return `${creds.email_address}@${creds.imap_host}`; }
 
@@ -95,11 +105,19 @@ export class ImapClientService implements OnModuleDestroy {
       secure: creds.imap_port === 993,
       auth: { user: creds.email_address, pass: creds.password },
       logger: false,
-    });
+      // Nonaktifkan IDLE otomatis — kita pakai pool dan getMailboxLock,
+      // biarkan imapflow handle IDLE per-lock saja bukan seisi sesi.
+      disableAutoIdle: true,
+    } as any);
     try {
-      await client.connect();
+      await this.raceTimeout(
+        client.connect(),
+        ImapClientService.CONNECT_TIMEOUT_MS,
+        `konek ke ${creds.imap_host}:${creds.imap_port}`,
+      );
     } catch (e: any) {
-      throw new BadRequestException(`Gagal konek IMAP: ${e.message}`);
+      try { client.close(); } catch {}
+      throw new BadRequestException(`Gagal konek IMAP (${creds.imap_host}:${creds.imap_port}): ${e.message}`);
     }
     return client;
   }
@@ -143,19 +161,36 @@ export class ImapClientService implements OnModuleDestroy {
   }
 
   private async withMailbox<T>(creds: ImapCreds, mailboxPath: string, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
-    const { client, key } = await this.getClient(creds);
-    try {
-      const lock = await client.getMailboxLock(mailboxPath);
+    const attempt = async (): Promise<T> => {
+      const { client, key } = await this.getClient(creds);
       try {
-        return await fn(client);
-      } finally {
-        lock.release();
+        const lock = await client.getMailboxLock(mailboxPath);
+        try {
+          // Batasi waktu operasi — fetching email besar / server lambat tidak
+          // boleh menggantung request sampai proxy timeout (502/504).
+          return await this.raceTimeout(fn(client), ImapClientService.OP_TIMEOUT_MS, 'operasi IMAP');
+        } finally {
+          lock.release();
+        }
+      } catch (e: any) {
+        // Koneksi basi/putus — buang dari pool supaya request berikutnya dapat koneksi segar.
+        this.evict(key, `error: ${e.message}`);
+        throw e;
       }
+    };
+
+    try {
+      return await attempt();
     } catch (e: any) {
-      // Koneksi basi/putus di tengah jalan — buang dari pool, biar request
-      // berikutnya (bukan yang ini, supaya user tidak nunggu 2x) bikin baru.
-      this.evict(key, `error: ${e.message}`);
-      throw e;
+      // BadRequestException = error logis (folder salah, uid tidak ada) — langsung lempar.
+      if (e instanceof BadRequestException) throw e;
+      // Error jaringan / koneksi putus — retry sekali dengan koneksi baru.
+      this.logger.warn(`IMAP error (${e.message}), retry dengan koneksi segar…`);
+      try {
+        return await attempt();
+      } catch (e2: any) {
+        throw new BadRequestException(`Operasi email gagal: ${e2.message}`);
+      }
     }
   }
 
