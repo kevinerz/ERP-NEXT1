@@ -320,7 +320,7 @@ export class MasterService {
 
   // ─── SITE PELANGGAN ──────────────────────────────────────────
 
-  async findAllSite(query: { search?: string; id_pelanggan?: string; page?: number; limit?: number }) {
+  async findAllSite(query: { search?: string; id_pelanggan?: string; id_layanan?: string; id_grup?: string; status_site?: string; page?: number; limit?: number }) {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;
     const skip = (page - 1) * limit;
@@ -330,9 +330,13 @@ export class MasterService {
         { nama_site: { contains: query.search } },
         { kode_site: { contains: query.search } },
         { kota: { contains: query.search } },
+        { pelanggan: { nama_pelanggan: { contains: query.search } } },
       ];
     }
     if (query.id_pelanggan) where.id_pelanggan = Number(query.id_pelanggan);
+    if (query.id_layanan) where.id_layanan = Number(query.id_layanan);
+    if (query.id_grup) where.pelanggan = { id_grup: Number(query.id_grup) };
+    if (query.status_site) where.status_site = query.status_site;
     const [data, total, statusGroups] = await Promise.all([
       this.prisma.sitePelanggan.findMany({
         where, skip, take: limit,

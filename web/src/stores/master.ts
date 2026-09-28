@@ -261,7 +261,7 @@ export const useMasterStore = defineStore('master', {
     async fetchSiteAll() {
       this.siteAllLoading = true
       try {
-        const { data } = await api.get('/master/site', { params: { limit: 2000 } })
+        const { data } = await api.get('/master/site', { params: { limit: 10000 } })
         this.siteAllList = data.data ?? []
       } catch (e: any) { this.error = e.response?.data?.message || 'Gagal memuat semua site' }
       finally { this.siteAllLoading = false }
