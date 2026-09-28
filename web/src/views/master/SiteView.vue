@@ -83,9 +83,14 @@ const availableLayananList = computed(() => {
   if (!filterGrup.value && !filterPelanggan.value && !grupSearch.value) return master.layananList
   let sites = master.siteAllList
   if (filterGrup.value) {
-    const grp = master.grupList.find(g => g.id_grup === filterGrup.value)
-    const ptIds = new Set((grp?.pelanggan ?? []).map(p => p.id_pelanggan))
-    sites = sites.filter(s => ptIds.has(s.id_pelanggan))
+    if (filterGrup.value === -1) {
+      const grupPtIds = new Set(master.grupList.flatMap(g => g.pelanggan?.map(p => p.id_pelanggan) ?? []))
+      sites = sites.filter(s => !grupPtIds.has(s.id_pelanggan))
+    } else {
+      const grp = master.grupList.find(g => g.id_grup === filterGrup.value)
+      const ptIds = new Set((grp?.pelanggan ?? []).map(p => p.id_pelanggan))
+      sites = sites.filter(s => ptIds.has(s.id_pelanggan))
+    }
   }
   if (filterPelanggan.value) {
     sites = sites.filter(s => s.id_pelanggan === filterPelanggan.value)
@@ -104,6 +109,10 @@ watch(availableLayananList, (list) => {
 // Pelanggan tersedia berdasarkan grup yang dipilih
 const availablePelangganList = computed(() => {
   if (!filterGrup.value) return master.pelangganDropdown
+  if (filterGrup.value === -1) {
+    const grupPtIds = new Set(master.grupList.flatMap(g => g.pelanggan?.map(p => p.id_pelanggan) ?? []))
+    return master.pelangganDropdown.filter(p => !grupPtIds.has(p.id_pelanggan))
+  }
   const grp = master.grupList.find(g => g.id_grup === filterGrup.value)
   const ptIds = new Set((grp?.pelanggan ?? []).map(p => p.id_pelanggan))
   return master.pelangganDropdown.filter(p => ptIds.has(p.id_pelanggan))
@@ -562,6 +571,7 @@ function highlight(text: string, q: string) {
         <select v-model="filterGrup" @change="doSearch" class="filter-select">
           <option :value="0">Semua Grup</option>
           <option v-for="g in master.grupList" :key="g.id_grup" :value="g.id_grup">{{ g.nama_grup }}</option>
+          <option :value="-1">— Lainnya (Non Grup)</option>
         </select>
         <select v-model="filterPelanggan" @change="doSearch" class="filter-select">
           <option :value="0">Semua Pelanggan ({{ availablePelangganList.length }})</option>

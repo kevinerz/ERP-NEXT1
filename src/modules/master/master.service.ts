@@ -335,7 +335,10 @@ export class MasterService {
     }
     if (query.id_pelanggan) where.id_pelanggan = Number(query.id_pelanggan);
     if (query.id_layanan) where.id_layanan = Number(query.id_layanan);
-    if (query.id_grup) where.pelanggan = { id_grup: Number(query.id_grup) };
+    if (query.id_grup) {
+      const gid = Number(query.id_grup);
+      where.pelanggan = gid === -1 ? { id_grup: null } : { id_grup: gid };
+    }
     if (query.status_site) where.status_site = query.status_site;
     const [data, total, statusGroups] = await Promise.all([
       this.prisma.sitePelanggan.findMany({
