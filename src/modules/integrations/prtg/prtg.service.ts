@@ -211,7 +211,7 @@ export class PrtgService {
           { id_ticket_terbentuk: null, is_pending: false, diterima_pada: { gte: new Date(now.getTime() - 24 * 3600_000) } },
         ],
       },
-      select: { id_webhook: true, prtg_sensor_id: true, prtg_device_name: true, id_ticket_terbentuk: true, is_pending: true, first_seen_at: true },
+      select: { id_webhook: true, prtg_sensor_id: true, prtg_device_name: true, id_ticket_terbentuk: true, is_pending: true, first_seen_at: true, pesan_alert: true },
     });
     const activeDevices = new Set(activeEntries.map((e) => e.prtg_device_name));
     // Device pending yang sudah melewati grace period

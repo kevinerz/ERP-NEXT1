@@ -37,7 +37,7 @@ export class ToolsService {
     protocol: string,
     noDns: boolean,
     port: number,
-  ): Promise<{ host: string; output: string }> {
+  ): Promise<{ host: string; output: string; protocol?: string }> {
     const host = validateHost(rawHost);
     const hops = Math.min(maxhops, 20);
     const dns = noDns ? '-n' : '';

@@ -137,7 +137,7 @@ export class PortalService {
 
     const deviceNames = mappings.map((m) => m.device_name);
     // Webhook yang masih DOWN dan sudah jadi tiket (bukan pending)
-    const webhooks = await this.prisma.integrationPrtgWebhooks.findMany({
+    const webhooks = await this.prisma.integrationPrtgWebhook.findMany({
       where: {
         prtg_device_name: { in: deviceNames },
         status_sensor: 'Down',
@@ -148,7 +148,7 @@ export class PortalService {
     });
 
     // Cek tiket masih Open / In_Progress
-    const ticketIds = [...new Set(webhooks.map((w) => w.id_ticket_terbentuk!))];
+    const ticketIds = [...new Set(webhooks.map((w) => w.id_ticket_terbentuk!))] as number[];
     const openTickets = await this.prisma.operationTicket.findMany({
       where: { id_ticket: { in: ticketIds }, status_tiket: { in: ['Open', 'In_Progress'] } },
       select: { id_ticket: true },

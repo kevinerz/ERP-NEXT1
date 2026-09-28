@@ -1,6 +1,6 @@
 import { Controller, Get, Put, Post, Body, UseGuards } from '@nestjs/common';
 import { MikrotikService } from './mikrotik.service';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt.guard';
 
 @UseGuards(JwtAuthGuard)
 @Controller('mikrotik')
