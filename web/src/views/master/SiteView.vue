@@ -77,6 +77,52 @@ function resetFilters() {
 }
 watch(pageSize, () => { page.value = 1; fetchData() })
 
+// ─── Layanan tersedia berdasarkan filter aktif ───────────────
+const availableLayananList = computed(() => {
+  // Jika tidak ada filter grup/pelanggan → tampil semua
+  if (!filterGrup.value && !filterPelanggan.value && !grupSearch.value) return master.layananList
+  let sites = master.siteAllList
+  if (filterGrup.value) {
+    const grp = master.grupList.find(g => g.id_grup === filterGrup.value)
+    const ptIds = new Set((grp?.pelanggan ?? []).map(p => p.id_pelanggan))
+    sites = sites.filter(s => ptIds.has(s.id_pelanggan))
+  }
+  if (filterPelanggan.value) {
+    sites = sites.filter(s => s.id_pelanggan === filterPelanggan.value)
+  }
+  const used = new Set(sites.map(s => s.id_layanan).filter(Boolean))
+  return master.layananList.filter(l => used.has(l.id_layanan))
+})
+
+// Reset filterLayanan jika layanan yg dipilih tidak ada di available list
+watch(availableLayananList, (list) => {
+  if (filterLayanan.value && !list.find(l => l.id_layanan === filterLayanan.value)) {
+    filterLayanan.value = 0
+  }
+})
+
+// Pelanggan tersedia berdasarkan grup yang dipilih
+const availablePelangganList = computed(() => {
+  if (!filterGrup.value) return master.pelangganDropdown
+  const grp = master.grupList.find(g => g.id_grup === filterGrup.value)
+  const ptIds = new Set((grp?.pelanggan ?? []).map(p => p.id_pelanggan))
+  return master.pelangganDropdown.filter(p => ptIds.has(p.id_pelanggan))
+})
+
+// Reset filterPelanggan jika tidak ada di grup baru
+watch(filterGrup, () => {
+  if (filterPelanggan.value && !availablePelangganList.value.find(p => p.id_pelanggan === filterPelanggan.value)) {
+    filterPelanggan.value = 0
+  }
+})
+
+// Layanan tersedia di grup view (berdasarkan grupSearch + filterStatus)
+const availableLayananGrup = computed(() => {
+  const used = new Set(filteredSiteAll.value.map(s => s.id_layanan).filter(Boolean))
+  if (!grupSearch.value && !filterStatus.value) return master.layananList
+  return master.layananList.filter(l => used.has(l.id_layanan))
+})
+
 function switchView(mode: 'list' | 'grup') {
   viewMode.value = mode
   if (mode === 'grup' && !master.siteAllList.length) master.fetchSiteAll()
@@ -325,8 +371,8 @@ function highlight(text: string, q: string) {
           <button v-if="grupSearch" class="clear-btn" @click="grupSearch = ''">✕</button>
         </div>
         <select v-model="filterLayanan" @change="() => {}" class="filter-select">
-          <option :value="0">Semua Layanan</option>
-          <option v-for="l in master.layananList" :key="l.id_layanan" :value="l.id_layanan">
+          <option :value="0">Semua Layanan ({{ availableLayananGrup.length }})</option>
+          <option v-for="l in availableLayananGrup" :key="l.id_layanan" :value="l.id_layanan">
             {{ l.nama_layanan }}
           </option>
         </select>
@@ -518,14 +564,14 @@ function highlight(text: string, q: string) {
           <option v-for="g in master.grupList" :key="g.id_grup" :value="g.id_grup">{{ g.nama_grup }}</option>
         </select>
         <select v-model="filterPelanggan" @change="doSearch" class="filter-select">
-          <option :value="0">Semua Pelanggan</option>
-          <option v-for="p in master.pelangganDropdown" :key="p.id_pelanggan" :value="p.id_pelanggan">
+          <option :value="0">Semua Pelanggan ({{ availablePelangganList.length }})</option>
+          <option v-for="p in availablePelangganList" :key="p.id_pelanggan" :value="p.id_pelanggan">
             {{ p.nama_pelanggan }}
           </option>
         </select>
         <select v-model="filterLayanan" @change="doSearch" class="filter-select">
-          <option :value="0">Semua Layanan</option>
-          <option v-for="l in master.layananList" :key="l.id_layanan" :value="l.id_layanan">{{ l.nama_layanan }}</option>
+          <option :value="0">Semua Layanan ({{ availableLayananList.length }})</option>
+          <option v-for="l in availableLayananList" :key="l.id_layanan" :value="l.id_layanan">{{ l.nama_layanan }}</option>
         </select>
         <button class="btn-search" @click="doSearch">Cari</button>
         <button v-if="hasActiveFilters" class="btn-reset" @click="resetFilters" title="Reset semua filter">✕ Reset</button>
