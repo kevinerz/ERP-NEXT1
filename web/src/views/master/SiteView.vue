@@ -698,11 +698,11 @@ function highlight(text: string, q: string) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1300px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; flex-wrap: wrap; gap: 12px; }
-.page-header h2 { margin: 0 0 3px; font-size: 22px; color: #0f172a; font-weight: 700; }
+.page { padding: 24px 28px; max-width: 1400px; }
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+.page-header h2 { margin: 0 0 3px; font-size: 20px; color: #0f172a; font-weight: 700; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
-.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .view-toggle { display: flex; background: #f1f5f9; border-radius: 8px; padding: 3px; gap: 2px; }
 .toggle-btn { padding: 6px 16px; border: none; background: none; border-radius: 6px; font-size: 13px; font-weight: 500; color: #64748b; cursor: pointer; transition: all .15s; }
@@ -710,8 +710,9 @@ function highlight(text: string, q: string) {
 .btn-primary { padding: 9px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 
 /* Status bar */
-.status-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-.chip { padding: 5px 13px; border-radius: 20px; font-size: 12.5px; font-weight: 500; border: 1px solid transparent; cursor: pointer; transition: all .15s; user-select: none; display: flex; align-items: center; gap: 5px; }
+.status-bar { margin-bottom: 16px; }
+.status-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chip { padding: 5px 13px; border-radius: 20px; font-size: 12.5px; font-weight: 500; border: 1px solid transparent; cursor: pointer; transition: all .15s; user-select: none; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .chip:hover { filter: brightness(.94); }
 .chip b { font-size: 13px; }
 
@@ -746,17 +747,17 @@ function highlight(text: string, q: string) {
 /* Grup cards */
 .grup-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; margin-bottom: 8px; }
 .grup-card.standalone { opacity: .85; }
-.grup-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-left: 4px solid #1d4ed8; cursor: pointer; user-select: none; gap: 12px; transition: background .1s; }
+.grup-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px; border-left: 4px solid #1d4ed8; cursor: pointer; user-select: none; gap: 12px; transition: background .1s; min-height: 48px; }
 .grup-header:hover { background: #f8fafc; }
-.grup-left { display: flex; align-items: center; gap: 10px; flex: 1; flex-wrap: wrap; }
-.grup-kode { font-size: 11.5px; font-weight: 700; background: #f1f5f9; border-radius: 5px; padding: 2px 8px; white-space: nowrap; }
-.grup-nama { font-size: 14px; font-weight: 700; color: #0f172a; }
-.grup-desc { font-size: 12px; color: #94a3b8; }
-.grup-right { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
-.grup-stat { font-size: 13px; color: #64748b; }
+.grup-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
+.grup-kode { font-size: 11px; font-weight: 700; background: #f1f5f9; border-radius: 5px; padding: 2px 7px; white-space: nowrap; flex-shrink: 0; }
+.grup-nama { font-size: 14px; font-weight: 700; color: #0f172a; white-space: nowrap; flex-shrink: 0; }
+.grup-desc { font-size: 12px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.grup-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: 8px; }
+.grup-stat { font-size: 12.5px; color: #64748b; white-space: nowrap; }
 .grup-stat b { color: #0f172a; }
 .stat-filtered b { color: #1d4ed8; }
-.chevron { font-size: 14px; color: #94a3b8; transition: transform .2s; display: inline-block; }
+.chevron { font-size: 13px; color: #94a3b8; transition: transform .2s; display: inline-block; flex-shrink: 0; }
 .chevron.open { transform: rotate(180deg); }
 
 .grup-body { border-top: 1px solid #f1f5f9; }
