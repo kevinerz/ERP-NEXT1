@@ -209,6 +209,13 @@
               </select>
             </div>
             <div class="form-row">
+              <label>Kategori</label>
+              <div class="kategori-chips">
+                <button class="chip" :class="{ active: produkKategori === '' }" @click="produkKategori = ''">Semua</button>
+                <button v-for="k in kategoriList" :key="k" class="chip" :class="{ active: produkKategori === k }" @click="produkKategori = k">{{ k }}</button>
+              </div>
+            </div>
+            <div class="form-row">
               <label>Cari Produk</label>
               <input v-model="produkSearch" type="text" placeholder="Telkomsel, Indosat, 10RB, dst..." />
             </div>
@@ -311,14 +318,22 @@ const loadingProduk = ref(false)
 const beliForm = ref({ id_sumber: '' as number | '', buyer_sku_code: '', keterangan: '' })
 const beliError = ref('')
 const beliSubmitting = ref(false)
+const produkKategori = ref('')
+const kategoriList = computed(() => {
+  const set = new Set(produkList.value.map((p: any) => p.kategori).filter(Boolean))
+  return Array.from(set) as string[]
+})
 const produkFiltered = computed(() => {
   const q = produkSearch.value.trim().toLowerCase()
-  if (!q) return produkList.value.slice(0, 100)
-  return produkList.value.filter((p) =>
+  let list = produkList.value
+  if (produkKategori.value) list = list.filter((p: any) => p.kategori === produkKategori.value)
+  if (!q) return list.slice(0, 150)
+  return list.filter((p: any) =>
     p.nama_produk?.toLowerCase().includes(q) ||
     p.operator?.toLowerCase().includes(q) ||
-    p.kode_produk?.toLowerCase().includes(q),
-  ).slice(0, 100)
+    p.kode_produk?.toLowerCase().includes(q) ||
+    p.kategori?.toLowerCase().includes(q),
+  ).slice(0, 150)
 })
 
 const showConfigModal = ref(false)
@@ -341,6 +356,8 @@ async function fetchDigiStatus() {
 async function openBeliModal() {
   beliForm.value = { id_sumber: selectedSim.value?.id_sumber || '', buyer_sku_code: '', keterangan: '' }
   beliError.value = ''
+  produkKategori.value = ''
+  produkSearch.value = ''
   showBeliModal.value = true
   loadingProduk.value = true
   try {
@@ -548,7 +565,11 @@ onMounted(() => Promise.all([fetchSimCards(), fetchTopup(), fetchDigiStatus()]))
 .btn-cek-sm:hover { background: #dbeafe; }
 
 .modal-lg { width: 560px; }
-.produk-list { max-height: 280px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+.kategori-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 4px 10px; border-radius: 20px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; cursor: pointer; transition: all .15s; }
+.chip:hover { border-color: #94a3b8; }
+.chip.active { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+.produk-list { max-height: 260px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
 .produk-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
 .produk-item:last-child { border-bottom: none; }
 .produk-item:hover { background: #f8fafc; }
