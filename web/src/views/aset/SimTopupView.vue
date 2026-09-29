@@ -198,6 +198,7 @@
             <button class="modal-close" @click="showBeliModal = false">✕</button>
           </div>
           <div class="modal-body">
+            <div v-if="beliError" class="beli-error-banner">⚠️ {{ beliError }}</div>
             <div class="form-row">
               <label>Sumber Internet / SIM (nomor tujuan) *</label>
               <select v-model="beliForm.id_sumber">
@@ -236,7 +237,6 @@
               <label>Keterangan</label>
               <input v-model="beliForm.keterangan" type="text" placeholder="Opsional" />
             </div>
-            <p v-if="beliError" class="form-error">{{ beliError }}</p>
           </div>
           <div class="modal-footer">
             <button class="btn-cancel" @click="showBeliModal = false">Batal</button>
@@ -565,6 +565,7 @@ onMounted(() => Promise.all([fetchSimCards(), fetchTopup(), fetchDigiStatus()]))
 .btn-cek-sm:hover { background: #dbeafe; }
 
 .modal-lg { width: 560px; }
+.beli-error-banner { background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; font-weight: 500; }
 .kategori-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { padding: 4px 10px; border-radius: 20px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; cursor: pointer; transition: all .15s; }
 .chip:hover { border-color: #94a3b8; }
