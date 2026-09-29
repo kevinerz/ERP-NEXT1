@@ -414,26 +414,6 @@ async function submitProvision() {
       </button>
     </div>
 
-    <!-- Grace period banner -->
-    <div v-if="pendingList.length" class="pending-banner">
-      <div class="pending-banner-head">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <strong>{{ pendingList.length }} device dalam grace period</strong>
-        <span class="pending-sub"> — menunggu konfirmasi sebelum tiket & WA dibuat (anti false alarm)</span>
-      </div>
-      <div class="pending-items">
-        <div v-for="p in pendingList" :key="p.device_name" class="pending-item">
-          <span class="pending-device">{{ p.device_name }}</span>
-          <span class="pending-sensor">{{ p.sensor_name }}</span>
-          <span class="pending-dot"></span>
-          <span class="pending-since">Down sejak {{ fmtTime(p.first_seen_at) }}</span>
-          <span class="pending-sisa" :class="p.sisa_detik <= 0 ? 'sisa-segera' : ''">
-            {{ p.sisa_detik <= 0 ? '⚡ Segera diproses...' : `⏱ ${fmtSisa(p.sisa_detik)} lagi` }}
-          </span>
-        </div>
-      </div>
-    </div>
-
     <div class="tabs">
       <button :class="['tab', { active: tab === 'mapping' }]" @click="tab = 'mapping'">🔗 Mapping Device → Site</button>
       <button :class="['tab', { active: tab === 'audit' }]" @click="tab = 'audit'; fetchDevices()">🔍 Audit Sensor</button>
@@ -864,18 +844,6 @@ async function submitProvision() {
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0 0 16px; font-size: 13px; color: #64748b; }
 
-/* Grace period banner */
-.pending-banner { background: #fffbeb; border: 1px solid #fde68a; border-left: 3px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
-.pending-banner-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #92400e; margin-bottom: 8px; }
-.pending-sub { font-weight: 400; }
-.pending-items { display: flex; flex-direction: column; gap: 5px; }
-.pending-item { display: flex; align-items: center; gap: 8px; font-size: 12px; background: rgba(255,255,255,.7); border-radius: 6px; padding: 6px 10px; }
-.pending-device { font-weight: 700; color: #334155; font-family: monospace; }
-.pending-sensor { color: #64748b; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pending-dot { width: 5px; height: 5px; border-radius: 50%; background: #f59e0b; flex-shrink: 0; animation: blink 1s infinite; }
-.pending-since { color: #94a3b8; white-space: nowrap; }
-.pending-sisa { font-weight: 700; color: #b45309; white-space: nowrap; }
-.sisa-segera { color: #dc2626; animation: blink .5s infinite; }
 @keyframes blink { 0%,100% { opacity:1 } 50% { opacity:.4 } }
 
 /* Durasi flow preview */
