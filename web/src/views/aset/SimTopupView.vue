@@ -215,14 +215,14 @@
             <div class="produk-list">
               <div v-if="loadingProduk" class="empty-state">Memuat daftar produk...</div>
               <div v-else-if="!produkFiltered.length" class="empty-state">Tidak ada produk cocok</div>
-              <div v-for="p in produkFiltered" :key="p.kode"
-                class="produk-item" :class="{ selected: beliForm.buyer_sku_code === p.kode }"
-                @click="beliForm.buyer_sku_code = p.kode">
+              <div v-for="p in produkFiltered" :key="p.kode_produk"
+                class="produk-item" :class="{ selected: beliForm.buyer_sku_code === p.kode_produk }"
+                @click="beliForm.buyer_sku_code = p.kode_produk">
                 <div class="produk-info">
-                  <div class="produk-name">{{ p.nama }}</div>
+                  <div class="produk-name">{{ p.nama_produk }}</div>
                   <div class="produk-sub">{{ p.operator }} · {{ p.kategori }}</div>
                 </div>
-                <div class="produk-price">{{ fmtRp(p.harga) }}</div>
+                <div class="produk-price">{{ fmtRp(parseFloat(p.harga_jual) || 0) }}</div>
               </div>
             </div>
             <div class="form-row">
@@ -233,7 +233,7 @@
           </div>
           <div class="modal-footer">
             <button class="btn-cancel" @click="showBeliModal = false">Batal</button>
-            <button class="btn-primary" :disabled="beliSubmitting || !beliForm.id_sumber || !beliForm.buyer_sku_code" @click="submitBeli">
+            <button class="btn-primary" :disabled="beliSubmitting || !beliForm.id_sumber || !beliForm.buyer_sku_code" @click="submitBeli" style="min-width:120px">
               {{ beliSubmitting ? 'Memproses...' : 'Beli Sekarang' }}
             </button>
           </div>
@@ -315,7 +315,9 @@ const produkFiltered = computed(() => {
   const q = produkSearch.value.trim().toLowerCase()
   if (!q) return produkList.value.slice(0, 100)
   return produkList.value.filter((p) =>
-    p.nama?.toLowerCase().includes(q) || p.operator?.toLowerCase().includes(q) || p.kategori?.toLowerCase().includes(q),
+    p.nama_produk?.toLowerCase().includes(q) ||
+    p.operator?.toLowerCase().includes(q) ||
+    p.kode_produk?.toLowerCase().includes(q),
   ).slice(0, 100)
 })
 

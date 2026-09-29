@@ -7,14 +7,12 @@ export interface HaybiCreds {
 }
 
 export interface HaybiProduct {
-  kode: string;
-  nama: string;
+  kode_produk: string;
+  nama_produk: string;
   kategori: string;
   operator: string;
-  harga: number;
-  harga_jual?: number;
+  harga_jual: string; // string dari Haybi, e.g. "100065.00"
   status?: string;
-  deskripsi?: string;
 }
 
 export interface HaybiTrxResult {
