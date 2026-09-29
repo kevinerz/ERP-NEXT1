@@ -374,8 +374,24 @@ model SitePelanggan {
   prtg_mapping       IntegrationPrtgMapping[]
   uptimekuma_mapping IntegrationUptimeKumaMapping[]
   instalasi_orders   InstalasiOrder[]
+  dokumen            SiteDokumen[]
 
   @@map("site_pelanggan")
+}
+
+model SiteDokumen {
+  id_dokumen   Int      @id @default(autoincrement())
+  id_site      Int
+  nama_file    String   @db.VarChar(255)
+  url_file     String   @db.Text
+  tipe_file    String   @db.VarChar(10)
+  keterangan   String?  @db.VarChar(500)
+  ukuran_byte  Int?
+  created_at   DateTime @default(now())
+
+  site SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+
+  @@map("site_dokumen")
 }
 
 model GudangAset {

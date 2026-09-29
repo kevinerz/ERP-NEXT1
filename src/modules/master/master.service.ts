@@ -9,6 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UploadService } from '../../common/upload/upload.service';
 import { VendorLoginDto } from './dto/kontak-teknisi.dto';
 import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
@@ -26,6 +27,7 @@ export class MasterService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private config: ConfigService,
+    private upload: UploadService,
   ) {}
 
   // ─── LAYANAN ────────────────────────────────────────────────
@@ -894,5 +896,51 @@ export class MasterService {
       data: { pin_hash },
     });
     return { message: 'PIN berhasil diset' };
+  }
+
+  // ─── DOKUMEN SITE (Berita Acara) ────────────────────────────
+
+  async getDokumenSite(id_site: number) {
+    const data = await (this.prisma as any).siteDokumen.findMany({
+      where: { id_site },
+      orderBy: { created_at: 'desc' },
+    });
+    return { data };
+  }
+
+  async uploadDokumenSite(
+    id_site: number,
+    file: Express.Multer.File,
+    keterangan?: string,
+  ) {
+    const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site } });
+    if (!site) throw new NotFoundException('Site tidak ditemukan');
+
+    const ext = file.originalname.split('.').pop()?.toLowerCase() || 'bin';
+    const allowed = ['pdf', 'jpg', 'jpeg', 'png'];
+    if (!allowed.includes(ext)) throw new BadRequestException('Format file harus PDF, JPG, atau PNG');
+
+    const timestamp = Date.now();
+    const filename = `site-${id_site}-${timestamp}.${ext}`;
+    const url = await this.upload.uploadFile(file.buffer, 'site-dokumen', filename);
+
+    const data = await (this.prisma as any).siteDokumen.create({
+      data: {
+        id_site,
+        nama_file: file.originalname,
+        url_file: url,
+        tipe_file: ext,
+        keterangan: keterangan || null,
+        ukuran_byte: file.size,
+      },
+    });
+    return { data, message: `Dokumen ${file.originalname} berhasil diupload` };
+  }
+
+  async deleteDokumenSite(id_dokumen: number) {
+    const doc = await (this.prisma as any).siteDokumen.findUnique({ where: { id_dokumen } });
+    if (!doc) throw new NotFoundException('Dokumen tidak ditemukan');
+    await (this.prisma as any).siteDokumen.delete({ where: { id_dokumen } });
+    return { message: `Dokumen ${doc.nama_file} dihapus` };
   }
 }

@@ -1,7 +1,9 @@
 import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, ParseIntPipe, ForbiddenException, Req,
+  UseInterceptors, UploadedFile, BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { MasterService } from './master.service';
 import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
@@ -185,6 +187,29 @@ export class MasterController {
         throw new ForbiddenException('Force delete site hanya untuk Admin/Director');
     }
     return this.masterService.removeSite(id, isForce);
+  }
+
+  // ─── DOKUMEN SITE (Berita Acara) ────────────────────────────
+
+  @Get('site/:id/dokumen')
+  getDokumenSite(@Param('id', ParseIntPipe) id: number) {
+    return this.masterService.getDokumenSite(id);
+  }
+
+  @Post('site/:id/dokumen')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadDokumenSite(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('keterangan') keterangan?: string,
+  ) {
+    if (!file) throw new BadRequestException('File wajib diupload');
+    return this.masterService.uploadDokumenSite(id, file, keterangan);
+  }
+
+  @Delete('site/dokumen/:id_dokumen')
+  deleteDokumenSite(@Param('id_dokumen', ParseIntPipe) id: number) {
+    return this.masterService.deleteDokumenSite(id);
   }
 
   // ─── SUMBER INTERNET ─────────────────────────────────────────

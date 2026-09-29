@@ -15,7 +15,7 @@ const vendorList = ref<any[]>([])
 const asetSimList = ref<any[]>([])
 const asetList = ref<any[]>([])  // untuk perangkat picker
 
-const activeTab = ref<'sumber' | 'perangkat' | 'pic' | 'proyek' | 'tiket'>('sumber')
+const activeTab = ref<'sumber' | 'perangkat' | 'pic' | 'proyek' | 'tiket' | 'dokumen'>('sumber')
 
 // Sumber Internet
 const showSumberModal = ref(false)
@@ -39,6 +39,15 @@ const picForm = ref<any>({})
 const picSubmitting = ref(false)
 const picError = ref('')
 
+// Dokumen (Berita Acara)
+const dokumenList = ref<any[]>([])
+const dokumenLoading = ref(false)
+const dokumenError = ref('')
+const dokumenUploading = ref(false)
+const dokumenFile = ref<File | null>(null)
+const dokumenKeterangan = ref('')
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
 const PERUNTUKAN = ['Main', 'Backup', 'Redundant']
 const STATUS_LINK = ['Aktif', 'Nonaktif', 'Gangguan']
 const STATUS_PERANGKAT = ['Aktif', 'Nonaktif', 'Rusak']
@@ -55,7 +64,7 @@ const SITE_STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 }
 
 onMounted(async () => {
-  await Promise.all([loadSite(), loadVendors(), loadAsetSim(), loadAset()])
+  await Promise.all([loadSite(), loadVendors(), loadAsetSim(), loadAset(), loadDokumen()])
 })
 
 async function loadSite() {
@@ -90,6 +99,55 @@ async function loadAset() {
     const r = await api.get('/assets', { params: { limit: 500 } })
     asetList.value = r.data.data || []
   } catch {}
+}
+
+// ─── Dokumen Site ─────────────────────────────────────────────
+
+async function loadDokumen() {
+  dokumenLoading.value = true
+  try {
+    const r = await api.get(`/master/site/${id}/dokumen`)
+    dokumenList.value = r.data.data || []
+  } catch {}
+  finally { dokumenLoading.value = false }
+}
+
+function onFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  dokumenFile.value = input.files?.[0] || null
+}
+
+async function uploadDokumen() {
+  if (!dokumenFile.value) { dokumenError.value = 'Pilih file terlebih dahulu'; return }
+  dokumenUploading.value = true; dokumenError.value = ''
+  try {
+    const form = new FormData()
+    form.append('file', dokumenFile.value)
+    if (dokumenKeterangan.value) form.append('keterangan', dokumenKeterangan.value)
+    await api.post(`/master/site/${id}/dokumen`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    dokumenFile.value = null
+    dokumenKeterangan.value = ''
+    if (fileInputRef.value) fileInputRef.value.value = ''
+    await loadDokumen()
+  } catch (e: any) { dokumenError.value = e.response?.data?.message || 'Gagal upload' }
+  finally { dokumenUploading.value = false }
+}
+
+async function deleteDokumen(doc: any) {
+  if (!confirm(`Hapus dokumen "${doc.nama_file}"?`)) return
+  try {
+    await api.delete(`/master/site/dokumen/${doc.id_dokumen}`)
+    await loadDokumen()
+  } catch (e: any) { dokumenError.value = e.response?.data?.message || 'Gagal menghapus' }
+}
+
+function fmtBytes(bytes: number) {
+  if (!bytes) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 // Aset yang tersedia untuk dipilih: Di_Gudang atau yang sudah terpasang di site ini
@@ -336,6 +394,9 @@ const isGsm = computed(() => {
         <button :class="['tab', { active: activeTab === 'tiket' }]" @click="activeTab = 'tiket'">
           🎫 Tiket ({{ site.tickets?.length || 0 }})
         </button>
+        <button :class="['tab', { active: activeTab === 'dokumen' }]" @click="activeTab = 'dokumen'">
+          📄 Dokumen ({{ dokumenList.length }})
+        </button>
       </div>
 
       <!-- Tab: Sumber Internet -->
@@ -523,6 +584,60 @@ const isGsm = computed(() => {
                 {{ t.status_tiket }}
               </span>
               <span class="lr-arrow">›</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Tab: Dokumen (Berita Acara) -->
+      <div v-if="activeTab === 'dokumen'" class="tab-content">
+        <div class="tab-header">
+          <h3>Dokumen Berita Acara</h3>
+        </div>
+
+        <!-- Upload form -->
+        <div class="dok-upload-box">
+          <div class="dok-upload-title">Upload Dokumen Baru</div>
+          <div class="dok-upload-row">
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              @change="onFileSelected"
+              class="dok-file-input"
+            />
+            <input
+              v-model="dokumenKeterangan"
+              class="dok-ket-input"
+              placeholder="Keterangan (opsional)"
+            />
+            <button class="btn-upload" @click="uploadDokumen" :disabled="dokumenUploading || !dokumenFile">
+              {{ dokumenUploading ? 'Mengupload...' : 'Upload' }}
+            </button>
+          </div>
+          <div class="dok-hint">Format: PDF, JPG, JPEG, PNG · Maks 10 MB</div>
+          <p v-if="dokumenError" class="form-error">{{ dokumenError }}</p>
+        </div>
+
+        <!-- Dokumen list -->
+        <div v-if="dokumenLoading" class="empty-state">Memuat dokumen...</div>
+        <div v-else-if="!dokumenList.length" class="empty-state">Belum ada dokumen untuk site ini</div>
+        <div v-else class="dok-list">
+          <div v-for="doc in dokumenList" :key="doc.id_dokumen" class="dok-card">
+            <div class="dok-icon">
+              <span v-if="doc.tipe_file === 'pdf'">📄</span>
+              <span v-else>🖼️</span>
+            </div>
+            <div class="dok-info">
+              <div class="dok-nama">{{ doc.nama_file }}</div>
+              <div class="dok-meta">
+                <span v-if="doc.keterangan" class="dok-ket">{{ doc.keterangan }}</span>
+                <span class="dok-size">{{ fmtBytes(doc.ukuran_byte) }}</span>
+                <span class="dok-date">{{ new Date(doc.created_at).toLocaleDateString('id-ID') }}</span>
+              </div>
+            </div>
+            <div class="dok-actions">
+              <a :href="doc.url_file" target="_blank" class="btn-view">Buka</a>
+              <button class="btn-icon red" @click="deleteDokumen(doc)" title="Hapus">🗑️</button>
             </div>
           </div>
         </div>
@@ -864,4 +979,27 @@ const isGsm = computed(() => {
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Dokumen */
+.dok-upload-box { background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px; }
+.dok-upload-title { font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 10px; }
+.dok-upload-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.dok-file-input { flex: 1; min-width: 180px; font-size: 13px; }
+.dok-ket-input { flex: 1.5; min-width: 180px; padding: 8px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; outline: none; background: #fff; }
+.dok-ket-input:focus { border-color: #3b82f6; }
+.dok-hint { font-size: 11px; color: #94a3b8; margin-top: 8px; }
+.btn-upload { padding: 8px 20px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-upload:disabled { opacity: 0.5; cursor: not-allowed; }
+.dok-list { display: flex; flex-direction: column; gap: 10px; }
+.dok-card { display: flex; align-items: center; gap: 14px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 14px 18px; }
+.dok-icon { font-size: 28px; flex-shrink: 0; }
+.dok-info { flex: 1; min-width: 0; }
+.dok-nama { font-size: 14px; font-weight: 600; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dok-meta { display: flex; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
+.dok-ket { font-size: 12px; color: #374151; }
+.dok-size { font-size: 11px; color: #94a3b8; }
+.dok-date { font-size: 11px; color: #94a3b8; }
+.dok-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.btn-view { padding: 6px 14px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.btn-view:hover { background: #dbeafe; }
 </style>
