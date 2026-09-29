@@ -200,7 +200,7 @@ export class MasterController {
   @UseInterceptors(FileInterceptor('file'))
   uploadDokumenSite(
     @Param('id', ParseIntPipe) id: number,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: any,
     @Body('keterangan') keterangan?: string,
   ) {
     if (!file) throw new BadRequestException('File wajib diupload');

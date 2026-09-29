@@ -910,7 +910,7 @@ export class MasterService {
 
   async uploadDokumenSite(
     id_site: number,
-    file: Express.Multer.File,
+    file: any,
     keterangan?: string,
   ) {
     const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site } });

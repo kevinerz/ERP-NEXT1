@@ -78,7 +78,10 @@ export class DigiflazzClient {
       username: creds.username,
       sign: this.sign(creds, 'pricelist'),
     });
-    if (!Array.isArray(data)) throw new BadRequestException('Gagal ambil daftar produk Digiflazz');
+    if (!Array.isArray(data)) {
+      const detail = (data as any)?.message || (data as any)?.rc;
+      throw new BadRequestException(detail ? `Digiflazz: ${detail}` : 'Gagal ambil daftar produk Digiflazz — response tidak valid');
+    }
     let list = data as DigiflazzProduct[];
     if (opts?.category) list = list.filter((p) => p.category?.toLowerCase() === opts.category!.toLowerCase());
     return list.filter((p) => p.buyer_product_status && p.seller_product_status);
