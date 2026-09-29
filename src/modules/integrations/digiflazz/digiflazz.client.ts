@@ -1,47 +1,46 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { createHash } from 'crypto';
 
-export interface DigiflazzCreds {
+export interface HaybiCreds {
   username: string;
   api_key: string;
-  mode: 'production' | 'development';
 }
 
-export interface DigiflazzProduct {
-  buyer_sku_code: string;
-  product_name: string;
-  category: string;
-  brand: string;
-  type: string;
-  price: number;
-  seller_name: string;
-  buyer_product_status: boolean;
-  seller_product_status: boolean;
-  unlimited_stock: boolean;
-  stock: number;
-  desc: string;
+export interface HaybiProduct {
+  kode: string;
+  nama: string;
+  kategori: string;
+  operator: string;
+  harga: number;
+  harga_jual?: number;
+  status?: string;
+  deskripsi?: string;
 }
 
-export interface DigiflazzTrxResult {
-  ref_id: string;
-  customer_no: string;
-  buyer_sku_code: string;
-  message: string;
-  status: string; // Pending | Sukses | Gagal
-  rc?: string;
+export interface HaybiTrxResult {
+  ref_id?: string;
+  no_tujuan?: string;
+  produk?: string;
+  pesan: string;
+  status: string; // sukses | pending | error
+  rc: string;
   sn?: string;
-  price?: number;
-  buyer_last_saldo?: number;
+  harga?: number;
+  saldo_akhir?: number;
 }
 
-const BASE_URL = 'https://api.digiflazz.com/v1';
+const BASE_URL = 'https://haybi.id/api/h2h';
 
-/** DigiflazzClient — akses REST API Digiflazz (PPOB pulsa/paket data). Semua
- * request ditandatangani MD5(username + apikey + <konteks>) sesuai spek mereka. */
+/** HaybiClient — akses REST API Haybi H2H (PPOB pulsa/paket data).
+ * Sign: md5(username + api_key + ref_id), wajib di semua endpoint. */
 @Injectable()
-export class DigiflazzClient {
-  private sign(creds: DigiflazzCreds, context: string): string {
-    return createHash('md5').update(`${creds.username}${creds.api_key}${context}`).digest('hex');
+export class HaybiClient {
+  private sign(creds: HaybiCreds, ref_id: string): string {
+    return createHash('md5').update(`${creds.username}${creds.api_key}${ref_id}`).digest('hex');
+  }
+
+  private makeRef(): string {
+    return `haybi-${Date.now()}`;
   }
 
   private async post(path: string, body: Record<string, any>): Promise<any> {
@@ -51,65 +50,62 @@ export class DigiflazzClient {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(20_000),
     });
-    // Digiflazz sering balas detail error (rc/message) di body walau HTTP status-nya sendiri 4xx/5xx —
-    // coba parse body dulu sebelum nyerah ke pesan generik.
     let json: any;
     try { json = await res.json(); } catch { json = null; }
-    if (!res.ok) {
-      const detail = json?.data?.message || json?.message || json?.data?.rc;
-      throw new BadRequestException(detail ? `Digiflazz: ${detail}` : `Digiflazz API error ${res.status}`);
+    if (!res.ok || json?.status === 'error') {
+      const detail = json?.pesan || json?.message;
+      throw new BadRequestException(detail ? `Haybi: ${detail}` : `Haybi API error ${res.status}`);
     }
-    return json?.data;
+    return json;
   }
 
-  async getSaldo(creds: DigiflazzCreds): Promise<number> {
+  async getSaldo(creds: HaybiCreds): Promise<number> {
+    const ref_id = this.makeRef();
     const data = await this.post('/cek-saldo', {
-      cmd: 'deposit',
       username: creds.username,
-      sign: this.sign(creds, 'depo'),
+      ref_id,
+      sign: this.sign(creds, ref_id),
     });
-    if (data?.rc && data.rc !== '00') throw new BadRequestException(`Gagal cek saldo Digiflazz: ${data.message || data.rc}`);
-    return data?.saldo ?? 0;
+    if (data?.status === 'error') throw new BadRequestException(`Gagal cek saldo Haybi: ${data.pesan || data.rc}`);
+    return data?.saldo ?? data?.deposit ?? 0;
   }
 
-  async getPriceList(creds: DigiflazzCreds, opts?: { category?: string }): Promise<DigiflazzProduct[]> {
-    const data = await this.post('/price-list', {
-      cmd: 'prepaid',
+  async getProducts(creds: HaybiCreds, opts?: { kategori?: string; operator?: string }): Promise<HaybiProduct[]> {
+    const ref_id = this.makeRef();
+    const body: Record<string, any> = {
       username: creds.username,
-      sign: this.sign(creds, 'pricelist'),
-    });
-    if (!Array.isArray(data)) {
-      const detail = (data as any)?.message || (data as any)?.rc;
-      throw new BadRequestException(detail ? `Digiflazz: ${detail}` : 'Gagal ambil daftar produk Digiflazz — response tidak valid');
+      ref_id,
+      sign: this.sign(creds, ref_id),
+    };
+    if (opts?.kategori) body.kategori = opts.kategori;
+    if (opts?.operator) body.operator = opts.operator;
+
+    const data = await this.post('/produk', body);
+    const list = data?.produk ?? data?.data ?? data;
+    if (!Array.isArray(list)) {
+      throw new BadRequestException('Gagal ambil daftar produk Haybi — response tidak valid');
     }
-    let list = data as DigiflazzProduct[];
-    if (opts?.category) list = list.filter((p) => p.category?.toLowerCase() === opts.category!.toLowerCase());
-    return list.filter((p) => p.buyer_product_status && p.seller_product_status);
+    return list as HaybiProduct[];
   }
 
-  async buy(creds: DigiflazzCreds, params: { buyer_sku_code: string; customer_no: string; ref_id: string }): Promise<DigiflazzTrxResult> {
-    const data = await this.post('/transaction', {
+  async buy(creds: HaybiCreds, params: { kode_produk: string; no_tujuan: string; ref_id: string }): Promise<HaybiTrxResult> {
+    const data = await this.post('/transaksi', {
       username: creds.username,
-      buyer_sku_code: params.buyer_sku_code,
-      customer_no: params.customer_no,
       ref_id: params.ref_id,
       sign: this.sign(creds, params.ref_id),
-      testing: creds.mode === 'development',
+      produk: params.kode_produk,
+      no_tujuan: params.no_tujuan,
     });
-    if (!data) throw new BadRequestException('Respons Digiflazz kosong/tidak valid');
-    return data as DigiflazzTrxResult;
+    if (!data) throw new BadRequestException('Respons Haybi kosong/tidak valid');
+    return data as HaybiTrxResult;
   }
 
-  /** Cek ulang status transaksi yang masih Pending — pakai ref_id yg sama */
-  async checkStatus(creds: DigiflazzCreds, params: { buyer_sku_code: string; customer_no: string; ref_id: string }): Promise<DigiflazzTrxResult> {
-    const data = await this.post('/transaction', {
-      commands: 'status-pembelian',
+  async checkStatus(creds: HaybiCreds, ref_id: string): Promise<HaybiTrxResult> {
+    const data = await this.post('/cek-status', {
       username: creds.username,
-      buyer_sku_code: params.buyer_sku_code,
-      customer_no: params.customer_no,
-      ref_id: params.ref_id,
-      sign: this.sign(creds, params.ref_id),
+      ref_id,
+      sign: this.sign(creds, ref_id),
     });
-    return data as DigiflazzTrxResult;
+    return data as HaybiTrxResult;
   }
 }

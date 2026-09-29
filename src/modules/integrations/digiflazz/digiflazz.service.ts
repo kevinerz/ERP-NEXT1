@@ -2,10 +2,10 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { SecretCryptoService } from '../../../common/crypto/secret-crypto.service';
-import { DigiflazzClient } from './digiflazz.client';
+import { HaybiClient } from './digiflazz.client';
 import { ConnectDigiflazzDto, BeliDigiflazzDto } from './dto/digiflazz.dto';
 
-const DUPLIKAT_WINDOW_MS = 2 * 60 * 1000; // cegah klik ganda/retry setelah timeout ke Digiflazz
+const DUPLIKAT_WINDOW_MS = 2 * 60 * 1000; // cegah klik ganda/retry setelah timeout ke Haybi
 
 @Injectable()
 export class DigiflazzService {
@@ -14,7 +14,7 @@ export class DigiflazzService {
   constructor(
     private prisma: PrismaService,
     private crypto: SecretCryptoService,
-    private client: DigiflazzClient,
+    private client: HaybiClient,
   ) {}
 
   async getConfig() {
@@ -23,25 +23,25 @@ export class DigiflazzService {
   }
 
   async updateConfig(dto: ConnectDigiflazzDto) {
-    const creds = { username: dto.username, api_key: dto.api_key, mode: dto.mode };
+    const creds = { username: dto.username, api_key: dto.api_key };
     // Validasi kredensial langsung — cek saldo, gagal kalau username/apikey salah
     await this.client.getSaldo(creds);
 
     await this.prisma.integrationDigiflazzConfig.upsert({
       where: { id: 1 },
-      create: { id: 1, username: dto.username, api_key_enc: this.crypto.encrypt(dto.api_key), mode: dto.mode },
-      update: { username: dto.username, api_key_enc: this.crypto.encrypt(dto.api_key), mode: dto.mode },
+      create: { id: 1, username: dto.username, api_key_enc: this.crypto.encrypt(dto.api_key) },
+      update: { username: dto.username, api_key_enc: this.crypto.encrypt(dto.api_key) },
     });
-    return { message: 'Konfigurasi Digiflazz tersimpan & terverifikasi' };
+    return { message: 'Konfigurasi Haybi H2H tersimpan & terverifikasi' };
   }
 
   private async resolveCreds() {
     const row = await this.prisma.integrationDigiflazzConfig.findUnique({ where: { id: 1 } });
-    if (!row?.username || !row.api_key_enc) throw new BadRequestException('Digiflazz belum dikonfigurasi — buka Konfigurasi Digiflazz');
+    if (!row?.username || !row.api_key_enc) throw new BadRequestException('Haybi H2H belum dikonfigurasi — buka Konfigurasi Haybi');
     try {
-      return { username: row.username, api_key: this.crypto.decrypt(row.api_key_enc), mode: row.mode as 'production' | 'development' };
+      return { username: row.username, api_key: this.crypto.decrypt(row.api_key_enc) };
     } catch {
-      throw new BadRequestException('Konfigurasi Digiflazz rusak (kredensial tidak terbaca) — connect ulang');
+      throw new BadRequestException('Konfigurasi Haybi H2H rusak (kredensial tidak terbaca) — connect ulang');
     }
   }
 
@@ -51,9 +51,9 @@ export class DigiflazzService {
     return { data: { saldo } };
   }
 
-  async getPriceList(category?: string) {
+  async getPriceList(kategori?: string) {
     const creds = await this.resolveCreds();
-    const data = await this.client.getPriceList(creds, { category });
+    const data = await this.client.getProducts(creds, { kategori });
     return { data };
   }
 
@@ -69,7 +69,7 @@ export class DigiflazzService {
       where: {
         id_sumber: dto.id_sumber,
         buyer_sku_code: dto.buyer_sku_code,
-        metode: 'Digiflazz',
+        metode: 'Haybi',
         status_transaksi: { in: ['Sukses', 'Pending'] },
         tgl_topup: { gte: new Date(Date.now() - DUPLIKAT_WINDOW_MS) },
       },
@@ -84,12 +84,12 @@ export class DigiflazzService {
 
     const ref_id = `ERP-${Date.now()}-${randomBytes(3).toString('hex')}`;
     const result = await this.client.buy(creds, {
-      buyer_sku_code: dto.buyer_sku_code,
-      customer_no: sumber.nomor_pelanggan_isp,
+      kode_produk: dto.buyer_sku_code,
+      no_tujuan: sumber.nomor_pelanggan_isp,
       ref_id,
     });
 
-    const status_transaksi = result.status === 'Sukses' ? 'Sukses' : result.status === 'Gagal' ? 'Gagal' : 'Pending';
+    const status_transaksi = result.status === 'sukses' ? 'Sukses' : result.status === 'error' ? 'Gagal' : 'Pending';
 
     let data;
     try {
@@ -99,12 +99,12 @@ export class DigiflazzService {
           id_aset_sim: sumber.id_aset_sim,
           id_site: sumber.id_site,
           jenis_topup: 'Data',
-          nominal: result.price ?? 0,
-          harga_modal: result.price ?? 0,
+          nominal: result.harga ?? 0,
+          harga_modal: result.harga ?? 0,
           tgl_topup: new Date(),
           id_user: userId || null,
           keterangan: dto.keterangan,
-          metode: 'Digiflazz',
+          metode: 'Haybi',
           buyer_sku_code: dto.buyer_sku_code,
           customer_no: sumber.nomor_pelanggan_isp,
           ref_id,
@@ -118,40 +118,36 @@ export class DigiflazzService {
         },
       });
     } catch (err) {
-      // Transaksi sudah dieksekusi/diproses di Digiflazz tapi gagal dicatat lokal —
+      // Transaksi sudah dieksekusi/diproses di Haybi tapi gagal dicatat lokal —
       // jangan biarkan hilang tanpa jejak, ini menyangkut uang riil.
       this.logger.error(
-        `GAGAL SIMPAN CATATAN TOPUP setelah request ke Digiflazz — ref_id=${ref_id} status=${status_transaksi} ` +
+        `GAGAL SIMPAN CATATAN TOPUP setelah request ke Haybi H2H — ref_id=${ref_id} status=${status_transaksi} ` +
         `id_sumber=${dto.id_sumber} response=${JSON.stringify(result)}`,
         (err as Error)?.stack,
       );
       throw new BadRequestException(
-        `Transaksi ke Digiflazz ${status_transaksi === 'Sukses' ? 'BERHASIL' : 'sudah diproses'} (ref: ${ref_id}) ` +
+        `Transaksi ke Haybi H2H ${status_transaksi === 'Sukses' ? 'BERHASIL' : 'sudah diproses'} (ref: ${ref_id}) ` +
         'tapi GAGAL dicatat di sistem. JANGAN mengulangi pembelian ini — hubungi admin untuk rekonsiliasi manual.',
       );
     }
 
-    return { data, message: result.message || `Transaksi ${status_transaksi}` };
+    return { data, message: result.pesan || `Transaksi ${status_transaksi}` };
   }
 
   async checkStatus(idTopup: number) {
     const row = await this.prisma.simTopup.findUnique({ where: { id_topup: idTopup } });
     if (!row) throw new NotFoundException('Transaksi tidak ditemukan');
-    if (row.metode !== 'Digiflazz' || !row.ref_id || !row.buyer_sku_code || !row.customer_no)
-      throw new BadRequestException('Bukan transaksi Digiflazz');
+    if (row.metode !== 'Haybi' || !row.ref_id)
+      throw new BadRequestException('Bukan transaksi Haybi H2H');
 
     const creds = await this.resolveCreds();
-    const result = await this.client.checkStatus(creds, {
-      buyer_sku_code: row.buyer_sku_code,
-      customer_no: row.customer_no,
-      ref_id: row.ref_id,
-    });
-    const status_transaksi = result.status === 'Sukses' ? 'Sukses' : result.status === 'Gagal' ? 'Gagal' : 'Pending';
+    const result = await this.client.checkStatus(creds, row.ref_id);
+    const status_transaksi = result.status === 'sukses' ? 'Sukses' : result.status === 'error' ? 'Gagal' : 'Pending';
 
     const data = await this.prisma.simTopup.update({
       where: { id_topup: idTopup },
       data: { status_transaksi, serial_number: result.sn, provider_response: JSON.stringify(result) },
     });
-    return { data, message: `Status: ${status_transaksi}` };
+    return { data, message: result.pesan || `Status: ${status_transaksi}` };
   }
 }

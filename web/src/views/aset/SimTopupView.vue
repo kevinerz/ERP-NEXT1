@@ -67,11 +67,11 @@
             <span class="filter-sep">s/d</span>
             <input v-model="filterSampai" type="date" @change="fetchTopup" />
             <button class="btn-reset" @click="resetFilter">Reset</button>
-            <button v-if="digiConfigured" class="btn-beli" @click="openBeliModal">⚡ Beli Digiflazz</button>
+            <button v-if="digiConfigured" class="btn-beli" @click="openBeliModal">⚡ Beli Haybi H2H</button>
             <button class="btn-primary" @click="openModal">+ Tambah Topup</button>
-            <button v-if="bisaKelolaDigiflazz" class="btn-config" @click="openConfigModal" title="Konfigurasi Digiflazz">⚙️</button>
+            <button v-if="bisaKelolaDigiflazz" class="btn-config" @click="openConfigModal" title="Konfigurasi Haybi H2H">⚙️</button>
           </div>
-          <p v-if="digiConfigured && digiSaldo !== null" class="saldo-info">💰 Saldo Digiflazz: {{ fmtRp(digiSaldo) }}</p>
+          <p v-if="digiConfigured && digiSaldo !== null" class="saldo-info">💰 Saldo Haybi H2H: {{ fmtRp(digiSaldo) }}</p>
         </div>
 
         <!-- History table -->
@@ -112,7 +112,7 @@
                   <td><span class="jenis-chip" :class="jenisClass(t.jenis_topup)">{{ t.jenis_topup }}</span></td>
                   <td class="nominal">{{ fmtRp(t.nominal) }}</td>
                   <td>
-                    <span v-if="t.metode === 'Digiflazz'" class="status-chip" :class="statusClass(t.status_transaksi)">
+                    <span v-if="t.metode === 'Haybi'" class="status-chip" :class="statusClass(t.status_transaksi)">
                       {{ t.status_transaksi }}
                     </span>
                     <span v-else class="cell-sub">Manual</span>
@@ -120,7 +120,7 @@
                   <td class="ket">{{ t.keterangan || '—' }}</td>
                   <td>{{ t.user?.karyawan?.nama_lengkap || '—' }}</td>
                   <td class="nowrap">
-                    <button v-if="t.metode === 'Digiflazz' && t.status_transaksi === 'Pending'" class="btn-cek-sm" @click="cekStatus(t.id_topup)">Cek Status</button>
+                    <button v-if="t.metode === 'Haybi' && t.status_transaksi === 'Pending'" class="btn-cek-sm" @click="cekStatus(t.id_topup)">Cek Status</button>
                     <button class="btn-hapus-sm" @click="deleteTopup(t.id_topup)">Hapus</button>
                   </td>
                 </tr>
@@ -194,7 +194,7 @@
       <div v-if="showBeliModal" class="modal-overlay" @click.self="showBeliModal = false">
         <div class="modal modal-lg">
           <div class="modal-header">
-            <h3>⚡ Beli Pulsa/Paket Data — Digiflazz</h3>
+            <h3>⚡ Beli Pulsa/Paket Data — Haybi H2H</h3>
             <button class="modal-close" @click="showBeliModal = false">✕</button>
           </div>
           <div class="modal-body">
@@ -215,14 +215,14 @@
             <div class="produk-list">
               <div v-if="loadingProduk" class="empty-state">Memuat daftar produk...</div>
               <div v-else-if="!produkFiltered.length" class="empty-state">Tidak ada produk cocok</div>
-              <div v-for="p in produkFiltered" :key="p.buyer_sku_code"
-                class="produk-item" :class="{ selected: beliForm.buyer_sku_code === p.buyer_sku_code }"
-                @click="beliForm.buyer_sku_code = p.buyer_sku_code">
+              <div v-for="p in produkFiltered" :key="p.kode"
+                class="produk-item" :class="{ selected: beliForm.buyer_sku_code === p.kode }"
+                @click="beliForm.buyer_sku_code = p.kode">
                 <div class="produk-info">
-                  <div class="produk-name">{{ p.product_name }}</div>
-                  <div class="produk-sub">{{ p.brand }} · {{ p.category }}</div>
+                  <div class="produk-name">{{ p.nama }}</div>
+                  <div class="produk-sub">{{ p.operator }} · {{ p.kategori }}</div>
                 </div>
-                <div class="produk-price">{{ fmtRp(p.price) }}</div>
+                <div class="produk-price">{{ fmtRp(p.harga) }}</div>
               </div>
             </div>
             <div class="form-row">
@@ -246,24 +246,17 @@
       <div v-if="showConfigModal" class="modal-overlay" @click.self="showConfigModal = false">
         <div class="modal">
           <div class="modal-header">
-            <h3>⚙️ Konfigurasi Digiflazz</h3>
+            <h3>⚙️ Konfigurasi Haybi H2H</h3>
             <button class="modal-close" @click="showConfigModal = false">✕</button>
           </div>
           <div class="modal-body">
             <div class="form-row">
-              <label>Username Digiflazz</label>
-              <input v-model="configForm.username" type="text" placeholder="username akun Digiflazz" />
+              <label>Username Haybi H2H</label>
+              <input v-model="configForm.username" type="text" placeholder="username akun Haybi H2H" />
             </div>
             <div class="form-row">
               <label>API Key {{ configHasKey ? '(sudah tersimpan — isi hanya jika ingin ganti)' : '' }}</label>
-              <input v-model="configForm.api_key" type="password" :placeholder="configHasKey ? '••••••••' : 'API Key Digiflazz'" />
-            </div>
-            <div class="form-row">
-              <label>Mode</label>
-              <select v-model="configForm.mode">
-                <option value="production">Production (transaksi nyata)</option>
-                <option value="development">Development (testing, tidak potong saldo asli)</option>
-              </select>
+              <input v-model="configForm.api_key" type="password" :placeholder="configHasKey ? '••••••••' : 'API Key Haybi H2H'" />
             </div>
             <p v-if="configError" class="form-error">{{ configError }}</p>
             <p v-if="configMsg" class="config-msg">{{ configMsg }}</p>
@@ -322,12 +315,12 @@ const produkFiltered = computed(() => {
   const q = produkSearch.value.trim().toLowerCase()
   if (!q) return produkList.value.slice(0, 100)
   return produkList.value.filter((p) =>
-    p.product_name?.toLowerCase().includes(q) || p.brand?.toLowerCase().includes(q),
+    p.nama?.toLowerCase().includes(q) || p.operator?.toLowerCase().includes(q) || p.kategori?.toLowerCase().includes(q),
   ).slice(0, 100)
 })
 
 const showConfigModal = ref(false)
-const configForm = ref({ username: '', api_key: '', mode: 'production' })
+const configForm = ref({ username: '', api_key: '' })
 const configHasKey = ref(false)
 const configError = ref('')
 const configMsg = ref('')
@@ -378,7 +371,7 @@ async function openConfigModal() {
   showConfigModal.value = true
   try {
     const cfg = (await api.get('/digiflazz/config')).data.data
-    configForm.value = { username: cfg.username || '', api_key: '', mode: cfg.mode || 'production' }
+    configForm.value = { username: cfg.username || '', api_key: '' }
     configHasKey.value = !!cfg.has_api_key
   } catch {}
 }

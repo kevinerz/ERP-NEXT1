@@ -1,9 +1,8 @@
-import { IsString, IsOptional, IsInt, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsInt } from 'class-validator';
 
 export class ConnectDigiflazzDto {
   @IsString() username: string;
   @IsString() api_key: string;
-  @IsIn(['production', 'development']) mode: 'production' | 'development';
 }
 
 export class BeliDigiflazzDto {
