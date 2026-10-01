@@ -1,4 +1,4 @@
-import { ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ExecutionContext, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -8,8 +8,7 @@ import { TokenBlacklistService } from '../../modules/auth/token-blacklist.servic
 export class JwtAuthGuard extends AuthGuard('jwt') {
   constructor(
     private reflector: Reflector,
-    // Opsional: diisi saat guard didaftarkan di main.ts (app.get)
-    private tokenBlacklist?: TokenBlacklistService,
+    @Optional() private tokenBlacklist?: TokenBlacklistService,
   ) {
     super();
   }

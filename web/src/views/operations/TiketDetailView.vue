@@ -48,7 +48,7 @@ const previewUrl = ref('')
 async function fetchFotos() {
   try {
     const { data } = await api.get(`/operations/${id}/fotos`)
-    fotos.value = data.data ?? data
+    fotos.value = data.data ?? []
   } catch { /* silent */ }
 }
 
@@ -324,6 +324,9 @@ async function handleEdit() {
 }
 
 async function handleAddLog() {
+  if (!logForm.value.status_ke && !logForm.value.catatan?.trim()) {
+    flash('Isi status atau catatan terlebih dahulu'); return
+  }
   logSubmitting.value = true
   try {
     await ops.addLog({ id_ticket: id, status_ke: logForm.value.status_ke || undefined, catatan: logForm.value.catatan || undefined })
@@ -331,7 +334,7 @@ async function handleAddLog() {
     showLogModal.value = false
     logForm.value = { status_ke: '', catatan: '' }
     flash('Log ditambahkan')
-  } catch { flash('Gagal tambah log') }
+  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal tambah log') }
   finally { logSubmitting.value = false }
 }
 
@@ -363,15 +366,19 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
 
 const confirmHapusTiket = ref(false)
 const hapusTiketError = ref('')
+const hapusLoading = ref(false)
 
 function hapusTiket() { hapusTiketError.value = ''; confirmHapusTiket.value = true }
 
 async function doHapusTiket() {
+  if (hapusLoading.value) return
   confirmHapusTiket.value = false
+  hapusLoading.value = true
   try {
     await api.delete(`/operations/${id}`)
     router.push('/operations')
   } catch (e: any) { hapusTiketError.value = e?.response?.data?.message || 'Gagal menghapus tiket' }
+  finally { hapusLoading.value = false }
 }
 
 function slaInfo(t: any): { label: string; cls: string } {
@@ -394,7 +401,12 @@ function ageHours(d: string) {
   const endMs = (t && (t.status_tiket === 'Resolved' || t.status_tiket === 'Closed') && t.tgl_resolved)
     ? new Date(t.tgl_resolved).getTime()
     : Date.now()
-  const h = Math.floor((endMs - new Date(d).getTime()) / 3600000)
+  const totalMs = endMs - new Date(d).getTime()
+  const h = Math.floor(totalMs / 3600000)
+  if (h === 0) {
+    const m = Math.floor(totalMs / 60000)
+    return m < 1 ? '<1 menit' : `${m} menit`
+  }
   return h < 24 ? `${h} jam` : `${Math.floor(h / 24)} hari`
 }
 
@@ -403,6 +415,14 @@ function journeyStep(t: any) {
   if (t.tgl_sampai) return 2
   if (t.tgl_berangkat) return 1
   return 0
+}
+
+async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
+  try {
+    await ops.update(id, { [field]: new Date().toISOString() })
+    await ops.fetchOne(id)
+    flash(field === 'tgl_berangkat' ? 'Waktu berangkat dicatat' : 'Waktu tiba dicatat')
+  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal mencatat waktu') }
 }
 </script>
 
@@ -685,7 +705,10 @@ function journeyStep(t: any) {
                 <div class="jstep-body">
                   <div class="jstep-label">Berangkat</div>
                   <div class="jstep-time" v-if="ops.current.tgl_berangkat">{{ fmtDt(ops.current.tgl_berangkat) }}</div>
-                  <div class="jstep-time pending" v-else>—</div>
+                  <template v-else>
+                    <div class="jstep-time pending">—</div>
+                    <button v-if="!['Resolved','Closed'].includes(ops.current.status_tiket)" class="btn-journey" @click="setJourneyTime('tgl_berangkat')">Catat Berangkat</button>
+                  </template>
                   <div v-if="teknisiLokasi && ops.current.tgl_berangkat" class="jstep-gps">
                     📡 {{ Number(teknisiLokasi.latitude).toFixed(5) }}, {{ Number(teknisiLokasi.longitude).toFixed(5) }}
                   </div>
@@ -697,7 +720,10 @@ function journeyStep(t: any) {
                 <div class="jstep-body">
                   <div class="jstep-label">Tiba di Lokasi</div>
                   <div class="jstep-time" v-if="ops.current.tgl_sampai">{{ fmtDt(ops.current.tgl_sampai) }}</div>
-                  <div class="jstep-time pending" v-else>—</div>
+                  <template v-else>
+                    <div class="jstep-time pending">—</div>
+                    <button v-if="ops.current.tgl_berangkat && !['Resolved','Closed'].includes(ops.current.status_tiket)" class="btn-journey" @click="setJourneyTime('tgl_sampai')">Catat Tiba</button>
+                  </template>
                 </div>
               </div>
               <div class="journey-line" :class="{ done: journeyStep(ops.current) >= 3 }"></div>
@@ -1071,6 +1097,8 @@ function journeyStep(t: any) {
 .jstep-time { font-size: 11px; color: #64748b; margin-top: 1px; }
 .jstep-time.pending { color: #cbd5e1; }
 .jstep-gps { font-size: 10px; color: #94a3b8; font-family: monospace; margin-top: 2px; }
+.btn-journey { margin-top: 4px; padding: 3px 10px; font-size: 11px; border: 1px solid #3b82f6; color: #3b82f6; background: transparent; border-radius: 4px; cursor: pointer; }
+.btn-journey:hover { background: #eff6ff; }
 
 .journey-line { width: 2px; height: 20px; background: #e2e8f0; margin: 2px 0 2px 17px; transition: background 0.2s; border-radius: 2px; }
 .journey-line.done { background: #86efac; }

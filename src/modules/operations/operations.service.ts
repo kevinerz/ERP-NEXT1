@@ -167,8 +167,8 @@ export class OperationsService {
             },
           });
           if (!site) return;
-          const perangkat = (dto as any).id_perangkat ? await this.prisma.perangkatSite.findUnique({
-            where: { id_perangkat: (dto as any).id_perangkat },
+          const perangkat = dto.id_perangkat ? await this.prisma.perangkatSite.findUnique({
+            where: { id_perangkat: dto.id_perangkat },
             select: { jenis_perangkat: true, merk: true, tipe_model: true },
           }) : null;
           const tipePerangkat = perangkat
@@ -190,7 +190,7 @@ export class OperationsService {
             koordinat_site: site.koordinat_gps ?? '',
             no_hp_pic: site.pic[0]?.no_kontak ?? '',
             tipe_perangkat: tipePerangkat,
-            sensor_detail: (dto as any).deskripsi_masalah ?? '',
+            sensor_detail: dto.deskripsi_masalah ?? '',
             waktu_down: waktuDown,
           });
         })().catch(() => {});
@@ -221,11 +221,21 @@ export class OperationsService {
     if (dto.status_tiket === 'Closed') {
       updateData.tgl_closed = new Date();
     }
-    // Prioritas berubah → hitung ulang deadline SLA dari tgl_open
-    if (dto.prioritas && dto.prioritas !== ticket.prioritas) {
-      updateData.sla_due = hitungSlaDue(dto.prioritas, ticket.tgl_open);
-      updateData.sla_breached = false; // dinilai ulang oleh scheduler
+    // Reopen: reset SLA dari sekarang agar tiket tidak langsung tampil TELAT
+    const wasResolved = ['Resolved', 'Closed'].includes(ticket.status_tiket ?? '');
+    const isReopened  = dto.status_tiket && !['Resolved', 'Closed'].includes(dto.status_tiket) && wasResolved;
+    if (isReopened) {
+      updateData.tgl_resolved = null;
+      updateData.sla_due = hitungSlaDue(dto.prioritas ?? ticket.prioritas ?? 'Medium', new Date());
+      updateData.sla_breached = false;
     }
+    // Prioritas berubah → hitung ulang deadline SLA dari tgl_open
+    if (!isReopened && dto.prioritas && dto.prioritas !== ticket.prioritas) {
+      updateData.sla_due = hitungSlaDue(dto.prioritas, ticket.tgl_open);
+      updateData.sla_breached = false;
+    }
+    if (dto.tgl_berangkat !== undefined) updateData.tgl_berangkat = dto.tgl_berangkat ? new Date(dto.tgl_berangkat) : null;
+    if (dto.tgl_sampai   !== undefined) updateData.tgl_sampai   = dto.tgl_sampai   ? new Date(dto.tgl_sampai)   : null;
 
     const data = await this.prisma.operationTicket.update({
       where: { id_ticket: id },
@@ -467,10 +477,10 @@ export class OperationsService {
       orderBy: { created_at: 'asc' },
     });
     const BASE = process.env.APP_URL || 'https://1erp.nextone.id';
-    return fotos.map(f => ({
+    return { data: fotos.map(f => ({
       ...f,
       url: `${BASE}/uploads/tickets/${id_ticket}/${f.filename}`,
-    }));
+    })) };
   }
 
   async remove(id: number) {

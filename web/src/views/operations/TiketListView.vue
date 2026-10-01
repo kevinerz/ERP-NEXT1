@@ -60,6 +60,7 @@ async function handleSubmit() {
     if (!payload.id_teknisi_pic) delete payload.id_teknisi_pic
     const result = await ops.create(payload)
     showModal.value = false
+    form.value = { id_site: 0, judul_tiket: '', deskripsi_masalah: '', prioritas: 'Medium', sumber_tiket: 'Internal', id_teknisi_pic: 0 }
     router.push(`/operations/${result.id_ticket}`)
   } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal membuat tiket' }
   finally { submitting.value = false }
