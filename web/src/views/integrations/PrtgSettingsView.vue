@@ -30,7 +30,7 @@ async function toggleAktif() {
 }
 
 // ─── KONEKSI ──────────────────────────────────────────────────
-const configForm = ref({ base_url: '', username: '', passhash: '', durasi_konfirmasi_menit: 10 })
+const configForm = ref({ base_url: '', username: '', passhash: '', durasi_konfirmasi_menit: 10, cooldown_flapping_menit: 60 })
 const configHasPasshash = ref(false)
 const savingConfig = ref(false)
 const configMsg = ref('')
@@ -43,6 +43,14 @@ const DURASI_OPTIONS = [
   { value: 20, label: '20 menit — koneksi sangat tidak stabil' },
 ]
 
+const COOLDOWN_OPTIONS = [
+  { value: 0,   label: '0 menit — nonaktif (tiket baru setiap down)' },
+  { value: 30,  label: '30 menit' },
+  { value: 60,  label: '60 menit — rekomendasi (1 jam)' },
+  { value: 120, label: '2 jam' },
+  { value: 240, label: '4 jam' },
+]
+
 async function fetchConfig() {
   try {
     const d = (await api.get('/prtg/config')).data.data
@@ -50,6 +58,7 @@ async function fetchConfig() {
     configForm.value.username = d.username
     configHasPasshash.value = d.has_passhash
     configForm.value.durasi_konfirmasi_menit = d.durasi_konfirmasi_menit ?? 10
+    configForm.value.cooldown_flapping_menit = d.cooldown_flapping_menit ?? 60
   } catch {}
 }
 async function saveConfig() {
@@ -562,6 +571,37 @@ async function submitProvision() {
           </div>
         </div>
 
+        <div class="field" style="margin-top:20px">
+          <label>Cooldown Anti-Flapping</label>
+          <select v-model.number="configForm.cooldown_flapping_menit">
+            <option v-for="o in COOLDOWN_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+          </select>
+          <p class="field-hint">
+            Jika device kembali DOWN dalam waktu ini setelah tiket di-resolve, tiket lama akan
+            <strong>dibuka kembali</strong> (bukan tiket baru). Ini mencegah banjir tiket dari device
+            yang flapping (naik-turun berulang). Log flapping tetap tercatat di dalam tiket.
+          </p>
+        </div>
+
+        <div v-if="configForm.cooldown_flapping_menit > 0" class="durasi-preview">
+          <div class="durasi-flow">
+            <div class="dp-step dp-ok">Tiket Resolved</div>
+            <div class="dp-arrow-split">
+              <div>
+                <div class="dp-arrow">→ DOWN dalam {{ configForm.cooldown_flapping_menit }} menit →</div>
+                <div class="dp-step dp-warn">Reopen tiket lama<br><small>Log flapping #N ditambahkan</small></div>
+              </div>
+              <div>
+                <div class="dp-arrow">→ DOWN setelah {{ configForm.cooldown_flapping_menit }} menit →</div>
+                <div class="dp-step dp-ok">Tiket baru dibuat<br><small>Outage berbeda</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="durasi-preview">
+          <p class="hint" style="margin:0;color:#f97316">⚠️ Cooldown nonaktif — setiap down akan membuat tiket baru, termasuk saat flapping.</p>
+        </div>
+
         <button class="btn-submit" @click="saveConfig" :disabled="savingConfig">
           {{ savingConfig ? 'Menyimpan...' : 'Simpan Konfigurasi' }}
         </button>
@@ -855,7 +895,11 @@ async function submitProvision() {
 .dp-silent { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
 .dp-arrow { font-size: 12px; color: #94a3b8; white-space: nowrap; font-weight: 600; }
 .dp-split { display: flex; flex-direction: column; gap: 6px; }
+.dp-arrow-split { display: flex; gap: 20px; flex-wrap: wrap; }
+.dp-arrow-split > div { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.dp-arrow-split .dp-arrow { white-space: normal; text-align: center; max-width: 160px; }
 .dp-step small { font-weight: 400; display: block; margin-top: 2px; }
+.field-hint { font-size: 12px; color: #64748b; margin-top: 6px; line-height: 1.5; }
 
 .status-bar { display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; color: #334155; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; }

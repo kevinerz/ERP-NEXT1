@@ -180,6 +180,14 @@ export class PrtgService {
     } catch { return 10; }
   }
 
+  /** Cooldown anti-flapping: menit setelah resolved sebelum boleh buat tiket baru (default 60). */
+  private async getCooldownFlapping(): Promise<number> {
+    try {
+      const row = await this.prisma.integrationPrtgConfig.findUnique({ where: { id: 1 } });
+      return (row as any)?.cooldown_flapping_menit ?? 60;
+    } catch { return 60; }
+  }
+
   @Cron('*/1 * * * *')
   async poll() {
     // PAUSE TOTAL: polling PRTG MATI kecuali env PRTG_POLL_ENABLED=true.
@@ -196,7 +204,8 @@ export class PrtgService {
     }
 
     const durasiKonfirmasiMenit = await this.getDurasiKonfirmasi();
-    const hasil = { tiket_dibuat: 0, pending_baru: 0, false_alarm: 0, dilewati: 0, auto_resolved: 0, tanpa_site: 0 };
+    const cooldownMenit = await this.getCooldownFlapping();
+    const hasil = { tiket_dibuat: 0, flapping_reopened: 0, pending_baru: 0, false_alarm: 0, dilewati: 0, auto_resolved: 0, tanpa_site: 0 };
     const now = new Date();
     const downDevices = new Set(downSensors.map((s) => s.device));
 
@@ -277,14 +286,16 @@ export class PrtgService {
 
       let ticketId: number | null = null;
       if (site) {
-        const ticket = await this.buatTiketPrtg(
+        const { ticket, isReopen } = await this.buatTiketPrtg(
           { sensorId: firstEntry.prtg_sensor_id ?? '', device, sensor: sensorNames, message: firstEntry.pesan_alert },
           site,
+          cooldownMenit,
         );
         ticketId = ticket.id_ticket;
-        hasil.tiket_dibuat++;
+        if (isReopen) hasil.flapping_reopened++;
+        else hasil.tiket_dibuat++;
         for (const s of downSensorList) {
-          this.prtg.acknowledgeAlarm(s.objid, `Tiket ${ticket.nomor_tiket} dibuat oleh sistem ERP`).catch(() => {});
+          this.prtg.acknowledgeAlarm(s.objid, `Tiket ${ticket.nomor_tiket} ${isReopen ? 'dibuka kembali (flapping)' : 'dibuat'} oleh sistem ERP`).catch(() => {});
         }
       } else {
         hasil.tanpa_site++;
@@ -363,10 +374,10 @@ export class PrtgService {
       await this.prisma.integrationPrtgWebhook.delete({ where: { id_webhook: w.id_webhook } }).catch(() => {});
     }
 
-    if (hasil.tiket_dibuat || hasil.auto_resolved || hasil.false_alarm || hasil.pending_baru) {
+    if (hasil.tiket_dibuat || hasil.flapping_reopened || hasil.auto_resolved || hasil.false_alarm || hasil.pending_baru) {
       this.logger.log(`PRTG poll: ${JSON.stringify(hasil)}`);
     }
-    return { data: hasil, message: `Poll selesai: ${hasil.pending_baru} pending, ${hasil.tiket_dibuat} tiket dibuat, ${hasil.false_alarm} false alarm dihindari, ${hasil.auto_resolved} auto-resolved` };
+    return { data: hasil, message: `Poll selesai: ${hasil.pending_baru} pending, ${hasil.tiket_dibuat} tiket dibuat, ${hasil.flapping_reopened} flapping reopened, ${hasil.false_alarm} false alarm, ${hasil.auto_resolved} auto-resolved` };
   }
 
   private async genNomorTiket(now: Date): Promise<string> {
@@ -381,12 +392,67 @@ export class PrtgService {
 
   // Dipakai poll() (sensor down real-time) & createMapping() (retroaktif utk
   // webhook yang sudah tersimpan tanpa tiket sebelum device-nya di-mapping).
+  // Mengembalikan { ticket, isReopen } — isReopen=true jika tiket lama dibuka kembali (flapping).
   private async buatTiketPrtg(
     info: { sensorId: string; device: string; sensor: string; message?: string | null },
     site: { id_site: number; nama_site: string },
-  ) {
+    cooldownMenit = 60,
+  ): Promise<{ ticket: any; isReopen: boolean }> {
     const prioritas = info.sensor.toLowerCase().includes('ping') ? 'Critical' : 'High';
     const now = new Date();
+
+    // ── Cek cooldown flapping ─────────────────────────────────────────
+    // Jika ada tiket PRTG untuk site ini yang di-resolve dalam cooldownMenit terakhir,
+    // reopen tiket itu daripada membuat tiket baru (mencegah banjir tiket flapping).
+    const cooldownSince = new Date(now.getTime() - cooldownMenit * 60_000);
+    const ticketFlapping = await this.prisma.operationTicket.findFirst({
+      where: {
+        id_site: site.id_site,
+        sumber_tiket: 'PRTG',
+        judul_tiket: { contains: info.device },
+        status_tiket: { in: ['Resolved', 'Closed'] },
+        tgl_resolved: { gte: cooldownSince },
+      },
+      orderBy: { tgl_resolved: 'desc' },
+    });
+
+    if (ticketFlapping) {
+      const menitSejak = Math.round((now.getTime() - new Date(ticketFlapping.tgl_resolved!).getTime()) / 60_000);
+      // Hitung berapa kali sudah flapping (jumlah log "flapping" di tiket ini)
+      const jmlFlapping = await this.prisma.operationTicketLog.count({
+        where: { id_ticket: ticketFlapping.id_ticket, catatan: { contains: 'flapping' } },
+      });
+
+      await this.prisma.operationTicket.update({
+        where: { id_ticket: ticketFlapping.id_ticket },
+        data: {
+          status_tiket: 'In_Progress',
+          tgl_resolved: null,
+          sla_due: new Date(now.getTime() + (SLA_JAM[ticketFlapping.prioritas] ?? 4) * 3600_000),
+          sla_breached: false,
+        },
+      });
+      await this.prisma.operationTicketLog.create({
+        data: {
+          id_ticket: ticketFlapping.id_ticket,
+          status_dari: ticketFlapping.status_tiket,
+          status_ke: 'In_Progress',
+          catatan: `⚠️ Device flapping #${jmlFlapping + 1}: kembali DOWN ${menitSejak} menit setelah terakhir UP — cooldown ${cooldownMenit} menit`,
+        },
+      });
+      this.notif.notifyForModul('operations', {
+        tipe: 'tiket_update',
+        judul: `⚠️ Flapping #${jmlFlapping + 1}: ${info.device} DOWN lagi`,
+        deskripsi: `${ticketFlapping.nomor_tiket} — ${menitSejak} menit setelah UP`,
+        url: `/operations/${ticketFlapping.id_ticket}`,
+      }).catch(() => {});
+      this.logger.warn(
+        `PRTG flapping #${jmlFlapping + 1} terdeteksi: ${info.device} DOWN lagi setelah ${menitSejak} menit — reopen ${ticketFlapping.nomor_tiket}`,
+      );
+      return { ticket: ticketFlapping, isReopen: true };
+    }
+
+    // ── Tiket baru (tidak dalam cooldown) ─────────────────────────────
     const nomor = await this.genNomorTiket(now);
     const ticket = await this.prisma.operationTicket.create({
       data: {
@@ -442,7 +508,7 @@ export class PrtgService {
       });
     })().catch(() => {});
 
-    return ticket;
+    return { ticket, isReopen: false };
   }
 
   // ─── KONFIGURASI KONEKSI ────────────────────────────────────────
@@ -455,11 +521,12 @@ export class PrtgService {
         username: row?.username || '',
         has_passhash: !!row?.passhash,
         durasi_konfirmasi_menit: row?.durasi_konfirmasi_menit ?? 10,
+        cooldown_flapping_menit: (row as any)?.cooldown_flapping_menit ?? 60,
       },
     };
   }
 
-  async updateConfig(dto: { base_url?: string; username?: string; passhash?: string; durasi_konfirmasi_menit?: number }) {
+  async updateConfig(dto: { base_url?: string; username?: string; passhash?: string; durasi_konfirmasi_menit?: number; cooldown_flapping_menit?: number }) {
     await this.prisma.integrationPrtgConfig.upsert({
       where: { id: 1 },
       create: {
@@ -468,12 +535,14 @@ export class PrtgService {
         username: dto.username || null,
         passhash: dto.passhash ? this.crypto.encrypt(dto.passhash) : null,
         durasi_konfirmasi_menit: dto.durasi_konfirmasi_menit ?? 10,
+        ...(dto.cooldown_flapping_menit !== undefined && { cooldown_flapping_menit: dto.cooldown_flapping_menit } as any),
       },
       update: {
         base_url: dto.base_url !== undefined ? dto.base_url : undefined,
         username: dto.username !== undefined ? dto.username : undefined,
         passhash: dto.passhash ? this.crypto.encrypt(dto.passhash) : undefined,
         durasi_konfirmasi_menit: dto.durasi_konfirmasi_menit !== undefined ? dto.durasi_konfirmasi_menit : undefined,
+        ...(dto.cooldown_flapping_menit !== undefined && { cooldown_flapping_menit: dto.cooldown_flapping_menit } as any),
       },
     });
     return { message: 'Konfigurasi PRTG disimpan' };
@@ -542,7 +611,7 @@ export class PrtgService {
     });
     let tiket_dibuat = false;
     if (pending && pending.prtg_sensor_id) {
-      const ticket = await this.buatTiketPrtg(
+      const { ticket } = await this.buatTiketPrtg(
         { sensorId: pending.prtg_sensor_id, device: dto.device_name, sensor: pending.prtg_sensor_name || 'Sensor', message: pending.pesan_alert },
         site,
       );

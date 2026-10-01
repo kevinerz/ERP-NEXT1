@@ -1111,6 +1111,7 @@ model IntegrationPrtgConfig {
   passhash                String?  @db.VarChar(100)
   is_aktif                Boolean  @default(true)  // false = polling dijeda (hemat resource)
   durasi_konfirmasi_menit Int      @default(10)    // menit Down sebelum tiket + WA dibuat (anti false alarm)
+  cooldown_flapping_menit Int      @default(60)    // menit setelah resolve sebelum boleh buat tiket baru (anti flapping)
   updated_at              DateTime @default(now()) @updatedAt
 
   @@map("integration_prtg_config")
