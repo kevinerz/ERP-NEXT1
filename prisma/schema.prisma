@@ -670,6 +670,7 @@ model OperationTicket {
   tgl_closed                 DateTime?
   sla_due                    DateTime?
   sla_breached               Boolean   @default(false)
+  tgl_sensor_down            DateTime? // Waktu sensor PRTG pertama DOWN (sebelum grace period)
   tgl_berangkat              DateTime?
   tgl_sampai                 DateTime?
   created_at                 DateTime  @default(now())

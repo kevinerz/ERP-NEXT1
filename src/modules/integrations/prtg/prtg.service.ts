@@ -287,7 +287,7 @@ export class PrtgService {
       let ticketId: number | null = null;
       if (site) {
         const { ticket, isReopen } = await this.buatTiketPrtg(
-          { sensorId: firstEntry.prtg_sensor_id ?? '', device, sensor: sensorNames, message: firstEntry.pesan_alert },
+          { sensorId: firstEntry.prtg_sensor_id ?? '', device, sensor: sensorNames, message: firstEntry.pesan_alert, sensorDownAt: (firstEntry.first_seen_at as unknown) as Date },
           site,
           cooldownMenit,
         );
@@ -394,7 +394,7 @@ export class PrtgService {
   // webhook yang sudah tersimpan tanpa tiket sebelum device-nya di-mapping).
   // Mengembalikan { ticket, isReopen } — isReopen=true jika tiket lama dibuka kembali (flapping).
   private async buatTiketPrtg(
-    info: { sensorId: string; device: string; sensor: string; message?: string | null },
+    info: { sensorId: string; device: string; sensor: string; message?: string | null; sensorDownAt?: Date },
     site: { id_site: number; nama_site: string },
     cooldownMenit = 60,
   ): Promise<{ ticket: any; isReopen: boolean }> {
@@ -428,10 +428,11 @@ export class PrtgService {
         data: {
           status_tiket: 'In_Progress',
           tgl_resolved: null,
+          tgl_sensor_down: info.sensorDownAt ?? now,
           sla_due: new Date(now.getTime() + (SLA_JAM[ticketFlapping.prioritas] ?? 4) * 3600_000),
           sla_breached: false,
         },
-      });
+      } as any);
       await this.prisma.operationTicketLog.create({
         data: {
           id_ticket: ticketFlapping.id_ticket,
@@ -462,8 +463,9 @@ export class PrtgService {
         deskripsi_masalah: info.message || `Sensor ${info.sensor} pada ${info.device} down`,
         prioritas,
         sumber_tiket: 'PRTG',
+        tgl_sensor_down: info.sensorDownAt ?? now,
         sla_due: new Date(now.getTime() + (SLA_JAM[prioritas] ?? 24) * 3600_000),
-      },
+      } as any,
     });
     await this.prisma.operationTicketLog.create({
       data: { id_ticket: ticket.id_ticket, status_ke: 'Open', catatan: `Tiket dibuat otomatis dari PRTG (sensor #${info.sensorId})` },
@@ -612,7 +614,7 @@ export class PrtgService {
     let tiket_dibuat = false;
     if (pending && pending.prtg_sensor_id) {
       const { ticket } = await this.buatTiketPrtg(
-        { sensorId: pending.prtg_sensor_id, device: dto.device_name, sensor: pending.prtg_sensor_name || 'Sensor', message: pending.pesan_alert },
+        { sensorId: pending.prtg_sensor_id, device: dto.device_name, sensor: pending.prtg_sensor_name || 'Sensor', message: pending.pesan_alert, sensorDownAt: pending.diterima_pada },
         site,
       );
       await this.prisma.integrationPrtgWebhook.update({ where: { id_webhook: pending.id_webhook }, data: { id_ticket_terbentuk: ticket.id_ticket } });

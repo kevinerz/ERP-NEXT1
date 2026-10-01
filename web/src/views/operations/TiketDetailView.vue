@@ -122,6 +122,33 @@ async function fetchPrtgTicketEvents() {
   } catch { /* silent */ }
 }
 
+// Downtime dari tgl_sensor_down (langsung di tiket) — tersedia meski webhook sudah dibersihkan
+const downtimeInfo = computed(() => {
+  const t = ops.current
+  if (!t || t.sumber_tiket !== 'PRTG') return null
+  const waktuDown = prtgEvents.value?.waktu_down ?? (t as any).tgl_sensor_down ?? null
+  if (!waktuDown) return null
+  const waktuUp = prtgEvents.value?.waktu_up ?? t.tgl_resolved ?? null
+  const sudahUp = !!waktuUp && ['Resolved', 'Closed'].includes(t.status_tiket ?? '')
+  let durasiLabel = '—'
+  if (waktuDown && waktuUp && sudahUp) {
+    const totalSec = Math.floor((new Date(waktuUp).getTime() - new Date(waktuDown).getTime()) / 1000)
+    const jam = Math.floor(totalSec / 3600)
+    const menit = Math.floor((totalSec % 3600) / 60)
+    const dtk = totalSec % 60
+    durasiLabel = jam > 0 ? `${jam} jam ${menit > 0 ? menit + ' menit' : ''}`
+      : menit > 0 ? `${menit} menit ${dtk} detik` : `${dtk} detik`
+  }
+  return {
+    waktu_down: waktuDown,
+    waktu_up: waktuUp,
+    sudah_up: sudahUp,
+    durasi_label: durasiLabel,
+    pesan_down: prtgEvents.value?.pesan_down ?? null,
+    device_name: prtgEvents.value?.device_name ?? null,
+  }
+})
+
 async function fetchPrtgSensors() {
   const siteId = ops.current?.site?.id_site
   if (!siteId) return
@@ -649,32 +676,31 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
           </div>
 
           <!-- ── Rincian Downtime ──────────────────────────── -->
-          <div v-if="prtgEvents" class="prtg-downup">
+          <div v-if="downtimeInfo" class="prtg-downup">
             <div class="pdu-section-title">⏱ Rincian Downtime Tiket Ini</div>
             <div class="prtg-downup-row">
               <div class="prtg-downup-item">
                 <div class="pdu-icon down">▼</div>
                 <div>
                   <div class="pdu-label">Mulai Down</div>
-                  <div class="pdu-val">{{ fmtDt(prtgEvents.waktu_down) }}</div>
-                  <div v-if="prtgEvents.pesan_down" class="pdu-msg">{{ prtgEvents.pesan_down }}</div>
+                  <div class="pdu-val">{{ fmtDt(downtimeInfo.waktu_down) }}</div>
+                  <div v-if="downtimeInfo.pesan_down" class="pdu-msg">{{ downtimeInfo.pesan_down }}</div>
                 </div>
               </div>
               <div class="prtg-downup-arrow">→</div>
               <div class="prtg-downup-item">
-                <div class="pdu-icon" :class="prtgEvents.sudah_up ? 'up' : 'pending'">
-                  {{ prtgEvents.sudah_up ? '▲' : '?' }}
+                <div class="pdu-icon" :class="downtimeInfo.sudah_up ? 'up' : 'pending'">
+                  {{ downtimeInfo.sudah_up ? '▲' : '?' }}
                 </div>
                 <div>
-                  <div class="pdu-label">{{ prtgEvents.sudah_up ? 'Kembali Up' : 'Belum Up' }}</div>
-                  <div class="pdu-val">{{ prtgEvents.sudah_up ? fmtDt(prtgEvents.waktu_up) : '—' }}</div>
-                  <div v-if="prtgEvents.pesan_up" class="pdu-msg">{{ prtgEvents.pesan_up }}</div>
+                  <div class="pdu-label">{{ downtimeInfo.sudah_up ? 'Kembali Up' : 'Belum Up' }}</div>
+                  <div class="pdu-val">{{ downtimeInfo.sudah_up ? fmtDt(downtimeInfo.waktu_up) : '—' }}</div>
                 </div>
               </div>
-              <div class="prtg-downup-duration" :class="prtgEvents.sudah_up ? 'dur-card-done' : 'dur-card-live'">
+              <div class="prtg-downup-duration" :class="downtimeInfo.sudah_up ? 'dur-card-done' : 'dur-card-live'">
                 <div class="pdu-dur-label">Total Downtime</div>
-                <div class="pdu-dur-val" :class="prtgEvents.sudah_up ? 'dur-done' : 'dur-live'">
-                  {{ prtgEvents.sudah_up ? prtgEvents.durasi_label : 'Masih down...' }}
+                <div class="pdu-dur-val" :class="downtimeInfo.sudah_up ? 'dur-done' : 'dur-live'">
+                  {{ downtimeInfo.sudah_up ? downtimeInfo.durasi_label : 'Masih down...' }}
                 </div>
               </div>
             </div>
