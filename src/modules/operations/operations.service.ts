@@ -21,8 +21,20 @@ const TICKET_DETAIL_INCLUDE = {
   site: {
     select: {
       id_site: true, kode_site: true, nama_site: true, kota: true, alamat_lengkap: true,
-      pelanggan: { select: { nama_pelanggan: true, kode_pelanggan: true, no_telp: true, nama_pic_utama: true } },
+      pelanggan: { select: { nama_pelanggan: true, kode_pelanggan: true, no_telp: true, nama_pic_utama: true, no_hp_pic_utama: true } },
       layanan: { select: { kode_layanan: true, nama_layanan: true } },
+      pic: {
+        select: { id_pic: true, nama_pic: true, jabatan: true, no_kontak: true, email: true, is_utama: true, media_komunikasi: true },
+        orderBy: [{ is_utama: 'desc' as const }, { nama_pic: 'asc' as const }],
+      },
+      sumber_internet: {
+        select: {
+          id_sumber: true, peruntukan_link: true, bandwidth_mbps: true, nomor_pelanggan_isp: true, status_link: true,
+          vendor: { select: { id_vendor: true, nama_vendor: true, kontak_pic: true, no_telp: true, email_pic: true } },
+        },
+        where: { status_link: 'Aktif' },
+        orderBy: { peruntukan_link: 'asc' as const },
+      },
     },
   },
   teknisi: { select: { id_karyawan: true, nama_lengkap: true, jabatan: true } },

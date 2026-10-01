@@ -531,6 +531,94 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
         <strong>Deskripsi:</strong> {{ ops.current.deskripsi_masalah }}
       </div>
 
+      <!-- ── KONTAK & PROVIDER ─────────────────────────────── -->
+      <div class="kontak-grid">
+
+        <!-- Kontak PIC Site -->
+        <div class="kontak-card">
+          <div class="kontak-card-title">📞 Kontak Site</div>
+
+          <!-- PIC Pelanggan Utama -->
+          <div v-if="ops.current.site?.pelanggan?.nama_pic_utama || ops.current.site?.pelanggan?.no_hp_pic_utama || ops.current.site?.pelanggan?.no_telp" class="kontak-group">
+            <div class="kontak-group-label">PIC Pelanggan</div>
+            <div class="kontak-row">
+              <span class="kontak-name">{{ ops.current.site?.pelanggan?.nama_pic_utama || ops.current.site?.pelanggan?.nama_pelanggan }}</span>
+              <div class="kontak-actions">
+                <a v-if="ops.current.site?.pelanggan?.no_hp_pic_utama"
+                   :href="`https://wa.me/${ops.current.site.pelanggan.no_hp_pic_utama.replace(/\D/g,'').replace(/^0/,'62')}`"
+                   target="_blank" class="kontak-btn wa" title="WhatsApp">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.12.554 4.107 1.523 5.83L.057 23.5l5.83-1.466A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.794 9.794 0 01-5.007-1.376l-.36-.214-3.717.937.98-3.607-.234-.373A9.794 9.794 0 012.182 12c0-5.415 4.403-9.818 9.818-9.818 5.415 0 9.818 4.403 9.818 9.818 0 5.415-4.403 9.818-9.818 9.818z"/></svg>
+                  {{ ops.current.site.pelanggan.no_hp_pic_utama }}
+                </a>
+                <a v-if="ops.current.site?.pelanggan?.no_telp"
+                   :href="`tel:${ops.current.site.pelanggan.no_telp}`"
+                   class="kontak-btn tel" title="Telpon">
+                  📲 {{ ops.current.site.pelanggan.no_telp }}
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <!-- PIC Site (list) -->
+          <div v-if="(ops.current.site as any)?.pic?.length" class="kontak-group">
+            <div class="kontak-group-label">PIC Site</div>
+            <div v-for="p in (ops.current.site as any).pic" :key="p.id_pic" class="kontak-row">
+              <div class="kontak-name-wrap">
+                <span class="kontak-name">{{ p.nama_pic }}</span>
+                <span v-if="p.is_utama" class="kontak-badge-utama">Utama</span>
+                <span v-if="p.jabatan" class="kontak-jabatan">{{ p.jabatan }}</span>
+              </div>
+              <div class="kontak-actions">
+                <a v-if="p.no_kontak"
+                   :href="`https://wa.me/${String(p.no_kontak).replace(/\D/g,'').replace(/^0/,'62')}`"
+                   target="_blank" class="kontak-btn wa" title="WhatsApp">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.12.554 4.107 1.523 5.83L.057 23.5l5.83-1.466A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.794 9.794 0 01-5.007-1.376l-.36-.214-3.717.937.98-3.607-.234-.373A9.794 9.794 0 012.182 12c0-5.415 4.403-9.818 9.818-9.818 5.415 0 9.818 4.403 9.818 9.818 0 5.415-4.403 9.818-9.818 9.818z"/></svg>
+                  {{ p.no_kontak }}
+                </a>
+                <a v-if="p.email" :href="`mailto:${p.email}`" class="kontak-btn email" title="Email">✉ {{ p.email }}</a>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="!ops.current.site?.pelanggan?.no_hp_pic_utama && !ops.current.site?.pelanggan?.no_telp && !(ops.current.site as any)?.pic?.length" class="kontak-empty">
+            Belum ada kontak PIC di data site
+          </div>
+        </div>
+
+        <!-- Provider / ISP -->
+        <div class="kontak-card">
+          <div class="kontak-card-title">🌐 Provider / ISP</div>
+
+          <template v-if="(ops.current.site as any)?.sumber_internet?.length">
+            <div v-for="isp in (ops.current.site as any).sumber_internet" :key="isp.id_sumber" class="isp-row">
+              <div class="isp-header">
+                <span class="isp-link-type" :class="isp.peruntukan_link === 'Main' ? 'isp-main' : 'isp-backup'">
+                  {{ isp.peruntukan_link === 'Main' ? '▶ Main' : '⬡ Backup' }}
+                </span>
+                <span class="isp-vendor-name">{{ isp.vendor?.nama_vendor || '—' }}</span>
+                <span v-if="isp.bandwidth_mbps" class="isp-bw">{{ isp.bandwidth_mbps }} Mbps</span>
+              </div>
+              <div v-if="isp.nomor_pelanggan_isp" class="isp-pelno">
+                No. Pelanggan ISP: <strong>{{ isp.nomor_pelanggan_isp }}</strong>
+              </div>
+              <div class="kontak-actions" v-if="isp.vendor?.no_telp || isp.vendor?.kontak_pic || isp.vendor?.email_pic">
+                <span v-if="isp.vendor?.kontak_pic" class="isp-pic-name">PIC: {{ isp.vendor.kontak_pic }}</span>
+                <a v-if="isp.vendor?.no_telp"
+                   :href="`https://wa.me/${String(isp.vendor.no_telp).replace(/\D/g,'').replace(/^0/,'62')}`"
+                   target="_blank" class="kontak-btn wa" title="WA Vendor">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.12.554 4.107 1.523 5.83L.057 23.5l5.83-1.466A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.794 9.794 0 01-5.007-1.376l-.36-.214-3.717.937.98-3.607-.234-.373A9.794 9.794 0 012.182 12c0-5.415 4.403-9.818 9.818-9.818 5.415 0 9.818 4.403 9.818 9.818 0 5.415-4.403 9.818-9.818 9.818z"/></svg>
+                  {{ isp.vendor.no_telp }}
+                </a>
+                <a v-if="isp.vendor?.email_pic" :href="`mailto:${isp.vendor.email_pic}`" class="kontak-btn email">✉ {{ isp.vendor.email_pic }}</a>
+              </div>
+            </div>
+          </template>
+
+          <div v-else class="kontak-empty">Belum ada data provider / ISP di site ini</div>
+        </div>
+
+      </div>
+
       <!-- ── MAIN GRID 2-COL ────────────────────────────────── -->
       <div class="main-grid">
 
@@ -1319,6 +1407,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
   .main-grid { grid-template-columns: 1fr; }
   .foto-stages-grid { grid-template-columns: 1fr; }
   .prtg-graph-hdr { flex-direction: column; align-items: flex-start; }
+  .kontak-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
   .page { padding: 16px; }
@@ -1326,4 +1415,40 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
   .sensor-grid { grid-template-columns: 1fr; }
   .prtg-graph-tabs { flex-wrap: wrap; }
 }
+
+/* ── Kontak & Provider ──────────────────────────────────── */
+.kontak-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.kontak-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; }
+.kontak-card-title { font-size: 12px; font-weight: 700; color: #475569; letter-spacing: 0.3px; margin-bottom: 12px; }
+.kontak-group { margin-bottom: 12px; }
+.kontak-group:last-child { margin-bottom: 0; }
+.kontak-group-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px; margin-bottom: 6px; }
+.kontak-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; }
+.kontak-row:last-child { border-bottom: none; }
+.kontak-name-wrap { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kontak-name { font-size: 13px; font-weight: 600; color: #1e293b; }
+.kontak-jabatan { font-size: 11px; color: #94a3b8; }
+.kontak-badge-utama { font-size: 10px; background: #dbeafe; color: #1d4ed8; border-radius: 4px; padding: 1px 5px; font-weight: 600; }
+.kontak-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.kontak-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 5px; text-decoration: none; white-space: nowrap; border: none; cursor: pointer; }
+.kontak-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+.kontak-btn.wa { background: #dcfce7; color: #16a34a; }
+.kontak-btn.wa:hover { background: #bbf7d0; }
+.kontak-btn.tel { background: #e0f2fe; color: #0369a1; }
+.kontak-btn.tel:hover { background: #bae6fd; }
+.kontak-btn.email { background: #fef3c7; color: #b45309; }
+.kontak-btn.email:hover { background: #fde68a; }
+.kontak-empty { font-size: 12px; color: #94a3b8; font-style: italic; padding: 8px 0; }
+
+/* ISP rows */
+.isp-row { border-bottom: 1px solid #f1f5f9; padding: 8px 0; }
+.isp-row:last-child { border-bottom: none; }
+.isp-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.isp-link-type { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
+.isp-main { background: #dbeafe; color: #1d4ed8; }
+.isp-backup { background: #fef9c3; color: #854d0e; }
+.isp-vendor-name { font-size: 13px; font-weight: 600; color: #1e293b; }
+.isp-bw { font-size: 11px; color: #64748b; background: #f1f5f9; border-radius: 4px; padding: 1px 6px; }
+.isp-pelno { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+.isp-pic-name { font-size: 11px; color: #475569; font-style: italic; }
 </style>
