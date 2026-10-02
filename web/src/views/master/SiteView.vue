@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
 import { useAuthStore } from '@/stores/auth'
@@ -312,6 +312,68 @@ async function handleSubmit() {
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
 const fmtDate = fmtDateShort
+
+// ─── Google Places Autocomplete ──────────────────────────────
+const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY as string | undefined
+const hasGoogleMaps = computed(() => !!GMAPS_KEY)
+const gmapsInputRef = ref<HTMLInputElement | null>(null)
+let gmapsScriptLoaded = false
+let acInstance: any = null
+
+function loadGoogleMapsScript(): Promise<void> {
+  if (gmapsScriptLoaded || (window as any).google?.maps?.places) {
+    gmapsScriptLoaded = true
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    const s = document.createElement('script')
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&libraries=places&language=id&region=ID`
+    s.async = true
+    s.defer = true
+    s.onload = () => { gmapsScriptLoaded = true; resolve() }
+    document.head.appendChild(s)
+  })
+}
+
+async function initGmapsAutocomplete() {
+  if (!GMAPS_KEY || !gmapsInputRef.value) return
+  await loadGoogleMapsScript()
+  const google = (window as any).google
+  if (!google?.maps?.places) return
+  if (acInstance) { google.maps.event.clearInstanceListeners(acInstance) }
+  acInstance = new google.maps.places.Autocomplete(gmapsInputRef.value, {
+    componentRestrictions: { country: 'id' },
+    fields: ['name', 'formatted_address', 'address_components', 'geometry'],
+    types: ['establishment', 'geocode'],
+  })
+  acInstance.addListener('place_changed', () => {
+    const place = acInstance.getPlace()
+    if (!place?.geometry?.location) return
+    form.value.alamat_lengkap = place.formatted_address ?? ''
+    let kota = ''; let provinsi = ''
+    for (const comp of place.address_components ?? []) {
+      const t = comp.types as string[]
+      if (t.includes('locality') || t.includes('administrative_area_level_2')) {
+        if (!kota) kota = comp.long_name
+      }
+      if (t.includes('administrative_area_level_1')) provinsi = comp.long_name
+    }
+    if (kota) form.value.kota = kota
+    if (provinsi) form.value.provinsi = provinsi
+    const lat = place.geometry.location.lat()
+    const lng = place.geometry.location.lng()
+    form.value.koordinat_gps = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+    // Kosongkan field cari setelah pilih
+    if (gmapsInputRef.value) gmapsInputRef.value.value = ''
+  })
+}
+
+watch(showModal, async (val) => {
+  if (val && GMAPS_KEY) {
+    await nextTick()
+    await initGmapsAutocomplete()
+  }
+})
 
 // Highlight match dalam text
 function highlight(text: string, q: string) {
@@ -710,6 +772,11 @@ function highlight(text: string, q: string) {
             <label>Nama Site <span class="req">*</span></label>
             <input v-model="form.nama_site" placeholder="Kantor Pusat / Outlet ..." />
           </div>
+          <div v-if="hasGoogleMaps" class="field full gmaps-field">
+            <label>🗺 Cari Lokasi di Google Maps</label>
+            <input ref="gmapsInputRef" type="text" class="gmaps-input" placeholder="Ketik nama tempat, gedung, atau alamat..." autocomplete="off" />
+            <span class="gmaps-hint">Pilih dari saran untuk isi otomatis: Alamat, Kota, Provinsi, Koordinat GPS</span>
+          </div>
           <div class="field full">
             <label>Alamat Lengkap <span class="req">*</span></label>
             <textarea v-model="form.alamat_lengkap" rows="2" placeholder="Jl. ..."></textarea>
@@ -894,6 +961,10 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; font-family: inherit; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; box-shadow: 0 0 0 3px #3b82f615; }
 .field input:disabled, .field select:disabled { background: #f1f5f9; color: #94a3b8; }
+.gmaps-field { border: 1px dashed #93c5fd; border-radius: 10px; padding: 10px 14px; background: #eff6ff; }
+.gmaps-input { border: 1px solid #bfdbfe !important; background: #fff !important; }
+.gmaps-input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px #3b82f620 !important; }
+.gmaps-hint { font-size: 11.5px; color: #3b82f6; margin-top: 2px; }
 .form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 0 28px 4px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 28px 22px; border-top: 1px solid #f1f5f9; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }

@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify'
 import { useEmailStore } from '@/stores/email'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import BasePagination from '@/components/BasePagination.vue'
+import RecipientInput from '@/components/RecipientInput.vue'
 import { fmtDateTime } from '@/composables/useFormat'
 import api from '@/services/api'
 
@@ -74,13 +75,22 @@ async function pilihFolder(key: string) {
   await email.switchFolder(key)
 }
 
+function parseEmails(str: string): string[] {
+  if (!str) return []
+  return str.split(',').map(s => {
+    const m = s.match(/<([^>]+)>/)
+    return (m ? m[1] : s).trim().toLowerCase()
+  }).filter(s => s.includes('@'))
+}
+
 async function bukaEditDraft(uid: number) {
   await email.fetchMessage(uid)
   if (!email.current) return
   editingDraftUid.value = uid
+  toTags.value = parseEmails(email.current.to || '')
+  ccTags.value = []
+  bccTags.value = []
   composeForm.value = {
-    to: email.current.to || '',
-    cc: '', bcc: '',
     subject: email.current.subject === '(tanpa subjek)' ? '' : email.current.subject,
     html: email.current.html || email.current.text || '',
     in_reply_to: '',
@@ -131,7 +141,10 @@ function fmtSize(n: number) {
 
 // ─── COMPOSE ──────────────────────────────────────────────────
 const showCompose = ref(false)
-const composeForm = ref({ to: '', cc: '', bcc: '', subject: '', html: '', in_reply_to: '' })
+const composeForm = ref({ subject: '', html: '', in_reply_to: '' })
+const toTags = ref<string[]>([])
+const ccTags = ref<string[]>([])
+const bccTags = ref<string[]>([])
 const composeFiles = ref<File[]>([])
 const sending = ref(false)
 const savingDraft = ref(false)
@@ -178,7 +191,8 @@ watch(showCompose, (open) => {
 
 function bukaCompose() {
   editingDraftUid.value = null
-  composeForm.value = { to: '', cc: '', bcc: '', subject: '', html: '', in_reply_to: '' }
+  toTags.value = []; ccTags.value = []; bccTags.value = []
+  composeForm.value = { subject: '', html: '', in_reply_to: '' }
   composeFiles.value = []
   showCc.value = false
   sendError.value = ''
@@ -188,9 +202,9 @@ function bukaBalas() {
   if (!email.current) return
   editingDraftUid.value = null
   const fromAddr = email.current.from?.match(/<(.+)>/)?.[1] || email.current.from || ''
+  toTags.value = fromAddr ? [fromAddr.toLowerCase()] : []
+  ccTags.value = []; bccTags.value = []
   composeForm.value = {
-    to: fromAddr,
-    cc: '', bcc: '',
     subject: email.current.subject.startsWith('Re:') ? email.current.subject : `Re: ${email.current.subject}`,
     html: `<br><br><hr><p>Pada ${fmtTgl(email.current.date)}, ${email.current.from} menulis:</p><blockquote>${email.current.html || email.current.text || ''}</blockquote>`,
     in_reply_to: String(email.current.uid),
@@ -213,16 +227,24 @@ function tutupCompose() {
   showCompose.value = false
 }
 
+function buildPayload() {
+  onEditorInput()
+  return {
+    ...composeForm.value,
+    to: toTags.value.join(', '),
+    cc: ccTags.value.join(', '),
+    bcc: bccTags.value.join(', '),
+  }
+}
+
 async function kirimEmail() {
   if (sending.value || savingDraft.value) return
-  if (!composeForm.value.to || !composeForm.value.subject) {
+  if (!toTags.value.length || !composeForm.value.subject) {
     sendError.value = 'Tujuan dan subjek wajib diisi'; return
   }
-  // Editor rich text (contenteditable) sudah menghasilkan HTML — kirim apa adanya.
-  onEditorInput()
   sending.value = true; sendError.value = ''
   try {
-    await email.sendMail(composeForm.value, composeFiles.value, editingDraftUid.value)
+    await email.sendMail(buildPayload(), composeFiles.value, editingDraftUid.value)
     showCompose.value = false
     if (email.currentFolder === 'sent' || email.currentFolder === 'drafts') await loadInbox()
   } catch (e: any) { sendError.value = e.response?.data?.message || 'Gagal mengirim email' }
@@ -231,10 +253,9 @@ async function kirimEmail() {
 
 async function simpanDraf() {
   if (sending.value || savingDraft.value) return
-  onEditorInput()
   savingDraft.value = true; sendError.value = ''
   try {
-    const newUid = await email.saveDraft(composeForm.value, composeFiles.value, editingDraftUid.value)
+    const newUid = await email.saveDraft(buildPayload(), composeFiles.value, editingDraftUid.value)
     editingDraftUid.value = newUid ?? editingDraftUid.value
     showCompose.value = false
     if (email.currentFolder === 'drafts') await loadInbox()
@@ -402,24 +423,23 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
     <div v-if="showCompose" class="modal-overlay" @click.self="tutupCompose">
       <div class="modal">
         <h3>{{ editingDraftUid ? '📝 Edit Draf' : '✏️ Tulis Email' }}</h3>
-        <!-- Daftar kontak karyawan untuk autocomplete penerima -->
-        <datalist id="hris-contacts">
-          <option v-for="c in contacts" :key="c.email" :value="c.email">{{ c.nama_lengkap }}</option>
-        </datalist>
         <div class="field">
           <label>Kepada</label>
-          <input v-model="composeForm.to" list="hris-contacts" placeholder="Ketik nama/email atau pilih dari daftar" />
-          <small class="hint">Beberapa penerima: pisahkan dengan koma</small>
+          <RecipientInput
+            v-model="toTags"
+            :contacts="contacts"
+            placeholder="Tambah penerima — ketik nama atau email, Enter untuk tambah"
+          />
         </div>
         <button v-if="!showCc" class="link-btn" @click="showCc = true">+ Cc/Bcc</button>
         <template v-else>
           <div class="field">
             <label>Cc</label>
-            <input v-model="composeForm.cc" list="hris-contacts" placeholder="cc@email.com" />
+            <RecipientInput v-model="ccTags" :contacts="contacts" placeholder="Tambah Cc…" />
           </div>
           <div class="field">
             <label>Bcc</label>
-            <input v-model="composeForm.bcc" list="hris-contacts" placeholder="bcc@email.com" />
+            <RecipientInput v-model="bccTags" :contacts="contacts" placeholder="Tambah Bcc…" />
           </div>
         </template>
         <div class="field">
