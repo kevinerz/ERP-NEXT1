@@ -5,6 +5,7 @@ export const ALL_MODULS = ['hris', 'master', 'sales', 'crm', 'projects', 'operat
 
 interface User {
   id_user: number
+  id_karyawan?: number
   username: string
   nama_lengkap: string
   jabatan: string

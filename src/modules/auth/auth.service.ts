@@ -190,6 +190,7 @@ export class AuthService {
     return {
       data: {
         id_user: user.id_user,
+        id_karyawan: user.id_karyawan,
         username: user.username,
         nama_lengkap: user.karyawan.nama_lengkap,
         nip: user.karyawan.nip,

@@ -282,6 +282,7 @@ function destroyMap() {
 const STATUS_LIST = ['Open', 'In_Progress', 'Pending_Customer', 'Resolved', 'Closed']
 const PRIORITAS_LIST = ['Low', 'Medium', 'High', 'Critical']
 const JENIS_WO = ['Troubleshoot', 'Maintenance', 'Instalasi', 'Survey', 'Upgrade']
+const JENIS_GANGGUAN_LIST = ['Gangguan Massal', 'Listrik Mati', 'FO Cut', 'Perangkat Rusak', 'Konfigurasi', 'Human Error', 'Unknown', 'Lainnya']
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Open:             { bg: '#eff6ff', color: '#1d4ed8' },
   In_Progress:      { bg: '#fef9c3', color: '#a16207' },
@@ -325,6 +326,8 @@ function openEdit() {
     tipe_assign: tipeAssign,
     id_teknisi_pic: tipeAssign === 'internal' ? (t.teknisi?.id_karyawan || 0) : 0,
     id_kontak_teknisi: tipeAssign === 'vendor' ? (t.kontak_teknisi?.id_kontak || 0) : 0,
+    jenis_gangguan: (t as any).jenis_gangguan || '',
+    root_cause: (t as any).root_cause || '',
   }
   editError.value = ''; showEditModal.value = true
 }
@@ -337,6 +340,8 @@ async function handleEdit() {
       deskripsi_masalah: editForm.value.deskripsi_masalah,
       prioritas: editForm.value.prioritas,
       status_tiket: editForm.value.status_tiket,
+      jenis_gangguan: editForm.value.jenis_gangguan || undefined,
+      root_cause: editForm.value.root_cause || undefined,
     }
     if (editForm.value.tipe_assign === 'internal') {
       payload.id_teknisi_pic = editForm.value.id_teknisi_pic || null
@@ -390,6 +395,21 @@ async function handleAddWo() {
 }
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
+
+const tanganiLoading = ref(false)
+
+async function handleTangani() {
+  if (!auth.user?.id_karyawan) { flash('Akun tidak terhubung ke data karyawan'); return }
+  tanganiLoading.value = true
+  try {
+    const payload: any = { id_teknisi_pic: auth.user.id_karyawan }
+    if (ops.current?.status_tiket === 'Open') payload.status_tiket = 'In_Progress'
+    await ops.update(id, payload)
+    await ops.fetchOne(id)
+    flash('Tiket berhasil ditangani')
+  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal') }
+  finally { tanganiLoading.value = false }
+}
 
 const confirmHapusTiket = ref(false)
 const hapusTiketError = ref('')
@@ -487,6 +507,12 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
           </span>
           <button class="btn-timeline" @click="showTimeline = true">📊 Timeline</button>
           <button class="btn-print" @click="printLaporanTiket(ops.current)">🖨 Laporan</button>
+          <button
+            v-if="auth.user?.id_karyawan && !['Resolved','Closed'].includes(ops.current.status_tiket)"
+            class="btn-tangani"
+            :disabled="tanganiLoading"
+            @click="handleTangani"
+          >{{ tanganiLoading ? '...' : '⚡ Tangani' }}</button>
           <button class="btn-edit" @click="openEdit">Edit</button>
           <button v-if="auth.hasRole('Admin')" class="btn-hapus-tiket" @click="hapusTiket">🗑 Hapus</button>
         </div>
@@ -529,6 +555,17 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 
       <div v-if="ops.current.deskripsi_masalah" class="deskripsi-box">
         <strong>Deskripsi:</strong> {{ ops.current.deskripsi_masalah }}
+      </div>
+
+      <div v-if="(ops.current as any).jenis_gangguan || (ops.current as any).root_cause" class="rca-box">
+        <div v-if="(ops.current as any).jenis_gangguan" class="rca-row">
+          <span class="rca-label">Jenis Gangguan</span>
+          <span class="rca-badge">{{ (ops.current as any).jenis_gangguan }}</span>
+        </div>
+        <div v-if="(ops.current as any).root_cause" class="rca-row">
+          <span class="rca-label">Root Cause</span>
+          <span class="rca-text">{{ (ops.current as any).root_cause }}</span>
+        </div>
       </div>
 
       <!-- ── KONTAK & PROVIDER ─────────────────────────────── -->
@@ -1015,6 +1052,17 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
               </select>
             </div>
             <div class="field full"><label>Deskripsi Masalah</label><textarea v-model="editForm.deskripsi_masalah" rows="3"></textarea></div>
+            <div class="field">
+              <label>Jenis Gangguan</label>
+              <select v-model="editForm.jenis_gangguan">
+                <option value="">— Belum dikategorikan —</option>
+                <option v-for="j in JENIS_GANGGUAN_LIST" :key="j" :value="j">{{ j }}</option>
+              </select>
+            </div>
+            <div class="field full">
+              <label>Root Cause / Catatan Teknis</label>
+              <textarea v-model="editForm.root_cause" rows="3" placeholder="Jelaskan penyebab gangguan, tindakan yang dilakukan, dll..."></textarea>
+            </div>
           </div>
           <p v-if="editError" class="form-error">{{ editError }}</p>
           <div class="modal-actions">
@@ -1119,6 +1167,9 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .btn-print { padding: 8px 14px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-print:hover { background: #dcfce7; }
 .btn-edit { padding: 8px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-tangani { padding: 8px 16px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-tangani:hover:not(:disabled) { background: #1e40af; }
+.btn-tangani:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-hapus-tiket { padding: 8px 16px; background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-hapus-tiket:hover:not(:disabled) { background: #fee2e2; border-color: #f87171; }
 .btn-hapus-tiket:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -1135,6 +1186,11 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .text-gray { color: #64748b; }
 
 .deskripsi-box { background: #f8fafc; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #475569; margin-bottom: 14px; }
+.rca-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
+.rca-row { display: flex; align-items: baseline; gap: 10px; }
+.rca-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #9a3412; letter-spacing: 0.4px; white-space: nowrap; }
+.rca-badge { background: #ea580c; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+.rca-text { font-size: 13px; color: #7c2d12; }
 
 /* ── MAIN GRID ───────────────────────────────── */
 .main-grid { display: grid; grid-template-columns: 1fr 400px; gap: 16px; align-items: start; }

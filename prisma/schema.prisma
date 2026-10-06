@@ -695,6 +695,8 @@ model OperationTicket {
   tgl_sensor_down            DateTime? // Waktu sensor PRTG pertama DOWN (sebelum grace period)
   tgl_berangkat              DateTime?
   tgl_sampai                 DateTime?
+  jenis_gangguan             String?   @db.VarChar(50)
+  root_cause                 String?   @db.Text
   created_at                 DateTime  @default(now())
   updated_at                 DateTime  @updatedAt
 
