@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as net from 'net';
@@ -16,6 +17,49 @@ function validateHost(host: string): string {
 
 @Injectable()
 export class ToolsService {
+  constructor(private readonly config: ConfigService) {}
+
+  async foursquareAutocomplete(q: string) {
+    const key = this.config.get<string>('FOURSQUARE_API_KEY');
+    if (!key) throw new InternalServerErrorException('FOURSQUARE_API_KEY belum dikonfigurasi');
+
+    const url = new URL('https://places-api.foursquare.com/autocomplete');
+    url.searchParams.set('query', q);
+    url.searchParams.set('ll', '-6.2,106.8');
+    url.searchParams.set('radius', '500000');
+    url.searchParams.set('limit', '6');
+    url.searchParams.set('types', 'place');
+
+    const res = await fetch(url.toString(), {
+      headers: {
+        Authorization: key,
+        Accept: 'application/json',
+        'X-Places-Api-Version': '2025-06-17',
+      },
+    });
+
+    if (!res.ok) {
+      throw new InternalServerErrorException(`Foursquare error ${res.status}`);
+    }
+
+    const data: any = await res.json();
+    return (data.results || [])
+      .filter((r: any) => r.type === 'place' && r.place?.geocodes?.main)
+      .map((r: any) => {
+        const p = r.place;
+        const loc = p.location || {};
+        const geo = p.geocodes.main;
+        return {
+          name: p.name,
+          address: loc.formatted_address || [loc.address, loc.locality, loc.region].filter(Boolean).join(', '),
+          city: loc.locality || loc.dma || '',
+          province: loc.region || '',
+          lat: geo.latitude,
+          lng: geo.longitude,
+        };
+      });
+  }
+
   async runPing(rawHost: string, count: number): Promise<{ host: string; output: string; stats: any }> {
     const host = validateHost(rawHost);
     try {

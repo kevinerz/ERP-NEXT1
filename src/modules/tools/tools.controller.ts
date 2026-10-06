@@ -50,4 +50,10 @@ export class ToolsController {
     if (isNaN(p) || p < 1 || p > 65535) throw new BadRequestException('port tidak valid');
     return this.svc.checkPort(host, p);
   }
+
+  @Get('places/autocomplete')
+  placesAutocomplete(@Query('q') q: string) {
+    if (!q || q.trim().length < 2) throw new BadRequestException('query terlalu pendek');
+    return this.svc.foursquareAutocomplete(q.trim());
+  }
 }

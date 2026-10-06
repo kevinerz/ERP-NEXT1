@@ -990,7 +990,7 @@ export class PrtgService {
       return {
         device_name: device,
         jumlah_sensor: list.length,
-        ada_down: list.some((s) => ['5', '14', 'Down', 'Down Partial'].includes(String(s.status_raw ?? s.status))),
+        ada_down: list.some((s) => ['5', '13', '14', 'Down', 'Down (Ack)', 'Down Partial'].includes(String(s.status_raw ?? s.status))),
         matched: !!site,
         site: site ? { id_site: site.id_site, kode_site: site.kode_site, nama_site: site.nama_site } : null,
         mapped_manual: manual,

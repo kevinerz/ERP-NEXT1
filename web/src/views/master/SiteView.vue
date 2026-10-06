@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, nextTick } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
 import { useAuthStore } from '@/stores/auth'
@@ -296,8 +296,8 @@ async function handleSubmit() {
     const payload: any = { ...form.value }
     Object.keys(payload).forEach(k => { if (payload[k] === '' || payload[k] === 0) delete payload[k] })
     if (editId.value) {
-      delete payload.id_pelanggan; delete payload.kode_site; delete payload.id_layanan
-      await master.updateSite(editId.value, { ...form.value, id_layanan: form.value.id_layanan || undefined })
+      delete payload.id_pelanggan; delete payload.kode_site
+      await master.updateSite(editId.value, payload)
     } else {
       await master.createSite(payload)
     }
@@ -313,66 +313,78 @@ async function handleSubmit() {
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
 const fmtDate = fmtDateShort
 
-// ─── Google Places Autocomplete ──────────────────────────────
-const GMAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY as string | undefined
-const hasGoogleMaps = computed(() => !!GMAPS_KEY)
-const gmapsInputRef = ref<HTMLInputElement | null>(null)
-let gmapsScriptLoaded = false
-let acInstance: any = null
+// ─── HERE Maps Autosuggest ────────────────────────────────────
+const HERE_KEY = import.meta.env.VITE_HERE_API_KEY
 
-function loadGoogleMapsScript(): Promise<void> {
-  if (gmapsScriptLoaded || (window as any).google?.maps?.places) {
-    gmapsScriptLoaded = true
-    return Promise.resolve()
-  }
-  return new Promise((resolve) => {
-    const s = document.createElement('script')
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&libraries=places&language=id&region=ID`
-    s.async = true
-    s.defer = true
-    s.onload = () => { gmapsScriptLoaded = true; resolve() }
-    document.head.appendChild(s)
-  })
+function hereCleanName(title: string): string {
+  const m = title.match(/^[^(]+\((.+)\)\s*$/)
+  return m ? m[1] : title
 }
 
-async function initGmapsAutocomplete() {
-  if (!GMAPS_KEY || !gmapsInputRef.value) return
-  await loadGoogleMapsScript()
-  const google = (window as any).google
-  if (!google?.maps?.places) return
-  if (acInstance) { google.maps.event.clearInstanceListeners(acInstance) }
-  acInstance = new google.maps.places.Autocomplete(gmapsInputRef.value, {
-    componentRestrictions: { country: 'id' },
-    fields: ['name', 'formatted_address', 'address_components', 'geometry'],
-    types: ['establishment', 'geocode'],
-  })
-  acInstance.addListener('place_changed', () => {
-    const place = acInstance.getPlace()
-    if (!place?.geometry?.location) return
-    form.value.alamat_lengkap = place.formatted_address ?? ''
-    let kota = ''; let provinsi = ''
-    for (const comp of place.address_components ?? []) {
-      const t = comp.types as string[]
-      if (t.includes('locality') || t.includes('administrative_area_level_2')) {
-        if (!kota) kota = comp.long_name
-      }
-      if (t.includes('administrative_area_level_1')) provinsi = comp.long_name
-    }
-    if (kota) form.value.kota = kota
-    if (provinsi) form.value.provinsi = provinsi
-    const lat = place.geometry.location.lat()
-    const lng = place.geometry.location.lng()
-    form.value.koordinat_gps = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
-    // Kosongkan field cari setelah pilih
-    if (gmapsInputRef.value) gmapsInputRef.value.value = ''
-  })
+const mapQuery = ref('')
+const mapResults = ref<any[]>([])
+const mapLoading = ref(false)
+const mapShowDropdown = ref(false)
+let mapDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+async function searchHere() {
+  const q = mapQuery.value.trim()
+  if (q.length < 2) { mapResults.value = []; mapShowDropdown.value = false; return }
+  mapLoading.value = true
+  try {
+    const url = new URL('https://autosuggest.search.hereapi.com/v1/autosuggest')
+    url.searchParams.set('q', q)
+    url.searchParams.set('at', '-6.2,106.8')
+    url.searchParams.set('limit', '6')
+    url.searchParams.set('apiKey', HERE_KEY)
+    const res = await fetch(url.toString())
+    const data = await res.json()
+    mapResults.value = (data.items || [])
+      .filter((item: any) => item.position)
+      .map((item: any) => ({
+        name: hereCleanName(item.title),
+        address: item.address?.label || '',
+        city: item.address?.city || item.address?.district || '',
+        province: item.address?.state || '',
+        lat: item.position?.lat,
+        lng: item.position?.lng,
+      }))
+    mapShowDropdown.value = mapResults.value.length > 0
+  } catch {
+    mapResults.value = []
+  } finally {
+    mapLoading.value = false
+  }
 }
 
-watch(showModal, async (val) => {
-  if (val && GMAPS_KEY) {
-    await nextTick()
-    await initGmapsAutocomplete()
+function onMapInput() {
+  if (mapDebounceTimer) clearTimeout(mapDebounceTimer)
+  mapDebounceTimer = setTimeout(searchHere, 350)
+}
+
+function selectMapResult(r: any) {
+  form.value.nama_site = r.name || ''
+  form.value.alamat_lengkap = r.address || ''
+  form.value.kota = r.city || ''
+  form.value.provinsi = r.province || ''
+  if (r.lat != null) {
+    form.value.koordinat_gps = `${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}`
   }
+  mapQuery.value = r.name || ''
+  mapShowDropdown.value = false
+}
+
+function hideMapDropdown() {
+  setTimeout(() => { mapShowDropdown.value = false }, 200)
+}
+
+function openSync(s: any) {
+  openEdit(s)
+  mapQuery.value = s.nama_site || ''
+}
+
+watch(showModal, (val) => {
+  if (!val) { mapQuery.value = ''; mapResults.value = []; mapShowDropdown.value = false }
 })
 
 // Highlight match dalam text
@@ -543,7 +555,10 @@ function highlight(text: string, q: string) {
                       </td>
                       <td class="text-muted text-sm">{{ fmtDate(s.tgl_aktif) }}</td>
                       <td>
-                        <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
+                        <div class="row-actions">
+                          <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
+                          <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari di OpenStreetMap">🗺</button>
+                        </div>
                       </td>
                     </tr>
                   </tbody>
@@ -599,7 +614,12 @@ function highlight(text: string, q: string) {
                       <td><span class="lay-badge" :title="s.layanan?.nama_layanan">{{ s.layanan?.nama_layanan || '—' }}</span></td>
                       <td><span class="status-badge" :style="{ background: STATUS_COLOR[s.status_site]?.bg, color: STATUS_COLOR[s.status_site]?.color }">{{ s.status_site }}</span></td>
                       <td class="text-muted text-sm">{{ fmtDate(s.tgl_aktif) }}</td>
-                      <td><button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button></td>
+                      <td>
+                        <div class="row-actions">
+                          <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
+                          <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari di OpenStreetMap">🗺</button>
+                        </div>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -722,6 +742,7 @@ function highlight(text: string, q: string) {
               <td class="text-gray text-sm">{{ fmtDate(s.tgl_aktif) }}</td>
               <td>
                 <div class="row-actions">
+                  <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari di OpenStreetMap">🗺</button>
                   <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
                   <button class="btn-hapus-sm" @click.stop="hapusSite(s)">Hapus</button>
                 </div>
@@ -772,10 +793,27 @@ function highlight(text: string, q: string) {
             <label>Nama Site <span class="req">*</span></label>
             <input v-model="form.nama_site" placeholder="Kantor Pusat / Outlet ..." />
           </div>
-          <div v-if="hasGoogleMaps" class="field full gmaps-field">
-            <label>🗺 Cari Lokasi di Google Maps</label>
-            <input ref="gmapsInputRef" type="text" class="gmaps-input" placeholder="Ketik nama tempat, gedung, atau alamat..." autocomplete="off" />
-            <span class="gmaps-hint">Pilih dari saran untuk isi otomatis: Alamat, Kota, Provinsi, Koordinat GPS</span>
+          <div class="field full gmaps-field">
+            <label>🗺 Cari Lokasi (HERE Maps)</label>
+            <div class="osm-wrap">
+              <input
+                v-model="mapQuery"
+                @input="onMapInput"
+                @focus="mapShowDropdown = mapResults.length > 0"
+                @blur="hideMapDropdown"
+                class="osm-input"
+                placeholder="Ketik nama tempat atau alamat..."
+                autocomplete="off"
+              />
+              <span v-if="mapLoading" class="osm-spin">⏳</span>
+              <ul v-if="mapShowDropdown && mapResults.length" class="osm-dropdown">
+                <li v-for="r in mapResults" :key="r.name + r.lat" @mousedown.prevent="selectMapResult(r)">
+                  <span class="osm-name">{{ r.name }}</span>
+                  <span class="osm-addr">{{ r.address }}</span>
+                </li>
+              </ul>
+            </div>
+            <span class="gmaps-hint">Pilih dari saran untuk isi otomatis: Nama Site, Alamat, Kota, Provinsi, Koordinat GPS</span>
           </div>
           <div class="field full">
             <label>Alamat Lengkap <span class="req">*</span></label>
@@ -913,6 +951,8 @@ function highlight(text: string, q: string) {
 .lay-badge { font-size: 12px; color: #0369a1; background: #f0f9ff; border-radius: 5px; padding: 2px 8px; white-space: nowrap; display: inline-block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 .btn-edit-sm { padding: 4px 12px; background: #f1f5f9; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; color: #334155; white-space: nowrap; }
 .btn-edit-sm:hover { background: #e2e8f0; }
+.btn-sync-sm { padding: 4px 8px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; line-height: 1; }
+.btn-sync-sm:hover { background: #dcfce7; border-color: #86efac; }
 
 /* List view table */
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
@@ -962,9 +1002,17 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; box-shadow: 0 0 0 3px #3b82f615; }
 .field input:disabled, .field select:disabled { background: #f1f5f9; color: #94a3b8; }
 .gmaps-field { border: 1px dashed #93c5fd; border-radius: 10px; padding: 10px 14px; background: #eff6ff; }
-.gmaps-input { border: 1px solid #bfdbfe !important; background: #fff !important; }
-.gmaps-input:focus { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px #3b82f620 !important; }
-.gmaps-hint { font-size: 11.5px; color: #3b82f6; margin-top: 2px; }
+.gmaps-hint { font-size: 11.5px; color: #3b82f6; margin-top: 4px; display: block; }
+.osm-wrap { position: relative; width: 100%; }
+.osm-input { width: 100%; box-sizing: border-box; border: 1px solid #bfdbfe; border-radius: 6px; padding: 8px 32px 8px 12px; font-size: 14px; background: #fff; }
+.osm-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px #3b82f620; }
+.osm-spin { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; }
+.osm-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.12); list-style: none; margin: 0; padding: 4px 0; z-index: 9999; max-height: 240px; overflow-y: auto; }
+.osm-dropdown li { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f3f4f6; }
+.osm-dropdown li:last-child { border-bottom: none; }
+.osm-dropdown li:hover { background: #eff6ff; }
+.osm-name { display: block; font-weight: 600; font-size: 13px; color: #1e40af; }
+.osm-addr { display: block; font-size: 11px; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 0 28px 4px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 28px 22px; border-top: 1px solid #f1f5f9; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }

@@ -187,6 +187,7 @@ model MasterLayanan {
   opportunities    SalesOpportunity[]
   kontrak          KontrakLayanan[]
   instalasi_orders InstalasiOrder[]
+  surveys_presales PresalesSurvey[]   @relation("SurveyLayanan")
 
   @@map("master_layanan")
 }
@@ -207,7 +208,6 @@ model MasterVendorIsp {
   created_at       DateTime @default(now())
 
   sumber_internet    SumberInternetSite[]
-  surveys_isp        PresalesSurvey[]
   work_orders_vendor WorkOrder[]           @relation("WoVendorKetiga")
   jurnal_ap          IntegrationJurnalAp[]
 
@@ -576,22 +576,44 @@ model SalesActivity {
 }
 
 model PresalesSurvey {
-  id_survey           Int      @id @default(autoincrement())
-  id_opportunity      Int
-  id_presales_pic     Int
-  tanggal_survey      DateTime @db.Date
-  alamat_survey       String   @db.Text
-  koordinat_gps       String?  @db.VarChar(50)
-  id_rekomendasi_isp  Int?
-  rekomendasi_layanan String?  @db.VarChar(255)
-  catatan_teknis      String?  @db.Text
-  hasil_survey        String   @default("Feasible") @db.VarChar(30)
-  file_foto_survey    String?  @db.VarChar(255)
-  created_at          DateTime @default(now())
+  id_survey            Int       @id @default(autoincrement())
+  id_opportunity       Int?
 
-  opportunity     SalesOpportunity @relation(fields: [id_opportunity], references: [id_opportunity])
-  presales_pic    HrisKaryawan     @relation("SurveyPic", fields: [id_presales_pic], references: [id_karyawan])
-  rekomendasi_isp MasterVendorIsp? @relation(fields: [id_rekomendasi_isp], references: [id_vendor])
+  // Identitas prospek (bisa tanpa opportunity)
+  nama_prospek         String?   @db.VarChar(200)
+  alamat_survey        String?   @db.Text
+  kota                 String?   @db.VarChar(100)
+  koordinat_gps        String?   @db.VarChar(50)
+
+  // Survey FO
+  tanggal_survey       DateTime? @db.Date
+  nama_odp             String?   @db.VarChar(100)
+  status_odp           String    @default("Belum_Survey") @db.VarChar(30)
+
+  // Vendor & Order
+  id_layanan           Int?
+  vendor               String?   @db.VarChar(50)
+  nomor_order_vendor   String?   @db.VarChar(100)
+  sn_modem             String?   @db.VarChar(100)
+  status_order         String    @default("Belum_Order") @db.VarChar(30)
+
+  // Timeline order
+  tgl_order            DateTime? @db.Date
+  tgl_estimasi_selesai DateTime? @db.Date
+  tgl_selesai          DateTime? @db.Date
+
+  // Meta
+  catatan              String?   @db.Text
+  file_foto_survey     String?   @db.VarChar(255)
+  id_presales_pic      Int?
+  status_presales      String    @default("Draft") @db.VarChar(30)
+
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @updatedAt
+
+  opportunity  SalesOpportunity? @relation(fields: [id_opportunity], references: [id_opportunity], onDelete: SetNull)
+  layanan      MasterLayanan?    @relation("SurveyLayanan", fields: [id_layanan], references: [id_layanan], onDelete: SetNull)
+  presales_pic HrisKaryawan?     @relation("SurveyPic", fields: [id_presales_pic], references: [id_karyawan], onDelete: SetNull)
 
   @@map("presales_surveys")
 }

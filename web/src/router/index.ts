@@ -138,6 +138,12 @@ const router = createRouter({
           name: 'crm-pic-detail',
           component: () => import('@/views/crm/CrmPicDetailView.vue'),
         },
+        // Pre-Sales
+        {
+          path: 'presales',
+          name: 'presales-list',
+          component: () => import('@/views/presales/PresalesSurveyView.vue'),
+        },
         // Sales
         {
           path: 'sales',
@@ -390,6 +396,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris', 'hris-undangan': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master', 'master-gudang': 'master',
   'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master',
+  'presales-list': 'sales',
   'sales-dashboard': 'sales', 'sales-lead-list': 'sales', 'sales-lead-detail': 'sales',
   'sales-opp-list': 'sales', 'sales-opp-detail': 'sales',
   'sales-quotation-list': 'sales', 'sales-quotation-detail': 'sales',
@@ -457,6 +464,7 @@ const ROUTE_TITLE: Record<string, string> = {
   'master-site-detail':    'Detail Site — NextOne ERP',
   'master-layanan':        'Layanan — NextOne ERP',
   'master-vendor':         'Vendor — NextOne ERP',
+  'presales-list':         'Pre-Sales — NextOne ERP',
   'sales-dashboard':       'Sales — NextOne ERP',
   'sales-lead-list':       'Lead — NextOne ERP',
   'sales-lead-detail':     'Detail Lead — NextOne ERP',

@@ -92,6 +92,7 @@ const menuGroups = [
   {
     label: 'KOMERSIAL', accent: '#10b981',
     items: [
+      { label: 'Pre-Sales',   emoji: '🔍', to: '/presales',        modul: 'sales' },
       { label: 'Sales',       emoji: '💼', to: '/sales',           modul: 'sales' },
       { label: 'CRM',         emoji: '🤝', to: '/crm/pic',         modul: 'crm' },
       { label: 'Proyek',      emoji: '📐', to: '/projects',        modul: 'projects' },

@@ -87,10 +87,13 @@ export class PrtgClient {
   // sensor di ±2.150 device. Set jauh di atas itu (tidak ada penalti kalau lebih).
   private static readonly MAX_COUNT = 20_000;
 
-  // Semua sensor berstatus Down (5) / DownPartial (14)
+  // Semua sensor berstatus Down (5) / DownAck (13) / DownPartial (14)
+  // Status 13 (Down Acknowledged) HARUS ikut — kalau tidak, sensor yang
+  // sudah di-ack oleh ERP langsung dianggap UP di poll berikutnya dan
+  // tiket di-resolve prematur meski device masih down.
   async getDownSensors(): Promise<PrtgSensor[]> {
     const url = await this.authedUrl(
-      `/api/table.json?content=sensors&columns=objid,sensor,device,status,message&filter_status=5&filter_status=14&count=${PrtgClient.MAX_COUNT}`,
+      `/api/table.json?content=sensors&columns=objid,sensor,device,status,message&filter_status=5&filter_status=13&filter_status=14&count=${PrtgClient.MAX_COUNT}`,
     );
     const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
     if (!res.ok) throw new Error(`PRTG API error ${res.status}`);

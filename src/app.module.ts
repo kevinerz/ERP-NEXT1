@@ -48,6 +48,7 @@ import { MobileModule } from './modules/mobile/mobile.module';
 import { InstalasiModule } from './modules/instalasi/instalasi.module';
 import { ToolsModule } from './modules/tools/tools.module';
 import { MikrotikModule } from './modules/mikrotik/mikrotik.module';
+import { PresalesModule } from './modules/presales/presales.module';
 
 @Module({
   imports: [
@@ -107,6 +108,7 @@ import { MikrotikModule } from './modules/mikrotik/mikrotik.module';
     InstalasiModule,
     ToolsModule,
     MikrotikModule,
+    PresalesModule,
   ],
   controllers: [HealthController],
   providers: [
