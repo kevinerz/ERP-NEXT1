@@ -102,6 +102,7 @@ export class OperationsService {
     if (query.status_tiket) where.status_tiket = query.status_tiket;
     if (query.prioritas) where.prioritas = query.prioritas;
     if (query.id_teknisi) where.id_teknisi_pic = Number(query.id_teknisi);
+    if ((query as any).sumber_tiket) where.sumber_tiket = (query as any).sumber_tiket;
 
     const [data, total] = await Promise.all([
       this.prisma.operationTicket.findMany({
