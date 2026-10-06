@@ -294,9 +294,6 @@ export class PrtgService {
         ticketId = ticket.id_ticket;
         if (isReopen) hasil.flapping_reopened++;
         else hasil.tiket_dibuat++;
-        for (const s of downSensorList) {
-          this.prtg.acknowledgeAlarm(s.objid, `Tiket ${ticket.nomor_tiket} ${isReopen ? 'dibuka kembali (flapping)' : 'dibuat'} oleh sistem ERP`).catch(() => {});
-        }
       } else {
         hasil.tanpa_site++;
       }
@@ -618,7 +615,6 @@ export class PrtgService {
         site,
       );
       await this.prisma.integrationPrtgWebhook.update({ where: { id_webhook: pending.id_webhook }, data: { id_ticket_terbentuk: ticket.id_ticket } });
-      this.prtg.acknowledgeAlarm(Number(pending.prtg_sensor_id), `Tiket ${ticket.nomor_tiket} dibuat oleh sistem ERP`).catch(() => {});
       await this.prisma.notification.deleteMany({
         where: { is_read: false, judul: { contains: `[PRTG] ${dto.device_name} DOWN` } },
       }).catch(() => {});
