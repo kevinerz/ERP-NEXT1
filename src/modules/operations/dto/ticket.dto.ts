@@ -14,8 +14,6 @@ export class CreateTicketDto {
   @IsOptional() @IsIn(PRIORITAS) prioritas?: string;
 }
 
-const JENIS_GANGGUAN = ['Gangguan Massal', 'Listrik Mati', 'FO Cut', 'Perangkat Rusak', 'Konfigurasi', 'Human Error', 'Unknown', 'Lainnya'] as const;
-
 export class UpdateTicketDto {
   // null diperbolehkan untuk un-assign teknisi
   @IsOptional() @ValidateIf((o) => o.id_teknisi_pic !== null) @IsInt() id_teknisi_pic?: number | null;
@@ -26,7 +24,7 @@ export class UpdateTicketDto {
   @IsOptional() @IsIn(STATUS_TIKET) status_tiket?: string;
   @IsOptional() @IsDateString() tgl_berangkat?: string;
   @IsOptional() @IsDateString() tgl_sampai?: string;
-  @IsOptional() @IsIn(JENIS_GANGGUAN) jenis_gangguan?: string;
+  @IsOptional() @IsString() @MaxLength(100) jenis_gangguan?: string;
   @IsOptional() @IsString() root_cause?: string;
 }
 

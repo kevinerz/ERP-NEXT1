@@ -256,6 +256,33 @@ export class MasterController {
   @Delete('pic/:id')
   deletePic(@Param('id', ParseIntPipe) id: number) { return this.masterService.deletePic(id); }
 
+  // ─── JENIS GANGGUAN ─────────────────────────────────────────────
+
+  @Get('jenis-gangguan')
+  findAllJenisGangguan(@Query() q: { search?: string; is_aktif?: string }) {
+    return this.masterService.findAllJenisGangguan(q);
+  }
+
+  @Post('jenis-gangguan')
+  createJenisGangguan(@Body() dto: { nama: string; deskripsi?: string; urutan?: number }) {
+    return this.masterService.createJenisGangguan(dto);
+  }
+
+  @Patch('jenis-gangguan/:id')
+  updateJenisGangguan(@Param('id', ParseIntPipe) id: number, @Body() dto: any) {
+    return this.masterService.updateJenisGangguan(id, dto);
+  }
+
+  @Patch('jenis-gangguan/:id/toggle')
+  toggleJenisGangguan(@Param('id', ParseIntPipe) id: number) {
+    return this.masterService.toggleJenisGangguan(id);
+  }
+
+  @Delete('jenis-gangguan/:id')
+  removeJenisGangguan(@Param('id', ParseIntPipe) id: number) {
+    return this.masterService.removeJenisGangguan(id);
+  }
+
   // ─── MASTER GUDANG ───────────────────────────────────────────
 
   @Get('gudang')

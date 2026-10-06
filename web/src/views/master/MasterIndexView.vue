@@ -52,6 +52,14 @@ const menus = [
     accent: '#c2410c',
   },
   {
+    icon: '⚡',
+    label: 'Jenis Gangguan',
+    desc: 'Kategori gangguan untuk tiket — FO Cut, Listrik Mati, dll',
+    to: '/master/jenis-gangguan',
+    color: '#fff7ed',
+    accent: '#ea580c',
+  },
+  {
     icon: '🔩',
     label: 'Pengaturan',
     desc: 'Konfigurasi sistem, logo, dan preferensi aplikasi',

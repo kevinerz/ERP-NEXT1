@@ -812,6 +812,48 @@ export class MasterService {
     return { message: `Gudang ${row.nama_gudang} dihapus` };
   }
 
+  // ─── JENIS GANGGUAN ──────────────────────────────────────────────
+
+  async findAllJenisGangguan(query: { search?: string; is_aktif?: string }) {
+    const where: any = {};
+    if (query.search) where.nama = { contains: query.search };
+    if (query.is_aktif !== undefined && query.is_aktif !== '') where.is_aktif = query.is_aktif === 'true';
+    const data = await this.prisma.masterJenisGangguan.findMany({
+      where,
+      orderBy: [{ urutan: 'asc' }, { nama: 'asc' }],
+    });
+    return { data };
+  }
+
+  async createJenisGangguan(dto: { nama: string; deskripsi?: string; urutan?: number }) {
+    const data = await this.prisma.masterJenisGangguan.create({ data: dto });
+    return { data, message: `Jenis gangguan "${data.nama}" ditambahkan` };
+  }
+
+  async updateJenisGangguan(id: number, dto: { nama?: string; deskripsi?: string; urutan?: number; is_aktif?: boolean }) {
+    const row = await this.prisma.masterJenisGangguan.findUnique({ where: { id_jenis: id } });
+    if (!row) throw new NotFoundException('Jenis gangguan tidak ditemukan');
+    const data = await this.prisma.masterJenisGangguan.update({ where: { id_jenis: id }, data: dto });
+    return { data, message: 'Jenis gangguan diperbarui' };
+  }
+
+  async toggleJenisGangguan(id: number) {
+    const row = await this.prisma.masterJenisGangguan.findUnique({ where: { id_jenis: id } });
+    if (!row) throw new NotFoundException('Jenis gangguan tidak ditemukan');
+    const data = await this.prisma.masterJenisGangguan.update({
+      where: { id_jenis: id },
+      data: { is_aktif: !row.is_aktif },
+    });
+    return { data, message: data.is_aktif ? 'Diaktifkan' : 'Dinonaktifkan' };
+  }
+
+  async removeJenisGangguan(id: number) {
+    const row = await this.prisma.masterJenisGangguan.findUnique({ where: { id_jenis: id } });
+    if (!row) throw new NotFoundException('Jenis gangguan tidak ditemukan');
+    await this.prisma.masterJenisGangguan.delete({ where: { id_jenis: id } });
+    return { message: `"${row.nama}" dihapus` };
+  }
+
   // ─── KONTAK TEKNISI / PEMASANG (pihak ketiga) ─────────────────
 
   async findAllKontakTeknisi(query: { search?: string; is_aktif?: string; page?: number; limit?: number }) {

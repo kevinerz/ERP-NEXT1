@@ -282,7 +282,13 @@ function destroyMap() {
 const STATUS_LIST = ['Open', 'In_Progress', 'Pending_Customer', 'Resolved', 'Closed']
 const PRIORITAS_LIST = ['Low', 'Medium', 'High', 'Critical']
 const JENIS_WO = ['Troubleshoot', 'Maintenance', 'Instalasi', 'Survey', 'Upgrade']
-const JENIS_GANGGUAN_LIST = ['Gangguan Massal', 'Listrik Mati', 'FO Cut', 'Perangkat Rusak', 'Konfigurasi', 'Human Error', 'Unknown', 'Lainnya']
+const jenisGangguanList = ref<string[]>([])
+async function fetchJenisGangguan() {
+  try {
+    const r = await api.get('/master/jenis-gangguan', { params: { is_aktif: 'true' } })
+    jenisGangguanList.value = (r.data.data as any[]).map((j) => j.nama)
+  } catch { /* pakai fallback jika API gagal */ }
+}
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Open:             { bg: '#eff6ff', color: '#1d4ed8' },
   In_Progress:      { bg: '#fef9c3', color: '#a16207' },
@@ -299,7 +305,7 @@ const WO_STATUS_COLOR: Record<string, string> = {
 }
 
 onMounted(async () => {
-  await Promise.all([ops.fetchOne(id), ops.fetchTeknisiList(), ops.fetchKontakTeknisiList(), proyek.fetchSiteList()])
+  await Promise.all([ops.fetchOne(id), ops.fetchTeknisiList(), ops.fetchKontakTeknisiList(), proyek.fetchSiteList(), fetchJenisGangguan()])
   await fetchFotos()
   await nextTick()
   initMap()
@@ -1056,7 +1062,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
               <label>Jenis Gangguan</label>
               <select v-model="editForm.jenis_gangguan">
                 <option value="">— Belum dikategorikan —</option>
-                <option v-for="j in JENIS_GANGGUAN_LIST" :key="j" :value="j">{{ j }}</option>
+                <option v-for="j in jenisGangguanList" :key="j" :value="j">{{ j }}</option>
               </select>
             </div>
             <div class="field full">

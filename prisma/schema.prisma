@@ -231,6 +231,18 @@ model MasterGudang {
   @@map("master_gudang")
 }
 
+model MasterJenisGangguan {
+  id_jenis   Int      @id @default(autoincrement())
+  nama       String   @db.VarChar(100)
+  deskripsi  String?  @db.VarChar(255)
+  urutan     Int      @default(0)
+  is_aktif   Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@map("master_jenis_gangguan")
+}
+
 // Kontak orang pemasang / teknisi pihak ketiga (freelance/borongan)
 model MasterKontakTeknisi {
   id_kontak        Int      @id @default(autoincrement())

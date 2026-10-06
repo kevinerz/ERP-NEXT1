@@ -127,6 +127,11 @@ const router = createRouter({
           name: 'master-site-detail',
           component: () => import('@/views/master/SiteDetailView.vue'),
         },
+        {
+          path: 'master/jenis-gangguan',
+          name: 'master-jenis-gangguan',
+          component: () => import('@/views/master/JenisGangguanView.vue'),
+        },
         // CRM
         {
           path: 'crm/pic',
