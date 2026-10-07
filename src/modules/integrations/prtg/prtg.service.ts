@@ -207,7 +207,10 @@ export class PrtgService {
     const cooldownMenit = await this.getCooldownFlapping();
     const hasil = { tiket_dibuat: 0, flapping_reopened: 0, pending_baru: 0, false_alarm: 0, dilewati: 0, auto_resolved: 0, tanpa_site: 0 };
     const now = new Date();
-    const downDevices = new Set(downSensors.map((s) => s.device));
+    // Normalisasi device name dengan .trim() untuk menghindari mismatch karena whitespace
+    const downDevices = new Set(downSensors.map((s) => s.device?.trim() ?? ''));
+    // Sensor IDs saat ini down — lebih stabil dari nama (tidak berubah meski device di-rename di PRTG)
+    const downSensorIds = new Set(downSensors.map((s) => String(s.objid)));
 
     // ── 1. Kumpulkan semua entri aktif (tiket confirmed + pending grace period)
     const activeEntries = await this.prisma.integrationPrtgWebhook.findMany({
@@ -317,7 +320,11 @@ export class PrtgService {
       if (!w.ticket) continue;
       const entry = tiketSensors.get(w.ticket.id_ticket) ?? { ticket: w.ticket, devices: [], allUp: true };
       entry.devices.push(w.prtg_device_name ?? '');
-      if (downDevices.has(w.prtg_device_name ?? '')) entry.allUp = false;
+      // Cek sensor ID (stabil meski device di-rename) ATAU device name (fallback)
+      const sensorMasihDown =
+        (w.prtg_sensor_id ? downSensorIds.has(w.prtg_sensor_id) : false) ||
+        downDevices.has((w.prtg_device_name ?? '').trim());
+      if (sensorMasihDown) entry.allUp = false;
       tiketSensors.set(w.ticket.id_ticket, entry);
     }
     for (const { ticket, devices, allUp } of tiketSensors.values()) {
@@ -364,7 +371,7 @@ export class PrtgService {
       where: { id_ticket_terbentuk: null, is_pending: false, diterima_pada: { gte: new Date(now.getTime() - 24 * 3600_000) } },
     });
     for (const w of oldPending) {
-      if (downDevices.has(w.prtg_device_name ?? '')) continue;
+      if ((w.prtg_sensor_id && downSensorIds.has(w.prtg_sensor_id)) || downDevices.has((w.prtg_device_name ?? '').trim())) continue;
       await this.prisma.notification.deleteMany({
         where: { is_read: false, judul: { contains: `[PRTG] ${w.prtg_device_name} DOWN` } },
       }).catch(() => {});
