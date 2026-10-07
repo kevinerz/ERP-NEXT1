@@ -191,14 +191,36 @@ export class PrtgService {
   /** Sensor yang sedang Down saat ini — langsung dari PRTG API (bukan cache DB). */
   async getMonitor() {
     if (!(await this.prtg.isConfigured())) return { data: [], message: 'PRTG belum dikonfigurasi' };
-    const downSensors = await this.prtg.getDownSensors();
+    const [downSensors, durasiKonfirmasi] = await Promise.all([
+      this.prtg.getDownSensors(),
+      this.getDurasiKonfirmasi(),
+    ]);
 
     // Group by device, cari site dan tiket aktif
-    const byDevice = new Map<string, { device: string; sensors: typeof downSensors; site: { id_site: number; nama_site: string } | null; tiket: { id_ticket: number; nomor_tiket: string; status_tiket: string } | null }>();
+    const byDevice = new Map<string, {
+      device: string; sensors: typeof downSensors;
+      site: { id_site: number; nama_site: string } | null;
+      tiket: { id_ticket: number; nomor_tiket: string; status_tiket: string } | null;
+      pending_sejak: Date | null;
+    }>();
     for (const s of downSensors) {
       const d = s.device?.trim() ?? '';
-      if (!byDevice.has(d)) byDevice.set(d, { device: d, sensors: [], site: null, tiket: null });
+      if (!byDevice.has(d)) byDevice.set(d, { device: d, sensors: [], site: null, tiket: null, pending_sejak: null });
       byDevice.get(d)!.sensors.push(s);
+    }
+
+    // Ambil info pending dari DB (kapan mulai down)
+    const deviceNames = Array.from(byDevice.keys());
+    const pendingRows = deviceNames.length
+      ? await this.prisma.integrationPrtgWebhook.findMany({
+          where: { prtg_device_name: { in: deviceNames }, is_pending: true, id_ticket_terbentuk: null },
+          select: { prtg_device_name: true, first_seen_at: true },
+          orderBy: { first_seen_at: 'asc' },
+        })
+      : [];
+    for (const row of pendingRows) {
+      const e = byDevice.get((row.prtg_device_name ?? '').trim());
+      if (e && !e.pending_sejak) e.pending_sejak = row.first_seen_at as unknown as Date;
     }
 
     // Cari site & tiket untuk tiap device
@@ -214,12 +236,20 @@ export class PrtgService {
       }
     }));
 
-    const data = Array.from(byDevice.values()).map((e) => ({
-      device:    e.device,
-      site:      e.site,
-      tiket:     e.tiket,
-      sensors:   e.sensors.map((s) => ({ id: s.objid, nama: s.sensor, status: s.status, pesan: s.message_raw })),
-    }));
+    const now = Date.now();
+    const data = Array.from(byDevice.values()).map((e) => {
+      const sinaiMs = e.pending_sejak ? now - new Date(e.pending_sejak).getTime() : null;
+      const sisaMs  = sinaiMs !== null ? Math.max(0, durasiKonfirmasi * 60_000 - sinaiMs) : null;
+      return {
+        device:         e.device,
+        site:           e.site,
+        tiket:          e.tiket,
+        pending_sejak:  e.pending_sejak,
+        sisa_grace_ms:  sisaMs,       // null = baru masuk, belum ada entri DB
+        durasi_konfirmasi_menit: durasiKonfirmasi,
+        sensors:        e.sensors.map((s) => ({ id: s.objid, nama: s.sensor, status: s.status, pesan: s.message_raw })),
+      };
+    });
 
     return { data, total: data.length, message: `${data.length} device Down saat ini di PRTG` };
   }

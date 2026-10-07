@@ -499,7 +499,15 @@ async function submitProvision() {
               <router-link v-if="d.tiket" :to="`/operations/${d.tiket.id_ticket}`" class="badge-tiket">
                 🎫 {{ d.tiket.nomor_tiket }} · {{ d.tiket.status_tiket }}
               </router-link>
-              <span v-else-if="d.site" class="badge-notiket">Belum ada tiket</span>
+              <template v-else-if="d.site">
+                <span v-if="d.sisa_grace_ms !== null && d.sisa_grace_ms > 0" class="badge-grace">
+                  ⏳ Tiket dalam {{ Math.ceil(d.sisa_grace_ms / 60000) }} mnt
+                </span>
+                <span v-else-if="d.sisa_grace_ms === 0" class="badge-grace badge-grace-soon">
+                  ⚡ Tiket segera dibuat...
+                </span>
+                <span v-else class="badge-notiket">Menunggu konfirmasi</span>
+              </template>
             </div>
           </div>
           <div class="mon-sensors">
@@ -1023,6 +1031,9 @@ async function submitProvision() {
 .badge-tiket { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; }
 .badge-tiket:hover { background: #bbf7d0; }
 .badge-notiket { background: #ffedd5; color: #9a3412; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.badge-grace { background: #fef9c3; color: #92400e; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.badge-grace-soon { background: #fed7aa; color: #9a3412; animation: pulse-grace 1s ease-in-out infinite; }
+@keyframes pulse-grace { 0%,100% { opacity:1; } 50% { opacity:.6; } }
 .mon-sensors { padding: 6px 18px 12px; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid #fef2f2; background: #fff9f9; }
 .mon-sensor-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .sensor-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; flex-shrink: 0; }
