@@ -7,7 +7,7 @@ import api from '@/services/api'
 const proyek = useProyekStore()
 const auth = useAuthStore()
 const bisaKelolaKoneksi = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
-const tab = ref<'koneksi' | 'mapping' | 'audit' | 'graph' | 'provision'>('mapping')
+const tab = ref<'monitor' | 'koneksi' | 'mapping' | 'audit' | 'graph' | 'provision'>('monitor')
 
 // ─── STATUS ───────────────────────────────────────────────────
 const status = ref<any>(null)
@@ -263,14 +263,48 @@ function lastVal(points: any[], key: string) {
   return null
 }
 
+// ─── MONITOR ──────────────────────────────────────────────────
+const monitorData    = ref<any[]>([])
+const monitorLoading = ref(false)
+const monitorError   = ref('')
+const monitorLastAt  = ref<Date | null>(null)
+let   monitorTimer: ReturnType<typeof setInterval> | null = null
+
+async function fetchMonitor() {
+  monitorLoading.value = true; monitorError.value = ''
+  try {
+    monitorData.value = (await api.get('/prtg/monitor')).data.data ?? []
+    monitorLastAt.value = new Date()
+  } catch (e: any) { monitorError.value = e.response?.data?.message || 'Gagal memuat data monitor' }
+  finally { monitorLoading.value = false }
+}
+
+function fmtRelative(d: Date | null) {
+  if (!d) return '—'
+  const s = Math.floor((Date.now() - d.getTime()) / 1000)
+  if (s < 5) return 'baru saja'
+  if (s < 60) return `${s} detik lalu`
+  return `${Math.floor(s / 60)} menit lalu`
+}
+
+const monitorTick = ref(0)
+let   monitorTickInterval: ReturnType<typeof setInterval> | null = null
+
 onMounted(async () => {
-  await Promise.all([fetchStatus(), fetchConfig(), fetchMapping(), proyek.fetchSiteList(), fetchPending()])
+  await Promise.all([fetchStatus(), fetchConfig(), fetchMapping(), proyek.fetchSiteList(), fetchPending(), fetchMonitor()])
   // Refresh pending list tiap 15 detik (tampilkan countdown live)
   pendingInterval = setInterval(fetchPending, 15_000)
+  // Refresh monitor tiap 60 detik
+  monitorTimer = setInterval(fetchMonitor, 60_000)
+  monitorTickInterval = setInterval(() => monitorTick.value++, 5_000)
 })
 
 import { onUnmounted } from 'vue'
-onUnmounted(() => { if (pendingInterval) clearInterval(pendingInterval) })
+onUnmounted(() => {
+  if (pendingInterval) clearInterval(pendingInterval)
+  if (monitorTimer) clearInterval(monitorTimer)
+  if (monitorTickInterval) clearInterval(monitorTickInterval)
+})
 
 // ─── PROVISION ────────────────────────────────────────────────
 const provisionList     = ref<any[]>([])
@@ -424,11 +458,60 @@ async function submitProvision() {
     </div>
 
     <div class="tabs">
+      <button :class="['tab', { active: tab === 'monitor' }]" @click="tab = 'monitor'; fetchMonitor()">🔴 Monitor Down</button>
       <button :class="['tab', { active: tab === 'mapping' }]" @click="tab = 'mapping'">🔗 Mapping Device → Site</button>
       <button :class="['tab', { active: tab === 'audit' }]" @click="tab = 'audit'; fetchDevices()">🔍 Audit Sensor</button>
       <button :class="['tab', { active: tab === 'graph' }]" @click="tab = 'graph'">📈 Ping & Traffic</button>
       <button :class="['tab', { active: tab === 'provision' }]" @click="tab = 'provision'; fetchProvision()">⚡ Provision Perangkat</button>
       <button v-if="bisaKelolaKoneksi" :class="['tab', { active: tab === 'koneksi' }]" @click="tab = 'koneksi'">⚙️ Koneksi</button>
+    </div>
+
+    <!-- ─── TAB: MONITOR ─── -->
+    <div v-if="tab === 'monitor'" class="tab-content">
+      <div class="monitor-header">
+        <div class="monitor-meta" @click="monitorTick">
+          <span class="mon-count" :class="monitorData.length ? 'count-red' : 'count-green'">{{ monitorData.length }}</span>
+          <span class="mon-label">{{ monitorData.length === 0 ? 'Semua device UP ✓' : `device sedang DOWN` }}</span>
+          <span class="mon-time">Diperbarui: {{ fmtRelative(monitorLastAt) }}</span>
+        </div>
+        <button class="btn-refresh" :disabled="monitorLoading" @click="fetchMonitor">
+          <span v-if="monitorLoading">⏳</span><span v-else>🔄</span> Refresh
+        </button>
+      </div>
+
+      <div v-if="monitorError" class="alert-err">{{ monitorError }}</div>
+
+      <div v-if="monitorLoading && !monitorData.length" class="loading-state">Mengambil data dari PRTG...</div>
+
+      <div v-else-if="!monitorData.length && !monitorLoading" class="empty-monitor">
+        <div class="empty-icon">✅</div>
+        <div class="empty-title">Semua Device UP</div>
+        <div class="empty-sub">Tidak ada sensor Down, DownAck, atau DownPartial di PRTG saat ini.</div>
+      </div>
+
+      <div v-else class="monitor-list">
+        <div v-for="d in monitorData" :key="d.device" class="mon-card">
+          <div class="mon-card-top">
+            <div class="mon-device-name">{{ d.device }}</div>
+            <div class="mon-badges">
+              <span v-if="d.site" class="badge-site">{{ d.site.nama_site }}</span>
+              <span v-else class="badge-nosite">Belum termapping</span>
+              <router-link v-if="d.tiket" :to="`/operations/${d.tiket.id_ticket}`" class="badge-tiket">
+                🎫 {{ d.tiket.nomor_tiket }} · {{ d.tiket.status_tiket }}
+              </router-link>
+              <span v-else-if="d.site" class="badge-notiket">Belum ada tiket</span>
+            </div>
+          </div>
+          <div class="mon-sensors">
+            <div v-for="s in d.sensors" :key="s.id" class="mon-sensor-row">
+              <span class="sensor-dot"></span>
+              <span class="sensor-name">{{ s.nama }}</span>
+              <span class="sensor-status">{{ s.status }}</span>
+              <span v-if="s.pesan" class="sensor-msg">{{ s.pesan }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ─── TAB: MAPPING ─── -->
@@ -909,9 +992,43 @@ async function submitProvision() {
 .toggle-btn.paused { background: #f0fdf4; color: #15803d; }
 .toggle-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1.5px solid #e2e8f0; }
+.tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1.5px solid #e2e8f0; flex-wrap: wrap; }
 .tab { padding: 10px 16px; background: none; border: none; border-bottom: 2px solid transparent; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .tab.active { color: #1e40af; border-bottom-color: #1e40af; }
+
+/* ── Monitor Tab ─────────────────────────────────────────────── */
+.monitor-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.monitor-meta { display: flex; align-items: baseline; gap: 10px; }
+.mon-count { font-size: 36px; font-weight: 800; line-height: 1; }
+.count-red  { color: #dc2626; }
+.count-green { color: #16a34a; }
+.mon-label { font-size: 15px; font-weight: 600; color: #0f172a; }
+.mon-time { font-size: 12px; color: #94a3b8; }
+.btn-refresh { padding: 8px 16px; border: 1.5px solid #e2e8f0; border-radius: 8px; background: #f8fafc; font-size: 13px; font-weight: 600; cursor: pointer; color: #334155; }
+.btn-refresh:hover { background: #e2e8f0; }
+.btn-refresh:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.empty-monitor { text-align: center; padding: 60px 20px; }
+.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-title { font-size: 18px; font-weight: 700; color: #16a34a; margin-bottom: 6px; }
+.empty-sub { font-size: 13px; color: #64748b; }
+
+.monitor-list { display: flex; flex-direction: column; gap: 10px; }
+.mon-card { background: #fff; border-radius: 12px; border: 1.5px solid #fee2e2; box-shadow: 0 1px 3px rgba(0,0,0,0.06); overflow: hidden; }
+.mon-card-top { display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px 10px; flex-wrap: wrap; }
+.mon-device-name { font-size: 14px; font-weight: 700; color: #0f172a; flex: 1; min-width: 200px; }
+.mon-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.badge-site { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.badge-nosite { background: #fef9c3; color: #92400e; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.badge-tiket { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-decoration: none; }
+.badge-tiket:hover { background: #bbf7d0; }
+.badge-notiket { background: #ffedd5; color: #9a3412; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.mon-sensors { padding: 6px 18px 12px; display: flex; flex-direction: column; gap: 4px; border-top: 1px solid #fef2f2; background: #fff9f9; }
+.mon-sensor-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.sensor-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; flex-shrink: 0; }
+.sensor-name { font-weight: 600; color: #334155; min-width: 120px; }
+.sensor-status { color: #dc2626; font-weight: 700; font-size: 11px; background: #fee2e2; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+.sensor-msg { color: #64748b; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 400px; }
 
 .tab-content { display: flex; flex-direction: column; gap: 16px; }
 .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 20px 24px; }

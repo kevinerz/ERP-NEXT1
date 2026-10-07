@@ -22,6 +22,10 @@ export class PrtgController {
   @Post('poll')
   poll() { return this.prtgService.poll(); }
 
+  // Sensor yang sedang Down saat ini langsung dari PRTG API
+  @Get('monitor')
+  getMonitor() { return this.prtgService.getMonitor(); }
+
   // Aktif/jeda polling — Admin/Director
   @Roles('Admin', 'Director')
   @Patch('toggle')

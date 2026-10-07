@@ -188,6 +188,42 @@ export class PrtgService {
     } catch { return 60; }
   }
 
+  /** Sensor yang sedang Down saat ini — langsung dari PRTG API (bukan cache DB). */
+  async getMonitor() {
+    if (!(await this.prtg.isConfigured())) return { data: [], message: 'PRTG belum dikonfigurasi' };
+    const downSensors = await this.prtg.getDownSensors();
+
+    // Group by device, cari site dan tiket aktif
+    const byDevice = new Map<string, { device: string; sensors: typeof downSensors; site: { id_site: number; nama_site: string } | null; tiket: { id_ticket: number; nomor_tiket: string; status_tiket: string } | null }>();
+    for (const s of downSensors) {
+      const d = s.device?.trim() ?? '';
+      if (!byDevice.has(d)) byDevice.set(d, { device: d, sensors: [], site: null, tiket: null });
+      byDevice.get(d)!.sensors.push(s);
+    }
+
+    // Cari site & tiket untuk tiap device
+    await Promise.all(Array.from(byDevice.values()).map(async (entry) => {
+      entry.site = await this.cariSite(entry.device);
+      if (entry.site) {
+        const tiket = await this.prisma.operationTicket.findFirst({
+          where: { id_site: entry.site.id_site, status_tiket: { in: ['Open', 'In_Progress', 'Pending_Customer'] }, sumber_tiket: 'PRTG' },
+          select: { id_ticket: true, nomor_tiket: true, status_tiket: true },
+          orderBy: { created_at: 'desc' },
+        });
+        entry.tiket = tiket;
+      }
+    }));
+
+    const data = Array.from(byDevice.values()).map((e) => ({
+      device:    e.device,
+      site:      e.site,
+      tiket:     e.tiket,
+      sensors:   e.sensors.map((s) => ({ id: s.objid, nama: s.sensor, status: s.status, pesan: s.message_raw })),
+    }));
+
+    return { data, total: data.length, message: `${data.length} device Down saat ini di PRTG` };
+  }
+
   @Cron('*/1 * * * *')
   async poll() {
     // PAUSE TOTAL: polling PRTG MATI kecuali env PRTG_POLL_ENABLED=true.
