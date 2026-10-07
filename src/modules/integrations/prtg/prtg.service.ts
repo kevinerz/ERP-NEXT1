@@ -366,11 +366,20 @@ export class PrtgService {
       }).catch(() => {});
     }
 
-    // ── 5. Bersihkan entri pending lama yang devicenya sudah UP (tanpa tiket) ──
-    const oldPending = await this.prisma.integrationPrtgWebhook.findMany({
-      where: { id_ticket_terbentuk: null, is_pending: false, diterima_pada: { gte: new Date(now.getTime() - 24 * 3600_000) } },
+    // ── 5. Bersihkan entri tanpa tiket yang devicenya sudah UP ──────────────
+    // Termasuk:  is_pending=false (sudah konfirmasi, tanpa site)   → cleanup dalam 24 jam
+    //            is_pending=true  yang sudah kadaluarsa (>grace+5 menit) → orphan, hapus saja
+    const batasOrphan = new Date(now.getTime() - (durasiKonfirmasiMenit + 5) * 60_000);
+    const oldEntries = await this.prisma.integrationPrtgWebhook.findMany({
+      where: {
+        id_ticket_terbentuk: null,
+        OR: [
+          { is_pending: false, diterima_pada: { gte: new Date(now.getTime() - 24 * 3600_000) } },
+          { is_pending: true,  first_seen_at: { lt: batasOrphan } },
+        ],
+      },
     });
-    for (const w of oldPending) {
+    for (const w of oldEntries) {
       if ((w.prtg_sensor_id && downSensorIds.has(w.prtg_sensor_id)) || downDevices.has((w.prtg_device_name ?? '').trim())) continue;
       await this.prisma.notification.deleteMany({
         where: { is_read: false, judul: { contains: `[PRTG] ${w.prtg_device_name} DOWN` } },
