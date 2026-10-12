@@ -20,7 +20,7 @@ const maxHops      = ref('20')
 const dnsType      = ref('A')
 const trProtocol   = ref('udp')
 const trPort       = ref('80')
-const trNoDns      = ref(false)
+const trNoDns      = ref(true)
 
 const loading   = ref(false)
 const result    = ref<any>(null)

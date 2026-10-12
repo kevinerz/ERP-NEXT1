@@ -90,15 +90,15 @@ export class ToolsService {
     if (protocol === 'tcp') {
       const hasTcptr = await hasCommand('tcptraceroute');
       if (hasTcptr) {
-        cmd = `tcptraceroute -m ${hops} -w 1 ${dns} ${host} ${port}`;
+        cmd = `tcptraceroute -m ${hops} -w 1 -q 1 ${dns} ${host} ${port}`;
       } else {
-        cmd = `traceroute -T -p ${port} -m ${hops} -w 1 ${dns} ${host}`;
+        cmd = `traceroute -T -p ${port} -m ${hops} -w 1 -q 1 ${dns} ${host}`;
       }
     } else if (protocol === 'icmp') {
-      cmd = `traceroute -I -m ${hops} -w 1 ${dns} ${host}`;
+      cmd = `traceroute -I -m ${hops} -w 1 -q 1 ${dns} ${host}`;
     } else {
       // UDP default
-      cmd = `traceroute -m ${hops} -w 1 ${dns} ${host}`;
+      cmd = `traceroute -m ${hops} -w 1 -q 1 ${dns} ${host}`;
     }
 
     try {
