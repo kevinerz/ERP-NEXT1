@@ -86,30 +86,32 @@ export class ToolsService {
     const hops = Math.min(maxhops, 20);
     const dns = noDns ? '-n' : '';
 
+    const maxSec = hops + 10; // hard cap: max hops + 10s buffer
     let cmd: string;
     if (protocol === 'tcp') {
       const hasTcptr = await hasCommand('tcptraceroute');
       if (hasTcptr) {
-        cmd = `tcptraceroute -m ${hops} -w 1 -q 1 ${dns} ${host} ${port}`;
+        cmd = `timeout ${maxSec} tcptraceroute -m ${hops} -w 1 -q 1 ${dns} ${host} ${port}`;
       } else {
-        cmd = `traceroute -T -p ${port} -m ${hops} -w 1 -q 1 ${dns} ${host}`;
+        cmd = `timeout ${maxSec} traceroute -T -p ${port} -m ${hops} -w 1 -q 1 ${dns} ${host}`;
       }
     } else if (protocol === 'icmp') {
-      cmd = `traceroute -I -m ${hops} -w 1 -q 1 ${dns} ${host}`;
+      cmd = `timeout ${maxSec} traceroute -I -m ${hops} -w 1 -q 1 ${dns} ${host}`;
     } else {
-      // UDP default
-      cmd = `traceroute -m ${hops} -w 1 -q 1 ${dns} ${host}`;
+      cmd = `timeout ${maxSec} traceroute -m ${hops} -w 1 -q 1 ${dns} ${host}`;
     }
 
     try {
-      const { stdout, stderr } = await execAsync(cmd, { timeout: 150000 });
+      const { stdout, stderr } = await execAsync(cmd, { timeout: (maxSec + 5) * 1000 });
       return { host, output: stdout + (stderr || ''), protocol };
     } catch (e: any) {
-      // fallback: if raw socket error, try tracepath
+      // timeout atau Operation not permitted → kembalikan output parsial jika ada
+      if (e.stdout) {
+        return { host, output: e.stdout + '\n(timeout — output parsial)', protocol };
+      }
       if ((e.message || '').includes('Operation not permitted')) {
         try {
-          const timeoutSec = hops * 4;
-          const { stdout } = await execAsync(`timeout ${timeoutSec} tracepath -m ${hops} ${host}`, { timeout: 150000 });
+          const { stdout } = await execAsync(`timeout ${maxSec} tracepath -n -m ${hops} ${host}`, { timeout: (maxSec + 5) * 1000 });
           return { host, output: stdout, protocol: 'tracepath' };
         } catch (e2: any) {
           return { host, output: e2.stdout || e2.message || 'Traceroute gagal', protocol };
