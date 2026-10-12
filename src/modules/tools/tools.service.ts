@@ -104,19 +104,19 @@ export class ToolsService {
       const { stdout, stderr } = await execAsync(cmd, { timeout: (maxSec + 5) * 1000 });
       return { host, output: stdout + (stderr || ''), protocol };
     } catch (e: any) {
-      // timeout atau Operation not permitted → kembalikan output parsial jika ada
+      const errOut = [e.stdout, e.stderr].filter(Boolean).join('\n') || e.message || 'Traceroute gagal';
       if (e.stdout) {
-        return { host, output: e.stdout + '\n(timeout — output parsial)', protocol };
+        return { host, output: errOut + '\n(timeout — output parsial)', protocol };
       }
       if ((e.message || '').includes('Operation not permitted')) {
         try {
           const { stdout } = await execAsync(`timeout ${maxSec} tracepath -n -m ${hops} ${host}`, { timeout: (maxSec + 5) * 1000 });
           return { host, output: stdout, protocol: 'tracepath' };
         } catch (e2: any) {
-          return { host, output: e2.stdout || e2.message || 'Traceroute gagal', protocol };
+          return { host, output: [e2.stdout, e2.stderr].filter(Boolean).join('\n') || e2.message || 'Traceroute gagal', protocol };
         }
       }
-      return { host, output: e.stdout || e.message || 'Traceroute gagal', protocol };
+      return { host, output: errOut, protocol };
     }
   }
 

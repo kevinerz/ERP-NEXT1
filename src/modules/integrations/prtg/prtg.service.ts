@@ -273,8 +273,8 @@ export class PrtgService {
     const cooldownMenit = await this.getCooldownFlapping();
     const hasil = { tiket_dibuat: 0, flapping_reopened: 0, pending_baru: 0, false_alarm: 0, dilewati: 0, auto_resolved: 0, tanpa_site: 0 };
     const now = new Date();
-    // Normalisasi device name dengan .trim() untuk menghindari mismatch karena whitespace
-    const downDevices = new Set(downSensors.map((s) => s.device?.trim() ?? ''));
+    // Normalisasi device name: trim + lowercase agar tidak mismatch karena whitespace/casing
+    const downDevices = new Set(downSensors.map((s) => (s.device?.trim() ?? '').toLowerCase()));
     // Sensor IDs saat ini down — lebih stabil dari nama (tidak berubah meski device di-rename di PRTG)
     const downSensorIds = new Set(downSensors.map((s) => String(s.objid)));
 
@@ -299,9 +299,11 @@ export class PrtgService {
     );
 
     // ── 2. Sensor pertama kali Down — masuk grace period (belum tiket, belum WA)
+    // activeDevices pakai lowercase juga agar konsisten dengan downDevices
+    const activeDevicesLower = new Set(Array.from(activeDevices).map((d) => (d ?? '').toLowerCase()));
     const byDevice = new Map<string, PrtgSensor[]>();
     for (const s of downSensors) {
-      if (activeDevices.has(s.device)) { hasil.dilewati++; continue; }
+      if (activeDevicesLower.has((s.device ?? '').toLowerCase())) { hasil.dilewati++; continue; }
       const arr = byDevice.get(s.device) ?? [];
       arr.push(s);
       byDevice.set(s.device, arr);
@@ -337,7 +339,7 @@ export class PrtgService {
     }
 
     for (const [device, entries] of pendingByDevice) {
-      if (!downDevices.has(device)) {
+      if (!downDevices.has(device.toLowerCase())) {
         // Device sudah UP dalam grace period → false alarm, hapus entri
         for (const e of entries) {
           await this.prisma.integrationPrtgWebhook.delete({ where: { id_webhook: e.id_webhook } }).catch(() => {});
@@ -381,20 +383,41 @@ export class PrtgService {
       where: { is_pending: false, ticket: { status_tiket: { in: STATUS_TIKET_AKTIF }, sumber_tiket: 'PRTG' } },
       include: { ticket: { select: { id_ticket: true, nomor_tiket: true, status_tiket: true } } },
     });
-    const tiketSensors = new Map<number, { ticket: typeof aktifPrtg[0]['ticket']; devices: string[]; allUp: boolean }>();
+    const tiketSensors = new Map<number, { ticket: typeof aktifPrtg[0]['ticket']; devices: string[]; sensorIds: string[]; hasNullSensorId: boolean; allUp: boolean }>();
     for (const w of aktifPrtg) {
       if (!w.ticket) continue;
-      const entry = tiketSensors.get(w.ticket.id_ticket) ?? { ticket: w.ticket, devices: [], allUp: true };
+      const entry = tiketSensors.get(w.ticket.id_ticket) ?? { ticket: w.ticket, devices: [], sensorIds: [], hasNullSensorId: false, allUp: true };
       entry.devices.push(w.prtg_device_name ?? '');
-      // Cek sensor ID (stabil meski device di-rename) ATAU device name (fallback)
+      if (w.prtg_sensor_id) entry.sensorIds.push(w.prtg_sensor_id);
+      else entry.hasNullSensorId = true;
+      // Cek sensor ID (stabil meski device di-rename) ATAU device name lowercase (case-insensitive)
       const sensorMasihDown =
         (w.prtg_sensor_id ? downSensorIds.has(w.prtg_sensor_id) : false) ||
-        downDevices.has((w.prtg_device_name ?? '').trim());
+        downDevices.has((w.prtg_device_name ?? '').trim().toLowerCase());
       if (sensorMasihDown) entry.allUp = false;
       tiketSensors.set(w.ticket.id_ticket, entry);
     }
-    for (const { ticket, devices, allUp } of tiketSensors.values()) {
+    for (const { ticket, devices, sensorIds, hasNullSensorId, allUp } of tiketSensors.values()) {
       if (!allUp) continue;
+
+      // Verifikasi langsung ke PRTG sebelum resolve — mencegah false resolve
+      // kalau API sebelumnya return partial data atau device di-rename
+      const deviceName = devices[0] ?? '';
+      if (deviceName) {
+        try {
+          const deviceSensors = await this.prtg.getSensorsByDevice(deviceName);
+          const masihDown = deviceSensors.some((s) => [5, 13, 14].includes(s.status_raw));
+          if (masihDown) {
+            const downNames = deviceSensors.filter((s) => [5, 13, 14].includes(s.status_raw)).map((s) => `${s.sensor}(${s.status_raw})`).join(', ');
+            this.logger.warn(`Auto-resolve dibatalkan: ${ticket?.nomor_tiket} — ${deviceName} masih DOWN di PRTG [${downNames}]`);
+            continue;
+          }
+        } catch (e: any) {
+          // Jika verifikasi gagal (network/PRTG error), jangan resolve — safe default
+          this.logger.warn(`Verifikasi PRTG gagal untuk ${deviceName}: ${e.message} — skip auto-resolve (safe)`);
+          continue;
+        }
+      }
       await this.prisma.operationTicket.update({
         where: { id_ticket: ticket.id_ticket },
         data: { status_tiket: 'Resolved', tgl_resolved: new Date() },
@@ -411,7 +434,6 @@ export class PrtgService {
       await this.prisma.notification.deleteMany({
         where: { is_read: false, url: `/operations/${ticket.id_ticket}` },
       }).catch(() => {});
-      const deviceName = devices[0] ?? '';
       this.wa.notifMonitorUp({ sumber: 'PRTG', nama: deviceName }).catch(() => {});
 
       this.prisma.operationTicket.findUnique({
@@ -446,7 +468,7 @@ export class PrtgService {
       },
     });
     for (const w of oldEntries) {
-      if ((w.prtg_sensor_id && downSensorIds.has(w.prtg_sensor_id)) || downDevices.has((w.prtg_device_name ?? '').trim())) continue;
+      if ((w.prtg_sensor_id && downSensorIds.has(w.prtg_sensor_id)) || downDevices.has((w.prtg_device_name ?? '').trim().toLowerCase())) continue;
       await this.prisma.notification.deleteMany({
         where: { is_read: false, judul: { contains: `[PRTG] ${w.prtg_device_name} DOWN` } },
       }).catch(() => {});
