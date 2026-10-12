@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, reactive } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
@@ -126,7 +126,11 @@ const mapSubmitting = ref(false)
 const mapMsg = ref('')
 const hapusMappingId = ref(0)
 
-const mapSite = makeSiteCombo(mapForm.value)
+const mapSiteIdRef = computed({
+  get: () => mapForm.value.id_site,
+  set: (v: number) => { mapForm.value.id_site = v },
+})
+const mapSite = makeSiteCombo(mapSiteIdRef)
 
 async function fetchMapping() {
   mappingLoading.value = true
@@ -151,7 +155,8 @@ async function submitMapping() {
     const r = await api.post('/prtg/mapping', mapForm.value)
     mapMsg.value = r.data.message
     mapForm.value = { device_name: '', id_site: 0 }
-    mapSite.clear()
+    mapSite.query.value = ''
+    mapSite.open.value = false
     await fetchMapping()
   } catch (e: any) { mapMsg.value = e.response?.data?.message || 'Gagal menyimpan mapping' }
   finally { mapSubmitting.value = false }
@@ -282,6 +287,10 @@ function fmtRelative(d: Date | null) {
 
 const monitorTick = ref(0)
 let   monitorTickInterval: ReturnType<typeof setInterval> | null = null
+const monitorLastAtDisplay = computed(() => {
+  monitorTick.value // track dependency agar recompute tiap 5 detik
+  return fmtRelative(monitorLastAt.value)
+})
 
 onMounted(async () => {
   await Promise.all([fetchStatus(), fetchConfig(), fetchMapping(), proyek.fetchSiteList(), fetchPending(), fetchMonitor()])
@@ -290,7 +299,6 @@ onMounted(async () => {
   monitorTickInterval = setInterval(() => monitorTick.value++, 5_000)
 })
 
-import { onUnmounted } from 'vue'
 onUnmounted(() => {
   if (pendingInterval) clearInterval(pendingInterval)
   if (monitorTimer) clearInterval(monitorTimer)
@@ -372,7 +380,6 @@ async function fetchProvision() {
   provisionLoading.value = true; provisionError.value = ''; bulkResult.value = null
   try {
     provisionList.value = (await api.get('/prtg/provision/preview')).data.data ?? []
-    if (bulkCandidates.value.length) await doBulkProvision()
   } catch (e: any) { provisionError.value = e.response?.data?.message || 'Gagal memuat data provision' }
   finally { provisionLoading.value = false }
 }
@@ -542,7 +549,7 @@ function exportProvisionCSV() {
           <span class="mon-count" :class="monitorData.length ? 'count-red' : 'count-green'">{{ monitorData.length }}</span>
           <div>
             <div class="mon-label">{{ monitorData.length === 0 ? 'Semua device UP ✓' : 'device sedang DOWN' }}</div>
-            <div class="mon-time">Diperbarui: {{ fmtRelative(monitorLastAt) }}</div>
+            <div class="mon-time">Diperbarui: {{ monitorLastAtDisplay }}</div>
           </div>
         </div>
         <button class="btn-refresh" :disabled="monitorLoading" @click="fetchMonitor">
@@ -681,7 +688,7 @@ function exportProvisionCSV() {
                       {{ d.matched ? (d.mapped_manual ? 'Manual' : 'Otomatis') : 'Belum Match' }}
                     </span>
                   </td>
-                  <td>{{ d.site ? `[${d.site.nama_site}]` : '—' }}</td>
+                  <td>{{ d.site ? `[${d.site.kode_site}] ${d.site.nama_site}` : '—' }}</td>
                   <td>
                     <button v-if="!d.matched" class="btn-map" @click="mapDariAudit(d.device_name)">Map ke Site</button>
                     <button v-else class="btn-map-add" @click="mapDariAudit(d.device_name)" title="Tambah / timpa dengan mapping manual">+ Manual</button>
