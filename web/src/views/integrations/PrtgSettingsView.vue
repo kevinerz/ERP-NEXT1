@@ -494,6 +494,16 @@ async function submitProvision() {
 }
 
 // Export CSV semua device provision
+function downloadCSV(rows: any[][], filename: string) {
+  const csv = rows.map(r => r.map((c: any) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename
+  document.body.appendChild(a); a.click()
+  document.body.removeChild(a); URL.revokeObjectURL(url)
+}
+
 function exportProvisionCSV() {
   if (!provisionList.value.length) return
   const header = ['Device PRTG', 'IP Address', 'Status', 'Site', 'Skor Match (%)', 'Pelanggan', 'Sudah Provision']
@@ -503,15 +513,19 @@ function exportProvisionCSV() {
     else if (d.match_score === 100) status = '100% Match (Auto)'
     else if (d.match_score != null && d.match_score >= 50) status = `Partial ${d.match_score}%`
     else if (!d.ip_address) status = 'No IP'
-    return [d.device_name, d.ip_address ?? '', status, d.nama_site ?? '', d.match_score ?? '', d.nama_pelanggan ?? '', d.sudah_ada ? 'Ya' : 'Tidak']
+    return [d.device_name, d.ip_address, status, d.nama_site, d.match_score, d.nama_pelanggan, d.sudah_ada ? 'Ya' : 'Tidak']
   })
-  const csv = [header, ...rows].map(r => r.map((c: any) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = `prtg-provision-${new Date().toISOString().slice(0, 10)}.csv`
-  document.body.appendChild(a); a.click()
-  document.body.removeChild(a); URL.revokeObjectURL(url)
+  downloadCSV([header, ...rows], `prtg-provision-${new Date().toISOString().slice(0, 10)}.csv`)
+}
+
+function exportKonfirmasiCSV() {
+  const list = partialCandidates.value
+  if (!list.length) return
+  const header = ['Device PRTG', 'IP Address', 'Site Tebakan', 'Skor Match (%)', 'Pelanggan', 'Kode Site', 'Aksi']
+  const rows = list.map((d: any) => [
+    d.device_name, d.ip_address, d.nama_site, d.match_score, d.nama_pelanggan, d.kode_site ?? '', 'Konfirmasi'
+  ])
+  downloadCSV([header, ...rows], `prtg-konfirmasi-${new Date().toISOString().slice(0, 10)}.csv`)
 }
 </script>
 
@@ -835,6 +849,10 @@ function exportProvisionCSV() {
         <input class="search-prov" v-model="provisionSearch" placeholder="🔍 Cari device / site / IP..." />
         <button class="btn-export" @click="exportProvisionCSV" :disabled="!provisionList.length" title="Export semua status provision ke CSV">
           ⬇ Export CSV
+        </button>
+        <button class="btn-export btn-export-konfirmasi" @click="exportKonfirmasiCSV" :disabled="!provStats.partial" title="Export hanya device yang perlu konfirmasi site (partial match)">
+          ⬇ Export Konfirmasi
+          <span v-if="provStats.partial" class="export-badge">{{ provStats.partial }}</span>
         </button>
         <button class="btn-refresh" @click="fetchProvision" :disabled="provisionLoading">
           {{ provisionLoading ? '⏳' : '🔄' }} Refresh
@@ -1170,8 +1188,11 @@ function exportProvisionCSV() {
 .btn-prov { padding: 5px 12px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-prov:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn-prov-sm { padding: 4px 10px; background: #f1f5f9; color: #374151; border: 1px solid #e2e8f0; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-.btn-export { padding: 9px 14px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-export { position: relative; padding: 9px 14px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .btn-export:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-export-konfirmasi { background: #faf5ff; color: #6d28d9; border-color: #ddd6fe; }
+.btn-export-konfirmasi:not(:disabled):hover { background: #ede9fe; }
+.export-badge { background: #7c3aed; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 700; }
 .btn-lookup { padding: 8px 14px; background: #eff6ff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; color: #1d4ed8; cursor: pointer; white-space: nowrap; }
 .btn-lookup:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-row-inline { display: flex; gap: 6px; align-items: center; }
