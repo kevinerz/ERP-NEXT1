@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import api from '@/services/api'
 
 type Tab = 'ping' | 'traceroute' | 'mtr' | 'dns' | 'port'
@@ -73,6 +73,10 @@ async function run() {
     if (timer) { clearInterval(timer); timer = null }
   }
 }
+
+onUnmounted(() => {
+  if (timer) { clearInterval(timer); timer = null }
+})
 
 function setTab(t: Tab) {
   activeTab.value = t

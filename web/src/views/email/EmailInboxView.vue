@@ -473,7 +473,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
             <span>📎 Lampirkan File</span>
           </label>
           <div v-if="composeFiles.length" class="file-list">
-            <span v-for="(f, i) in composeFiles" :key="i" class="file-chip">
+            <span v-for="(f, i) in composeFiles" :key="f.name + f.size" class="file-chip">
               {{ f.name }} <button @click="hapusFile(i)">×</button>
             </span>
           </div>

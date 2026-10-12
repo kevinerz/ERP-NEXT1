@@ -186,15 +186,15 @@ function prioritasCls(p: string) {
         <!-- Summary cards -->
         <div class="summary-cards">
           <div class="card">
-            <div class="card-val">{{ summary.total_tiket }}</div>
+            <div class="card-val">{{ summary?.total_tiket ?? 0 }}</div>
             <div class="card-lbl">Total Tiket</div>
           </div>
-          <div class="card" :class="{ 'card-red': summary.total_breach > 0 }">
-            <div class="card-val">{{ summary.total_breach }}</div>
+          <div class="card" :class="{ 'card-red': (summary?.total_breach ?? 0) > 0 }">
+            <div class="card-val">{{ summary?.total_breach ?? 0 }}</div>
             <div class="card-lbl">Tiket Breach</div>
           </div>
           <div class="card">
-            <div class="card-val">{{ fmtMttr(summary.avg_mttr_menit) }}</div>
+            <div class="card-val">{{ fmtMttr(summary?.avg_mttr_menit) }}</div>
             <div class="card-lbl">Rata-rata Waktu Penyelesaian</div>
           </div>
         </div>

@@ -56,17 +56,29 @@ function useGroups(endpoint: string) {
   }
 
   async function saveEdit(id: number) {
-    await api.patch(`${endpoint}/${id}`, editForm.value)
-    editId.value = null; await load()
+    try {
+      await api.patch(`${endpoint}/${id}`, editForm.value)
+      editId.value = null; await load()
+    } catch (e: any) {
+      listError.value = e.response?.data?.message || 'Gagal menyimpan'
+    }
   }
 
   async function toggle(g: Group) {
-    await api.patch(`${endpoint}/${g.id}`, { is_active: !g.is_active }); await load()
+    try {
+      await api.patch(`${endpoint}/${g.id}`, { is_active: !g.is_active }); await load()
+    } catch (e: any) {
+      listError.value = e.response?.data?.message || 'Gagal mengubah status'
+    }
   }
 
   async function remove(id: number) {
     if (!confirm('Hapus grup ini?')) return
-    await api.delete(`${endpoint}/${id}`); await load()
+    try {
+      await api.delete(`${endpoint}/${id}`); await load()
+    } catch (e: any) {
+      listError.value = e.response?.data?.message || 'Gagal menghapus'
+    }
   }
 
   async function testGroup(g: Group) {
@@ -192,6 +204,8 @@ async function load() {
   try {
     const r = await api.get('/starsender/config')
     config.value = r.data.data; form.value.is_active = config.value.is_active
+  } catch {
+    // silent — save() akan handle error-nya sendiri
   } finally { loading.value = false }
 }
 

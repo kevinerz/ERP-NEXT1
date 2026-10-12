@@ -235,22 +235,22 @@ function exportCsv() {
       <!-- Summary Cards -->
       <div class="kpi-row">
         <div class="kpi-card blue">
-          <div class="kpi-val">{{ data.summary.total_tiket }}</div>
+          <div class="kpi-val">{{ data.summary?.total_tiket ?? 0 }}</div>
           <div class="kpi-label">Total Tiket</div>
-          <div class="kpi-sub">{{ data.summary.total_resolved }} resolved</div>
+          <div class="kpi-sub">{{ data.summary?.total_resolved ?? 0 }} resolved</div>
         </div>
-        <div class="kpi-card" :class="data.summary.compliance_pct >= 95 ? 'green' : 'red'">
-          <div class="kpi-val">{{ fmtPct(data.summary.compliance_pct) }}</div>
+        <div class="kpi-card" :class="(data.summary?.compliance_pct ?? 0) >= 95 ? 'green' : 'red'">
+          <div class="kpi-val">{{ fmtPct(data.summary?.compliance_pct) }}</div>
           <div class="kpi-label">Kepatuhan SLA</div>
           <div class="kpi-sub">Target {{ data.target_umum }}%</div>
         </div>
-        <div class="kpi-card" :class="data.summary.compliance_fo_pct >= 99 ? 'green' : 'red'">
-          <div class="kpi-val">{{ fmtPct(data.summary.compliance_fo_pct) }}</div>
+        <div class="kpi-card" :class="(data.summary?.compliance_fo_pct ?? 0) >= 99 ? 'green' : 'red'">
+          <div class="kpi-val">{{ fmtPct(data.summary?.compliance_fo_pct) }}</div>
           <div class="kpi-label">Kepatuhan FO</div>
           <div class="kpi-sub">Target {{ data.target_fo }}%</div>
         </div>
-        <div class="kpi-card" :class="data.summary.total_breach > 0 ? 'red' : 'green'">
-          <div class="kpi-val">{{ data.summary.total_breach }}</div>
+        <div class="kpi-card" :class="(data.summary?.total_breach ?? 0) > 0 ? 'red' : 'green'">
+          <div class="kpi-val">{{ data.summary?.total_breach ?? 0 }}</div>
           <div class="kpi-label">Total Breach</div>
           <div class="kpi-sub">tiket melewati SLA</div>
         </div>

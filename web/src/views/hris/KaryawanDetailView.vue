@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
 import { fmtDate as formatDate } from '@/composables/useFormat'
@@ -20,9 +20,19 @@ const actionLoading = ref(false)
 const actionError = ref('')
 const actionSuccess = ref('')
 
+let successTimer: ReturnType<typeof setTimeout> | null = null
+function setSuccess(msg: string) {
+  actionSuccess.value = msg
+  if (successTimer) clearTimeout(successTimer)
+  successTimer = setTimeout(() => { actionSuccess.value = '' }, 3000)
+}
+onUnmounted(() => { if (successTimer) clearTimeout(successTimer) })
+
 onMounted(async () => {
-  await hris.fetchRoles()
-  await hris.fetchOne(id)
+  try {
+    await hris.fetchRoles()
+    await hris.fetchOne(id)
+  } catch { /* error ditampilkan lewat hris.error jika ada */ }
 })
 
 async function handleToggleStatus() {
@@ -30,8 +40,7 @@ async function handleToggleStatus() {
   try {
     await hris.toggleStatus(id)
     await hris.fetchOne(id)
-    actionSuccess.value = 'Status karyawan diperbarui'
-    setTimeout(() => actionSuccess.value = '', 3000)
+    setSuccess('Status karyawan diperbarui')
   } catch (e: any) {
     actionError.value = e.response?.data?.message || 'Gagal'
   }
@@ -62,8 +71,7 @@ async function handleCreateUser() {
     await hris.fetchOne(id)
     showCreateUser.value = false
     userForm.value = { username: '', password: '', role_ids: [] }
-    actionSuccess.value = 'Akun user berhasil dibuat'
-    setTimeout(() => actionSuccess.value = '', 3000)
+    setSuccess('Akun user berhasil dibuat')
   } catch (e: any) {
     actionError.value = e.response?.data?.message || 'Gagal membuat akun'
   } finally {
@@ -82,8 +90,7 @@ async function handleResetPw() {
     await hris.resetPassword(id, newPassword.value)
     showResetPw.value = false
     newPassword.value = ''
-    actionSuccess.value = 'Password berhasil direset'
-    setTimeout(() => actionSuccess.value = '', 3000)
+    setSuccess('Password berhasil direset')
   } catch (e: any) {
     actionError.value = e.response?.data?.message || 'Gagal reset password'
   } finally {
@@ -107,8 +114,7 @@ async function handleEditRoles() {
     await hris.updateUserRoles(id, editRoleIds.value)
     await hris.fetchOne(id)
     showEditRoles.value = false
-    actionSuccess.value = 'Role berhasil diperbarui'
-    setTimeout(() => actionSuccess.value = '', 3000)
+    setSuccess('Role berhasil diperbarui')
   } catch (e: any) {
     actionError.value = e.response?.data?.message || 'Gagal update role'
   } finally {
@@ -121,8 +127,7 @@ async function handleToggleUserStatus() {
   try {
     await hris.toggleUserStatus(id)
     await hris.fetchOne(id)
-    actionSuccess.value = 'Status akun diperbarui'
-    setTimeout(() => actionSuccess.value = '', 3000)
+    setSuccess('Status akun diperbarui')
   } catch (e: any) {
     actionError.value = e.response?.data?.message || 'Gagal'
   }

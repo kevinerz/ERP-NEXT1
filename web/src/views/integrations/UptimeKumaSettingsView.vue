@@ -230,7 +230,7 @@ onMounted(async () => {
             <tr v-if="!mappingList.length"><td colspan="3" class="empty">Belum ada mapping manual</td></tr>
             <tr v-for="m in mappingList" :key="m.id_mapping">
               <td class="mono">{{ m.monitor_name }} <span class="text-gray">({{ m.monitor_id }})</span></td>
-              <td>[{{ m.site.kode_site }}] {{ m.site.nama_site }}</td>
+              <td>{{ m.site ? `[${m.site.kode_site}] ${m.site.nama_site}` : '—' }}</td>
               <td><button class="btn-hapus" :disabled="hapusMappingId === m.id_mapping" @click="hapusMapping(m.id_mapping, m.monitor_name)">{{ hapusMappingId === m.id_mapping ? 'Menghapus...' : 'Hapus' }}</button></td>
             </tr>
           </tbody>

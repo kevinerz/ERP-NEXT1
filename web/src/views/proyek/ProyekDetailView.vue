@@ -55,11 +55,13 @@ const WO_STATUS_COLOR: Record<string, string> = {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    proyek.fetchOne(id),
-    proyek.fetchPmList(),
-    proyek.fetchTeknisiList(),
-  ])
+  try {
+    await Promise.all([
+      proyek.fetchOne(id),
+      proyek.fetchPmList(),
+      proyek.fetchTeknisiList(),
+    ])
+  } catch { /* error ditampilkan lewat proyek.error jika ada */ }
 })
 
 function openEdit() {
@@ -237,8 +239,8 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
           @click="router.push(`/contracts/${proyek.current.kontrak.id_kontrak}`)">
           <span class="ic-label">Kontrak</span>
           <span class="ic-value fw">{{ proyek.current.kontrak.nomor_kontrak }}</span>
-          <span class="ic-status" :class="`kstatus-${proyek.current.kontrak.status_kontrak.toLowerCase()}`">
-            {{ proyek.current.kontrak.status_kontrak.replace('_', ' ') }}
+          <span class="ic-status" :class="`kstatus-${proyek.current.kontrak.status_kontrak?.toLowerCase() ?? ''}`">
+            {{ proyek.current.kontrak.status_kontrak?.replace('_', ' ') ?? '—' }}
           </span>
         </div>
       </div>

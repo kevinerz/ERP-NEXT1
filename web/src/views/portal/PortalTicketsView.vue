@@ -16,13 +16,18 @@ const formErr  = ref('')
 const form = ref({ id_site: 0, judul_tiket: '', deskripsi_masalah: '' })
 
 onMounted(async () => {
-  const [t, s] = await Promise.all([
-    portalApi.get('/portal/tickets', { params: { limit: 200 } }),
-    portalApi.get('/portal/sites'),
-  ])
-  tickets.value = t.data.data ?? []
-  sites.value   = s.data.data ?? []
-  loading.value = false
+  try {
+    const [t, s] = await Promise.all([
+      portalApi.get('/portal/tickets', { params: { limit: 200 } }),
+      portalApi.get('/portal/sites'),
+    ])
+    tickets.value = t.data.data ?? []
+    sites.value   = s.data.data ?? []
+  } catch {
+    // biarkan list kosong, loading tetap selesai
+  } finally {
+    loading.value = false
+  }
 })
 
 const filtered = computed(() => {
@@ -50,8 +55,10 @@ const kpi = computed(() => ({
 }))
 
 async function openDetail(t: any) {
-  const r = await portalApi.get(`/portal/tickets/${t.id_ticket}`)
-  detail.value = r.data.data
+  try {
+    const r = await portalApi.get(`/portal/tickets/${t.id_ticket}`)
+    detail.value = r.data.data
+  } catch { /* detail tetap null, modal tidak terbuka */ }
 }
 
 async function submitTicket() {

@@ -903,7 +903,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
             </div>
             <div v-if="!activityFeed.length" class="empty-section">Belum ada aktivitas</div>
             <div class="feed-list">
-              <div v-for="(item, idx) in activityFeed" :key="idx" class="feed-item">
+              <div v-for="item in activityFeed" :key="item.kind + ':' + item.time" class="feed-item">
                 <!-- Log entry -->
                 <template v-if="item.kind === 'log'">
                   <div class="feed-dot log-dot-c" :style="{ background: item.log.status_ke ? STATUS_COLOR[item.log.status_ke]?.color || '#64748b' : '#94a3b8' }"></div>
@@ -975,7 +975,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
           </div>
           <div class="tl-body">
             <div class="tl-list">
-              <div v-for="(ev, idx) in timelineEvents" :key="idx" class="tl-item">
+              <div v-for="(ev, idx) in timelineEvents" :key="ev.type + ':' + ev.time" class="tl-item">
                 <div class="tl-line-wrap">
                   <div class="tl-dot" :style="{ background: ev.color }">{{ ev.icon }}</div>
                   <div class="tl-connector" v-if="idx < timelineEvents.length - 1"></div>

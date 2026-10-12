@@ -135,8 +135,12 @@ async function uploadFoto() {
 }
 async function hapusFoto(id_foto: number) {
   if (!confirm('Hapus foto ini?')) return
-  await ins.deleteFoto(id_foto)
-  await ins.fetchOne(id)
+  try {
+    await ins.deleteFoto(id_foto)
+    await ins.fetchOne(id)
+  } catch (e: any) {
+    alert(e.response?.data?.message || 'Gagal menghapus foto')
+  }
 }
 function fotoUrl(filename: string) {
   return `/uploads/instalasi/${id}/${filename}`

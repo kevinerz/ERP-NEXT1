@@ -343,7 +343,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
                   <td>{{ fmtMenit(p.mttr_menit) }}</td>
                   <td :class="{ 'red-text': p.sla_breach > 0 }">{{ p.sla_breach }}</td>
                 </tr>
-                <tr v-if="!nocMetrics.per_prioritas.length"><td colspan="5" class="empty-sm">Belum ada tiket periode ini</td></tr>
+                <tr v-if="!nocMetrics.per_prioritas?.length"><td colspan="5" class="empty-sm">Belum ada tiket periode ini</td></tr>
               </tbody>
             </table>
           </div>
@@ -355,7 +355,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
                 <tr v-for="t in nocMetrics.per_teknisi" :key="t.nama">
                   <td>{{ t.nama }}</td><td>{{ t.resolved }}</td><td>{{ fmtMenit(t.mttr_menit) }}</td>
                 </tr>
-                <tr v-if="!nocMetrics.per_teknisi.length"><td colspan="3" class="empty-sm">Belum ada tiket selesai</td></tr>
+                <tr v-if="!nocMetrics.per_teknisi?.length"><td colspan="3" class="empty-sm">Belum ada tiket selesai</td></tr>
               </tbody>
             </table>
           </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
 import { useAuthStore } from '@/stores/auth'
@@ -361,6 +361,10 @@ function onMapInput() {
   if (mapDebounceTimer) clearTimeout(mapDebounceTimer)
   mapDebounceTimer = setTimeout(searchHere, 350)
 }
+
+onUnmounted(() => {
+  if (mapDebounceTimer) clearTimeout(mapDebounceTimer)
+})
 
 function selectMapResult(r: any) {
   form.value.nama_site = r.name || ''
