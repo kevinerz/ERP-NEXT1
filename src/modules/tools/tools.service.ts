@@ -84,21 +84,20 @@ export class ToolsService {
   ): Promise<{ host: string; output: string; protocol?: string }> {
     const host = validateHost(rawHost);
     const hops = Math.min(maxhops, 20);
-    const dns = noDns ? '-n' : '';
-
     const maxSec = hops + 10; // hard cap: max hops + 10s buffer
+    // Selalu pakai -n: DNS reverse per hop bisa menambah 3-5 detik per hop
     let cmd: string;
     if (protocol === 'tcp') {
       const hasTcptr = await hasCommand('tcptraceroute');
       if (hasTcptr) {
-        cmd = `timeout ${maxSec} tcptraceroute -m ${hops} -w 1 -q 1 ${dns} ${host} ${port}`;
+        cmd = `timeout ${maxSec} tcptraceroute -m ${hops} -w 1 -q 1 -n ${host} ${port}`;
       } else {
-        cmd = `timeout ${maxSec} traceroute -T -p ${port} -m ${hops} -w 1 -q 1 ${dns} ${host}`;
+        cmd = `timeout ${maxSec} traceroute -T -p ${port} -m ${hops} -w 1 -q 1 -n ${host}`;
       }
     } else if (protocol === 'icmp') {
-      cmd = `timeout ${maxSec} traceroute -I -m ${hops} -w 1 -q 1 ${dns} ${host}`;
+      cmd = `timeout ${maxSec} traceroute -I -m ${hops} -w 1 -q 1 -n ${host}`;
     } else {
-      cmd = `timeout ${maxSec} traceroute -m ${hops} -w 1 -q 1 ${dns} ${host}`;
+      cmd = `timeout ${maxSec} traceroute -m ${hops} -w 1 -q 1 -n ${host}`;
     }
 
     try {

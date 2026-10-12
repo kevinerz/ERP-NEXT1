@@ -187,10 +187,6 @@ function quickSet(h: string, p?: string) {
 
         <!-- Traceroute extra options -->
         <div v-if="activeTab === 'traceroute'" class="tr-options">
-          <label class="tr-check">
-            <input type="checkbox" v-model="trNoDns" />
-            <span>Skip DNS (lebih cepat)</span>
-          </label>
           <span class="tr-info">
             <span v-if="trProtocol === 'udp'">UDP — mode default, cocok untuk routing umum</span>
             <span v-else-if="trProtocol === 'tcp'">TCP — via tcptraceroute, cocok untuk cek firewall per-port</span>
