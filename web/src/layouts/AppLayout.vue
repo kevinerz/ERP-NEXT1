@@ -24,9 +24,56 @@ const appVersion = __APP_VERSION__
 const appHash    = __APP_GIT_HASH__
 const cfg        = useSettingsStore()
 
+// ── Audio alert ───────────────────────────────────────
+const soundEnabled = ref(localStorage.getItem('notif_sound') !== '0')
+let audioCtx: AudioContext | null = null
+
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext()
+    if (audioCtx.state === 'suspended') audioCtx.resume()
+  } catch {}
+}
+
+function playAlertSound() {
+  if (!soundEnabled.value) return
+  try {
+    if (!audioCtx) audioCtx = new AudioContext()
+    if (audioCtx.state === 'suspended') audioCtx.resume()
+    const ctx = audioCtx
+    // 3 beep keras (880 Hz, 0ms / 280ms / 560ms)
+    ;[0, 0.28, 0.56].forEach(offset => {
+      const osc  = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.type = 'square'
+      osc.frequency.value = 880
+      const t = ctx.currentTime + offset
+      gain.gain.setValueAtTime(0, t)
+      gain.gain.linearRampToValueAtTime(0.75, t + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22)
+      osc.start(t)
+      osc.stop(t + 0.22)
+    })
+  } catch {}
+}
+
+function toggleSound() {
+  soundEnabled.value = !soundEnabled.value
+  localStorage.setItem('notif_sound', soundEnabled.value ? '1' : '0')
+  if (soundEnabled.value) playAlertSound()
+}
+
+// Bunyikan saat ada toast baru
+watch(() => notif.toasts.length, (newLen, oldLen) => {
+  if (newLen > (oldLen ?? 0)) playAlertSound()
+})
+
 onMounted(() => {
   notif.startPolling()
   document.addEventListener('click', onDocClick)
+  document.addEventListener('click', unlockAudio, { once: true })
 })
 onUnmounted(() => {
   notif.stopPolling()
@@ -290,6 +337,13 @@ const initials = computed(() => {
         </div>
 
         <div class="topbar-right">
+          <!-- Sound toggle -->
+          <button class="tb-btn sound-btn" @click="toggleSound"
+            :aria-label="soundEnabled ? 'Matikan suara notifikasi' : 'Aktifkan suara notifikasi'"
+            :title="soundEnabled ? 'Suara: ON (klik untuk mute)' : 'Suara: OFF (klik untuk aktifkan)'">
+            <span class="tb-icon">{{ soundEnabled ? '🔊' : '🔇' }}</span>
+          </button>
+
           <!-- Notification bell -->
           <div class="notif-area">
             <button class="tb-btn" @click.stop="toggleNotifPanel" :class="{ active: showNotifPanel }"
@@ -649,6 +703,8 @@ const initials = computed(() => {
 }
 .tb-btn:hover, .tb-btn.active { background: #f1f5f9; color: #0f172a; }
 .tb-icon { font-size: 18px; }
+.sound-btn { opacity: 0.7; }
+.sound-btn:hover { opacity: 1; }
 
 /* Notification badge */
 .notif-badge {
