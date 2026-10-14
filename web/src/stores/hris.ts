@@ -111,6 +111,11 @@ export const useHrisStore = defineStore('hris', {
       return data.data
     },
 
+    async updateModulAkses(id: number, modul_akses: string[]) {
+      const { data } = await api.patch(`/hris/karyawan/${id}/user/modul-akses`, { modul_akses })
+      return data.data
+    },
+
     async fetchRoles() {
       if (this.roles.length) return
       try {

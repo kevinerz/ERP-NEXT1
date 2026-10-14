@@ -103,6 +103,16 @@ export class HrisController {
     return this.hrisService.resetPassword(id, dto.new_password);
   }
 
+  // PATCH /api/hris/karyawan/:id/user/modul-akses
+  @Patch('karyawan/:id/user/modul-akses')
+  @Roles('Admin', 'Director')
+  updateModulAkses(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('modul_akses') modul_akses: string[],
+  ) {
+    return this.hrisService.updateModulAkses(id, modul_akses ?? []);
+  }
+
   // ─── REFERENSI ────────────────────────────────────────────────
 
   // GET /api/hris/roles

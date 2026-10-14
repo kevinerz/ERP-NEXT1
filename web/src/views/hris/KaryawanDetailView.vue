@@ -122,6 +122,53 @@ async function handleEditRoles() {
   }
 }
 
+// ─── Modul Akses ──────────────────────────────────────────────
+const ALL_MODULS = [
+  { key: 'hris',          label: 'HRIS',        icon: '👤' },
+  { key: 'master',        label: 'Master Data',  icon: '📦' },
+  { key: 'sales',         label: 'Sales',        icon: '💼' },
+  { key: 'projects',      label: 'Proyek',       icon: '📋' },
+  { key: 'operations',    label: 'Operasional',  icon: '🔧' },
+  { key: 'assets',        label: 'Aset',         icon: '🖥️' },
+  { key: 'contracts',     label: 'Kontrak',      icon: '📄' },
+  { key: 'reports',       label: 'Laporan',      icon: '📈' },
+  { key: 'notifications', label: 'Notifikasi',   icon: '🔔' },
+  { key: 'public-wo',     label: 'Public WO',    icon: '🌐' },
+  { key: 'prtg',          label: 'PRTG',         icon: '📡' },
+  { key: 'mekari',        label: 'Mekari',       icon: '💳' },
+]
+
+const showEditModul  = ref(false)
+const editModulAkses = ref<string[]>([])
+const semuaModul     = ref(false)
+
+function openEditModul() {
+  const raw: string[] = hris.current?.user?.modul_akses ?? []
+  semuaModul.value     = raw.length === 0
+  editModulAkses.value = raw.length ? [...raw] : []
+  showEditModul.value  = true
+}
+
+function onSemuaModulChange() {
+  if (semuaModul.value) editModulAkses.value = []
+}
+
+async function handleEditModul() {
+  actionLoading.value = true
+  actionError.value   = ''
+  try {
+    // semuaModul = true → kirim [] agar backend simpan null (akses semua)
+    await hris.updateModulAkses(id, semuaModul.value ? [] : editModulAkses.value)
+    await hris.fetchOne(id)
+    showEditModul.value = false
+    setSuccess('Akses modul berhasil diperbarui')
+  } catch (e: any) {
+    actionError.value = e.response?.data?.message || 'Gagal update modul akses'
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 async function handleToggleUserStatus() {
   actionError.value = ''
   try {
@@ -308,7 +355,14 @@ async function handleToggleUserStatus() {
           <div class="info-item">
             <span class="label">Role</span>
             <span class="value">
-              {{ hris.current.user.user_roles.map(ur => ur.role.nama_role).join(', ') }}
+              {{ hris.current.user.user_roles.map(ur => ur.role.nama_role).join(', ') || '—' }}
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="label">Akses Modul</span>
+            <span class="value">
+              <span v-if="!hris.current.user.modul_akses?.length" class="badge-admin">⭐ Semua Modul</span>
+              <span v-else>{{ hris.current.user.modul_akses.length }} modul</span>
             </span>
           </div>
           <div class="info-item">
@@ -318,6 +372,7 @@ async function handleToggleUserStatus() {
         </div>
         <div class="user-actions">
           <button class="btn-secondary" @click="openEditRoles">Edit Role</button>
+          <button class="btn-secondary" @click="openEditModul">Edit Akses Modul</button>
           <button class="btn-secondary" @click="showResetPw = true">Reset Password</button>
           <button
             :class="hris.current.user.is_aktif ? 'btn-danger' : 'btn-success'"
@@ -400,6 +455,41 @@ async function handleToggleUserStatus() {
           <button class="btn-cancel" @click="showEditRoles = false">Batal</button>
           <button class="btn-submit" @click="handleEditRoles" :disabled="actionLoading">
             {{ actionLoading ? 'Menyimpan...' : 'Simpan Role' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Edit Akses Modul -->
+    <div v-if="showEditModul" class="modal-overlay" @click.self="showEditModul = false">
+      <div class="modal modal-wide">
+        <h3>Edit Akses Modul</h3>
+        <p class="modal-sub">Username: <strong>{{ hris.current?.user?.username }}</strong></p>
+
+        <!-- Toggle Semua Modul (Administrator) -->
+        <label class="modul-admin-toggle" :class="{ active: semuaModul }">
+          <input type="checkbox" v-model="semuaModul" @change="onSemuaModulChange" />
+          <span>⭐ Administrator — Semua Modul (tidak dibatasi)</span>
+        </label>
+
+        <!-- Daftar modul individual -->
+        <div class="field" v-if="!semuaModul">
+          <label>Pilih modul yang dapat diakses:</label>
+          <div class="modul-grid">
+            <label v-for="m in ALL_MODULS" :key="m.key" class="modul-item"
+              :class="{ checked: editModulAkses.includes(m.key) }">
+              <input type="checkbox" :value="m.key" v-model="editModulAkses" />
+              <span class="modul-icon">{{ m.icon }}</span>
+              <span class="modul-name">{{ m.label }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div v-if="actionError" class="error-msg">{{ actionError }}</div>
+        <div class="modal-actions">
+          <button class="btn-cancel" @click="showEditModul = false">Batal</button>
+          <button class="btn-submit" @click="handleEditModul" :disabled="actionLoading">
+            {{ actionLoading ? 'Menyimpan...' : 'Simpan Akses' }}
           </button>
         </div>
       </div>
@@ -517,6 +607,29 @@ async function handleToggleUserStatus() {
 .btn-cancel { background: #f1f5f9; border: none; border-radius: 8px; padding: 9px 18px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Modul akses */
+.modal-wide { max-width: 560px; }
+.badge-admin { background: #fef3c7; color: #92400e; border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
+.modul-admin-toggle {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-radius: 10px; border: 2px solid #e2e8f0;
+  cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 14px;
+  transition: all 0.15s;
+}
+.modul-admin-toggle.active { border-color: #f59e0b; background: #fffbeb; color: #92400e; }
+.modul-admin-toggle input { width: 16px; height: 16px; accent-color: #f59e0b; }
+.modul-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.modul-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;
+  cursor: pointer; font-size: 13px; transition: all 0.12s;
+}
+.modul-item.checked { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
+.modul-item input { width: 14px; height: 14px; accent-color: #3b82f6; }
+.modul-icon { font-size: 15px; }
+.modul-name { font-weight: 500; }
+@media (max-width: 500px) { .modul-grid { grid-template-columns: repeat(2, 1fr); } }
 
 .loading-page { padding: 60px; text-align: center; color: #94a3b8; }
 </style>

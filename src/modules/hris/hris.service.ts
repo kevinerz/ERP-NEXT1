@@ -83,12 +83,19 @@ export class HrisService {
             username: true,
             is_aktif: true,
             last_login: true,
+            modul_akses: true,
             user_roles: { include: { role: true } },
           },
         },
       },
     });
     if (!karyawan) throw new NotFoundException('Karyawan tidak ditemukan');
+    // Parse modul_akses dari JSON string → array
+    if (karyawan.user) {
+      (karyawan.user as any).modul_akses = karyawan.user.modul_akses
+        ? JSON.parse(karyawan.user.modul_akses as string)
+        : [];
+    }
     return karyawan;
   }
 
@@ -236,6 +243,18 @@ export class HrisService {
       where: { id_user: karyawan.user.id_user },
       data: { password_hash },
       select: { id_user: true, username: true },
+    });
+  }
+
+  async updateModulAkses(id_karyawan: number, modul_akses: string[]) {
+    const karyawan = await this.findOneKaryawan(id_karyawan);
+    if (!karyawan.user) throw new NotFoundException('Karyawan belum memiliki akun user');
+
+    // modul_akses kosong = akses semua modul (Administrator)
+    return this.prisma.coreUser.update({
+      where: { id_user: karyawan.user.id_user },
+      data: { modul_akses: modul_akses.length ? JSON.stringify(modul_akses) : null },
+      select: { id_user: true, username: true, modul_akses: true },
     });
   }
 
