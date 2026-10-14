@@ -317,10 +317,16 @@ const bulkResult      = ref<any>(null)
 const provModal           = ref(false)
 const provSelected        = ref<any>(null)
 const provSiteId          = ref<number>(0)
-const provForm            = ref({ jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: '', ip_address: '' })
+const provForm            = ref({ jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: '', ip_address: '', importComment: false })
 const provSubmitting      = ref(false)
 const provMsg             = ref('')
 const provAsetFound       = ref<any>(null)
+
+// Import comment standalone (untuk device yang sudah mapped)
+const importModal         = ref(false)
+const importDevice        = ref<any>(null)
+const importLoading       = ref(false)
+const importResult        = ref<any>(null)
 const provAsetLookupLoad  = ref(false)
 const linkAset            = ref(false)
 
@@ -446,7 +452,8 @@ async function doBulkProvision() {
 function openProvModal(device: any) {
   provSelected.value = device
   provSiteId.value = device.id_site ?? inlineSiteId.value[device.device_name] ?? 0
-  provForm.value = { jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: device.parsed_sn ?? '', ip_address: device.ip_address ?? '' }
+  const hasCommentData = !!(device.parsed_sns?.length || device.parsed_pic?.length)
+  provForm.value = { jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: device.parsed_sn ?? '', ip_address: device.ip_address ?? '', importComment: hasCommentData }
   provAsetFound.value = null
   linkAset.value = false
   provMsg.value = ''
@@ -485,12 +492,48 @@ async function submitProvision() {
     }
     if (linkAset.value && provAsetFound.value) payload.id_aset = provAsetFound.value.id_aset
     await api.post('/prtg/provision', payload)
+    // Import data dari komentar jika dicentang
+    if (provForm.value.importComment && provSelected.value.comments) {
+      try {
+        await api.post('/prtg/import-comment', {
+          id_site: provSiteId.value,
+          parsed_sns: provSelected.value.parsed_sns ?? [],
+          parsed_pic: provSelected.value.parsed_pic ?? [],
+          parsed_ip: provSelected.value.parsed_ip ?? null,
+          comment_text: provSelected.value.comments ?? '',
+        })
+      } catch {}
+    }
     provModal.value = false
     clearInlineSite(provSelected.value.device_name)
     await fetchProvision()
   } catch (e: any) {
     provMsg.value = e.response?.data?.message || 'Gagal menambahkan perangkat'
   } finally { provSubmitting.value = false }
+}
+
+function openImportModal(device: any) {
+  importDevice.value = device
+  importResult.value = null
+  importModal.value = true
+}
+
+async function doImportComment() {
+  const d = importDevice.value
+  if (!d || !d.id_site) return
+  importLoading.value = true; importResult.value = null
+  try {
+    const r = await api.post('/prtg/import-comment', {
+      id_site: d.id_site,
+      parsed_sns: d.parsed_sns ?? [],
+      parsed_pic: d.parsed_pic ?? [],
+      parsed_ip: d.parsed_ip ?? null,
+      comment_text: d.comments ?? '',
+    })
+    importResult.value = r.data.data
+  } catch (e: any) {
+    importResult.value = { error: e.response?.data?.message || 'Gagal import' }
+  } finally { importLoading.value = false }
 }
 
 // Export CSV semua device provision
@@ -925,7 +968,13 @@ function exportKonfirmasiCSV() {
                     <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
                   </td>
                   <td><span class="badge-auto-match">~{{ d.match_score }}%</span></td>
-                  <td><button class="btn-prov" @click="openProvModal(d)">Provision</button></td>
+                  <td>
+                    <button class="btn-prov" @click="openProvModal(d)">Provision</button>
+                    <button v-if="d.id_site && d.comments && (d.parsed_sns?.length || d.parsed_pic?.length)"
+                      class="btn-import-sm" @click="openImportModal(d)" title="Import perangkat, PIC, catatan ke site yang sudah cocok">
+                      Import Data
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1017,7 +1066,13 @@ function exportKonfirmasiCSV() {
                     <span class="site-name">{{ d.nama_site || '—' }}</span>
                     <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
                   </td>
-                  <td><button class="btn-prov-sm" @click="openProvModal(d)">+ Lagi</button></td>
+                  <td>
+                    <button class="btn-prov-sm" @click="openProvModal(d)">+ Lagi</button>
+                    <button v-if="d.comments && (d.parsed_sns?.length || d.parsed_pic?.length)"
+                      class="btn-import-sm" @click="openImportModal(d)" title="Import perangkat, PIC, catatan dari komentar PRTG">
+                      Import Data
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1029,6 +1084,78 @@ function exportKonfirmasiCSV() {
         </div>
 
       </template>
+    </div>
+
+    <!-- Modal Import Data Komentar -->
+    <div v-if="importModal" class="modal-overlay" @click.self="importModal = false">
+      <div class="modal-box">
+        <div class="modal-head">
+          <h4>Import Data dari Komentar PRTG</h4>
+          <button class="modal-close" @click="importModal = false">✕</button>
+        </div>
+        <div class="modal-form" style="padding:16px 20px">
+          <div class="modal-info" style="margin-bottom:12px">
+            <div class="info-row"><span>Device</span><span class="mono">{{ importDevice?.device_name }}</span></div>
+            <div class="info-row"><span>Site</span><span>{{ importDevice?.nama_site || '—' }}</span></div>
+          </div>
+
+          <!-- Preview data yang akan diimport -->
+          <div v-if="!importResult" class="import-detail" style="margin-bottom:16px">
+            <div v-if="importDevice?.parsed_sns?.length" class="import-group">
+              <span class="import-group-label">Perangkat + SN → <em>Perangkat Site</em>:</span>
+              <ul class="import-list">
+                <li v-for="s in importDevice.parsed_sns" :key="s.sn">
+                  <span class="badge-sn">SN: {{ s.sn }}</span>
+                  <span v-if="s.device" class="sn-device">{{ s.device }}</span>
+                </li>
+              </ul>
+            </div>
+            <div v-if="importDevice?.parsed_pic?.length" class="import-group">
+              <span class="import-group-label">Nomor kontak → <em>PIC Site</em>:</span>
+              <div style="margin-top:4px">
+                <span v-for="p in importDevice.parsed_pic" :key="p" class="badge-pic">{{ p }}</span>
+              </div>
+            </div>
+            <div class="import-group" style="color:#64748b;font-size:12px">
+              Komentar PRTG akan disimpan ke catatan site (jika belum ada)
+            </div>
+          </div>
+
+          <!-- Hasil import -->
+          <div v-if="importResult && !importResult.error" class="import-result">
+            <div v-if="importResult.perangkat_dibuat?.length" class="result-group ok">
+              <strong>Perangkat dibuat ({{ importResult.perangkat_dibuat.length }}):</strong>
+              <ul>
+                <li v-for="p in importResult.perangkat_dibuat" :key="p.sn">{{ p.device || 'Device' }} — SN: {{ p.sn }} <em>({{ p.jenis }})</em></li>
+              </ul>
+            </div>
+            <div v-if="importResult.perangkat_skip?.length" class="result-group skip">
+              Dilewati (sudah ada): {{ importResult.perangkat_skip.join(', ') }}
+            </div>
+            <div v-if="importResult.pic_dibuat?.length" class="result-group ok">
+              <strong>PIC dibuat ({{ importResult.pic_dibuat.length }}):</strong>
+              {{ importResult.pic_dibuat.join(', ') }}
+            </div>
+            <div v-if="importResult.pic_skip?.length" class="result-group skip">
+              PIC dilewati (sudah ada): {{ importResult.pic_skip.join(', ') }}
+            </div>
+            <div v-if="importResult.catatan_updated" class="result-group ok">
+              Catatan site diperbarui
+            </div>
+            <div v-if="!importResult.perangkat_dibuat?.length && !importResult.pic_dibuat?.length && !importResult.catatan_updated" class="result-group skip">
+              Semua data sudah ada di ERP, tidak ada yang perlu diimport
+            </div>
+          </div>
+          <div v-if="importResult?.error" class="result-group err">{{ importResult.error }}</div>
+
+          <div class="modal-actions">
+            <button class="btn-secondary" @click="importModal = false">{{ importResult ? 'Tutup' : 'Batal' }}</button>
+            <button v-if="!importResult" class="btn-submit" @click="doImportComment" :disabled="importLoading">
+              {{ importLoading ? 'Mengimport...' : 'Import Sekarang' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Modal Provision -->
@@ -1081,7 +1208,49 @@ function exportKonfirmasiCSV() {
           <div v-if="provSelected?.comments" class="prtg-comment-box">
             <span class="comment-label">Komentar PRTG</span>
             <span class="comment-body">{{ provSelected.comments }}</span>
-            <span v-if="provSelected.parsed_sn" class="badge-sn">SN terdeteksi: {{ provSelected.parsed_sn }}</span>
+            <!-- Semua SN yang terdeteksi -->
+            <div v-if="provSelected.parsed_sns?.length" class="sn-list">
+              <span class="comment-label" style="margin-top:8px">Perangkat terdeteksi:</span>
+              <div v-for="s in provSelected.parsed_sns" :key="s.sn" class="sn-row-item">
+                <span class="badge-sn" style="cursor:pointer" @click="provForm.serial_number = s.sn" :title="'Klik untuk pakai SN ini'">
+                  SN: {{ s.sn }}
+                </span>
+                <span v-if="s.device" class="sn-device">{{ s.device }}</span>
+              </div>
+            </div>
+            <!-- PIC -->
+            <div v-if="provSelected.parsed_pic?.length" class="pic-list">
+              <span class="comment-label" style="margin-top:8px">PIC:</span>
+              <span v-for="p in provSelected.parsed_pic" :key="p" class="badge-pic">{{ p }}</span>
+            </div>
+          </div>
+
+          <!-- Import semua data komentar ke ERP -->
+          <div v-if="provSelected?.comments && (provSelected.parsed_sns?.length || provSelected.parsed_pic?.length)" class="import-section">
+            <label class="import-toggle">
+              <input type="checkbox" v-model="provForm.importComment" />
+              <strong>Import semua data dari komentar ke ERP</strong>
+            </label>
+            <div v-if="provForm.importComment" class="import-detail">
+              <div v-if="provSelected.parsed_sns?.length" class="import-group">
+                <span class="import-group-label">Perangkat yang akan dibuat di <em>Perangkat Site</em>:</span>
+                <ul class="import-list">
+                  <li v-for="s in provSelected.parsed_sns" :key="s.sn">
+                    <span class="badge-sn">SN: {{ s.sn }}</span>
+                    <span v-if="s.device" class="sn-device">{{ s.device }}</span>
+                  </li>
+                </ul>
+              </div>
+              <div v-if="provSelected.parsed_pic?.length" class="import-group">
+                <span class="import-group-label">Nomor kontak yang akan dibuat di <em>PIC Site</em>:</span>
+                <div style="margin-top:4px">
+                  <span v-for="p in provSelected.parsed_pic" :key="p" class="badge-pic">{{ p }}</span>
+                </div>
+              </div>
+              <div class="import-group" style="color:#64748b;font-size:12px">
+                Komentar PRTG juga akan disimpan ke catatan site (jika belum ada)
+              </div>
+            </div>
           </div>
 
           <div class="field">
@@ -1221,9 +1390,30 @@ td { padding: 10px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .comment-text { display: block; font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
 .comment-empty { color: #cbd5e1; font-size: 12px; }
 .badge-sn { display: inline-block; background: #f0fdf4; border: 1px solid #86efac; color: #15803d; border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 600; margin-top: 2px; }
-.prtg-comment-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+.btn-import-sm { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; margin-left: 4px; }
+.btn-import-sm:hover { background: #dbeafe; }
+.import-section { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+.import-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+.import-toggle input { margin: 0; }
+.import-detail { margin-top: 10px; }
+.import-group { margin-bottom: 8px; }
+.import-group-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: #059669; display: block; margin-bottom: 4px; }
+.import-list { margin: 4px 0 0 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.import-list li { display: flex; align-items: center; gap: 6px; }
+.import-result { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+.result-group { margin-bottom: 8px; font-size: 13px; }
+.result-group.ok { color: #15803d; }
+.result-group.skip { color: #94a3b8; font-style: italic; }
+.result-group.err { color: #dc2626; }
+.result-group ul { margin: 4px 0 0 16px; padding: 0; }
+.result-group ul li { margin: 2px 0; }
+.prtg-comment-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; max-height: 200px; overflow-y: auto; }
 .comment-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 4px; }
-.comment-body { display: block; font-size: 13px; color: #334155; line-height: 1.5; }
+.comment-body { display: block; font-size: 12px; color: #64748b; line-height: 1.5; word-break: break-word; }
+.sn-list, .pic-list { margin-top: 6px; }
+.sn-row-item { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+.sn-device { font-size: 12px; color: #475569; }
+.badge-pic { display: inline-block; background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1; border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 600; margin-right: 4px; }
 .site-name { display: block; font-weight: 600; }
 .pelanggan-sub { display: block; font-size: 11px; color: #94a3b8; }
 

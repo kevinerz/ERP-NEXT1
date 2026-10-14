@@ -798,21 +798,65 @@ export class PrtgService {
   // Preview: semua device yang sudah ter-mapping manual, lengkap dgn IP PRTG
   // dan daftar perangkat existing di site tersebut
   /**
-   * Parse komentar PRTG — ekstrak SN, IP, dan token teks bebas.
-   * Format yang dikenali:
-   *   SN: ABC123  |  S/N: ABC123  |  serial: ABC123  |  sn=ABC123
-   *   IP: 10.0.0.1 (opsional, biasanya sudah di field host)
+   * Parse komentar PRTG — ekstrak semua SN per perangkat, IP, nomor PIC, dan teks bersih.
+   *
+   * Komentar PRTG sering berupa catatan historis multi-entri tanpa line break (karena
+   * HTML PRTG di-strip). Contoh:
+   *   "- Modem ZTE IndihomeSN : ZTEGD3593A77- Mikrotik RB941SN : HD508DW4WW4/237/r3"
+   *
+   * Strategi:
+   *  1. Strip tag HTML, normalisasi whitespace (tapi pertahankan batas kata)
+   *  2. Cari semua pola "SN : <value>" — value berakhir di karakter non-SN (-, *, newline, dll)
+   *  3. Cari nama perangkat sebelum setiap SN (teks terdekat sebelum "SN :")
+   *  4. Ekstrak nomor HP (PIC) dari pola "PIC : <nomor>"
+   *  5. Ekstrak IP jika ada
    */
-  parseComment(comment: string): { sn: string | null; ip: string | null; teks: string } {
-    if (!comment) return { sn: null, ip: null, teks: '' };
-    const teks = comment.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(); // strip HTML PRTG
+  parseComment(comment: string): {
+    sn: string | null;
+    sns: Array<{ device: string; sn: string }>;
+    ip: string | null;
+    pic: string[];
+    teks: string;
+  } {
+    if (!comment) return { sn: null, sns: [], ip: null, pic: [], teks: '' };
 
-    const snMatch = teks.match(/(?:s\/n|sn|serial(?:\s*number)?)\s*[=:\-]?\s*([A-Za-z0-9\-]{4,30})/i);
+    // Strip HTML & normalkan whitespace
+    const teks = comment.replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+    // Cari semua SN: pola "SN" diikuti opsional spasi/titik dua lalu nilai
+    // Nilai SN: huruf, angka, /, . tapi bukan - (dash sering jadi bullet item)
+    // Berhenti di: spasi diikuti bukan karakter SN, bullet -, *, newline
+    const snPattern = /(?:s\/n|sn)\s*[:\-=]?\s*([A-Za-z0-9][A-Za-z0-9\/\.]{2,39})(?=\s*[-\*\n]|\s+[A-Z-]|$)/gi;
+    const sns: Array<{ device: string; sn: string }> = [];
+    let m: RegExpExecArray | null;
+    while ((m = snPattern.exec(teks)) !== null) {
+      const rawSn = m[1].replace(/[\/\.]$/, '').trim(); // buang trailing / atau .
+      if (rawSn.length < 4) continue;
+
+      // Cari nama perangkat: teks sebelum "SN" pada posisi ini (mundur ~40 karakter)
+      const before = teks.slice(Math.max(0, m.index - 60), m.index);
+      // Ambil kata-kata terakhir sebelum SN (biasanya "Mikrotik RB941" dll)
+      const deviceMatch = before.match(/[-\*]\s*([A-Za-z0-9][^-\*]{2,50}?)\s*$/);
+      const device = deviceMatch ? deviceMatch[1].trim() : '';
+
+      sns.push({ device, sn: rawSn });
+    }
+
+    // Nomor PIC — pola "PIC : <nomor>" atau "PIC: <nomor>"
+    const picPattern = /PIC\s*[:\-]?\s*([\d\-\+\s]{8,20})/gi;
+    const pic: string[] = [];
+    while ((m = picPattern.exec(teks)) !== null) {
+      const nomor = m[1].replace(/\s/g, '').replace(/^[-\+]/, '');
+      if (nomor.length >= 8) pic.push(nomor);
+    }
+
     const ipMatch = teks.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
 
     return {
-      sn: snMatch?.[1]?.trim() ?? null,
+      sn: sns[0]?.sn ?? null,        // backward compat: SN pertama
+      sns,
       ip: ipMatch?.[1] ?? null,
+      pic,
       teks,
     };
   }
@@ -957,7 +1001,9 @@ export class PrtgService {
         sudah_ada: sudahAda,
         comments: parsed.teks || null,
         parsed_sn: parsed.sn,
+        parsed_sns: parsed.sns,
         parsed_ip: parsed.ip,
+        parsed_pic: parsed.pic,
       };
     });
 
@@ -1074,6 +1120,177 @@ export class PrtgService {
     }
 
     return { perangkat, aset };
+  }
+
+  /** Tebak jenis perangkat dari nama device (string bebas dari PRTG comment atau device name) */
+  private guessJenis(name: string): string {
+    const n = name.toLowerCase();
+    if (/\bont\b|zte|huawei hg|gpon/.test(n)) return 'ONT';
+    if (/mikrotik|routeros|\brb\d|\brouter\b/.test(n)) return 'Router';
+    if (/\bswitch\b|\bsw\b/.test(n)) return 'Switch';
+    if (/mercusys|tplink|tp-link|\bap\b|wifi|access.?point/.test(n)) return 'AP';
+    if (/cctv|nvr|dvr|hikvision|dahua/.test(n)) return 'CCTV';
+    if (/modem|sfp/.test(n)) return 'Modem';
+    return 'CPE';
+  }
+
+  /** Pisah nama perangkat jadi merk + tipe_model */
+  private parseMerkModel(deviceName: string): { merk: string | null; tipe_model: string | null } {
+    const parts = deviceName.trim().split(/\s+/);
+    if (parts.length === 0) return { merk: null, tipe_model: null };
+    if (parts.length === 1) return { merk: parts[0], tipe_model: null };
+    return { merk: parts[0], tipe_model: parts.slice(1).join(' ') };
+  }
+
+  /**
+   * Import semua data dari komentar PRTG ke ERP untuk satu site:
+   * 1. Setiap device+SN → PerangkatSite (skip jika SN sudah ada di site)
+   * 2. Setiap nomor PIC → PicSite (skip jika nomor sudah ada di site)
+   * 3. Teks komentar → site.catatan (append jika belum ada komentar PRTG)
+   */
+  async importCommentData(dto: {
+    id_site: number;
+    parsed_sns: Array<{ device: string; sn: string }>;
+    parsed_pic: string[];
+    parsed_ip: string | null;
+    comment_text: string;
+  }) {
+    // Ambil data existing sekali saja
+    const [existingPerangkat, existingPic, site] = await Promise.all([
+      this.prisma.perangkatSite.findMany({
+        where: { id_site: dto.id_site },
+        select: { serial_number: true, ip_address: true },
+      }),
+      this.prisma.picSite.findMany({
+        where: { id_site: dto.id_site },
+        select: { no_kontak: true },
+      }),
+      this.prisma.sitePelanggan.findUnique({
+        where: { id_site: dto.id_site },
+        select: { catatan: true },
+      }),
+    ]);
+
+    const snSet = new Set(existingPerangkat.map((p) => p.serial_number?.toLowerCase()).filter(Boolean));
+    const ipSet = new Set(existingPerangkat.map((p) => p.ip_address?.toLowerCase()).filter(Boolean));
+    const picSet = new Set(existingPic.map((p) => p.no_kontak?.replace(/\D/g, '')).filter(Boolean));
+
+    const perangkat_dibuat: Array<{ device: string; sn: string; jenis: string }> = [];
+    const perangkat_skip: string[] = [];
+    const pic_dibuat: string[] = [];
+    const pic_skip: string[] = [];
+
+    // 1. Buat PerangkatSite untuk setiap device+SN
+    for (const { device, sn } of dto.parsed_sns) {
+      if (snSet.has(sn.toLowerCase())) { perangkat_skip.push(sn); continue; }
+      const { merk, tipe_model } = this.parseMerkModel(device);
+      const jenis = this.guessJenis(device || '');
+      const ipBuatDevice = dto.parsed_sns.length === 1 && dto.parsed_ip && !ipSet.has(dto.parsed_ip.toLowerCase())
+        ? dto.parsed_ip : null;
+      await this.prisma.perangkatSite.create({
+        data: {
+          id_site: dto.id_site,
+          jenis_perangkat: jenis,
+          merk: merk || null,
+          tipe_model: tipe_model || null,
+          serial_number: sn,
+          ip_address: ipBuatDevice,
+          status_perangkat: 'Aktif',
+          catatan: 'Diimport dari komentar PRTG',
+          tgl_pasang: new Date(),
+        },
+      });
+      snSet.add(sn.toLowerCase());
+      perangkat_dibuat.push({ device, sn, jenis });
+    }
+
+    // 2. Buat PicSite untuk setiap nomor PIC
+    for (const nomor of dto.parsed_pic) {
+      const digits = nomor.replace(/\D/g, '');
+      if (picSet.has(digits)) { pic_skip.push(nomor); continue; }
+      await this.prisma.picSite.create({
+        data: {
+          id_site: dto.id_site,
+          nama_pic: 'PIC (dari PRTG)',
+          no_kontak: nomor,
+          is_utama: false,
+        },
+      });
+      picSet.add(digits);
+      pic_dibuat.push(nomor);
+    }
+
+    // 3. Append komentar PRTG ke catatan site jika belum ada
+    let catatan_updated = false;
+    if (dto.comment_text) {
+      const tag = '[PRTG]';
+      const existing = site?.catatan ?? '';
+      if (!existing.includes(tag)) {
+        await this.prisma.sitePelanggan.update({
+          where: { id_site: dto.id_site },
+          data: { catatan: existing ? `${existing}\n\n${tag} ${dto.comment_text}` : `${tag} ${dto.comment_text}` },
+        });
+        catatan_updated = true;
+      }
+    }
+
+    return { perangkat_dibuat, perangkat_skip, pic_dibuat, pic_skip, catatan_updated };
+  }
+
+  /**
+   * Cron tiap jam: untuk setiap device PRTG yang sudah di-mapping ke site,
+   * parse komentar dan simpan otomatis semua data ke ERP (perangkat, PIC, catatan).
+   * Idempoten — data yang sudah ada di-skip, tidak ada duplikat.
+   */
+  @Cron('0 * * * *')
+  async syncCommentDataCron() {
+    if (!(await this.prtg.isConfigured())) return;
+    let devices: any[];
+    try {
+      devices = await this.prtg.getDevices();
+    } catch (e: any) {
+      this.logger.warn(`syncCommentData: gagal fetch devices: ${e.message}`);
+      return;
+    }
+
+    // Ambil semua mapping manual sekaligus
+    const mappings = await this.prisma.integrationPrtgMapping.findMany({
+      select: { device_name: true, id_site: true },
+    });
+    const mapBySite = new Map<string, number>(mappings.map((m) => [m.device_name, m.id_site]));
+
+    let totalPerangkat = 0, totalPic = 0, totalSites = 0;
+
+    for (const d of devices) {
+      if (!d.comments) continue;
+      const id_site = mapBySite.get(d.device);
+      if (!id_site) continue; // hanya device yang sudah di-mapping manual
+
+      const parsed = this.parseComment(d.comments);
+      if (!parsed.sns.length && !parsed.pic.length) continue;
+
+      try {
+        const result = await this.importCommentData({
+          id_site,
+          parsed_sns: parsed.sns,
+          parsed_pic: parsed.pic,
+          parsed_ip: parsed.ip,
+          comment_text: parsed.teks,
+        });
+        if (result.perangkat_dibuat.length || result.pic_dibuat.length || result.catatan_updated) {
+          totalSites++;
+          totalPerangkat += result.perangkat_dibuat.length;
+          totalPic += result.pic_dibuat.length;
+          this.logger.log(`syncComment site=${id_site} device="${d.device}" perangkat=${result.perangkat_dibuat.length} pic=${result.pic_dibuat.length}`);
+        }
+      } catch (e: any) {
+        this.logger.warn(`syncComment error site=${id_site} device="${d.device}": ${e.message}`);
+      }
+    }
+
+    if (totalSites > 0) {
+      this.logger.log(`syncCommentData selesai: ${totalSites} site, +${totalPerangkat} perangkat, +${totalPic} PIC`);
+    }
   }
 
   // Lookup GudangAset by serial number (untuk autocomplete di form provision)

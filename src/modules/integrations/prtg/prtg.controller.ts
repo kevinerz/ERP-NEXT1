@@ -122,4 +122,30 @@ export class PrtgController {
   lookupAset(@Query('sn') sn: string) {
     return this.prtgService.lookupAsetBySN(sn);
   }
+
+  /** Trigger manual sync komentar semua device mapped → ERP (biasanya jalan otomatis tiap jam) */
+  @Post('sync-comments')
+  async syncComments() {
+    await this.prtgService.syncCommentDataCron();
+    return { success: true, message: 'Sync komentar selesai' };
+  }
+
+  /** Import semua data dari komentar PRTG (perangkat, PIC, catatan) ke satu site */
+  @Post('import-comment')
+  async importComment(@Body() body: {
+    id_site: number;
+    parsed_sns: Array<{ device: string; sn: string }>;
+    parsed_pic: string[];
+    parsed_ip?: string | null;
+    comment_text?: string;
+  }) {
+    const result = await this.prtgService.importCommentData({
+      id_site: body.id_site,
+      parsed_sns: body.parsed_sns ?? [],
+      parsed_pic: body.parsed_pic ?? [],
+      parsed_ip: body.parsed_ip ?? null,
+      comment_text: body.comment_text ?? '',
+    });
+    return { success: true, data: result };
+  }
 }

@@ -18,6 +18,12 @@ prisma/migrations/*.sql.bak
 # Upload temp
 uploads/
 
+# Deploy scripts (berisi credentials)
+deploy.ps1
+deploy-*.ps1
+deploy-*.tar.gz
+deploy-*.sh
+
 # Logs
 *.log
 logs/
