@@ -95,12 +95,12 @@ async function handleLogin() {
 
         <form @submit.prevent="handleLogin" class="login-form">
           <div class="field">
-            <label>Username</label>
+            <label>Username / Email</label>
             <input
               v-model="username"
               type="text"
-              placeholder="Masukkan username"
-              autocomplete="username"
+              placeholder="Username atau alamat email"
+              autocomplete="username email"
               autofocus
               :disabled="auth.loading"
             />

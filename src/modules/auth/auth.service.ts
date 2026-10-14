@@ -25,30 +25,45 @@ export class AuthService {
   ) {}
 
   async login(dto: LoginDto, ip?: string) {
-    const user = await this.prisma.coreUser.findUnique({
+    const include = {
+      karyawan: true,
+      user_roles: { include: { role: true } },
+    } as const;
+
+    // Coba username dulu; kalau tidak ketemu, coba email via karyawan
+    let user = await this.prisma.coreUser.findUnique({
       where: { username: dto.username },
-      include: {
-        karyawan: true,
-        user_roles: { include: { role: true } },
-      },
+      include,
     });
 
-    if (!user) throw new UnauthorizedException('Username atau password salah');
+    if (!user) {
+      const karyawan = await this.prisma.hrisKaryawan.findFirst({
+        where: { email: dto.username },
+        select: { id_karyawan: true },
+      });
+      if (karyawan) {
+        user = await this.prisma.coreUser.findUnique({
+          where: { id_karyawan: karyawan.id_karyawan },
+          include,
+        });
+      }
+    }
+
+    if (!user) throw new UnauthorizedException('Username/Email atau password salah');
     if (!user.is_aktif) throw new UnauthorizedException('Akun tidak aktif');
     if (!user.karyawan) throw new UnauthorizedException('Akun tidak memiliki data karyawan');
 
     const passwordMatch = await bcrypt.compare(dto.password, user.password_hash);
     if (!passwordMatch) {
-      // Log gagal login
       await this.logService.log({
         username: dto.username,
         aksi: 'LOGIN',
         modul: 'auth',
         entitas: 'User',
-        deskripsi: `Login GAGAL — username: ${dto.username}`,
+        deskripsi: `Login GAGAL — identifier: ${dto.username}`,
         ip_address: ip,
       });
-      throw new UnauthorizedException('Username atau password salah');
+      throw new UnauthorizedException('Username/Email atau password salah');
     }
 
     await this.prisma.coreUser.update({
