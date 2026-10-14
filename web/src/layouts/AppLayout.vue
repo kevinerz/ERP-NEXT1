@@ -175,7 +175,6 @@ const menuGroups = [
 ]
 
 const adminMenu = [
-  { label: 'Users',          emoji: '👤', to: '/admin/users' },
   { label: 'Portal Akun',    emoji: '🌐', to: '/admin/portal-users' },
   { label: 'Activity Log',   emoji: '📝', to: '/admin/logs' },
   { label: 'Email Log',      emoji: '📤', to: '/admin/email-log' },
@@ -232,7 +231,6 @@ const PAGE_TITLES: Record<string, string> = {
   "kontrak-detail":       "Kontrak — Detail",
   laporan:                "Laporan",
   "laporan-sla":          "Laporan SLA",
-  "admin-users":          "Admin — Manajemen User",
   "admin-logs":           "Admin — Activity Log",
   "admin-email-log":      "Admin — Email Log",
   "notifications":        "Notifikasi",

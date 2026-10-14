@@ -225,11 +225,6 @@ const router = createRouter({
         },
         // Admin
         {
-          path: 'admin/users',
-          name: 'admin-users',
-          component: () => import('@/views/admin/UserManagementView.vue'),
-        },
-        {
           path: 'admin/portal-users',
           name: 'admin-portal-users',
           component: () => import('@/views/admin/PortalUsersView.vue'),
@@ -449,7 +444,7 @@ router.beforeEach((to) => {
     const modul = ROUTE_MODUL[to.name as string]
     if (modul && !auth.canAccess(modul)) return '/dashboard'
     // halaman admin hanya Admin / Director
-    const adminPages = ['admin-users', 'admin-logs', 'admin-email-log', 'admin-portal-users']
+    const adminPages = ['admin-logs', 'admin-email-log', 'admin-portal-users']
     if (adminPages.includes(to.name as string) && !auth.hasRole('Admin') && !auth.hasRole('Director') && !auth.hasRole('Manager_Ops')) return '/dashboard'
   }
 })
@@ -495,7 +490,6 @@ const ROUTE_TITLE: Record<string, string> = {
   'laporan-sla':           'Laporan SLA — NextOne ERP',
   'prtg-settings':         'Integrasi PRTG — NextOne ERP',
   'starsender-settings':   'Integrasi StarSender — NextOne ERP',
-  'admin-users':           'Manajemen User — NextOne ERP',
   'admin-portal-users':    'Portal Users — NextOne ERP',
   'notifications':         'Notifikasi — NextOne ERP',
   'profile':               'Profil — NextOne ERP',
