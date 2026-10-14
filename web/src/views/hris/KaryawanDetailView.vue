@@ -127,15 +127,28 @@ const ALL_MODULS = [
   { key: 'hris',          label: 'HRIS',        icon: '👤' },
   { key: 'master',        label: 'Master Data',  icon: '📦' },
   { key: 'sales',         label: 'Sales',        icon: '💼' },
+  { key: 'crm',           label: 'CRM',          icon: '🤝' },
   { key: 'projects',      label: 'Proyek',       icon: '📋' },
   { key: 'operations',    label: 'Operasional',  icon: '🔧' },
+  { key: 'instalasi',     label: 'Pemasangan',   icon: '🛠️' },
   { key: 'assets',        label: 'Aset',         icon: '🖥️' },
   { key: 'contracts',     label: 'Kontrak',      icon: '📄' },
+  { key: 'finance',       label: 'Finance',      icon: '💰' },
   { key: 'reports',       label: 'Laporan',      icon: '📈' },
   { key: 'notifications', label: 'Notifikasi',   icon: '🔔' },
   { key: 'public-wo',     label: 'Public WO',    icon: '🌐' },
   { key: 'prtg',          label: 'PRTG',         icon: '📡' },
   { key: 'mekari',        label: 'Mekari',       icon: '💳' },
+]
+
+const PRESETS = [
+  { key: 'teknisi',   label: 'Teknisi',    icon: '🔧', moduls: ['operations', 'instalasi', 'public-wo', 'assets', 'notifications'] },
+  { key: 'noc',       label: 'NOC',        icon: '📺', moduls: ['operations', 'notifications', 'prtg', 'assets', 'public-wo'] },
+  { key: 'sales',     label: 'Sales',      icon: '💼', moduls: ['sales', 'crm', 'master', 'contracts', 'reports'] },
+  { key: 'presales',  label: 'Pre-Sales',  icon: '🔍', moduls: ['sales', 'master'] },
+  { key: 'finance',   label: 'Finance/AR', icon: '💰', moduls: ['finance', 'reports', 'contracts', 'master'] },
+  { key: 'helpdesk',  label: 'Helpdesk',   icon: '🤝', moduls: ['crm', 'operations', 'notifications', 'master'] },
+  { key: 'manager',   label: 'Manager',    icon: '📋', moduls: ['hris', 'master', 'sales', 'crm', 'projects', 'operations', 'instalasi', 'assets', 'contracts', 'finance', 'reports', 'notifications', 'public-wo'] },
 ]
 
 const showEditModul  = ref(false)
@@ -151,6 +164,11 @@ function openEditModul() {
 
 function onSemuaModulChange() {
   if (semuaModul.value) editModulAkses.value = []
+}
+
+function applyPreset(moduls: string[]) {
+  semuaModul.value     = false
+  editModulAkses.value = [...moduls]
 }
 
 async function handleEditModul() {
@@ -472,9 +490,23 @@ async function handleToggleUserStatus() {
           <span>⭐ Administrator — Semua Modul (tidak dibatasi)</span>
         </label>
 
+        <!-- Preset per jabatan -->
+        <div class="preset-section" v-if="!semuaModul">
+          <span class="preset-label">Preset jabatan:</span>
+          <div class="preset-list">
+            <button
+              v-for="p in PRESETS" :key="p.key"
+              class="btn-preset"
+              :class="{ active: editModulAkses.join(',') === p.moduls.join(',') }"
+              @click="applyPreset(p.moduls)"
+              type="button"
+            >{{ p.icon }} {{ p.label }}</button>
+          </div>
+        </div>
+
         <!-- Daftar modul individual -->
         <div class="field" v-if="!semuaModul">
-          <label>Pilih modul yang dapat diakses:</label>
+          <label>Modul yang dapat diakses ({{ editModulAkses.length }} dipilih):</label>
           <div class="modul-grid">
             <label v-for="m in ALL_MODULS" :key="m.key" class="modul-item"
               :class="{ checked: editModulAkses.includes(m.key) }">
@@ -630,6 +662,25 @@ async function handleToggleUserStatus() {
 .modul-icon { font-size: 15px; }
 .modul-name { font-weight: 500; }
 @media (max-width: 500px) { .modul-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* Preset jabatan */
+.preset-section {
+  margin-bottom: 14px;
+}
+.preset-label {
+  display: block; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: #94a3b8; margin-bottom: 8px;
+}
+.preset-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn-preset {
+  background: #f1f5f9; border: 1.5px solid #e2e8f0;
+  border-radius: 20px; padding: 5px 12px;
+  font-size: 12px; font-weight: 600; color: #475569;
+  cursor: pointer; transition: all 0.12s;
+}
+.btn-preset:hover { border-color: #3b82f6; color: #1d4ed8; background: #eff6ff; }
+.btn-preset.active { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
 
 .loading-page { padding: 60px; text-align: center; color: #94a3b8; }
 </style>
