@@ -797,6 +797,26 @@ export class PrtgService {
 
   // Preview: semua device yang sudah ter-mapping manual, lengkap dgn IP PRTG
   // dan daftar perangkat existing di site tersebut
+  /**
+   * Parse komentar PRTG — ekstrak SN, IP, dan token teks bebas.
+   * Format yang dikenali:
+   *   SN: ABC123  |  S/N: ABC123  |  serial: ABC123  |  sn=ABC123
+   *   IP: 10.0.0.1 (opsional, biasanya sudah di field host)
+   */
+  parseComment(comment: string): { sn: string | null; ip: string | null; teks: string } {
+    if (!comment) return { sn: null, ip: null, teks: '' };
+    const teks = comment.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(); // strip HTML PRTG
+
+    const snMatch = teks.match(/(?:s\/n|sn|serial(?:\s*number)?)\s*[=:\-]?\s*([A-Za-z0-9\-]{4,30})/i);
+    const ipMatch = teks.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
+
+    return {
+      sn: snMatch?.[1]?.trim() ?? null,
+      ip: ipMatch?.[1] ?? null,
+      teks,
+    };
+  }
+
   /** Normalisasi string untuk matching: lowercase, hapus karakter non-alfanumerik, pisah token. */
   private nameTokens(s: string): string[] {
     const STOPWORDS = new Set(['the', 'and', 'atau', 'ke', 'di', 'di', 'dari', 'untuk', 'sc', 'fo', 'm2m', 'site']);
@@ -814,15 +834,20 @@ export class PrtgService {
    * 2. Token overlap: berapa persen token nama_site ada di device_name
    * 3. Skor kode_site: jika device_name diawali kode_site (misal "CT " → Chatime)
    */
-  private matchScore(deviceName: string, site: { kode_site: string; nama_site: string }): number {
+  private matchScore(deviceName: string, site: { kode_site: string; nama_site: string }, comment = ''): number {
     const dn = deviceName.toLowerCase();
     const sn = site.nama_site.toLowerCase();
+    const kode = site.kode_site.toLowerCase();
+    const cm = comment.toLowerCase();
 
-    // Exact substring
+    // Komentar PRTG mengandung kode_site atau nama_site → sinyal kuat
+    if (cm && kode.length >= 2 && cm.includes(kode)) return 0.95;
+    if (cm && sn.length >= 3 && cm.includes(sn)) return 0.92;
+
+    // Exact substring nama device ↔ nama site
     if (dn.includes(sn) || sn.includes(dn)) return 1.0;
 
     // Skor kode_site: device_name dimulai dengan kode_site
-    const kode = site.kode_site.toLowerCase();
     if (kode.length >= 2 && (dn.startsWith(kode + ' ') || dn.startsWith(kode + '-') || dn === kode)) return 0.9;
 
     // Token overlap
@@ -830,12 +855,18 @@ export class PrtgService {
     const st = this.nameTokens(site.nama_site);
     if (!dt.length || !st.length) return 0;
 
-    // Hitung berapa token site yang muncul di device (substring dari token device)
     let matches = 0;
     for (const s of st) {
       if (dt.some((d) => d.includes(s) || s.includes(d))) matches++;
     }
     const tokenScore = matches / st.length;
+
+    // Bonus komentar: token nama_site muncul di komentar
+    if (cm && tokenScore > 0) {
+      const cmTokens = this.nameTokens(comment);
+      const cmMatches = st.filter((t) => cmTokens.some((c) => c.includes(t) || t.includes(c))).length;
+      if (cmMatches >= Math.ceil(st.length * 0.5)) return Math.max(tokenScore, 0.75);
+    }
 
     // Bonus: token pertama (nama brand) sama persis
     const firstMatch = st[0] && dt[0] && (st[0] === dt[0] || dt[0].startsWith(st[0]) || st[0].startsWith(dt[0]));
@@ -884,6 +915,7 @@ export class PrtgService {
     const data = prtgDevices.map((d) => {
       const mapping = mappingByDevice.get(d.device) ?? null;
       const ip = d.host || null;
+      const parsed = this.parseComment(d.comments ?? '');
 
       let id_site: number | null = mapping?.site.id_site ?? null;
       let kode_site: string | null = mapping?.site.kode_site ?? null;
@@ -892,12 +924,12 @@ export class PrtgService {
       let match_source: 'manual' | 'auto' | null = mapping ? 'manual' : null;
       let match_score: number | null = null;
 
-      // Auto-match jika tidak ada manual mapping
+      // Auto-match jika tidak ada manual mapping — gunakan comment sebagai boost
       if (!mapping) {
         let best = 0;
         let bestSite: typeof allSites[0] | null = null;
         for (const s of allSites) {
-          const score = this.matchScore(d.device, s);
+          const score = this.matchScore(d.device, s, parsed.teks);
           if (score > best) { best = score; bestSite = s; }
         }
         if (bestSite && best >= AUTO_THRESHOLD) {
@@ -923,6 +955,9 @@ export class PrtgService {
         match_source,
         match_score,
         sudah_ada: sudahAda,
+        comments: parsed.teks || null,
+        parsed_sn: parsed.sn,
+        parsed_ip: parsed.ip,
       };
     });
 

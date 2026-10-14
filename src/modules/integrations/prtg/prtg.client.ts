@@ -18,6 +18,7 @@ export interface PrtgDevice {
   host: string;
   status: string;
   status_raw: number;
+  comments?: string;
 }
 
 export interface PrtgChannel {
@@ -101,10 +102,10 @@ export class PrtgClient {
     return (json.sensors ?? []) as PrtgSensor[];
   }
 
-  // Semua device dari PRTG dengan field host (IP address)
+  // Semua device dari PRTG dengan field host (IP address) dan comments
   async getDevices(): Promise<PrtgDevice[]> {
     const url = await this.authedUrl(
-      `/api/table.json?content=devices&columns=objid,device,host,status&count=${PrtgClient.MAX_COUNT}`,
+      `/api/table.json?content=devices&columns=objid,device,host,status,comments&count=${PrtgClient.MAX_COUNT}`,
     );
     const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`PRTG API error ${res.status}`);

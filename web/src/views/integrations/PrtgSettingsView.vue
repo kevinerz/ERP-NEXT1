@@ -446,7 +446,7 @@ async function doBulkProvision() {
 function openProvModal(device: any) {
   provSelected.value = device
   provSiteId.value = device.id_site ?? inlineSiteId.value[device.device_name] ?? 0
-  provForm.value = { jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: '', ip_address: device.ip_address ?? '' }
+  provForm.value = { jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: device.parsed_sn ?? '', ip_address: device.ip_address ?? '' }
   provAsetFound.value = null
   linkAset.value = false
   provMsg.value = ''
@@ -907,7 +907,7 @@ function exportKonfirmasiCSV() {
           </div>
           <div class="table-wrap">
             <table class="prov-table">
-              <thead><tr><th>Device PRTG</th><th>IP</th><th>Site Tebakan</th><th>Skor</th><th></th></tr></thead>
+              <thead><tr><th>Device PRTG</th><th>IP</th><th>Komentar PRTG</th><th>Site Tebakan</th><th>Skor</th><th></th></tr></thead>
               <tbody>
                 <tr v-for="d in partialCandidates" :key="d.device_name">
                   <td>
@@ -915,6 +915,11 @@ function exportKonfirmasiCSV() {
                     <span v-if="d.prtg_status" :class="['prtg-st', d.prtg_status?.toLowerCase().includes('up') ? 'prtg-up' : 'prtg-dn']">{{ d.prtg_status }}</span>
                   </td>
                   <td class="mono ip-cell">{{ d.ip_address }}</td>
+                  <td class="comment-cell">
+                    <span v-if="d.comments" class="comment-text" :title="d.comments">{{ d.comments }}</span>
+                    <span v-if="d.parsed_sn" class="badge-sn">SN: {{ d.parsed_sn }}</span>
+                    <span v-if="!d.comments && !d.parsed_sn" class="comment-empty">—</span>
+                  </td>
                   <td>
                     <span class="site-name">{{ d.nama_site }}</span>
                     <span v-if="d.nama_pelanggan" class="pelanggan-sub">{{ d.nama_pelanggan }}</span>
@@ -1072,6 +1077,13 @@ function exportKonfirmasiCSV() {
             </div>
           </div>
 
+          <!-- Komentar dari PRTG -->
+          <div v-if="provSelected?.comments" class="prtg-comment-box">
+            <span class="comment-label">Komentar PRTG</span>
+            <span class="comment-body">{{ provSelected.comments }}</span>
+            <span v-if="provSelected.parsed_sn" class="badge-sn">SN terdeteksi: {{ provSelected.parsed_sn }}</span>
+          </div>
+
           <div class="field">
             <label>IP Address <span class="req">*</span></label>
             <input v-model="provForm.ip_address" placeholder="IP dari PRTG (bisa diubah)" />
@@ -1205,6 +1217,13 @@ td { padding: 10px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .mono { font-family: 'Consolas', monospace; font-size: 12px; }
 .center { text-align: center; }
 .ip-cell { color: #1d4ed8; }
+.comment-cell { max-width: 180px; }
+.comment-text { display: block; font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.comment-empty { color: #cbd5e1; font-size: 12px; }
+.badge-sn { display: inline-block; background: #f0fdf4; border: 1px solid #86efac; color: #15803d; border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 600; margin-top: 2px; }
+.prtg-comment-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+.comment-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 4px; }
+.comment-body { display: block; font-size: 13px; color: #334155; line-height: 1.5; }
 .site-name { display: block; font-weight: 600; }
 .pelanggan-sub { display: block; font-size: 11px; color: #94a3b8; }
 
