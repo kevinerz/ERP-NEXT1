@@ -290,7 +290,7 @@ const initials = computed(() => {
           </RouterLink>
         </template>
 
-        <template v-if="auth.hasRole('Admin') || auth.hasRole('Director') || auth.hasRole('Manager_Ops')">
+        <template v-if="auth.hasRole('Admin') || auth.hasRole('Director') || auth.hasRole('Manager_Ops') || auth.isSuperAdmin">
           <div class="nav-group-label admin-group" v-if="sidebarOpen || mobileNavOpen">
             <span class="group-dot" style="background:#ef4444"></span>
             ADMIN
