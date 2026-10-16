@@ -73,8 +73,8 @@ export class ImapClientService implements OnModuleDestroy {
   private connecting = new Map<string, Promise<ImapFlow>>();
   private folderCache = new Map<string, string>();
   private static readonly IDLE_TIMEOUT_MS = 4 * 60 * 1000;
-  private static readonly CONNECT_TIMEOUT_MS = 15_000;
-  private static readonly OP_TIMEOUT_MS = 30_000;
+  private static readonly CONNECT_TIMEOUT_MS = 30_000;
+  private static readonly OP_TIMEOUT_MS = 45_000;
 
   /** Promise.race dengan timeout — menghindari request hanging selamanya. */
   private raceTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -105,6 +105,10 @@ export class ImapClientService implements OnModuleDestroy {
       secure: creds.imap_port === 993,
       auth: { user: creds.email_address, pass: creds.password },
       logger: false,
+      // Timeout native ImapFlow — race eksternal tetap ada sebagai safety net
+      connectionTimeout: ImapClientService.CONNECT_TIMEOUT_MS,
+      greetingTimeout: 10_000,
+      socketTimeout: ImapClientService.OP_TIMEOUT_MS,
       // Nonaktifkan IDLE otomatis — kita pakai pool dan getMailboxLock,
       // biarkan imapflow handle IDLE per-lock saja bukan seisi sesi.
       disableAutoIdle: true,
@@ -112,12 +116,16 @@ export class ImapClientService implements OnModuleDestroy {
     try {
       await this.raceTimeout(
         client.connect(),
-        ImapClientService.CONNECT_TIMEOUT_MS,
+        ImapClientService.CONNECT_TIMEOUT_MS + 5_000, // sedikit lebih lama dari native
         `konek ke ${creds.imap_host}:${creds.imap_port}`,
       );
     } catch (e: any) {
       try { client.close(); } catch {}
-      throw new BadRequestException(`Gagal konek IMAP (${creds.imap_host}:${creds.imap_port}): ${e.message}`);
+      const isTimeout = e.message?.toLowerCase().includes('timeout');
+      const hint = isTimeout
+        ? ` — pastikan server dapat menjangkau ${creds.imap_host}:${creds.imap_port} (cek firewall outbound)`
+        : '';
+      throw new BadRequestException(`Gagal konek IMAP (${creds.imap_host}:${creds.imap_port}): ${e.message}${hint}`);
     }
     return client;
   }
