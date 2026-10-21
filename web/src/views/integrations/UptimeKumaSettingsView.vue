@@ -3,11 +3,14 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { confirmDialog } from '@/composables/useDialog'
 
 const proyek = useProyekStore()
 const auth = useAuthStore()
 const bisaKelolaKoneksi = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
-const tab = ref<'koneksi' | 'mapping' | 'audit'>('koneksi')
+// Non-Admin tidak punya tab Koneksi → mulai di Mapping supaya halaman tidak kosong
+const tab = ref<'koneksi' | 'mapping' | 'audit'>(bisaKelolaKoneksi.value ? 'koneksi' : 'mapping')
+watch(bisaKelolaKoneksi, (v) => { if (!v && tab.value === 'koneksi') tab.value = 'mapping' })
 
 // ─── STATUS ───────────────────────────────────────────────────
 const status = ref<any>(null)
@@ -33,30 +36,37 @@ async function fetchConfig() {
   } catch {}
 }
 async function saveConfig() {
-  savingConfig.value = true; configMsg.value = ''
+  savingConfig.value = true; configMsg.value = ''; configErr.value = false
   try {
     await api.patch('/uptime-kuma/config', configForm.value)
     configMsg.value = 'Konfigurasi disimpan.'
     await Promise.all([fetchConfig(), fetchStatus()])
-  } catch (e: any) { configMsg.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { configErr.value = true; configMsg.value = e.response?.data?.message || 'Gagal menyimpan' }
   finally { savingConfig.value = false }
 }
 async function buatTokenBaru() {
-  if (webhookPath.value && !confirm('Buat token baru? URL webhook lama tidak akan berlaku lagi — kamu harus update di Uptime Kuma.')) return
-  regenerating.value = true; configMsg.value = ''
+  if (webhookPath.value && !(await confirmDialog({
+    title: 'Buat token baru?',
+    message: 'URL webhook lama tidak akan berlaku lagi — kamu harus update di Uptime Kuma.',
+    variant: 'warning',
+    confirmLabel: 'Ya, Buat Baru',
+  }))) return
+  regenerating.value = true; configMsg.value = ''; configErr.value = false
   try {
     const r = await api.post('/uptime-kuma/config/regenerate-token')
     webhookPath.value = r.data.data.webhook_path
     configMsg.value = r.data.message
     await fetchStatus()
-  } catch (e: any) { configMsg.value = e.response?.data?.message || 'Gagal membuat token' }
+  } catch (e: any) { configErr.value = true; configMsg.value = e.response?.data?.message || 'Gagal membuat token' }
   finally { regenerating.value = false }
 }
 function salinUrl() {
   if (!webhookUrl.value) return
   navigator.clipboard?.writeText(webhookUrl.value)
+  configErr.value = false
   configMsg.value = 'URL disalin ke clipboard.'
 }
+const configErr = ref(false)
 
 // ─── MAPPING ──────────────────────────────────────────────────
 const mappingList = ref<any[]>([])
@@ -65,6 +75,7 @@ const mappingLoading = ref(false)
 const mapForm = ref({ monitor_id: '', monitor_name: '', id_site: 0 })
 const mapSubmitting = ref(false)
 const mapMsg = ref('')
+const mapErr = ref(false)
 const hapusMappingId = ref(0)
 
 async function fetchMapping() {
@@ -78,23 +89,29 @@ async function fetchMapping() {
 
 async function submitMapping() {
   if (!mapForm.value.monitor_id || !mapForm.value.monitor_name || !mapForm.value.id_site) {
+    mapErr.value = true
     mapMsg.value = 'ID monitor, nama monitor, dan site wajib diisi'; return
   }
-  mapSubmitting.value = true; mapMsg.value = ''
+  mapSubmitting.value = true; mapMsg.value = ''; mapErr.value = false
   try {
     const r = await api.post('/uptime-kuma/mapping', mapForm.value)
     mapMsg.value = r.data.message
     mapForm.value = { monitor_id: '', monitor_name: '', id_site: 0 }
     await fetchMapping()
-  } catch (e: any) { mapMsg.value = e.response?.data?.message || 'Gagal menyimpan mapping' }
+  } catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menyimpan mapping' }
   finally { mapSubmitting.value = false }
 }
 
 async function hapusMapping(id: number, nama: string) {
-  if (!confirm(`Hapus mapping "${nama}"? Monitor ini akan balik ke matching otomatis (nama).`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Mapping',
+    message: `Hapus mapping "${nama}"? Monitor ini akan balik ke matching otomatis (nama).`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   hapusMappingId.value = id; mapMsg.value = ''
   try { await api.delete(`/uptime-kuma/mapping/${id}`); await fetchMapping() }
-  catch (e: any) { mapMsg.value = e.response?.data?.message || 'Gagal menghapus mapping' }
+  catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menghapus mapping' }
   finally { hapusMappingId.value = 0 }
 }
 
@@ -179,7 +196,7 @@ onMounted(async () => {
         <button class="btn-submit" @click="saveConfig" :disabled="savingConfig">
           {{ savingConfig ? 'Menyimpan...' : 'Simpan' }}
         </button>
-        <p v-if="configMsg" class="msg">{{ configMsg }}</p>
+        <p v-if="configMsg" :class="['msg', { err: configErr }]">{{ configMsg }}</p>
       </div>
     </div>
 
@@ -218,13 +235,13 @@ onMounted(async () => {
             {{ mapSubmitting ? 'Menyimpan...' : 'Simpan Mapping' }}
           </button>
         </div>
-        <p v-if="mapMsg" class="msg">{{ mapMsg }}</p>
+        <p v-if="mapMsg" :class="['msg', { err: mapErr }]">{{ mapMsg }}</p>
       </div>
 
       <div class="card">
         <h3>Mapping Tersimpan</h3>
         <div v-if="mappingLoading" class="loading">Memuat...</div>
-        <table v-else>
+        <div v-else class="tbl-scroll"><table>
           <thead><tr><th>Monitor</th><th>Site</th><th></th></tr></thead>
           <tbody>
             <tr v-if="!mappingList.length"><td colspan="3" class="empty">Belum ada mapping manual</td></tr>
@@ -234,7 +251,7 @@ onMounted(async () => {
               <td><button class="btn-hapus" :disabled="hapusMappingId === m.id_mapping" @click="hapusMapping(m.id_mapping, m.monitor_name)">{{ hapusMappingId === m.id_mapping ? 'Menghapus...' : 'Hapus' }}</button></td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
 
@@ -250,7 +267,7 @@ onMounted(async () => {
         <div v-if="auditLoading" class="loading">Memuat dari Uptime Kuma...</div>
         <template v-else>
           <p class="result-count">{{ filteredMonitors.length }} dari {{ monitors.length }} monitor</p>
-          <table>
+          <div class="tbl-scroll"><table>
             <thead><tr><th>Monitor</th><th>Status Terakhir</th><th>Status Match</th><th>Site</th><th></th></tr></thead>
             <tbody>
               <tr v-if="!filteredMonitors.length"><td colspan="5" class="empty">{{ monitors.length ? 'Tidak ada monitor yang cocok pencarian' : 'Tidak ada data — isi status page di tab Koneksi lalu Muat Ulang' }}</td></tr>
@@ -266,7 +283,7 @@ onMounted(async () => {
                 <td><button v-if="!m.matched" class="btn-map" @click="mapDariAudit(m)">Map ke Site</button></td>
               </tr>
             </tbody>
-          </table>
+          </table></div>
         </template>
       </div>
     </div>
@@ -275,6 +292,8 @@ onMounted(async () => {
 
 <style scoped>
 .page { padding: 28px 32px; max-width: 1100px; }
+/* block: judul & subjudul ditumpuk (global .page-header = flex row) */
+.page-header { display: block; margin-bottom: 0; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0 0 16px; font-size: 13px; color: #64748b; }
 
@@ -283,8 +302,8 @@ onMounted(async () => {
 .status-dot.ok { background: #22c55e; }
 .status-dot.off { background: #ef4444; }
 
-.tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1.5px solid #e2e8f0; }
-.tab { padding: 10px 16px; background: none; border: none; border-bottom: 2px solid transparent; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
+.tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1.5px solid #e2e8f0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tab { padding: 10px 16px; background: none; border: none; border-bottom: 2px solid transparent; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; white-space: nowrap; flex-shrink: 0; margin-bottom: -1.5px; }
 .tab.active { color: #1e40af; border-bottom-color: #1e40af; }
 
 .tab-content { display: flex; flex-direction: column; gap: 16px; }
@@ -322,7 +341,13 @@ td { padding: 11px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .btn-map { padding: 4px 10px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 
-.audit-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+.audit-toolbar { display: flex; align-items: center; gap: 10px 14px; margin-bottom: 10px; flex-wrap: wrap; }
+.tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tbl-scroll table { min-width: 520px; }
+@media (max-width: 768px) {
+  .card { padding: 16px; }
+  .field { min-width: 0; flex-basis: 100%; }
+}
 .search-input { flex: 1; min-width: 200px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
 .search-input:focus { border-color: #3b82f6; background: #fff; }
 .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; white-space: nowrap; }

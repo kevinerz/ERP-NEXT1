@@ -256,7 +256,7 @@ function initMap() {
 function parseSiteLatLng(koordinat?: string): [number, number] | null {
   if (!koordinat) return null
   const parts = koordinat.split(',').map(s => parseFloat(s.trim()))
-  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return [parts[0], parts[1]]
+  if (parts.length === 2 && !isNaN(parts[0]!) && !isNaN(parts[1]!)) return [parts[0]!, parts[1]!]
   return null
 }
 
@@ -539,7 +539,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
             @click="handleTangani"
           >{{ tanganiLoading ? '...' : '⚡ Tangani' }}</button>
           <button class="btn-edit" @click="openEdit">Edit</button>
-          <button v-if="auth.hasRole('Admin')" class="btn-hapus-tiket" @click="hapusTiket">🗑 Hapus</button>
+          <button v-if="auth.hasRole('Admin')" class="btn-hapus-tiket" :disabled="hapusLoading" @click="hapusTiket">{{ hapusLoading ? 'Menghapus...' : '🗑 Hapus' }}</button>
         </div>
       </div>
 
@@ -566,7 +566,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
             {{ ops.current.kontak_teknisi.nama }}
             <span class="vendor-tag">Vendor</span>
           </span>
-          <span class="ic-value" v-else>Belum assigned</span>
+          <span class="ic-value text-gray" v-else>Belum di-assign</span>
         </div>
         <div class="info-chip">
           <span class="ic-label">Durasi</span>
@@ -694,7 +694,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
               <div class="map-legend">
                 <span class="legend-item"><span class="dot green"></span> Teknisi</span>
                 <span class="legend-item"><span class="dot blue"></span> Site</span>
-                <span v-if="teknisiLokasi" class="map-lastseen">Update: {{ fmtDt(teknisiLokasi.updated_at) }}</span>
+                <span v-if="teknisiLokasi" class="map-lastseen">Diperbarui: {{ fmtDt(teknisiLokasi.updated_at) }}</span>
                 <span v-else-if="ops.current.teknisi" class="map-nodata">Belum ada GPS teknisi</span>
                 <span v-else class="map-nodata">Belum ada teknisi</span>
               </div>
@@ -834,7 +834,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                 <div>
                   <div class="pdu-label">Mulai Down</div>
                   <div class="pdu-val">{{ fmtDt(downtimeInfo.waktu_down) }}</div>
-                  <div v-if="downtimeInfo.pesan_down" class="pdu-msg">{{ downtimeInfo.pesan_down }}</div>
+                  <div v-if="downtimeInfo.pesan_down" class="pdu-msg" :title="downtimeInfo.pesan_down">{{ downtimeInfo.pesan_down }}</div>
                 </div>
               </div>
               <div class="prtg-downup-arrow">→</div>
@@ -922,7 +922,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
             </div>
             <div v-if="!activityFeed.length" class="empty-section">Belum ada aktivitas</div>
             <div class="feed-list">
-              <div v-for="item in activityFeed" :key="item.kind + ':' + item.time" class="feed-item">
+              <div v-for="item in activityFeed" :key="item.kind === 'log' ? 'log:' + item.log.id_log : 'foto:' + item.stage" class="feed-item">
                 <!-- Log entry -->
                 <template v-if="item.kind === 'log'">
                   <div class="feed-dot log-dot-c" :style="{ background: item.log.status_ke ? STATUS_COLOR[item.log.status_ke]?.color || '#64748b' : '#94a3b8' }"></div>
@@ -977,8 +977,8 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
       <!-- ── MODAL PREVIEW FOTO ─────────────────────────────── -->
       <div v-if="previewUrl" class="modal-overlay" @click.self="previewUrl = ''" style="z-index:3000">
         <div class="foto-preview-modal">
-          <button class="foto-preview-close" @click="previewUrl = ''">✕</button>
-          <img :src="previewUrl" class="foto-preview-img" />
+          <button type="button" class="foto-preview-close" aria-label="Tutup" @click="previewUrl = ''">✕</button>
+          <img :src="previewUrl" class="foto-preview-img" alt="Pratinjau foto" />
         </div>
       </div>
 
@@ -990,7 +990,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
               <div class="tl-title">📊 Timeline Lengkap</div>
               <div class="tl-sub">{{ ops.current.nomor_tiket }} · {{ ops.current.judul_tiket }}</div>
             </div>
-            <button class="tl-close" @click="showTimeline = false">✕</button>
+            <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showTimeline = false">✕</button>
           </div>
           <div class="tl-body">
             <div class="tl-list">
@@ -1038,7 +1038,11 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
       <!-- ── MODAL EDIT ──────────────────────────────────────── -->
       <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
         <div class="modal" v-focus-trap>
-          <h3>Edit Tiket</h3>
+          <div class="modal-header">
+            <span class="modal-title">Edit Tiket</span>
+            <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showEditModal = false">✕</button>
+          </div>
+          <div class="modal-body">
           <div class="form-grid">
             <div class="field full"><label>Judul Tiket</label><input v-model="editForm.judul_tiket" /></div>
             <div class="field">
@@ -1089,10 +1093,11 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
               <textarea v-model="editForm.root_cause" rows="3" placeholder="Jelaskan penyebab gangguan, tindakan yang dilakukan, dll..."></textarea>
             </div>
           </div>
-          <p v-if="editError" class="form-error">{{ editError }}</p>
-          <div class="modal-actions">
-            <button class="btn-cancel" @click="showEditModal = false">Batal</button>
-            <button class="btn-submit" @click="handleEdit" :disabled="editSubmitting">{{ editSubmitting ? 'Menyimpan...' : 'Simpan' }}</button>
+          <p v-if="editError" class="form-error-box">{{ editError }}</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="showEditModal = false">Batal</button>
+            <button type="button" class="btn btn-primary" @click="handleEdit" :disabled="editSubmitting">{{ editSubmitting ? 'Menyimpan...' : 'Simpan' }}</button>
           </div>
         </div>
       </div>
@@ -1100,7 +1105,11 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
       <!-- ── MODAL LOG ───────────────────────────────────────── -->
       <div v-if="showLogModal" class="modal-overlay" @click.self="showLogModal = false">
         <div class="modal" v-focus-trap>
-          <h3>Tambah Log</h3>
+          <div class="modal-header">
+            <span class="modal-title">Tambah Log</span>
+            <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showLogModal = false">✕</button>
+          </div>
+          <div class="modal-body">
           <div class="form-grid">
             <div class="field full">
               <label>Update Status (opsional)</label>
@@ -1111,9 +1120,10 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
             </div>
             <div class="field full"><label>Catatan</label><textarea v-model="logForm.catatan" rows="3" placeholder="Update kondisi, tindakan yang dilakukan..."></textarea></div>
           </div>
-          <div class="modal-actions">
-            <button class="btn-cancel" @click="showLogModal = false">Batal</button>
-            <button class="btn-submit" @click="handleAddLog" :disabled="logSubmitting">{{ logSubmitting ? 'Menyimpan...' : 'Tambah' }}</button>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="showLogModal = false">Batal</button>
+            <button type="button" class="btn btn-primary" @click="handleAddLog" :disabled="logSubmitting">{{ logSubmitting ? 'Menyimpan...' : 'Tambah' }}</button>
           </div>
         </div>
       </div>
@@ -1121,7 +1131,11 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
       <!-- ── MODAL SURAT TUGAS ────────────────────────────────── -->
       <div v-if="showWoModal" class="modal-overlay" @click.self="showWoModal = false">
         <div class="modal" v-focus-trap>
-          <h3>Buat Surat Tugas</h3>
+          <div class="modal-header">
+            <span class="modal-title">Buat Surat Tugas</span>
+            <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showWoModal = false">✕</button>
+          </div>
+          <div class="modal-body">
           <div class="form-grid">
             <div class="field">
               <label>Jenis Tugas</label>
@@ -1150,10 +1164,11 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
             <div class="field full"><label>Jadwal <span class="req">*</span></label><input v-model="woForm.tgl_jadwal" type="datetime-local" /></div>
             <div class="field full"><label>Deskripsi Tugas <span class="req">*</span></label><textarea v-model="woForm.deskripsi_tugas" rows="3" placeholder="Tugas teknisi..."></textarea></div>
           </div>
-          <p v-if="woError" class="form-error">{{ woError }}</p>
-          <div class="modal-actions">
-            <button class="btn-cancel" @click="showWoModal = false">Batal</button>
-            <button class="btn-submit" @click="handleAddWo" :disabled="woSubmitting">{{ woSubmitting ? 'Membuat...' : 'Buat Surat Tugas' }}</button>
+          <p v-if="woError" class="form-error-box">{{ woError }}</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="showWoModal = false">Batal</button>
+            <button type="button" class="btn btn-primary" @click="handleAddWo" :disabled="woSubmitting">{{ woSubmitting ? 'Membuat...' : 'Buat Surat Tugas' }}</button>
           </div>
         </div>
       </div>
@@ -1163,46 +1178,52 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 </template>
 
 <style scoped>
-.page { padding: 24px 28px; max-width: 1280px; }
-.loading-page { padding: 60px; text-align: center; color: #94a3b8; }
-.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 14px; padding: 14px 18px; margin: 20px 0; }
-.alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 14px; }
+.loading-page { padding: 60px; text-align: center; color: var(--text-muted); }
+.alert-error { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13.5px; padding: 12px 16px; margin-bottom: 14px; }
+.alert-success { background: var(--success-light); border: 1px solid #bbf7d0; border-radius: var(--r); color: #15803d; font-size: 13.5px; padding: 12px 16px; margin-bottom: 14px; }
 
 /* ── HEADER ─────────────────────────────────── */
-.btn-back { background: none; border: none; color: #3b82f6; font-size: 13px; font-weight: 600; cursor: pointer; padding: 0; display: block; margin-bottom: 4px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; gap: 12px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
-.header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
-.sla-badge-lg { padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.btn-back { background: none; border: none; color: var(--primary-hover); font-size: 13px; font-weight: 600; cursor: pointer; padding: 0; display: block; margin-bottom: 4px; }
+.btn-back:hover { text-decoration: underline; }
+.page-header { margin-bottom: 16px; }
+.page-header > div:first-child { min-width: 0; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); overflow-wrap: anywhere; }
+.header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.sla-badge-lg { padding: 5px 12px; border-radius: var(--r-sm); font-size: 12px; font-weight: 700; white-space: nowrap; }
 .sla-safe { background: #f0fdf4; color: #15803d; }
 .sla-warning { background: #fefce8; color: #a16207; }
 .sla-late { background: #dc2626; color: #fff; animation: slaPulse 1.2s infinite; }
 .sla-late-done { background: #fef2f2; color: #dc2626; }
 .sla-ok { background: #f0fdf4; color: #15803d; }
-.sla-none { color: #cbd5e1; }
+.sla-none { background: var(--border-light); color: var(--text-3); }
 @keyframes slaPulse { 50% { opacity: 0.6; } }
 @media (prefers-reduced-motion: reduce) {
   .sla-late, .blink-dot, .spinning, .spin-svg { animation: none !important; }
 }
 .prioritas-badge { padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; }
 .status-big { padding: 5px 14px; border-radius: 20px; font-size: 14px; font-weight: 700; }
-.btn-timeline { padding: 8px 14px; background: #ede9fe; color: #6d28d9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-timeline, .btn-print, .btn-edit, .btn-tangani, .btn-hapus-tiket {
+  padding: 8px 14px; border-radius: var(--r); font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap; line-height: 1.2; border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-timeline { background: #ede9fe; color: #6d28d9; }
 .btn-timeline:hover { background: #ddd6fe; }
-.btn-print { padding: 8px 14px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-print { background: var(--success-light); color: #15803d; border-color: #bbf7d0; }
 .btn-print:hover { background: #dcfce7; }
-.btn-edit { padding: 8px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
-.btn-tangani { padding: 8px 16px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.btn-edit { background: var(--surface); color: var(--text-2); border-color: var(--border); }
+.btn-edit:hover { background: #f8fafc; border-color: #cbd5e1; }
+.btn-tangani { background: var(--primary); color: #fff; font-weight: 700; }
 .btn-tangani:hover:not(:disabled) { background: #1e40af; }
 .btn-tangani:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn-hapus-tiket { padding: 8px 16px; background: #fef2f2; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-hapus-tiket { background: var(--danger-light); color: var(--danger); border-color: #fecaca; }
 .btn-hapus-tiket:hover:not(:disabled) { background: #fee2e2; border-color: #f87171; }
 .btn-hapus-tiket:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 
 /* ── INFO BAR ────────────────────────────────── */
 .info-bar { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
-.info-chip { background: #fff; border-radius: 10px; padding: 10px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+.info-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 14px; box-shadow: var(--shadow-xs); min-width: 0; overflow-wrap: anywhere; }
 .ic-label { display: block; font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.4px; }
 .ic-value { font-size: 13px; color: #0f172a; }
 .vendor-pic { display: flex; align-items: center; gap: 6px; }
@@ -1223,7 +1244,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .col-right { display: flex; flex-direction: column; gap: 16px; }
 
 /* ── MAP ─────────────────────────────────────── */
-.map-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
+.map-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
 .map-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px 8px; flex-wrap: wrap; gap: 8px; }
 .map-title { font-size: 13px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px; }
 .map-legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -1233,14 +1254,15 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .dot.blue  { background: #3b82f6; }
 .map-lastseen { font-size: 11px; color: #64748b; }
 .map-nodata { font-size: 11px; color: #94a3b8; font-style: italic; }
-.map-container { height: 280px; width: 100%; }
-.map-footer { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+/* Stacking context sendiri agar pane Leaflet (z-index 400–1000) tidak menimpa header/dropdown layout */
+.map-container { height: 280px; width: 100%; position: relative; z-index: 0; }
+.map-footer { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; padding: 8px 16px; background: #f8fafc; border-top: 1px solid var(--border); }
 .map-link { font-size: 12px; color: #3b82f6; text-decoration: none; font-weight: 600; }
 .map-link:hover { text-decoration: underline; }
 .map-coords { font-size: 11px; color: #94a3b8; font-family: monospace; }
 
 /* ── FOTO GALLERY ────────────────────────────── */
-.foto-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
+.foto-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
 .foto-card-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 10px; }
 .foto-card-title { font-size: 13px; font-weight: 700; color: #0f172a; }
 .foto-badge { background: #f0fdf4; color: #15803d; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
@@ -1258,8 +1280,8 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .foto-preview-close { position: absolute; top: -14px; right: -14px; width: 32px; height: 32px; border-radius: 50%; background: #fff; border: none; cursor: pointer; font-size: 16px; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 1; }
 
 /* ── SECTION CARD ────────────────────────────── */
-.section-card { background: #fff; border-radius: 12px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
-.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.section-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--shadow-sm); }
+.section-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
 .card-title { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
 .btn-add-small { padding: 4px 10px; background: #eff6ff; color: #1d4ed8; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .empty-section { color: #94a3b8; font-size: 13px; padding: 10px 0; }
@@ -1276,7 +1298,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .wo-status { font-size: 12px; font-weight: 700; min-width: 60px; text-align: right; flex-shrink: 0; }
 
 /* ── JOURNEY CARD ────────────────────────────── */
-.journey-card { background: #fff; border-radius: 12px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+.journey-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--shadow-sm); }
 .journey-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .journey-title { font-size: 13px; font-weight: 700; color: #0f172a; }
 .btn-timeline-sm { font-size: 12px; color: #6d28d9; background: none; border: none; cursor: pointer; font-weight: 600; padding: 0; }
@@ -1329,30 +1351,26 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .rel-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
 .rel-arrow { color: #94a3b8; font-size: 16px; }
 
-/* ── MODAL OVERLAY ───────────────────────────── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-.modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
+/* ── MODAL ───────────────────────────────────── */
+/* Overlay & modal pakai style global (main.css). z-index dinaikkan agar
+   berada di atas pane/kontrol Leaflet (z-index s/d 1000). */
+.modal-overlay { z-index: 2000; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.field { display: flex; flex-direction: column; gap: 6px; }
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .field.full { grid-column: 1 / -1; }
-.field label { font-size: 13px; font-weight: 600; color: #374151; }
-.req { color: #ef4444; }
-.field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
-.form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 8px 0; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
-.btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
-.btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.field label { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+.req { color: var(--danger); }
+.field input, .field select, .field textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r); font-size: 13.5px; font-family: inherit; outline: none; background: var(--surface); color: var(--text-1); transition: border-color 0.15s, box-shadow 0.15s; }
+.field textarea { resize: vertical; line-height: 1.5; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+.form-error-box { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 8px 12px; margin: 14px 0 0; }
+.modal-footer .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* ── TIMELINE MODAL ──────────────────────────── */
-.timeline-modal { background: #fff; border-radius: 16px; width: 560px; max-width: 95vw; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 24px 80px rgba(0,0,0,0.22); overflow: hidden; }
+.timeline-modal { background: var(--surface); border-radius: var(--r-xl); width: 560px; max-width: 95vw; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 24px 80px rgba(0,0,0,0.22); overflow: hidden; }
 .tl-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 22px 24px 16px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
 .tl-title { font-size: 17px; font-weight: 800; color: #0f172a; margin-bottom: 2px; }
 .tl-sub { font-size: 12px; color: #64748b; }
-.tl-close { width: 30px; height: 30px; border-radius: 50%; background: #f1f5f9; border: none; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.tl-close:hover { background: #e2e8f0; }
 .tl-body { overflow-y: auto; padding: 20px 24px 24px; flex: 1; }
 
 .tl-list { display: flex; flex-direction: column; }
@@ -1383,7 +1401,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 
 /* ── PRTG SECTION ────────────────────────────── */
 /* Status Card */
-.prtg-card { background: #fff; border-radius: 14px; border: 1px solid #e2e8f0; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.prtg-card { background: var(--surface); border-radius: var(--r-lg); border: 1px solid var(--border); padding: 20px; box-shadow: var(--shadow-sm); }
 .prtg-hdr { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
 .prtg-hdr-left { display: flex; align-items: flex-start; gap: 12px; }
 .prtg-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
@@ -1445,7 +1463,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .sensor-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; white-space: nowrap; align-self: flex-start; }
 
 /* Graph Card */
-.prtg-graph-card { background: #fff; border-radius: 14px; border: 1px solid #e2e8f0; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.prtg-graph-card { background: var(--surface); border-radius: var(--r-lg); border: 1px solid var(--border); padding: 20px; box-shadow: var(--shadow-sm); }
 .prtg-graph-hdr { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
 .prtg-graph-title { font-size: 15px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .prtg-live-dot { display: flex; align-items: center; gap: 5px; color: #16a34a; }
@@ -1491,9 +1509,20 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
   .prtg-graph-hdr { flex-direction: column; align-items: flex-start; }
   .kontak-grid { grid-template-columns: 1fr; }
 }
+@media (max-width: 768px) {
+  /* Global main.css membuat semua tombol page-header full-width; tombol kembali
+     tetap ringkas, dan tombol aksi dibagi dua kolom agar tidak menumpuk 6 baris. */
+  .page-header .btn-back { width: auto !important; }
+  .header-right { justify-content: flex-start; }
+  .page-header .header-right > button { width: auto !important; flex: 1 1 calc(50% - 4px); }
+  .wo-item { flex-wrap: wrap; }
+  .wo-status { text-align: left; }
+}
 @media (max-width: 600px) {
-  .page { padding: 16px; }
   .info-bar { grid-template-columns: 1fr 1fr; }
+  .prtg-downup-arrow { display: none; }
+  .prtg-downup-duration { width: 100%; }
+  .pdu-msg { max-width: 100%; }
   .sensor-grid { grid-template-columns: 1fr; }
   .prtg-graph-tabs { flex-wrap: wrap; }
 }

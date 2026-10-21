@@ -101,7 +101,7 @@ function sisaHari(d?: string) {
         <h2>Kontrak Layanan</h2>
         <p class="sub">Manajemen kontrak & recurring revenue</p>
       </div>
-      <button class="btn-primary" @click="showModal = true; formError = ''">+ Buat Kontrak</button>
+      <button type="button" class="btn btn-primary" @click="showModal = true; formError = ''">+ Buat Kontrak</button>
     </div>
 
     <!-- Summary -->
@@ -123,7 +123,7 @@ function sisaHari(d?: string) {
     </div>
 
     <!-- Filters -->
-    <div class="filters">
+    <div class="filter-bar">
       <input v-model="search" @keyup.enter="doFilter" placeholder="Cari nomor kontrak / site / pelanggan..." class="search-input" />
       <select v-model="filterStatus" @change="doFilter" class="filter-select">
         <option value="">Semua Status</option>
@@ -166,7 +166,7 @@ function sisaHari(d?: string) {
               <div class="text-sm" v-if="k.tgl_berakhir">{{ fmtDate(k.tgl_berakhir) }}</div>
               <div v-if="k.tgl_berakhir && k.status_kontrak === 'Aktif'" class="sisa"
                 :class="{ warn: (sisaHari(k.tgl_berakhir) ?? 999) <= 30 }">
-                {{ sisaHari(k.tgl_berakhir) !== null ? sisaHari(k.tgl_berakhir) + ' hari' : '' }}
+                {{ (sisaHari(k.tgl_berakhir) ?? 0) < 0 ? `lewat ${-(sisaHari(k.tgl_berakhir) ?? 0)} hari` : `${sisaHari(k.tgl_berakhir)} hari lagi` }}
               </div>
             </td>
             <td>
@@ -244,11 +244,8 @@ function sisaHari(d?: string) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
 
 .summary-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 .summary-chip { background: #fff; border-radius: 8px; padding: 12px 16px; border-left: 4px solid #94a3b8; box-shadow: 0 1px 3px rgba(0,0,0,0.07); cursor: pointer; min-width: 110px; }
@@ -260,12 +257,10 @@ function sisaHari(d?: string) {
 .warn-chip { border-left-color: #f97316; cursor: default; }
 .warn-val { color: #ea580c; }
 
-.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.search-input { flex: 1; min-width: 260px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.search-input:focus { border-color: #3b82f6; }
-.filter-select { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.btn-search { padding: 9px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.search-input { flex: 1; min-width: 260px; }
+.btn-search { height: 36px; padding: 0 16px; background: var(--border-light); border: 1px solid var(--border); border-radius: var(--r); font-size: 13.5px; font-weight: 600; color: var(--text-2); cursor: pointer; }
+.btn-search:hover { background: var(--border); }
+.alert-error { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
 table { width: 100%; border-collapse: collapse; }
@@ -285,8 +280,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .row-link:hover td { background: #f8fafc; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 520px; }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -300,4 +294,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

@@ -4,6 +4,7 @@ import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 import { todayLocal } from '@/composables/useFormat'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 
 const proyek = useProyekStore()
 const auth = useAuthStore()
@@ -20,13 +21,18 @@ const toggling = ref(false)
 async function toggleAktif() {
   if (!status.value || toggling.value) return
   const mauAktif = !status.value.is_aktif
-  if (!mauAktif && !confirm('Jeda polling PRTG? Tidak ada pengecekan otomatis (tiket auto) sampai diaktifkan lagi.')) return
+  if (!mauAktif && !(await confirmDialog({
+    title: 'Jeda polling PRTG?',
+    message: 'Tidak ada pengecekan otomatis (tiket auto) sampai diaktifkan lagi.',
+    variant: 'warning',
+    confirmLabel: 'Ya, Jeda',
+  }))) return
   toggling.value = true
   try {
     await api.patch('/prtg/toggle', { aktif: mauAktif })
     await fetchStatus()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal mengubah status polling')
+    alertError(e, 'Gagal mengubah status polling')
   } finally { toggling.value = false }
 }
 
@@ -63,13 +69,13 @@ async function fetchConfig() {
   } catch {}
 }
 async function saveConfig() {
-  savingConfig.value = true; configMsg.value = ''
+  savingConfig.value = true; configMsg.value = ''; configErr.value = false
   try {
     await api.patch('/prtg/config', configForm.value)
     configForm.value.passhash = ''
     configMsg.value = 'Konfigurasi disimpan.'
     await Promise.all([fetchConfig(), fetchStatus()])
-  } catch (e: any) { configMsg.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { configErr.value = true; configMsg.value = e.response?.data?.message || 'Gagal menyimpan' }
   finally { savingConfig.value = false }
 }
 
@@ -118,6 +124,12 @@ function makeSiteCombo(idRef: { value: number }) {
   return { query, open, filtered, display, select, blur, clear }
 }
 
+// setTimeout bukan global yang tersedia di template Vue — dulu dipanggil langsung
+// dari @blur sehingga error dan dropdown inline tidak pernah tertutup.
+function closeInlineSiteLater(deviceName: string) {
+  setTimeout(() => { inlineSiteOpen.value[deviceName] = false }, 200)
+}
+
 // ─── MAPPING ──────────────────────────────────────────────────
 const mappingList = ref<any[]>([])
 const unmatchedList = ref<any[]>([])
@@ -149,9 +161,10 @@ function pilihUnmatched(deviceName: string) {
 
 async function submitMapping() {
   if (!mapForm.value.device_name || !mapForm.value.id_site) {
+    mapErr.value = true
     mapMsg.value = 'Nama device dan site wajib diisi'; return
   }
-  mapSubmitting.value = true; mapMsg.value = ''
+  mapSubmitting.value = true; mapMsg.value = ''; mapErr.value = false
   try {
     const r = await api.post('/prtg/mapping', mapForm.value)
     mapMsg.value = r.data.message
@@ -159,17 +172,24 @@ async function submitMapping() {
     mapSite.query.value = ''
     mapSite.open.value = false
     await fetchMapping()
-  } catch (e: any) { mapMsg.value = e.response?.data?.message || 'Gagal menyimpan mapping' }
+  } catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menyimpan mapping' }
   finally { mapSubmitting.value = false }
 }
 
 async function hapusMapping(id: number, nama: string) {
-  if (!confirm(`Hapus mapping "${nama}"? Device ini akan balik ke matching otomatis (nama).`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Mapping',
+    message: `Hapus mapping "${nama}"? Device ini akan balik ke matching otomatis (nama).`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   hapusMappingId.value = id; mapMsg.value = ''
   try { await api.delete(`/prtg/mapping/${id}`); await fetchMapping() }
-  catch (e: any) { mapMsg.value = e.response?.data?.message || 'Gagal menghapus mapping' }
+  catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menghapus mapping' }
   finally { hapusMappingId.value = 0 }
 }
+const mapErr = ref(false)
+const configErr = ref(false)
 
 // ─── AUDIT SENSOR ─────────────────────────────────────────────
 const devices = ref<any[]>([])
@@ -382,7 +402,7 @@ async function quickProvision(device: any) {
     provisionList.value = fresh
     clearInlineSite(device.device_name)
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal provision')
+    alertError(e, 'Gagal provision')
   } finally {
     delete quickProvLoading.value[device.device_name]
   }
@@ -711,7 +731,7 @@ function exportKonfirmasiCSV() {
             {{ mapSubmitting ? 'Menyimpan...' : 'Simpan Mapping' }}
           </button>
         </div>
-        <p v-if="mapMsg" class="msg">{{ mapMsg }}</p>
+        <p v-if="mapMsg" :class="['msg', { err: mapErr }]">{{ mapMsg }}</p>
       </div>
 
       <div class="card">
@@ -841,7 +861,7 @@ function exportKonfirmasiCSV() {
         </div>
 
         <button class="btn-submit" @click="saveConfig" :disabled="savingConfig">{{ savingConfig ? 'Menyimpan...' : 'Simpan Konfigurasi' }}</button>
-        <p v-if="configMsg" class="msg">{{ configMsg }}</p>
+        <p v-if="configMsg" :class="['msg', { err: configErr }]">{{ configMsg }}</p>
       </div>
     </div>
 
@@ -1035,7 +1055,7 @@ function exportKonfirmasiCSV() {
                         :value="inlineSiteId[d.device_name] ? '' : inlineSiteQuery[d.device_name]"
                         @input="(e: any) => { inlineSiteQuery[d.device_name] = e.target.value; inlineSiteOpen[d.device_name] = true }"
                         placeholder="Cari nama site / kode..."
-                        @blur="() => setTimeout(() => { inlineSiteOpen[d.device_name] = false }, 200)"
+                        @blur="closeInlineSiteLater(d.device_name)"
                         autofocus />
                       <div v-if="inlineSiteOpen[d.device_name]" class="combo-dropdown">
                         <div v-for="s in getInlineSiteFiltered(d.device_name)" :key="s.id_site"
@@ -1105,7 +1125,7 @@ function exportKonfirmasiCSV() {
       <div class="modal-box">
         <div class="modal-head">
           <h4>Import Data dari Komentar PRTG</h4>
-          <button class="modal-close" @click="importModal = false">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="importModal = false">✕</button>
         </div>
         <div class="modal-form" style="padding:16px 20px">
           <div class="modal-info" style="margin-bottom:12px">
@@ -1177,7 +1197,7 @@ function exportKonfirmasiCSV() {
       <div class="modal-box">
         <div class="modal-head">
           <h4>⚡ Provision Perangkat</h4>
-          <button class="modal-close" @click="provModal = false">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="provModal = false">✕</button>
         </div>
 
         <div class="modal-info">
@@ -1327,6 +1347,8 @@ function exportKonfirmasiCSV() {
 
 <style scoped>
 .page { padding: 28px 32px; max-width: 1180px; }
+/* block: judul & subjudul ditumpuk (global .page-header = flex row) */
+.page-header { display: block; margin-bottom: 0; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0 0 16px; font-size: 13px; color: #64748b; }
 
@@ -1605,7 +1627,7 @@ td { padding: 10px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .dp-step small { font-weight: 400; display: block; margin-top: 2px; }
 
 /* ── Modal ── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 999; padding: 16px; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 1100; padding: 16px; }
 .modal-box { background: #fff; border-radius: 14px; padding: 24px; width: 540px; max-width: 100%; box-shadow: 0 8px 40px rgba(0,0,0,0.15); max-height: 90vh; overflow-y: auto; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .modal-head h4 { margin: 0; font-size: 16px; color: #0f172a; }

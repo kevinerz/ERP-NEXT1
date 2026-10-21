@@ -107,8 +107,8 @@ async function doBatalkan() {
         <span class="status-badge" :class="o.status_opname === 'Selesai' ? 'st-selesai' : 'st-berjalan'">{{ o.status_opname }}</span>
       </div>
       <div class="actions" v-if="isBerjalan">
-        <button class="btn-secondary" @click="batalkan">Batalkan</button>
-        <button class="btn-primary" @click="selesaikan" :disabled="finishing">
+        <button type="button" class="btn btn-secondary btn-batal" @click="batalkan" :disabled="finishing">Batalkan</button>
+        <button type="button" class="btn btn-primary" @click="selesaikan" :disabled="finishing">
           {{ finishing ? 'Menyelesaikan...' : 'Selesaikan Opname' }}
         </button>
       </div>
@@ -142,6 +142,9 @@ async function doBatalkan() {
           </tr>
         </thead>
         <tbody>
+          <tr v-if="!snapshotItems.length">
+            <td colspan="5" class="empty">Tidak ada aset di snapshot gudang ini</td>
+          </tr>
           <tr v-for="it in snapshotItems" :key="it.id_item" :class="{ 'row-found': it.ditemukan }">
             <td class="center">
               <input type="checkbox" :checked="it.ditemukan" :disabled="!isBerjalan" @change="toggleManual(it)" />
@@ -178,20 +181,19 @@ async function doBatalkan() {
       </table>
     </div>
   </div>
-  <div v-else-if="aset.loading" class="page"><p>Memuat...</p></div>
-  <div v-else class="page"><p>Sesi opname tidak ditemukan.</p></div>
+  <div v-else-if="aset.loading" class="page"><div class="loading-state">Memuat...</div></div>
+  <div v-else class="page"><div class="empty-state"><div class="empty-title">Sesi opname tidak ditemukan.</div></div></div>
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1000px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.breadcrumb { font-size: 12px; color: #94a3b8; margin-bottom: 4px; cursor: pointer; }
+.page { max-width: 1000px; }
+.breadcrumb { font-size: 13px; color: var(--text-3); margin-bottom: 6px; }
+.breadcrumb span { cursor: pointer; color: var(--primary-hover); }
 .breadcrumb span:hover { text-decoration: underline; }
-.page-header h2 { margin: 0 0 6px; font-size: 22px; color: #0f172a; }
-.actions { display: flex; gap: 10px; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-secondary { padding: 10px 18px; background: #fff; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.page-header h2 { margin: 0 0 6px; font-size: 22px; color: var(--text-1); }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn-batal { color: var(--danger); border-color: #fecaca; }
+.btn-batal:hover { background: var(--danger-light); border-color: #fca5a5; }
 
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
 .st-berjalan { background: #fef9c3; color: #a16207; }
@@ -209,8 +211,8 @@ async function doBatalkan() {
 
 .scan-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 16px 18px; margin-bottom: 20px; }
 .scan-box label { display: block; font-size: 13px; font-weight: 600; color: #1e40af; margin-bottom: 8px; }
-.scan-input-row { display: flex; gap: 10px; }
-.scan-input-row input { flex: 1; padding: 10px 14px; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 15px; outline: none; font-family: monospace; }
+.scan-input-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.scan-input-row input { flex: 1 1 200px; min-width: 0; padding: 10px 14px; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 15px; outline: none; font-family: monospace; }
 .scan-input-row input:focus { border-color: #3b82f6; }
 .btn-scan { padding: 10px 20px; background: #1e40af; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-scan:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -224,6 +226,7 @@ thead tr { background: #f8fafc; }
 th { padding: 12px 14px; font-size: 12px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; letter-spacing: 0.5px; }
 td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid #f1f5f9; vertical-align: top; }
 .center { text-align: center; }
+.empty { text-align: center; color: var(--text-muted); padding: 40px; }
 .kode { font-weight: 700; color: #1d4ed8; font-size: 13px; white-space: nowrap; }
 .fw600 { font-weight: 600; }
 .text-gray { color: #64748b; }

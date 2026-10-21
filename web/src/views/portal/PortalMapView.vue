@@ -12,7 +12,7 @@ let   leafletMap: any = null
 function parseCoord(gps: string | null): [number, number] | null {
   if (!gps) return null
   const parts = gps.split(',').map((p: string) => parseFloat(p.trim()))
-  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return [parts[0], parts[1]]
+  if (parts.length === 2 && !isNaN(parts[0]!) && !isNaN(parts[1]!)) return [parts[0]!, parts[1]!]
   return null
 }
 
@@ -180,7 +180,6 @@ const sitesDown       = () => downStatus.value.length
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 * { box-sizing: border-box; }
 
@@ -333,11 +332,16 @@ const sitesDown       = () => downStatus.value.length
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Pulse for down markers */
-@keyframes pulse-marker {
-  0%   { box-shadow: 0 0 0 2px #dc2626, 0 0 0 5px rgba(220,38,38,0.35); }
-  50%  { box-shadow: 0 0 0 2px #dc2626, 0 0 0 10px rgba(220,38,38,0); }
-  100% { box-shadow: 0 0 0 2px #dc2626, 0 0 0 5px rgba(220,38,38,0.35); }
+/* Keyframes pulse-marker ada di blok <style> non-scoped di bawah:
+   scoped CSS mengganti nama keyframes, sedangkan marker Leaflet memakai
+   inline style "animation:pulse-marker" sehingga animasinya tidak pernah jalan. */
+
+@media (max-width: 768px) {
+  .map-header { padding: 16px; }
+  .map-legend { flex-wrap: wrap; gap: 8px 14px; }
+  .stat-item { flex: 1; padding: 8px 10px; }
+  .geo-map { min-height: 60vh; }
+  .map-state, .map-error { padding: 48px 16px; text-align: center; }
 }
 
 /* Leaflet popup */
@@ -347,5 +351,14 @@ const sitesDown       = () => downStatus.value.length
 }
 :deep(.leaflet-popup-content) {
   margin: 12px 14px;
+}
+</style>
+
+<style>
+/* Global (tidak di-scope) karena dipakai dari HTML marker Leaflet */
+@keyframes pulse-marker {
+  0%   { box-shadow: 0 0 0 2px #dc2626, 0 0 0 5px rgba(220,38,38,0.35); }
+  50%  { box-shadow: 0 0 0 2px #dc2626, 0 0 0 10px rgba(220,38,38,0); }
+  100% { box-shadow: 0 0 0 2px #dc2626, 0 0 0 5px rgba(220,38,38,0.35); }
 }
 </style>

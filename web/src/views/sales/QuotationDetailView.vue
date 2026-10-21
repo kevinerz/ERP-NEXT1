@@ -6,6 +6,7 @@ import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import { printQuotation } from '@/composables/usePrint'
 import { fmtRupiahPenuh, fmtDate, fmtDateTime, todayLocal } from '@/composables/useFormat'
+import { confirmDialog, alertDialog, promptDialog, alertError } from '@/composables/useDialog'
 
 const route  = useRoute()
 const router = useRouter()
@@ -39,7 +40,7 @@ const kontrakForm      = ref({ id_site: 0, tgl_mulai: '', durasi_bulan: 12 })
 
 onMounted(async () => {
   await sales.fetchSalesList()
-  if (sales.salesList.length) approveForm.value.id_approver = sales.salesList[0].id_karyawan
+  if (sales.salesList.length) approveForm.value.id_approver = sales.salesList[0]!.id_karyawan
   await Promise.all([fetchQuotation(), fetchSites()])
 })
 
@@ -72,7 +73,7 @@ function openApprove() {
 }
 
 function toDateInput(d: string) {
-  return d ? new Date(d).toISOString().split('T')[0] : ''
+  return d ? new Date(d).toISOString().split('T')[0]! : ''
 }
 
 function openEdit() {
@@ -102,7 +103,7 @@ async function submitEdit() {
     successMsg.value = 'Quotation diperbarui'
     setTimeout(() => successMsg.value = '', 3000)
   } catch (e: any) {
-    alert(e?.response?.data?.message ?? 'Gagal memperbarui quotation')
+    await alertError(e, 'Gagal memperbarui quotation')
   } finally { editSubmit.value = false }
 }
 
@@ -149,7 +150,12 @@ async function handleApprove() {
 
 async function hapusQuotation() {
   const nomor = qt.value?.nomor_quotation
-  if (!confirm(`Hapus quotation "${nomor}" ini?`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Quotation?',
+    message: `Hapus quotation "${nomor}" ini?`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete(`/sales/quotation/${id}`)
     router.push('/sales/quotation')
@@ -157,24 +163,36 @@ async function hapusQuotation() {
     const msg = e?.response?.data?.message ?? 'Gagal menghapus quotation'
     // Quotation non-Draft → tawarkan force delete (Admin/Director)
     if (e?.response?.status === 400 && String(msg).includes('force delete')) {
-      if (!canForce.value) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
-      const ketik = prompt(
-        `⚠️ PERINGATAN — Quotation "${nomor}" akan DIHAPUS PERMANEN.\n\n` +
-        `Kontrak yang terhubung TIDAK ikut terhapus, hanya dilepas dari quotation ini.\n\n` +
-        `Ketik nomor quotation "${nomor}" untuk konfirmasi:`,
-      )
+      if (!canForce.value) {
+        await alertDialog({ title: 'Tidak Dapat Dihapus', message: msg + '\n\nHubungi Admin untuk force delete.', variant: 'warning' })
+        return
+      }
+      const ketik = await promptDialog({
+        title: 'Force Delete Quotation',
+        message:
+          `PERINGATAN — Quotation "${nomor}" akan DIHAPUS PERMANEN.\n\n` +
+          `Kontrak yang terhubung TIDAK ikut terhapus, hanya dilepas dari quotation ini.`,
+        label: `Ketik nomor quotation "${nomor}" untuk konfirmasi:`,
+        placeholder: nomor,
+        requireText: nomor,
+        variant: 'danger',
+        confirmLabel: 'Hapus Permanen',
+      })
       if (ketik === null) return
-      if (ketik.trim() !== nomor) { alert('Nomor quotation tidak cocok — dibatalkan.'); return }
+      if (ketik.trim() !== nomor) {
+        await alertDialog({ title: 'Dibatalkan', message: 'Nomor quotation tidak cocok — dibatalkan.', variant: 'warning' })
+        return
+      }
       try {
         const r = await api.delete(`/sales/quotation/${id}?force=true`)
-        alert(r.data?.message || 'Quotation dihapus (force)')
+        await alertDialog({ message: r.data?.message || 'Quotation dihapus (force)', variant: 'success' })
         router.push('/sales/quotation')
       } catch (e2: any) {
-        alert(e2?.response?.data?.message ?? 'Force delete gagal')
+        await alertError(e2, 'Force delete gagal')
       }
       return
     }
-    alert(msg)
+    await alertError(e, 'Gagal menghapus quotation')
   }
 }
 
@@ -184,7 +202,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; border: string }
   Rejected: { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
 }
 
-const statusStyle = computed(() => STATUS_STYLE[qt.value?.status_approval] || STATUS_STYLE['Draft'])
+const statusStyle = computed(() => STATUS_STYLE[qt.value?.status_approval] || STATUS_STYLE['Draft']!)
 
 const fmt = fmtRupiahPenuh
 
@@ -377,7 +395,7 @@ const prospekName = computed(() => {
         <div class="field">
           <label>Site <span class="req">*</span></label>
           <select v-model="kontrakForm.id_site">
-            <option value="0" disabled>-- Pilih Site --</option>
+            <option :value="0" disabled>-- Pilih Site --</option>
             <option v-for="s in sites" :key="s.id_site" :value="s.id_site">
               {{ s.kode_site }} — {{ s.nama_site }}
               <template v-if="s.pelanggan"> ({{ s.pelanggan.nama_pelanggan }})</template>
@@ -468,6 +486,7 @@ const prospekName = computed(() => {
 .btn-kontrak:hover { opacity: 0.9; }
 .btn-print { padding: 9px 16px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-print:hover { background: #dcfce7; }
+.header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 4px 0 12px; }
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 16px; }
@@ -494,7 +513,7 @@ const prospekName = computed(() => {
 .price-card.otc .price-sub { color: #94a3b8; }
 
 /* Catatan */
-.note-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 14px 16px; font-size: 14px; color: #374151; line-height: 1.6; margin-bottom: 24px; }
+.note-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 14px 16px; font-size: 14px; color: #374151; line-height: 1.6; margin-bottom: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Approval */
 .approval-card { border-radius: 12px; padding: 18px 20px; margin-bottom: 24px; }
@@ -514,10 +533,9 @@ const prospekName = computed(() => {
 .al { font-weight: 700; color: #374151; }
 
 /* Meta */
-.meta-row { display: flex; gap: 24px; font-size: 12px; color: #94a3b8; padding-top: 8px; }
+.meta-row { display: flex; gap: 6px 24px; font-size: 12px; color: #94a3b8; padding-top: 8px; flex-wrap: wrap; }
 
-/* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+/* Modal (overlay pakai global .modal-overlay) */
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 440px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal h3 { margin: 0 0 22px; font-size: 18px; color: #0f172a; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
@@ -542,5 +560,8 @@ const prospekName = computed(() => {
 @media (max-width: 700px) {
   .info-grid { grid-template-columns: 1fr 1fr; }
   .pricing-row { grid-template-columns: 1fr; }
+  .nomor { font-size: 20px; }
+  .modal { padding: 22px 20px; }
+  .kontrak-info-row { flex-wrap: wrap; }
 }
 </style>

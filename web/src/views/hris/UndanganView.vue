@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <div class="page-header">
-      <button class="btn-back" @click="router.push('/hris/karyawan')">← Daftar Karyawan</button>
+      <button type="button" class="btn-back" @click="router.push('/hris/karyawan')">← Daftar Karyawan</button>
       <h2>Undangan Sign-In Karyawan Baru</h2>
       <p>Buat link pendaftaran mandiri untuk calon karyawan — mereka isi semua data sendiri (termasuk foto), akun otomatis dibuat dan kredensial dikirim ke email mereka.</p>
     </div>
@@ -36,7 +36,8 @@
       <h3>Daftar Undangan</h3>
       <div v-if="loading" class="empty-state">Memuat...</div>
       <div v-else-if="!invitations.length" class="empty-state">Belum ada undangan dibuat</div>
-      <table v-else class="tbl">
+      <div v-else class="table-wrap">
+      <table class="tbl">
         <thead>
           <tr>
             <th>Dibuat</th>
@@ -51,7 +52,7 @@
           <tr v-for="inv in invitations" :key="inv.id_invitation">
             <td>{{ fmtDateTime(inv.created_at) }}</td>
             <td>{{ inv.departemen || '—' }} / {{ inv.jabatan || '—' }}</td>
-            <td><span class="badge" :class="statusClass(inv.status)">{{ inv.status }}</span></td>
+            <td><span class="badge" :class="statusClass(inv.status)">{{ STATUS_TEXT[inv.status] || inv.status }}</span></td>
             <td>{{ fmtDateTime(inv.expires_at) }}</td>
             <td>{{ inv.karyawan?.nama_lengkap || '—' }}</td>
             <td>
@@ -67,12 +68,14 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useHrisStore } from '@/stores/hris'
@@ -134,17 +137,19 @@ async function copyLink(link: string) {
 }
 
 async function handleRevoke(id: number) {
-  if (!confirm('Batalkan undangan ini? Link tidak akan bisa dipakai lagi.')) return
+  if (!(await confirmDialog({ title: 'Batalkan Undangan?', message: 'Link tidak akan bisa dipakai lagi.', variant: 'danger', confirmLabel: 'Ya, Batalkan' }))) return
   revokingId.value = id
   try {
     await api.delete(`/hris/invitations/${id}`)
     await fetchInvitations()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal membatalkan undangan')
+    await alertError(e, 'Gagal membatalkan undangan')
   } finally {
     revokingId.value = 0
   }
 }
+
+const STATUS_TEXT: Record<string, string> = { Pending: 'Menunggu', Used: 'Terpakai', Expired: 'Kedaluwarsa', Revoked: 'Dibatalkan' }
 
 function statusClass(status: string) {
   if (status === 'Pending') return 'badge-pending'
@@ -159,10 +164,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1000px; }
+.page { max-width: 1000px; }
 
-.page-header { margin-bottom: 20px; }
-.page-header h2 { margin: 8px 0 4px; font-size: 22px; color: #0f172a; }
+/* Tombol kembali + judul + deskripsi ditumpuk (global .page-header = baris) */
+.page-header { flex-direction: column; align-items: flex-start; gap: 0; }
+.page-header h2 { margin: 8px 0 4px; font-size: 22px; color: var(--text-1); }
 .page-header p { margin: 0; font-size: 13px; color: #64748b; max-width: 640px; }
 
 .btn-back {
@@ -202,7 +208,7 @@ onMounted(async () => {
 .link-result {
   margin-top: 16px; padding: 12px 16px;
   background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px;
-  display: flex; align-items: center; gap: 12px; justify-content: space-between;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px; justify-content: space-between;
 }
 .link-text { font-size: 13px; font-family: monospace; color: #15803d; word-break: break-all; }
 .btn-copy {
@@ -226,4 +232,12 @@ onMounted(async () => {
   padding: 5px 12px; font-size: 12px; font-weight: 600; color: #dc2626; cursor: pointer;
 }
 .btn-revoke:disabled { opacity: 0.5; cursor: not-allowed; }
+.tbl td { vertical-align: middle; }
+.tbl th { white-space: nowrap; }
+@media (max-width: 768px) {
+  .card { padding: 18px 16px; }
+  .tbl { min-width: 620px; }
+  .page-header .btn-back { width: auto !important; }
+  .form-row .btn-primary { width: 100%; }
+}
 </style>

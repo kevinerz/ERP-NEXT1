@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useAuthStore } from '@/stores/auth'
@@ -43,12 +44,17 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 }
 
 async function approve(status: 'Disetujui' | 'Ditolak') {
-  if (!confirm(`${status} pengajuan "${p.value?.nama_item}" ini?`)) return
+  if (!(await confirmDialog({
+    title: status === 'Disetujui' ? 'Setujui Pengajuan?' : 'Tolak Pengajuan?',
+    message: `${status} pengajuan "${p.value?.nama_item}" ini?`,
+    variant: status === 'Disetujui' ? 'success' : 'warning',
+    confirmLabel: status === 'Disetujui' ? 'Ya, Setujui' : 'Ya, Tolak',
+  }))) return
   processing.value = true
   try {
     await aset.approvePengajuan(id, { status_approval: status, catatan_approval: catatanApproval.value || undefined })
     await load()
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal memproses approval') }
+  } catch (e: any) { await alertError(e, 'Gagal memproses approval') }
   finally { processing.value = false }
 }
 
@@ -74,11 +80,11 @@ async function submitSelesai() {
 
 async function hapusAdmin() {
   const nama = p.value?.nama_item ?? `#${id}`
-  if (!confirm(`Hapus pengajuan "${nama}" secara permanen?\n\nTindakan ini tidak bisa dibatalkan.`)) return
+  if (!(await confirmDialog({ title: 'Hapus Pengajuan?', message: `Hapus pengajuan "${nama}" secara permanen?\n\nTindakan ini tidak bisa dibatalkan.`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await aset.removePengajuan(id)
     router.push('/assets/pengajuan')
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus pengajuan') }
+  } catch (e: any) { await alertError(e, 'Gagal menghapus pengajuan') }
 }
 </script>
 
@@ -98,7 +104,7 @@ async function hapusAdmin() {
           <button class="btn-reject" @click="approve('Ditolak')" :disabled="processing">Tolak</button>
           <button class="btn-approve" @click="approve('Disetujui')" :disabled="processing">Setujui</button>
         </template>
-        <button v-if="p.status_pengajuan === 'Disetujui'" class="btn-primary" @click="openSelesaiForm">📦 Barang Sudah Tiba</button>
+        <button v-if="p.status_pengajuan === 'Disetujui'" type="button" class="btn btn-primary" @click="openSelesaiForm">📦 Barang Sudah Tiba</button>
       </div>
     </div>
 
@@ -164,20 +170,18 @@ async function hapusAdmin() {
       </div>
     </div>
   </div>
-  <div v-else-if="aset.loading" class="page"><p>Memuat...</p></div>
-  <div v-else class="page"><p>Pengajuan tidak ditemukan.</p></div>
+  <div v-else-if="aset.loading" class="page"><div class="loading-state">Memuat...</div></div>
+  <div v-else class="page"><div class="empty-state"><div class="empty-title">Pengajuan tidak ditemukan.</div></div></div>
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 800px; }
-.breadcrumb { font-size: 12px; color: #94a3b8; margin-bottom: 8px; cursor: pointer; }
+.page { max-width: 800px; }
+.breadcrumb { font-size: 13px; color: var(--text-3); margin-bottom: 16px; }
+.breadcrumb span { cursor: pointer; color: var(--primary-hover); }
 .breadcrumb span:hover { text-decoration: underline; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 8px; font-size: 22px; color: #0f172a; }
+.page-header h2 { margin: 0 0 8px; font-size: 22px; color: var(--text-1); }
 .status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-.actions { display: flex; gap: 10px; }
-.btn-primary { padding: 10px 18px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-secondary { padding: 10px 18px; background: #fff; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn-hapus { padding: 10px 18px; background: #fff; color: #7f1d1d; border: 1.5px solid #fca5a5; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-hapus:hover { background: #fef2f2; }
 .btn-hapus:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -187,9 +191,12 @@ async function hapusAdmin() {
 .btn-reject:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .info-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 20px 24px; margin-bottom: 16px; }
-.info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+.info-row { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--border-light); font-size: 14px; }
 .info-row:last-child { border-bottom: none; }
+.info-row > :not(.info-label) { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+.info-label { flex-shrink: 0; }
 .info-row.full { flex-direction: column; gap: 6px; }
+.info-row.full > * { text-align: left; }
 .info-label { color: #64748b; font-weight: 600; font-size: 13px; }
 .alasan { margin: 0; color: #0f172a; white-space: pre-wrap; }
 .link { color: #1d4ed8; font-weight: 700; cursor: pointer; }
@@ -197,8 +204,7 @@ async function hapusAdmin() {
 .catatan-label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 8px; }
 .info-card textarea { width: 100%; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 440px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 440px; }
 .modal h3 { margin: 0 0 8px; font-size: 18px; color: #0f172a; }
 .modal-desc { margin: 0 0 18px; font-size: 13px; color: #64748b; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
@@ -210,4 +216,7 @@ async function hapusAdmin() {
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

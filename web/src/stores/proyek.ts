@@ -13,6 +13,7 @@ export interface Project {
   opportunity?: { nama_opportunity: string; lead?: { nama_prospek: string; nama_perusahaan?: string } }
   site?: { id_site: number; kode_site: string; nama_site: string; alamat_lengkap: string; kota?: string }
   pm?: { id_karyawan: number; nama_lengkap: string; jabatan: string }
+  kontrak?: { id_kontrak: number; nomor_kontrak: string; status_kontrak?: string }
   _count?: { work_orders: number }
   work_orders?: WorkOrder[]
   bast?: Bast[]

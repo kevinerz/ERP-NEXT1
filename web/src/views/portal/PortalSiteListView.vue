@@ -108,10 +108,18 @@ function mapsRouteLink(gps: string | null) {
         :class="['sl-card', `sl-${site.status_site?.toLowerCase()}`]"
       >
         <!-- Card header (always visible) -->
-        <div class="sl-card-head" @click="toggle(site.id_site)">
+        <div
+          class="sl-card-head"
+          role="button"
+          tabindex="0"
+          :aria-expanded="expanded === site.id_site"
+          @click="toggle(site.id_site)"
+          @keydown.enter.prevent="toggle(site.id_site)"
+          @keydown.space.prevent="toggle(site.id_site)"
+        >
           <div class="sl-card-left">
             <span :class="['sl-status-dot', `dot-${site.status_site?.toLowerCase()}`]"></span>
-            <div>
+            <div class="sl-card-text">
               <div class="sl-site-name">{{ site.nama_site }}</div>
               <div class="sl-site-sub">
                 {{ site.kode_site }}
@@ -158,10 +166,10 @@ function mapsRouteLink(gps: string | null) {
                 <div class="sl-gps-row">
                   <span class="sl-info-val sl-mono">{{ site.koordinat_gps }}</span>
                   <div class="sl-gps-actions">
-                    <a :href="mapsShareLink(site.koordinat_gps)" target="_blank" rel="noopener" class="sl-gps-btn sl-gps-share" title="Bagikan Lokasi">
+                    <a :href="mapsShareLink(site.koordinat_gps) ?? undefined" target="_blank" rel="noopener" class="sl-gps-btn sl-gps-share" title="Bagikan Lokasi">
                       📍 Lokasi
                     </a>
-                    <a :href="mapsRouteLink(site.koordinat_gps)" target="_blank" rel="noopener" class="sl-gps-btn sl-gps-route" title="Buka Rute di Google Maps">
+                    <a :href="mapsRouteLink(site.koordinat_gps) ?? undefined" target="_blank" rel="noopener" class="sl-gps-btn sl-gps-route" title="Buka Rute di Google Maps">
                       🧭 Rute
                     </a>
                   </div>
@@ -209,7 +217,7 @@ function mapsRouteLink(gps: string | null) {
                 <div class="sl-pic-sub" v-if="p.jabatan">{{ p.jabatan }}</div>
                 <div class="sl-pic-contacts">
                   <a v-if="p.no_kontak && waLink(p.no_kontak)"
-                     :href="waLink(p.no_kontak)"
+                     :href="waLink(p.no_kontak) ?? undefined"
                      target="_blank" rel="noopener"
                      class="sl-pic-contact sl-wa-link"
                      title="Chat WhatsApp">
@@ -267,7 +275,6 @@ function mapsRouteLink(gps: string | null) {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 * { box-sizing: border-box; }
 .sl-page {
@@ -386,10 +393,13 @@ function mapsRouteLink(gps: string | null) {
   min-width: 0;
   flex: 1;
 }
+.sl-card-text { min-width: 0; } /* wajib agar ellipsis nama site bekerja di dalam flex */
+.sl-card-head:focus-visible { outline: 2px solid #1456A6; outline-offset: -2px; }
 .sl-status-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
+  background: #CBD5E1;
 }
 .dot-aktif     { background: #0B7C4B; }
 .dot-prospek   { background: #1456A6; }
@@ -427,6 +437,9 @@ function mapsRouteLink(gps: string | null) {
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 2px;
+  background: #F1F5F9;
+  color: #475569;
+  white-space: nowrap;
 }
 .pill-aktif     { background: #ECFDF5; color: #065F46; }
 .pill-prospek   { background: #EFF6FF; color: #1E40AF; }
@@ -463,7 +476,7 @@ function mapsRouteLink(gps: string | null) {
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px 24px;
 }
-.sl-info-item { display: flex; flex-direction: column; gap: 3px; }
+.sl-info-item { display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 .sl-full { grid-column: 1 / -1; }
 .sl-info-key {
   font-size: 9px;
@@ -526,6 +539,7 @@ function mapsRouteLink(gps: string | null) {
 .sl-pic-contact {
   font-size: 11px;
   color: #2D4A6A;
+  overflow-wrap: anywhere;
 }
 .sl-wa-link {
   display: inline-flex;
@@ -647,9 +661,16 @@ function mapsRouteLink(gps: string | null) {
   gap: 8px;
 }
 .sl-error {
-  max-width: 1100px;
-  margin: 24px auto 0;
-  padding: 0 32px;
+  max-width: 1036px;
+  margin: 24px max(32px, calc((100% - 1036px) / 2)) 0;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-left: 4px solid #C41E1E;
+  border-radius: 3px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #7F1D1D;
+  font-weight: 500;
 }
 
 .spinner {
@@ -667,6 +688,9 @@ function mapsRouteLink(gps: string | null) {
   .sl-header { padding: 16px 16px 0; }
   .sl-toolbar { padding-bottom: 12px; }
   .sl-list { padding: 0 12px; margin-top: 16px; }
+  .sl-error { margin: 16px 12px 0; }
+  .sl-card-head { padding: 12px 14px; }
+  .sl-pic-item { max-width: none; }
   .sl-section { padding: 12px 14px; }
 }
 </style>

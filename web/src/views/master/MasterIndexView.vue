@@ -101,19 +101,18 @@ const menus = [
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 860px; }
-.page-header { margin-bottom: 28px; }
-.page-header h2 { margin: 0 0 6px; font-size: 24px; color: #0f172a; font-weight: 700; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
+.page { max-width: 960px; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); font-weight: 700; }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
 
 .grid { display: flex; flex-direction: column; gap: 12px; }
 
 .card {
   display: flex; align-items: center; gap: 18px;
-  background: #fff; border-radius: 14px; padding: 20px 22px;
+  background: var(--surface); border-radius: var(--r-lg); padding: 20px 22px;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.07);
-  border: 1.5px solid #f1f5f9;
+  box-shadow: var(--shadow-sm);
+  border: 1.5px solid var(--border-light);
   transition: box-shadow 0.2s, transform 0.15s, border-color 0.2s;
   text-align: left;
 }
@@ -124,15 +123,22 @@ const menus = [
 }
 
 .card-icon-wrap {
-  width: 54px; height: 54px; border-radius: 14px;
+  width: 54px; height: 54px; border-radius: var(--r-lg);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 .card-icon { font-size: 26px; line-height: 1; }
 
-.card-body { flex: 1; }
-.card-label { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
-.card-desc { font-size: 13px; color: #64748b; line-height: 1.4; }
+.card-body { flex: 1; min-width: 0; }
+.card-label { font-size: 16px; font-weight: 700; color: var(--text-1); margin-bottom: 4px; }
+.card-desc { font-size: 13px; color: var(--text-3); line-height: 1.4; }
+
+@media (max-width: 480px) {
+  .card { gap: 12px; padding: 14px 16px; }
+  .card-icon-wrap { width: 44px; height: 44px; }
+  .card-icon { font-size: 22px; }
+  .card-label { font-size: 15px; }
+}
 
 .card-arrow {
   font-size: 18px; color: #cbd5e1;

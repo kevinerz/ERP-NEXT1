@@ -94,23 +94,29 @@ async function doDelete() {
         <h2>⚡ Jenis Gangguan</h2>
         <p class="sub">Kategori gangguan yang digunakan pada tiket operasional</p>
       </div>
-      <button class="btn-add" @click="openAdd">+ Tambah</button>
+      <button type="button" class="btn btn-primary" @click="openAdd">+ Tambah</button>
     </div>
 
-    <div v-if="successMsg" class="alert-success">{{ successMsg }}</div>
-    <div v-if="error" class="alert-error">{{ error }}</div>
+    <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
+    <div v-if="error" class="alert alert-danger">{{ error }}</div>
 
-    <div v-if="loading" class="loading">Memuat...</div>
-    <div v-else-if="!rows.length" class="empty">Belum ada jenis gangguan. Klik "+ Tambah" untuk menambahkan.</div>
-    <div v-else class="table-wrap">
-      <table>
+    <div v-if="loading" class="table-card"><div class="loading-state">Memuat...</div></div>
+    <div v-else-if="!rows.length" class="table-card">
+      <div class="empty-state">
+        <div class="empty-icon">⚡</div>
+        <div class="empty-title">Belum ada jenis gangguan</div>
+        <div class="empty-desc">Klik "+ Tambah" untuk menambahkan.</div>
+      </div>
+    </div>
+    <div v-else class="table-card">
+      <table class="data-table">
         <thead>
           <tr>
-            <th style="width:50px">Urutan</th>
+            <th style="width:80px" class="center">Urutan</th>
             <th>Nama</th>
             <th>Deskripsi</th>
-            <th style="width:90px">Status</th>
-            <th style="width:130px">Aksi</th>
+            <th style="width:90px" class="center">Status</th>
+            <th style="width:220px">Aksi</th>
           </tr>
         </thead>
         <tbody>
@@ -119,15 +125,15 @@ async function doDelete() {
             <td class="fw">{{ row.nama }}</td>
             <td class="text-muted">{{ row.deskripsi || '—' }}</td>
             <td class="center">
-              <span :class="['pill', row.is_aktif ? 'pill-green' : 'pill-gray']">{{ row.is_aktif ? 'Aktif' : 'Nonaktif' }}</span>
+              <span :class="['badge', row.is_aktif ? 'badge-green' : 'badge-gray']">{{ row.is_aktif ? 'Aktif' : 'Nonaktif' }}</span>
             </td>
             <td>
-              <div class="action-btns">
-                <button class="btn-sm" @click="openEdit(row)">Edit</button>
-                <button :class="['btn-sm', row.is_aktif ? 'btn-muted' : 'btn-green']" @click="toggleAktif(row)">
+              <div class="actions">
+                <button type="button" class="btn btn-sm btn-secondary" @click="openEdit(row)">Edit</button>
+                <button type="button" :class="['btn btn-sm', row.is_aktif ? 'btn-secondary btn-muted' : 'btn-soft-success']" @click="toggleAktif(row)">
                   {{ row.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}
                 </button>
-                <button class="btn-sm btn-danger" @click="confirmDelete = row">Hapus</button>
+                <button type="button" class="btn btn-sm btn-soft-danger" @click="confirmDelete = row">Hapus</button>
               </div>
             </td>
           </tr>
@@ -138,26 +144,29 @@ async function doDelete() {
     <!-- Modal Tambah/Edit -->
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal">
-        <h3>{{ isEdit ? 'Edit' : 'Tambah' }} Jenis Gangguan</h3>
-        <div class="form-grid">
-          <div class="field full">
-            <label>Nama <span class="required">*</span></label>
-            <input v-model="form.nama" placeholder="cth: FO Cut, Listrik Mati, ..." maxlength="100" />
-          </div>
-          <div class="field full">
-            <label>Deskripsi</label>
-            <input v-model="form.deskripsi" placeholder="Keterangan singkat (opsional)" maxlength="255" />
-          </div>
-          <div class="field">
-            <label>Urutan</label>
-            <input v-model.number="form.urutan" type="number" min="0" placeholder="0" />
-            <small>Angka kecil tampil lebih atas di dropdown</small>
-          </div>
+        <div class="modal-header">
+          <h3 class="modal-title">{{ isEdit ? 'Edit' : 'Tambah' }} Jenis Gangguan</h3>
+          <button type="button" class="btn-modal-close" @click="showModal = false">×</button>
         </div>
-        <p v-if="formError" class="form-error">{{ formError }}</p>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showModal = false">Batal</button>
-          <button class="btn-submit" @click="handleSubmit" :disabled="submitting">{{ submitting ? 'Menyimpan...' : 'Simpan' }}</button>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label form-required">Nama</label>
+            <input v-model="form.nama" class="form-input" placeholder="cth: FO Cut, Listrik Mati, ..." maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Deskripsi</label>
+            <input v-model="form.deskripsi" class="form-input" placeholder="Keterangan singkat (opsional)" maxlength="255" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Urutan</label>
+            <input v-model.number="form.urutan" class="form-input" type="number" min="0" placeholder="0" />
+            <span class="form-hint">Angka kecil tampil lebih atas di dropdown</span>
+          </div>
+          <div v-if="formError" class="alert alert-danger">{{ formError }}</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showModal = false">Batal</button>
+          <button type="button" class="btn btn-primary" @click="handleSubmit" :disabled="submitting">{{ submitting ? 'Menyimpan...' : 'Simpan' }}</button>
         </div>
       </div>
     </div>
@@ -165,11 +174,16 @@ async function doDelete() {
     <!-- Confirm Delete -->
     <div v-if="confirmDelete" class="modal-overlay" @click.self="confirmDelete = null">
       <div class="modal modal-sm">
-        <h3>Hapus Jenis Gangguan?</h3>
-        <p>Hapus <strong>{{ confirmDelete.nama }}</strong>? Tiket yang sudah memakai kategori ini tidak terpengaruh.</p>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="confirmDelete = null">Batal</button>
-          <button class="btn-danger-full" @click="doDelete">Ya, Hapus</button>
+        <div class="modal-header">
+          <h3 class="modal-title">Hapus Jenis Gangguan?</h3>
+          <button type="button" class="btn-modal-close" @click="confirmDelete = null">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="confirm-text">Hapus <strong>{{ confirmDelete.nama }}</strong>? Tiket yang sudah memakai kategori ini tidak terpengaruh.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="confirmDelete = null">Batal</button>
+          <button type="button" class="btn btn-danger" @click="doDelete">Ya, Hapus</button>
         </div>
       </div>
     </div>
@@ -177,59 +191,25 @@ async function doDelete() {
 </template>
 
 <style scoped>
-.page { padding: 20px 24px; max-width: 860px; }
-.page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-.page-header h2 { font-size: 20px; font-weight: 700; color: #0f172a; margin: 0; }
-.sub { font-size: 13px; color: #64748b; margin: 2px 0 0; }
-.btn-add { padding: 8px 18px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-.btn-add:hover { background: #1e40af; }
+.page { max-width: 960px; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; font-weight: 700; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
 
-.alert-success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; }
-.alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; }
-.loading { text-align: center; padding: 40px; color: #64748b; }
-.empty { text-align: center; padding: 40px; color: #94a3b8; font-size: 14px; }
+.alert { margin-bottom: 12px; }
+.modal-body .alert { margin-bottom: 0; }
+.modal-body { display: flex; flex-direction: column; gap: 14px; }
+.confirm-text { font-size: 13.5px; color: var(--text-2); line-height: 1.6; }
 
-.table-wrap { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-thead th { background: #f8fafc; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-tbody tr { border-bottom: 1px solid #f1f5f9; transition: background 0.15s; }
-tbody tr:hover { background: #f8fafc; }
-tbody tr.inactive { opacity: 0.5; }
-tbody td { padding: 10px 14px; color: #334155; }
+.data-table tbody tr.inactive { opacity: 0.55; }
 .center { text-align: center; }
-.fw { font-weight: 600; }
-.text-muted { color: #64748b; }
+.fw { font-weight: 600; color: var(--text-1); }
+.text-muted { color: var(--text-3); }
 
-.pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
-.pill-green { background: #dcfce7; color: #166534; }
-.pill-gray { background: #f1f5f9; color: #64748b; }
-
-.action-btns { display: flex; gap: 6px; flex-wrap: wrap; }
-.btn-sm { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid #e2e8f0; background: #f8fafc; color: #334155; }
-.btn-sm:hover { background: #e2e8f0; }
-.btn-muted { color: #64748b; }
-.btn-green { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
-.btn-green:hover { background: #dcfce7; }
-.btn-danger { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
-.btn-danger:hover { background: #fee2e2; }
-
-/* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal { background: #fff; border-radius: 14px; padding: 24px; width: 100%; max-width: 480px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-.modal-sm { max-width: 380px; }
-.modal h3 { font-size: 17px; font-weight: 700; color: #0f172a; margin: 0 0 18px; }
-.form-grid { display: flex; flex-direction: column; gap: 12px; }
-.field { display: flex; flex-direction: column; gap: 4px; }
-.field.full { }
-label { font-size: 12px; font-weight: 600; color: #475569; }
-.required { color: #dc2626; }
-input, select { padding: 8px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; color: #0f172a; outline: none; }
-input:focus, select:focus { border-color: #3b82f6; }
-small { font-size: 11px; color: #94a3b8; }
-.form-error { color: #dc2626; font-size: 12px; margin: 8px 0 0; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.btn-cancel { padding: 8px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
-.btn-submit { padding: 8px 18px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
-.btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn-danger-full { padding: 8px 18px; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-muted { color: var(--text-3); }
+.btn-soft-success { background: var(--success-light); color: var(--success); border: 1px solid #bbf7d0; }
+.btn-soft-success:hover { background: #dcfce7; }
+.btn-soft-danger { background: var(--danger-light); color: var(--danger); border: 1px solid #fecaca; }
+.btn-soft-danger:hover { background: #fee2e2; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 </style>

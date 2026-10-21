@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import api from '@/services/api'
+import { confirmDialog } from '@/composables/useDialog'
 
 type Tab = 'config' | 'internal-groups' | 'pelanggan-groups' | 'templates'
 const tab = ref<Tab>('config')
@@ -73,7 +74,7 @@ function useGroups(endpoint: string) {
   }
 
   async function remove(id: number) {
-    if (!confirm('Hapus grup ini?')) return
+    if (!(await confirmDialog({ title: 'Hapus grup ini?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
     try {
       await api.delete(`${endpoint}/${id}`); await load()
     } catch (e: any) {
@@ -128,6 +129,11 @@ function selectPelanggan(p: PelangganOption) {
 }
 
 const showPelangganDropdown = ref(false)
+// setTimeout tidak tersedia sebagai global di template Vue — dulu @blur memanggil
+// `setTimeout(...)` langsung sehingga error dan dropdown tidak pernah tertutup.
+function hidePelangganDropdownLater() {
+  setTimeout(() => { showPelangganDropdown.value = false }, 150)
+}
 
 // ── Templates ────────────────────────────────────────────────────
 const TEMPLATE_KEYS = [
@@ -150,7 +156,7 @@ const tplLoading   = ref(false)
 const tplSaving    = ref(false)
 const tplMsg       = ref('')
 const tplMsgType   = ref<'ok'|'err'>('ok')
-const activeKey    = ref(TEMPLATE_KEYS[0].key)
+const activeKey    = ref(TEMPLATE_KEYS[0]!.key)
 const editingTpl   = ref<Templates>({})
 
 const activeTplMeta = computed(() => TEMPLATE_KEYS.find(t => t.key === activeKey.value))
@@ -181,7 +187,12 @@ async function saveTpl() {
 }
 
 async function resetTpl() {
-  if (!confirm('Reset semua template ke default?')) return
+  if (!(await confirmDialog({
+    title: 'Reset Template',
+    message: 'Reset semua template ke default?',
+    variant: 'danger',
+    confirmLabel: 'Ya, Reset',
+  }))) return
   tplSaving.value = true; tplMsg.value = ''
   try {
     const r = await api.post('/starsender/templates/reset')
@@ -453,7 +464,7 @@ async function test() {
                   placeholder="Cari & pilih pelanggan..."
                   class="pel-input"
                   @focus="showPelangganDropdown = true"
-                  @blur="setTimeout(() => showPelangganDropdown = false, 150)"
+                  @blur="hidePelangganDropdownLater"
                   @input="showPelangganDropdown = true; selectedPelanggan = null; pg.addForm.value.nama_group = pelangganSearch"
                   :disabled="pelangganLoading"
                 />
@@ -562,7 +573,7 @@ async function test() {
 .page-header h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; line-height: 1.5; }
 
-.tabs { display: flex; gap: 2px; margin-bottom: 24px; background: #f1f5f9; padding: 4px; border-radius: 10px; width: fit-content; flex-wrap: wrap; }
+.tabs { display: flex; gap: 2px; margin-bottom: 24px; background: #f1f5f9; padding: 4px; border-radius: 10px; width: fit-content; max-width: 100%; flex-wrap: wrap; }
 .tab { padding: 8px 18px; background: none; border: none; font-size: 13px; font-weight: 600; color: #64748b; cursor: pointer; border-radius: 7px; transition: all 0.15s; }
 .tab.active { background: #fff; color: #1d4ed8; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .tab:hover:not(.active) { color: #0f172a; }
@@ -713,5 +724,10 @@ code { background: #f1f5f9; padding: 1px 6px; border-radius: 4px; font-size: 11p
 @media (max-width: 768px) {
   .tpl-layout { grid-template-columns: 1fr; }
   .tpl-sidebar { position: static; }
+  .card { padding: 16px; }
+  .test-input-row { flex-direction: column; align-items: stretch; }
+  .group-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .group-actions { justify-content: flex-start; }
+  .toggle-row { gap: 12px; }
 }
 </style>

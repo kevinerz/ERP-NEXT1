@@ -46,6 +46,7 @@ export interface Quotation {
   created_at: string
   sales_pic: { nama_lengkap: string }
   approver?: { nama_lengkap: string }
+  opportunity?: { nama_opportunity: string; lead?: { nama_prospek: string } }
 }
 
 export interface PipelineItem {

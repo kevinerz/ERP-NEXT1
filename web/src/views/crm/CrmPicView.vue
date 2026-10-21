@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
+import { fmtDateShort } from '@/composables/useFormat'
 
 const router = useRouter()
 
@@ -71,7 +72,7 @@ function onFileChange(e: Event) {
 function parseCsv(text: string) {
   const lines = text.trim().split('\n')
   if (lines.length < 2) return []
-  const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
+  const headers = lines[0]!.split(',').map(h => h.trim().replace(/"/g, ''))
   return lines.slice(1).map(line => {
     const vals = line.split(',').map(v => v.trim().replace(/"/g, ''))
     const obj: any = {}
@@ -132,10 +133,9 @@ function statusColor(s: string) {
   return '#dc2626'
 }
 
-function fmtDate(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
+const fmtDate = fmtDateShort
+
+const STATUS_TEXT: Record<string, string> = { created: 'Dibuat', updated: 'Diperbarui', skip: 'Dilewati', error: 'Error' }
 </script>
 
 <template>
@@ -145,9 +145,9 @@ function fmtDate(d: string | null) {
         <h2>CRM — Master Data PIC</h2>
         <p class="sub">Kontak penanggung jawab IT di setiap pelanggan</p>
       </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn-import" @click="showImport = true; importDone = false; importRows = []; importResult = []">⬆ Import CSV</button>
-        <button class="btn-primary" @click="openAdd">+ Tambah PIC</button>
+      <div class="header-actions">
+        <button type="button" class="btn-import" @click="showImport = true; importDone = false; importRows = []; importResult = []">⬆ Import CSV</button>
+        <button type="button" class="btn btn-primary" @click="openAdd">+ Tambah PIC</button>
       </div>
     </div>
 
@@ -168,7 +168,7 @@ function fmtDate(d: string | null) {
     </div>
 
     <!-- Filter -->
-    <div class="filters">
+    <div class="filter-bar">
       <input v-model="search" @keyup.enter="doSearch" placeholder="Cari nama PIC / perusahaan / email..." class="search-input" />
       <button class="btn-search" @click="doSearch">Cari</button>
     </div>
@@ -267,7 +267,7 @@ function fmtDate(d: string | null) {
               <tr v-for="(r, i) in importResult" :key="i">
                 <td>{{ r.nama_perusahaan }}</td>
                 <td>{{ r.nama_pic }}</td>
-                <td><span :style="{ color: statusColor(r.status), fontWeight: 700 }">{{ r.status }}</span></td>
+                <td><span :style="{ color: statusColor(r.status), fontWeight: 700 }">{{ STATUS_TEXT[r.status] || r.status }}</span></td>
                 <td class="text-sm text-gray">{{ r.keterangan || '—' }}</td>
               </tr>
             </tbody>
@@ -343,22 +343,20 @@ function fmtDate(d: string | null) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-import  { padding: 10px 18px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
+.header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-import  { padding: 8px 16px; background: var(--success-light); color: #15803d; border: 1px solid #bbf7d0; border-radius: var(--r); font-size: 13.5px; font-weight: 600; cursor: pointer; line-height: 1; }
+.btn-import:hover { background: #dcfce7; }
 
 .stats-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 .stat-card { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); min-width: 110px; }
 .stat-num   { font-size: 26px; font-weight: 800; color: #0f172a; }
 .stat-label { font-size: 11px; color: #64748b; }
 
-.filters { display: flex; gap: 8px; margin-bottom: 16px; }
-.search-input { flex: 1; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.search-input:focus { border-color: #3b82f6; }
-.btn-search { padding: 9px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.search-input { flex: 1; min-width: 220px; }
+.btn-search { height: 36px; padding: 0 16px; background: var(--border-light); border: 1px solid var(--border); border-radius: var(--r); font-size: 13.5px; font-weight: 600; color: var(--text-2); cursor: pointer; }
+.btn-search:hover { background: var(--border); }
 
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
 table { width: 100%; border-collapse: collapse; }
@@ -378,9 +376,8 @@ td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .rencana-no   { background: #f8fafc; color: #64748b; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal        { background: #fff; border-radius: 14px; padding: 28px 32px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-.modal-wide   { width: 720px; }
+.modal        { padding: 28px 32px; max-width: 520px; }
+.modal-wide   { max-width: 720px; }
 .modal h3     { margin: 0 0 12px; font-size: 18px; color: #0f172a; }
 .hint         { font-size: 12px; color: #64748b; margin: 0 0 16px; }
 .file-input   { display: block; margin-bottom: 16px; font-size: 13px; }
@@ -408,4 +405,8 @@ td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.result-summary { flex-wrap: wrap; gap: 8px 20px; }
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

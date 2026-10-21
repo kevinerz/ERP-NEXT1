@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useInstalasiStore } from '@/stores/instalasi'
 import { useProyekStore } from '@/stores/proyek'
-import { fmtDateTime as fmtDt } from '@/composables/useFormat'
+import { fmtDateTime as fmtDt, fmtDateShort } from '@/composables/useFormat'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
 
@@ -46,7 +46,8 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 onMounted(async () => {
-  await Promise.all([
+  // allSettled: dropdown opsional yang gagal dimuat tidak boleh menghalangi daftar order tampil
+  await Promise.allSettled([
     proyek.fetchSiteList(),
     api.get('/master/layanan').then(r => { layananList.value = r.data.data ?? [] }),
     api.get('/operations/teknisi-list').then(r => { teknisiList.value = r.data.data ?? [] }),
@@ -98,11 +99,11 @@ async function handleSubmit() {
         <h2>Instalasi</h2>
         <p class="sub">Manajemen order pemasangan layanan</p>
       </div>
-      <button class="btn-primary" @click="openModal">+ Buat Order</button>
+      <button type="button" class="btn btn-primary" @click="openModal">+ Buat Order</button>
     </div>
 
     <!-- Filters -->
-    <div class="filters">
+    <div class="filter-bar">
       <input v-model="search" @keyup.enter="doFilter" placeholder="Cari nomor / site / pelanggan..." class="search-input" />
       <select v-model="filterStatus" @change="doFilter" class="filter-select">
         <option value="">Semua Status</option>
@@ -155,7 +156,7 @@ async function handleSubmit() {
                   : (item.teknisi_internal?.nama_lengkap || '—') }}
               </div>
             </td>
-            <td class="text-gray text-sm">{{ item.tgl_jadwal ? item.tgl_jadwal.slice(0,10) : '—' }}</td>
+            <td class="text-gray text-sm">{{ fmtDateShort(item.tgl_jadwal) }}</td>
             <td>
               <span class="status-badge"
                 :style="{ background: STATUS_COLOR[item.status_instalasi]?.bg, color: STATUS_COLOR[item.status_instalasi]?.color }">
@@ -237,17 +238,12 @@ async function handleSubmit() {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.search-input { flex: 1; min-width: 220px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.search-input:focus { border-color: #3b82f6; }
-.filter-select { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.btn-search { padding: 9px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
+.search-input { flex: 1; min-width: 220px; }
+.btn-search { height: 36px; padding: 0 16px; background: var(--border-light); border: 1px solid var(--border); border-radius: var(--r); font-size: 13.5px; font-weight: 600; color: var(--text-2); cursor: pointer; }
+.btn-search:hover { background: var(--border); }
+.alert-error { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
 table { width: 100%; border-collapse: collapse; }
 thead tr { background: #f8fafc; }
@@ -267,8 +263,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .row-link { cursor: pointer; }
 .row-link:hover td { background: #f8fafc; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 540px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 540px; }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -282,4 +277,8 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+td { vertical-align: top; }
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

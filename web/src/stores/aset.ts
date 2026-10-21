@@ -75,6 +75,7 @@ export interface PengajuanAset {
   kategori: string
   jumlah: number
   alasan: string
+  link_marketplace?: string | null
   estimasi_harga: number
   id_gudang_tujuan?: number | null
   status_pengajuan: string

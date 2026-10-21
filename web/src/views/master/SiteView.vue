@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { confirmDialog, alertDialog, promptDialog, alertError } from '@/composables/useDialog'
 import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
 import { useAuthStore } from '@/stores/auth'
@@ -254,7 +255,7 @@ function openEdit(s: any) {
 }
 
 async function hapusSite(site: any) {
-  if (!confirm('Hapus site ' + site.nama_site + '?')) return
+  if (!(await confirmDialog({ title: 'Hapus Site?', message: 'Hapus site ' + site.nama_site + '?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete('/master/site/' + site.id_site)
     master.siteList = master.siteList.filter((s: any) => s.id_site !== site.id_site)
@@ -264,23 +265,30 @@ async function hapusSite(site: any) {
     const msg = e.response?.data?.message || 'Gagal menghapus site'
     if (e.response?.status === 400 && String(msg).includes('force delete')) {
       const canForce = auth.hasRole('Admin') || auth.hasRole('Director')
-      if (!canForce) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
-      const ketik = prompt(
-        `⚠️ PERINGATAN — Site "${site.nama_site}" masih punya tiket/project/kontrak/invoice.\n\n` +
-        `Force delete akan MENGHAPUS PERMANEN site beserta SEMUA data terkait.\n\n` +
-        `Ketik kode site "${site.kode_site}" untuk konfirmasi:`,
-      )
+      if (!canForce) { await alertDialog({ title: 'Tidak Dapat Menghapus', message: msg + '\n\nHubungi Admin untuk force delete.', variant: 'warning' }); return }
+      const ketik = await promptDialog({
+        title: 'Force Delete Site',
+        message:
+          `PERINGATAN — Site "${site.nama_site}" masih punya tiket/project/kontrak/invoice.\n\n` +
+          `Force delete akan MENGHAPUS PERMANEN site beserta SEMUA data terkait.\n\n` +
+          `Ketik kode site "${site.kode_site}" untuk konfirmasi.`,
+        label: 'Ketik kode site untuk konfirmasi',
+        placeholder: site.kode_site,
+        requireText: site.kode_site,
+        variant: 'danger',
+        confirmLabel: 'Hapus Permanen',
+      })
       if (ketik === null) return
-      if (ketik.trim() !== site.kode_site) { alert('Kode site tidak cocok — dibatalkan.'); return }
+      if (ketik.trim() !== site.kode_site) { await alertDialog({ title: 'Dibatalkan', message: 'Kode site tidak cocok — dibatalkan.', variant: 'warning' }); return }
       try {
         const r = await api.delete('/master/site/' + site.id_site + '?force=true')
         master.siteList = master.siteList.filter((s: any) => s.id_site !== site.id_site)
         master.siteAllList = master.siteAllList.filter((s: any) => s.id_site !== site.id_site)
         flash(r.data?.message || 'Site + semua data terkait dihapus')
-      } catch (e2: any) { alert(e2.response?.data?.message || 'Force delete gagal') }
+      } catch (e2: any) { await alertError(e2, 'Force delete gagal') }
       return
     }
-    alert(msg)
+    await alertDialog({ message: msg, variant: 'danger' })
   }
 }
 
@@ -322,7 +330,7 @@ const HERE_KEY = import.meta.env.VITE_HERE_API_KEY
 
 function hereCleanName(title: string): string {
   const m = title.match(/^[^(]+\((.+)\)\s*$/)
-  return m ? m[1] : title
+  return m ? m[1]! : title
 }
 
 const mapQuery = ref('')
@@ -421,7 +429,7 @@ function highlight(text: string, q: string) {
             ≡ Daftar
           </button>
         </div>
-        <button class="btn-primary" @click="openAdd">+ Tambah Site</button>
+        <button type="button" class="btn btn-primary" @click="openAdd">+ Tambah Site</button>
       </div>
     </div>
 
@@ -444,8 +452,8 @@ function highlight(text: string, q: string) {
       </div>
     </div>
 
-    <div v-if="successMsg" class="alert-success">✓ {{ successMsg }}</div>
-    <div v-if="master.error" class="alert-error">{{ master.error }}</div>
+    <div v-if="successMsg" class="alert alert-success">✓ {{ successMsg }}</div>
+    <div v-if="master.error" class="alert alert-danger">{{ master.error }}</div>
 
     <!-- ═══════════════════ GRUP VIEW ═══════════════════ -->
     <template v-if="viewMode === 'grup'">
@@ -461,7 +469,7 @@ function highlight(text: string, q: string) {
           />
           <button v-if="grupSearch" class="clear-btn" @click="grupSearch = ''">✕</button>
         </div>
-        <select v-model="filterLayanan" @change="() => {}" class="filter-select">
+        <select v-model="filterLayanan" class="filter-select">
           <option :value="0">Semua Layanan ({{ availableLayananGrup.length }})</option>
           <option v-for="l in availableLayananGrup" :key="l.id_layanan" :value="l.id_layanan">
             {{ l.nama_layanan }}
@@ -565,7 +573,7 @@ function highlight(text: string, q: string) {
                       <td>
                         <div class="row-actions">
                           <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
-                          <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari di OpenStreetMap">🗺</button>
+                          <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari lokasi di HERE Maps">🗺</button>
                         </div>
                       </td>
                     </tr>
@@ -625,7 +633,7 @@ function highlight(text: string, q: string) {
                       <td>
                         <div class="row-actions">
                           <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
-                          <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari di OpenStreetMap">🗺</button>
+                          <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari lokasi di HERE Maps">🗺</button>
                         </div>
                       </td>
                     </tr>
@@ -639,6 +647,11 @@ function highlight(text: string, q: string) {
         <div v-if="!master.grupList.length && !standalonePtWithSites.length" class="empty-state">
           <div class="empty-icon">📍</div>
           <div class="empty-title">Belum ada site</div>
+        </div>
+        <div v-else-if="(grupSearch || filterLayanan || filterStatus) && !filteredSiteAll.length" class="empty-state">
+          <div class="empty-icon">📍</div>
+          <div class="empty-title">Tidak ada site ditemukan</div>
+          <div class="empty-desc">Coba ubah kata kunci atau filter</div>
         </div>
       </template>
     </template>
@@ -680,7 +693,7 @@ function highlight(text: string, q: string) {
       <!-- Page size + total -->
       <div class="list-meta">
         <span class="total-label">
-          Total <b>{{ master.siteMeta.total?.toLocaleString('id') }}</b> site
+          Total <b>{{ (master.siteMeta.total ?? 0).toLocaleString('id') }}</b> site
           <span v-if="hasActiveFilters"> (difilter)</span>
         </span>
         <div class="page-size-wrap">
@@ -696,7 +709,9 @@ function highlight(text: string, q: string) {
       </div>
 
       <div class="table-card">
-        <div v-if="master.siteLoading" class="loading">↻ Memuat...</div>
+        <div v-if="master.siteLoading" class="loading-state">
+          <span class="loading-spinner">↻</span> Memuat data site...
+        </div>
         <table v-else>
           <thead>
             <tr>
@@ -750,7 +765,7 @@ function highlight(text: string, q: string) {
               <td class="text-gray text-sm">{{ fmtDate(s.tgl_aktif) }}</td>
               <td>
                 <div class="row-actions">
-                  <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari di OpenStreetMap">🗺</button>
+                  <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari lokasi di HERE Maps">🗺</button>
                   <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
                   <button class="btn-hapus-sm" @click.stop="hapusSite(s)">Hapus</button>
                 </div>
@@ -761,7 +776,7 @@ function highlight(text: string, q: string) {
         <div class="table-footer-bar">
           <BasePagination :page="page" :total-pages="master.siteMeta.total_pages" @change="goPage" />
           <span class="page-info">
-            Hal {{ page }} / {{ master.siteMeta.total_pages }} · {{ master.siteMeta.total?.toLocaleString('id') }} site
+            Hal {{ page }} / {{ master.siteMeta.total_pages || 1 }} · {{ (master.siteMeta.total ?? 0).toLocaleString('id') }} site
           </span>
         </div>
       </div>
@@ -769,10 +784,10 @@ function highlight(text: string, q: string) {
 
     <!-- ─── Modal Form Site ─── -->
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
-      <div class="modal">
-        <div class="modal-head">
-          <h3>{{ editId ? 'Edit Site' : 'Tambah Site Baru' }}</h3>
-          <button class="modal-close" @click="showModal = false">✕</button>
+      <div class="modal modal-site">
+        <div class="modal-header">
+          <h3 class="modal-title">{{ editId ? 'Edit Site' : 'Tambah Site Baru' }}</h3>
+          <button type="button" class="btn-modal-close" @click="showModal = false">✕</button>
         </div>
         <div class="form-grid">
           <div class="field full">
@@ -828,11 +843,11 @@ function highlight(text: string, q: string) {
             <textarea v-model="form.alamat_lengkap" rows="2" placeholder="Jl. ..."></textarea>
           </div>
           <div class="field">
-            <label>Kota</label>
+            <label>Kota <span v-if="!editId" class="req">*</span></label>
             <input v-model="form.kota" placeholder="Jakarta" />
           </div>
           <div class="field">
-            <label>Provinsi</label>
+            <label>Provinsi <span v-if="!editId" class="req">*</span></label>
             <input v-model="form.provinsi" placeholder="DKI Jakarta" />
           </div>
           <div class="field">
@@ -854,10 +869,10 @@ function highlight(text: string, q: string) {
             <textarea v-model="form.catatan" rows="2"></textarea>
           </div>
         </div>
-        <p v-if="formError" class="form-error">{{ formError }}</p>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showModal = false">Batal</button>
-          <button class="btn-submit" @click="handleSubmit" :disabled="submitting">
+        <p v-if="formError" class="form-error-box">{{ formError }}</p>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showModal = false">Batal</button>
+          <button type="button" class="btn btn-primary" @click="handleSubmit" :disabled="submitting">
             {{ submitting ? 'Menyimpan...' : (editId ? 'Simpan Perubahan' : 'Tambah Site') }}
           </button>
         </div>
@@ -867,16 +882,16 @@ function highlight(text: string, q: string) {
 </template>
 
 <style scoped>
-.page { padding: 24px 28px; max-width: 1400px; }
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
-.page-header h2 { margin: 0 0 3px; font-size: 20px; color: #0f172a; font-weight: 700; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
+.page-header { align-items: center; margin-bottom: 16px; }
+.page-header h2 { margin: 0 0 3px; font-size: 20px; color: var(--text-1); font-weight: 700; }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
 .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-.view-toggle { display: flex; background: #f1f5f9; border-radius: 8px; padding: 3px; gap: 2px; }
-.toggle-btn { padding: 6px 16px; border: none; background: none; border-radius: 6px; font-size: 13px; font-weight: 500; color: #64748b; cursor: pointer; transition: all .15s; }
-.toggle-btn.active { background: #fff; color: #1d4ed8; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
-.btn-primary { padding: 9px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.view-toggle { display: flex; background: var(--border-light); border: 1px solid var(--border); border-radius: var(--r); padding: 3px; gap: 2px; }
+.toggle-btn { padding: 6px 16px; border: none; background: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 500; color: var(--text-3); cursor: pointer; transition: all .15s; }
+.toggle-btn.active { background: var(--surface); color: var(--primary); font-weight: 700; box-shadow: var(--shadow-sm); }
+.btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
+.alert { margin-bottom: 12px; }
 
 /* Status bar */
 .status-bar { margin-bottom: 16px; }
@@ -885,8 +900,6 @@ function highlight(text: string, q: string) {
 .chip:hover { filter: brightness(.94); }
 .chip b { font-size: 13px; }
 
-.alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 9px 14px; margin-bottom: 12px; }
-.alert-error   { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 9px 14px; margin-bottom: 12px; }
 
 /* Toolbar / filter bar */
 .toolbar, .filter-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
@@ -914,13 +927,13 @@ function highlight(text: string, q: string) {
 .size-select { padding: 5px 8px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 13px; outline: none; }
 
 /* Grup cards */
-.grup-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; margin-bottom: 8px; }
+.grup-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 8px; }
 .grup-card.standalone { opacity: .85; }
 .grup-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px; border-left: 4px solid #1d4ed8; cursor: pointer; user-select: none; gap: 12px; transition: background .1s; min-height: 48px; }
 .grup-header:hover { background: #f8fafc; }
 .grup-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
 .grup-kode { font-size: 11px; font-weight: 700; background: #f1f5f9; border-radius: 5px; padding: 2px 7px; white-space: nowrap; flex-shrink: 0; }
-.grup-nama { font-size: 14px; font-weight: 700; color: #0f172a; white-space: nowrap; flex-shrink: 0; }
+.grup-nama { font-size: 14px; font-weight: 700; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
 .grup-desc { font-size: 12px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .grup-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: 8px; }
 .grup-stat { font-size: 12.5px; color: #64748b; white-space: nowrap; }
@@ -963,7 +976,6 @@ function highlight(text: string, q: string) {
 .btn-sync-sm:hover { background: #dcfce7; border-color: #86efac; }
 
 /* List view table */
-.table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
 table { width: 100%; border-collapse: collapse; }
 thead tr { background: #f8fafc; }
 th { padding: 11px 14px; font-size: 11px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
@@ -982,26 +994,15 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .page-info { font-size: 12px; color: #94a3b8; }
 
 /* Empty / loading */
-.loading-state { padding: 52px; text-align: center; color: #94a3b8; font-size: 14px; }
 .loading-spinner { display: inline-block; animation: spin 1s linear infinite; font-size: 18px; }
-.loading { padding: 40px; text-align: center; color: #94a3b8; }
-.empty-state { text-align: center; padding: 48px 20px; }
-.empty-icon { font-size: 36px; margin-bottom: 10px; }
-.empty-title { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 5px; }
-.empty-desc { font-size: 13px; color: #94a3b8; }
-.btn-reset-lg { margin-top: 12px; padding: 8px 20px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; color: #475569; }
+.btn-reset-lg { margin-top: 12px; padding: 8px 20px; background: var(--border-light); border: 1px solid var(--border); border-radius: var(--r); font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-2); }
 
 /* Highlight search match */
 :deep(mark) { background: #fef08a; color: #713f12; border-radius: 2px; padding: 0 1px; }
 
 /* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 0; width: 600px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
-.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 22px 28px 16px; border-bottom: 1px solid #f1f5f9; }
-.modal-head h3 { margin: 0; font-size: 17px; color: #0f172a; font-weight: 700; }
-.modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; padding: 0 4px; }
-.modal-close:hover { color: #0f172a; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 20px 28px; }
+.modal-site { max-width: 600px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 20px 22px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field.full { grid-column: 1 / -1; }
 .field label { font-size: 12.5px; font-weight: 600; color: #374151; }
@@ -1021,18 +1022,17 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .osm-dropdown li:hover { background: #eff6ff; }
 .osm-name { display: block; font-weight: 600; font-size: 13px; color: #1e40af; }
 .osm-addr { display: block; font-size: 11px; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 0 28px 4px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 28px 22px; border-top: 1px solid #f1f5f9; }
-.btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
-.btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.form-error-box { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 8px 12px; margin: 0 22px 12px; }
 
 @media (max-width: 768px) {
-  .page { padding: 14px 16px; }
   .form-grid { grid-template-columns: 1fr; padding: 16px; }
   .field.full { grid-column: 1; }
-  .modal-head, .modal-actions, .form-error { padding-left: 16px; padding-right: 16px; }
-  .filter-select { max-width: 140px; }
-  .search-wrap { min-width: 160px; }
+  .form-error-box { margin-left: 16px; margin-right: 16px; }
+  .filter-select { max-width: none; flex: 1 1 140px; }
+  .search-wrap { min-width: 0; max-width: none; flex: 1 1 100%; }
+  .grup-desc, .pt-kota { display: none; }
+  .grup-header { padding: 10px 12px; }
+  .pt-row { padding: 9px 12px 9px 16px; }
+  .row-actions { flex-wrap: nowrap; }
 }
 </style>

@@ -87,7 +87,7 @@ const hasFilter = computed(() =>
       </div>
     </div>
 
-    <div v-if="error" class="alert-error">{{ error }}</div>
+    <div v-if="error" class="alert-error" role="alert">{{ error }}</div>
 
     <!-- Filter bar -->
     <div class="filter-card">
@@ -117,8 +117,8 @@ const hasFilter = computed(() =>
         <input v-model="fDari"   type="date" class="f-date" />
         <label class="date-label">s/d</label>
         <input v-model="fSampai" type="date" class="f-date" />
-        <button class="btn-filter" @click="doFilter">Terapkan</button>
-        <button v-if="hasFilter" class="btn-clear" @click="clearFilter">Reset</button>
+        <button type="button" class="btn-filter" @click="doFilter">Terapkan</button>
+        <button v-if="hasFilter" type="button" class="btn-clear" @click="clearFilter">Reset</button>
         <span class="total-badge" v-if="meta.total">{{ meta.total.toLocaleString('id-ID') }} log</span>
       </div>
     </div>
@@ -143,7 +143,7 @@ const hasFilter = computed(() =>
             <td colspan="7" class="empty">Belum ada log aktivitas</td>
           </tr>
           <tr v-for="log in logs" :key="log.id_log">
-            <td class="td-time">{{ fmtTime(log.created_at) }}</td>
+            <td class="td-time">{{ log.created_at ? fmtTime(log.created_at) : '—' }}</td>
             <td>
               <div class="td-nama">{{ log.nama || log.username }}</div>
               <div class="td-username">{{ log.username }}</div>
@@ -174,7 +174,7 @@ const hasFilter = computed(() =>
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
+.page { max-width: 1200px; }
 .page-header { margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
@@ -189,6 +189,7 @@ const hasFilter = computed(() =>
 .f-select { padding: 8px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; outline: none; background: #f8fafc; }
 .f-select.narrow { max-width: 130px; }
 .f-date { padding: 8px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; outline: none; }
+.f-select:focus, .f-date:focus { border-color: #3b82f6; }
 .date-label { font-size: 12px; color: #64748b; font-weight: 600; }
 .btn-filter { padding: 8px 16px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-clear { padding: 8px 12px; background: #fef2f2; color: #dc2626; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -208,9 +209,16 @@ td { padding: 11px 12px; border-top: 1px solid #f1f5f9; vertical-align: top; }
 .aksi-badge { padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .td-modul { font-size: 12px; color: #64748b; font-weight: 600; }
 .td-entitas { font-size: 12px; color: #374151; }
-.td-desc { font-size: 12px; color: #374151; max-width: 260px; }
+.td-desc { font-size: 12px; color: #374151; max-width: 260px; overflow-wrap: anywhere; }
 .td-ip { font-size: 11px; color: #94a3b8; white-space: nowrap; }
 .mono { font-family: monospace; }
 
 .table-foot { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
+
+@media (max-width: 768px) {
+  .filter-card { padding: 14px; }
+  .f-input.wide, .f-select, .f-select.narrow { flex: 1 1 100%; max-width: none; min-width: 0; }
+  .f-date { flex: 1 1 0; min-width: 0; }
+  .total-badge { margin-left: 0; }
+}
 </style>

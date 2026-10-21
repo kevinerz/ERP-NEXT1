@@ -5,6 +5,7 @@ import { useFinanceStore } from '@/stores/finance'
 import { exportCsv, type CsvSection } from '@/composables/useExport'
 import { fmtRupiah, fmtDateShort as fmtDate, statusLabel, todayLocal, monthLocal } from '@/composables/useFormat'
 import api from '@/services/api'
+import { confirmDialog, alertDialog, alertError } from '@/composables/useDialog'
 import BasePagination from '@/components/BasePagination.vue'
 
 const router = useRouter()
@@ -97,13 +98,17 @@ async function handleSubmit() {
 
 async function handleKirim(id: number, ev: Event) {
   ev.stopPropagation()
-  if (!confirm('Kirim invoice ini? Status akan berubah menjadi Terkirim.')) return
+  if (!(await confirmDialog({
+    title: 'Kirim Invoice?',
+    message: 'Status invoice akan berubah menjadi Terkirim.',
+    confirmLabel: 'Ya, Kirim',
+  }))) return
   processingId.value = id
   try {
     await finance.kirim(id)
     fetchData()
   } catch (err: any) {
-    alert(err?.response?.data?.message ?? 'Gagal mengirim invoice')
+    await alertError(err, 'Gagal mengirim invoice')
   } finally {
     processingId.value = 0
   }
@@ -111,13 +116,18 @@ async function handleKirim(id: number, ev: Event) {
 
 async function handleHapus(id: number, nomor: string, ev: Event) {
   ev.stopPropagation()
-  if (!confirm(`Hapus invoice ${nomor}? Tindakan ini tidak dapat dibatalkan.`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Invoice?',
+    message: `Hapus invoice ${nomor}? Tindakan ini tidak dapat dibatalkan.`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   processingId.value = id
   try {
     await finance.remove(id)
     fetchData()
   } catch (err: any) {
-    alert(err?.response?.data?.message ?? 'Gagal menghapus invoice')
+    await alertError(err, 'Gagal menghapus invoice')
   } finally {
     processingId.value = 0
   }
@@ -149,12 +159,15 @@ async function handleExport() {
   try {
     invoices = await fetchAllForExport()
   } catch (err: any) {
-    alert(err?.response?.data?.message ?? 'Gagal mengambil data invoice untuk diekspor')
+    await alertError(err, 'Gagal mengambil data invoice untuk diekspor')
     return
   } finally {
     exporting.value = false
   }
-  if (!invoices.length) { alert('Tidak ada data untuk diekspor.'); return }
+  if (!invoices.length) {
+    await alertDialog({ title: 'Data Kosong', message: 'Tidak ada data untuk diekspor.', variant: 'warning' })
+    return
+  }
   const sections: CsvSection[] = [{
     title: 'DAFTAR INVOICE',
     headers: ['Nomor', 'Pelanggan', 'Periode', 'Total', 'Dibayar', 'Sisa', 'Status', 'Jatuh Tempo'],
@@ -185,19 +198,19 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
         <p class="sub">Daftar tagihan pelanggan</p>
       </div>
       <div class="header-actions">
-        <button class="btn-export" @click="handleExport" :disabled="exporting">{{ exporting ? 'Menyiapkan...' : '⬇ Export Excel' }}</button>
-        <button class="btn-primary" @click="showModal = true; formError = ''">+ Buat Invoice</button>
+        <button type="button" class="btn-export" @click="handleExport" :disabled="exporting">{{ exporting ? 'Menyiapkan...' : '⬇ Export CSV' }}</button>
+        <button type="button" class="btn btn-primary" @click="showModal = true; formError = ''">+ Buat Invoice</button>
       </div>
     </div>
 
     <!-- Filters -->
-    <div class="filters">
+    <div class="filter-bar">
       <input v-model="search" @keyup.enter="doFilter" placeholder="Cari nomor invoice / pelanggan..." class="search-input" />
       <select v-model="filterStatus" @change="doFilter" class="filter-select">
         <option value="">Semua Status</option>
         <option v-for="s in STATUS_LIST" :key="s" :value="s">{{ statusLabel(s) }}</option>
       </select>
-      <input v-model="filterPeriode" @keyup.enter="doFilter" placeholder="Periode (YYYY-MM)" class="periode-input" />
+      <input v-model="filterPeriode" type="month" @keyup.enter="doFilter" @change="doFilter" placeholder="Periode (YYYY-MM)" title="Periode" class="search-input periode-input" />
       <button class="btn-search" @click="doFilter">Cari</button>
     </div>
 
@@ -313,22 +326,18 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 16px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
-.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-export { padding: 10px 16px; background: #ecfdf5; color: #15803d; border: 1px solid #a7f3d0; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
+.header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-export { padding: 8px 16px; background: #ecfdf5; color: #15803d; border: 1px solid #a7f3d0; border-radius: var(--r); font-size: 13.5px; font-weight: 600; cursor: pointer; line-height: 1; }
 .btn-export:hover { background: #d1fae5; }
+.btn-export:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.search-input { flex: 1; min-width: 240px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.search-input:focus { border-color: #3b82f6; }
-.filter-select, .periode-input { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.periode-input { width: 160px; }
-.btn-search { padding: 9px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.search-input { flex: 1; min-width: 240px; }
+.search-input.periode-input { flex: 0 0 auto; width: 170px; min-width: 0; }
+.btn-search { height: 36px; padding: 0 16px; background: var(--border-light); border: 1px solid var(--border); border-radius: var(--r); font-size: 13.5px; font-weight: 600; color: var(--text-2); cursor: pointer; }
+.btn-search:hover { background: var(--border); }
+.alert-error { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
 .table-wrap { overflow-x: auto; }
@@ -360,8 +369,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .mini-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 520px; }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -375,4 +383,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

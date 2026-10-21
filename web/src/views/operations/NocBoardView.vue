@@ -217,7 +217,7 @@ onUnmounted(() => {
         <div class="noc-clock">{{ jamDinding }}</div>
         <div class="noc-date">{{ tglDinding }}</div>
       </div>
-      <button class="fs-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'">
+      <button type="button" class="fs-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'">
         {{ isFullscreen ? '✕' : '⛶' }}
       </button>
     </div>
@@ -268,7 +268,8 @@ onUnmounted(() => {
             <div class="empty-text">Semua aman</div>
             <div class="empty-sub">Tidak ada tiket aktif saat ini</div>
           </div>
-          <table v-else class="tiket-table">
+          <div v-else class="dev-table-wrap">
+          <table class="tiket-table">
             <thead>
               <tr>
                 <th>Tiket</th>
@@ -311,6 +312,7 @@ onUnmounted(() => {
               </tr>
             </tbody>
           </table>
+          </div>
         </div>
 
         <!-- Field WO -->
@@ -346,11 +348,11 @@ onUnmounted(() => {
           <span class="panel-title">Perangkat di Site Pelanggan</span>
           <span class="panel-count" v-if="perangkat.length">{{ perangkat.length }}</span>
           <span class="syslog-source" v-if="syslogDevices.length">
-            🟢 {{ syslogDevices.length }} device syslog aktif
+            🟢 {{ syslogDevices.length }} perangkat syslog aktif
           </span>
         </div>
 
-        <div v-if="devicesLoading" class="empty-wo" style="padding:20px 0">Memuat perangkat…</div>
+        <div v-if="devicesLoading && !perangkat.length" class="empty-wo" style="padding:20px 0">Memuat perangkat…</div>
         <div v-else-if="!perangkat.length" class="empty-wo">Belum ada perangkat terdaftar</div>
         <div v-else class="dev-table-wrap">
           <table class="dev-table">
@@ -399,7 +401,7 @@ onUnmounted(() => {
       <!-- Syslog device list (unregistered) -->
       <div class="panel" v-if="syslogDevices.length">
         <div class="panel-head">
-          <span class="panel-title">Syslog Devices</span>
+          <span class="panel-title">Perangkat Syslog</span>
           <span class="panel-count">{{ syslogDevices.length }}</span>
         </div>
         <div class="wo-list">
@@ -411,7 +413,7 @@ onUnmounted(() => {
               </span>
             </div>
             <div class="wo-detail">IP: {{ d.ip }} · {{ d._count.logs }} log</div>
-            <div class="wo-site">{{ d.type ? '📡 ' + d.type : '📡 Unknown' }} · {{ fmtSyslogTime(d.updatedAt) }}</div>
+            <div class="wo-site">{{ d.type ? '📡 ' + d.type : '📡 Tipe tidak diketahui' }} · {{ fmtSyslogTime(d.updatedAt) }}</div>
           </div>
         </div>
       </div>
@@ -532,6 +534,7 @@ onUnmounted(() => {
 }
 .stat-tile {
   position: relative;
+  display: block; /* netralkan flex+gap dari .stat-tile global */
   background: #fff;
   border: 1px solid #e8edf5;
   border-radius: 12px;
@@ -603,6 +606,7 @@ onUnmounted(() => {
   align-items: start;
 }
 .panel {
+  min-width: 0; /* cegah tabel melebarkan kolom grid */
   background: #fff;
   border: 1px solid #e8edf5;
   border-radius: 12px;
@@ -771,4 +775,29 @@ onUnmounted(() => {
 .wo-onsite   { background: #fef3c7; color: #b45309; }
 .wo-detail { color: #64748b; font-size: 0.8rem; }
 .wo-site   { color: #94a3b8; font-size: 0.78rem; margin-top: 2px; }
+.wo-nama { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Responsive ─────────────────────────── */
+@media (max-width: 1200px) {
+  .stat-row { grid-template-columns: repeat(4, 1fr); }
+  .prio-tile { grid-column: 1 / -1; }
+  .prio-grid { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 1024px) {
+  .noc-main, .devices-section { grid-template-columns: 1fr; }
+  .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .prio-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 768px) {
+  .noc-board { padding: 16px; border-radius: var(--r); min-height: 0; }
+  .noc-header { flex-wrap: wrap; gap: 12px; }
+  .noc-title { flex: 1 1 100%; }
+  .noc-brand h1 { font-size: 1.05rem; }
+  .noc-clockbox { flex: 1; text-align: left; }
+  .noc-clock { font-size: 1.6rem; }
+  .stat-num { font-size: 1.9rem; }
+  .stat-row { grid-template-columns: repeat(2, 1fr) !important; }
+  .prio-tile { grid-column: 1 / -1; }
+  .tk-judul { max-width: 200px; }
+}
 </style>

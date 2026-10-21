@@ -50,17 +50,17 @@ onMounted(() => {
         <p>Data karyawan {{ cfg.settings.company_name || 'perusahaan' }}</p>
       </div>
       <div class="header-actions">
-        <button class="btn-secondary" @click="router.push('/hris/undangan')">
+        <button type="button" class="btn btn-secondary" @click="router.push('/hris/undangan')">
           🔗 Undang Karyawan Baru
         </button>
-        <button class="btn-primary" @click="router.push('/hris/karyawan/tambah')">
+        <button type="button" class="btn btn-primary" @click="router.push('/hris/karyawan/tambah')">
           + Tambah Karyawan
         </button>
       </div>
     </div>
 
     <!-- Filters -->
-    <div class="filters">
+    <div class="filter-bar">
       <input
         v-model="search"
         @input="onSearch"
@@ -68,11 +68,11 @@ onMounted(() => {
         placeholder="Cari nama, NIP, jabatan..."
         class="search-input"
       />
-      <select v-model="filterDept" class="select-filter">
+      <select v-model="filterDept" class="filter-select">
         <option value="">Semua Departemen</option>
         <option v-for="d in hris.departemenList" :key="d" :value="d">{{ d }}</option>
       </select>
-      <select v-model="filterStatus" class="select-filter">
+      <select v-model="filterStatus" class="filter-select">
         <option value="">Semua Status</option>
         <option value="true">Aktif</option>
         <option value="false">Nonaktif</option>
@@ -80,10 +80,11 @@ onMounted(() => {
     </div>
 
     <!-- Table -->
-    <div class="table-wrap">
+    <div class="table-card">
       <div v-if="hris.loading" class="loading-state">Memuat data...</div>
       <div v-else-if="hris.error" class="error-state">{{ hris.error }}</div>
-      <table v-else class="table">
+      <div v-else class="table-wrap">
+      <table class="table">
         <thead>
           <tr>
             <th>NIP</th>
@@ -123,88 +124,29 @@ onMounted(() => {
           </tr>
         </tbody>
       </table>
-    </div>
+      </div>
 
-    <!-- Pagination -->
-    <BasePagination :page="page" :total-pages="hris.meta?.total_pages ?? 1" @change="goPage" />
-    <div class="meta-info" v-if="!hris.loading">
-      {{ hris.meta?.total ?? 0 }} karyawan ditemukan
+      <!-- Pagination -->
+      <BasePagination :page="page" :total-pages="hris.meta?.total_pages ?? 1" @change="goPage" />
+      <div class="meta-info" v-if="!hris.loading">
+        {{ hris.meta?.total ?? 0 }} karyawan ditemukan
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; }
+.page-header h2 { margin: 0; font-size: 22px; color: var(--text-1); }
+.page-header p { margin: 4px 0 0; font-size: 13px; color: var(--text-3); }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
-.page-header h2 { margin: 0; font-size: 22px; color: #0f172a; }
-.page-header p { margin: 4px 0 0; font-size: 13px; color: #64748b; }
+.header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
-.header-actions { display: flex; gap: 10px; }
-
-.btn-primary {
-  background: linear-gradient(135deg, #1e40af, #3b82f6);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.btn-primary:hover { opacity: 0.9; }
-
-.btn-secondary {
-  background: #f1f5f9;
-  color: #1e40af;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.btn-secondary:hover { background: #e2e8f0; }
-
-.filters {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
 .search-input {
   flex: 1;
   min-width: 200px;
-  padding: 9px 14px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  outline: none;
 }
-.search-input:focus { border-color: #3b82f6; }
-.select-filter {
-  padding: 9px 12px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 14px;
-  background: #fff;
-  outline: none;
-  cursor: pointer;
-}
+.filter-select { cursor: pointer; }
 
-.table-wrap {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  overflow: auto;
-}
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -297,9 +239,10 @@ onMounted(() => {
 
 
 .meta-info {
-  margin-top: 12px;
-  font-size: 13px;
-  color: #94a3b8;
+  padding: 10px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
   text-align: right;
+  border-top: 1px solid var(--border-light);
 }
 </style>

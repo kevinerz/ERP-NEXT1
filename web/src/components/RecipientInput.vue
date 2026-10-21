@@ -34,8 +34,8 @@ function chipLabel(email: string): string {
   if (!c) return email
   const parts = c.nama_lengkap.trim().split(' ')
   const short = parts.length > 1
-    ? parts[0] + ' ' + parts[parts.length - 1][0] + '.'
-    : parts[0]
+    ? parts[0] + ' ' + parts[parts.length - 1]![0] + '.'
+    : parts[0]!
   return short.length > 22 ? short.slice(0, 21) + '…' : short
 }
 
@@ -76,7 +76,7 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',' || e.key === ';') {
     if (highlightIdx.value >= 0 && filtered.value[highlightIdx.value]) {
       e.preventDefault()
-      addContact(filtered.value[highlightIdx.value])
+      addContact(filtered.value[highlightIdx.value]!)
     } else if (inputText.value.trim()) {
       e.preventDefault()
       addEmail(inputText.value)
@@ -228,7 +228,8 @@ input::placeholder { color: #94a3b8; }
   border: 1.5px solid #e2e8f0;
   border-radius: 10px;
   box-shadow: 0 10px 28px rgba(0,0,0,.13);
-  overflow: hidden;
+  max-height: 320px;
+  overflow-y: auto;
 }
 .ri-item {
   display: flex;
@@ -246,6 +247,8 @@ input::placeholder { color: #94a3b8; }
   font-size: 13.5px;
   font-weight: 600;
   color: #1e293b;
+  flex-shrink: 0;
+  max-width: 60%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -253,8 +256,12 @@ input::placeholder { color: #94a3b8; }
 .ri-item-email {
   font-size: 12px;
   color: #64748b;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
   text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Transition */

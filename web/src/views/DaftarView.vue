@@ -22,7 +22,7 @@
       <!-- Form pendaftaran -->
       <form v-else @submit.prevent="submit">
         <h2>Daftar Akun Baru</h2>
-        <p class="sub">Isi data lengkap Anda di bawah ini. Setelah submit, username &amp; password akan dikirim ke email yang Anda daftarkan. Akun akan direview admin sebelum akses modul dibuka.</p>
+        <p class="sub">Isi data lengkap Anda di bawah ini. Setelah dikirim, username &amp; password akan dikirim ke email yang Anda daftarkan. Akun akan direview admin sebelum akses modul dibuka.</p>
 
         <div class="avatar-wrap">
           <img v-if="fotoPreview" :src="fotoPreview" alt="" class="avatar-photo" />
@@ -165,12 +165,12 @@
             <label>{{ captchaQuestion || 'Memuat pertanyaan...' }} <span class="req">*</span></label>
             <div class="captcha-row">
               <input v-model="captchaAnswer" type="text" inputmode="numeric" required />
-              <button type="button" class="btn-refresh" :disabled="loadingCaptcha" @click="fetchCaptcha">↻</button>
+              <button type="button" class="btn-refresh" :disabled="loadingCaptcha" title="Ganti pertanyaan" aria-label="Ganti pertanyaan verifikasi" @click="fetchCaptcha">↻</button>
             </div>
           </div>
         </div>
 
-        <p v-if="submitError" class="error-msg">{{ submitError }}</p>
+        <p v-if="submitError" class="error-msg" role="alert">{{ submitError }}</p>
 
         <button type="submit" class="btn-primary btn-block" :disabled="submitting">
           {{ submitting ? 'Mengirim...' : 'Daftar Sekarang' }}
@@ -291,7 +291,8 @@ onMounted(async () => {
 }
 .cred-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
 .cred-label { color: #64748b; }
-.cred-value { font-family: monospace; font-weight: 700; color: #0f172a; }
+.cred-value { font-family: monospace; font-weight: 700; color: #0f172a; overflow-wrap: anywhere; text-align: right; }
+.cred-row { gap: 12px; }
 .cred-warning { color: #b45309; font-size: 12px; margin: 8px 0 0; }
 
 h2 { font-size: 18px; color: #0f172a; margin: 0 0 6px; }
@@ -347,4 +348,9 @@ h2 { font-size: 18px; color: #0f172a; margin: 0 0 6px; }
 }
 .btn-block { width: 100%; margin-top: 24px; box-sizing: border-box; }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 768px) {
+  .onboarding-page { padding: 16px 12px; }
+  .onboarding-card { padding: 22px 18px; border-radius: var(--r-lg); }
+}
 </style>

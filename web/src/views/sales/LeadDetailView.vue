@@ -5,6 +5,7 @@ import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useMasterStore } from '@/stores/master'
 import { fmtRupiahPenuh, fmtDateShort, fmtDateTime, toDatetimeLocal } from '@/composables/useFormat'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 
 const router = useRouter()
 const route = useRoute()
@@ -130,12 +131,17 @@ function openEditActivity(a: any) {
 }
 
 async function hapusActivity(a: any) {
-  if (!confirm('Hapus aktivitas ini?')) return
+  if (!(await confirmDialog({
+    title: 'Hapus Aktivitas?',
+    message: 'Aktivitas ini akan dihapus.',
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete('/sales/activity/' + a.id_activity)
     await sales.fetchOneLead(id)
     flash('Aktivitas dihapus')
-  } catch (e: any) { alert(e?.response?.data?.message ?? 'Gagal menghapus aktivitas') }
+  } catch (e: any) { await alertError(e, 'Gagal menghapus aktivitas') }
 }
 
 async function handleAddActivity() {
@@ -193,7 +199,7 @@ const fmtDatetime = fmtDateTime
           <h2>{{ sales.currentLead.nama_prospek }}</h2>
           <p class="sub">{{ sales.currentLead.nama_perusahaan || 'Perorangan' }}</p>
         </div>
-        <button class="btn-edit-lead" @click="openEditLead">Edit Lead</button>
+        <button type="button" class="btn btn-secondary" @click="openEditLead">Edit Lead</button>
       </div>
 
       <div v-if="successMsg" class="alert-success">{{ successMsg }}</div>
@@ -227,7 +233,7 @@ const fmtDatetime = fmtDateTime
           >
             <div class="opp-name">{{ o.nama_opportunity }}</div>
             <div class="opp-meta">
-              <span class="tahapan-chip" :style="{ background: TAHAPAN_COLOR[o.tahapan] + '20', color: TAHAPAN_COLOR[o.tahapan] }">
+              <span class="tahapan-chip" :style="{ background: (TAHAPAN_COLOR[o.tahapan] || '#94a3b8') + '20', color: TAHAPAN_COLOR[o.tahapan] || '#94a3b8' }">
                 {{ o.tahapan }}
               </span>
               <span class="opp-nilai">{{ fmt(Number(o.estimasi_nilai)) }}</span>
@@ -406,7 +412,6 @@ const fmtDatetime = fmtDateTime
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
-.btn-edit-lead { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #374151; cursor: pointer; }
 
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 16px; }
 
@@ -414,10 +419,11 @@ const fmtDatetime = fmtDateTime
 .info-card, .section-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
 .mt16 { margin-top: 16px; }
 .card-title { font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; display: block; }
-.info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; color: #0f172a; }
-.info-label { color: #64748b; font-size: 13px; }
+.info-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; color: #0f172a; }
+.info-row > span:last-child { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.info-label { color: #64748b; font-size: 13px; flex-shrink: 0; }
 .status-chip { background: #eff6ff; color: #1d4ed8; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-.catatan-box { margin-top: 12px; padding: 10px; background: #f8fafc; border-radius: 8px; font-size: 13px; color: #475569; }
+.catatan-box { margin-top: 12px; padding: 10px; background: #f8fafc; border-radius: 8px; font-size: 13px; color: #475569; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .btn-add-small { padding: 5px 12px; background: #eff6ff; color: #1d4ed8; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -434,8 +440,8 @@ const fmtDatetime = fmtDateTime
 .act-left { min-width: 160px; }
 .act-jenis { display: block; font-size: 13px; font-weight: 700; color: #1d4ed8; margin-bottom: 4px; }
 .act-date { font-size: 11px; color: #94a3b8; }
-.act-right { flex: 1; }
-.act-ringkasan { margin: 0 0 6px; font-size: 14px; color: #0f172a; }
+.act-right { flex: 1; min-width: 0; }
+.act-ringkasan { margin: 0 0 6px; font-size: 14px; color: #0f172a; white-space: pre-wrap; overflow-wrap: anywhere; }
 .act-hasil { padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
 .hasil-positif { background: #f0fdf4; color: #15803d; }
 .hasil-negatif { background: #fef2f2; color: #dc2626; }
@@ -444,8 +450,7 @@ const fmtDatetime = fmtDateTime
 .btn-act-edit { padding: 3px 10px; background: #f1f5f9; color: #374151; border: none; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; }
 .btn-act-hapus { padding: 3px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; }
 
-/* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+/* Modal (overlay pakai global .modal-overlay) */
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 540px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -460,4 +465,13 @@ const fmtDatetime = fmtDateTime
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 768px) {
+  .activity-item { flex-wrap: wrap; gap: 8px 14px; }
+  .act-left { min-width: 0; width: 100%; display: flex; align-items: baseline; gap: 8px; }
+  .act-jenis { display: inline; margin-bottom: 0; }
+  .act-actions { flex-direction: row; width: 100%; justify-content: flex-end; }
+  .modal { padding: 22px 20px; }
+  .form-grid { grid-template-columns: 1fr; }
+}
 </style>

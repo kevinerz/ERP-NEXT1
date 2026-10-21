@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { confirmDialog } from '@/composables/useDialog'
 import { useRouter, useRoute } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
 import { fmtDate as formatDate } from '@/composables/useFormat'
@@ -28,11 +29,16 @@ function setSuccess(msg: string) {
 }
 onUnmounted(() => { if (successTimer) clearTimeout(successTimer) })
 
+// Penanda UI: fetch awal selesai (fetchRoles tidak men-set hris.loading,
+// jadi tanpa ini state "tidak ditemukan" sempat berkedip saat memuat).
+const loaded = ref(false)
+
 onMounted(async () => {
   try {
     await hris.fetchRoles()
     await hris.fetchOne(id)
   } catch { /* error ditampilkan lewat hris.error jika ada */ }
+  finally { loaded.value = true }
 })
 
 async function handleToggleStatus() {
@@ -50,7 +56,7 @@ const deleting = ref(false)
 
 async function handleDelete() {
   if (!hris.current) return
-  if (!confirm(`Hapus karyawan "${hris.current.nama_lengkap}"? Tindakan ini tidak bisa dibatalkan.`)) return
+  if (!(await confirmDialog({ title: 'Hapus Karyawan?', message: `Hapus karyawan "${hris.current.nama_lengkap}"? Tindakan ini tidak bisa dibatalkan.`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   actionError.value = ''
   deleting.value = true
   try {
@@ -428,6 +434,7 @@ async function handleToggleUserStatus() {
             </label>
           </div>
         </div>
+        <div v-if="actionError" class="error-msg">{{ actionError }}</div>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showCreateUser = false">Batal</button>
           <button class="btn-submit" @click="handleCreateUser" :disabled="actionLoading">
@@ -445,6 +452,7 @@ async function handleToggleUserStatus() {
           <label>Password Baru</label>
           <input v-model="newPassword" type="password" placeholder="Min. 8 karakter" />
         </div>
+        <div v-if="actionError" class="error-msg">{{ actionError }}</div>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showResetPw = false">Batal</button>
           <button class="btn-submit" @click="handleResetPw" :disabled="actionLoading">
@@ -469,6 +477,7 @@ async function handleToggleUserStatus() {
             </label>
           </div>
         </div>
+        <div v-if="actionError" class="error-msg">{{ actionError }}</div>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showEditRoles = false">Batal</button>
           <button class="btn-submit" @click="handleEditRoles" :disabled="actionLoading">
@@ -528,23 +537,23 @@ async function handleToggleUserStatus() {
     </div>
   </div>
 
-  <div v-else-if="hris.loading" class="loading-page">Memuat data karyawan...</div>
+  <div v-else-if="hris.loading || !loaded" class="loading-page">Memuat data karyawan...</div>
+  <div v-else class="page">
+    <button type="button" class="btn-back" @click="router.push('/hris/karyawan')">← Daftar Karyawan</button>
+    <div class="empty-state"><div class="empty-title">{{ hris.error || 'Data karyawan tidak ditemukan.' }}</div></div>
+  </div>
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 900px; }
+.page { max-width: 900px; }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
+.page-header { align-items: center; }
 .btn-back {
   background: none; border: none; color: #3b82f6;
   font-size: 14px; font-weight: 600; cursor: pointer; padding: 0;
+  align-self: flex-start;
 }
-.header-right { display: flex; gap: 10px; }
+.header-right { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .alert-success {
   background: #f0fdf4; border: 1px solid #86efac;
@@ -594,13 +603,13 @@ async function handleToggleUserStatus() {
 }
 .info-item { display: flex; flex-direction: column; gap: 3px; }
 .label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; }
-.value { font-size: 14px; color: #0f172a; }
+.value { font-size: 14px; color: var(--text-1); overflow-wrap: anywhere; }
 .mono { font-family: monospace; }
 
 .badge-aktif { background: #dcfce7; color: #15803d; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 .badge-nonaktif { background: #fee2e2; color: #dc2626; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 
-.user-actions { display: flex; gap: 10px; margin-top: 20px; }
+.user-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 .empty-user { color: #94a3b8; font-size: 14px; padding: 16px 0; }
 
 .btn-primary { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -610,23 +619,18 @@ async function handleToggleUserStatus() {
 .btn-success { background: #dcfce7; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #15803d; cursor: pointer; }
 
 /* Modal */
-.modal-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.5);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 1000;
-}
-.modal {
-  background: #fff; border-radius: 16px;
-  padding: 32px; width: 100%; max-width: 440px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+.modal { padding: 32px; max-width: 440px; }
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+  .card { padding: 18px 16px; }
 }
 .modal h3 { margin: 0 0 4px; font-size: 18px; color: #0f172a; }
 .modal-sub { margin: 0 0 20px; font-size: 13px; color: #64748b; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
 .field label { font-size: 13px; font-weight: 600; color: #374151; }
-.field input { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.field input:focus { border-color: #3b82f6; }
+.field input:not([type="checkbox"]) { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
+.field input:not([type="checkbox"]):focus { border-color: #3b82f6; }
+.error-msg { background: var(--danger-light); border: 1px solid #fecaca; color: var(--danger); border-radius: var(--r); padding: 8px 12px; font-size: 13px; margin-top: 4px; }
 
 .role-list { display: flex; flex-direction: column; gap: 8px; }
 .role-item {

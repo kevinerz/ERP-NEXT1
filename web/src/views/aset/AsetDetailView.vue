@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { confirmDialog } from '@/composables/useDialog'
 import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
@@ -80,7 +81,7 @@ async function handleLinkSim() {
 async function handleUnlinkSim() {
   const sumber = (a.value as any)?.sumber_internet
   if (!sumber) return
-  if (!confirm(`Putuskan SIM dari ${sumber.nomor_pelanggan_isp}?`)) return
+  if (!(await confirmDialog({ title: 'Putuskan SIM?', message: `Putuskan SIM dari ${sumber.nomor_pelanggan_isp}?`, variant: 'warning', confirmLabel: 'Ya, Putuskan' }))) return
   simError.value = ''
   try {
     await api.patch(`/master/sumber-internet/${sumber.id_sumber}`, { id_aset_sim: null })
@@ -181,13 +182,13 @@ const mutasiColor: Record<string, string> = {
             <span class="status-badge" :style="{ background: STATUS_COLOR[a.status_aset]?.bg, color: STATUS_COLOR[a.status_aset]?.color }">
               {{ statusLabel(a.status_aset) }}
             </span>
-            <span class="kondisi-badge">{{ a.kondisi?.replace('_', ' ') }}</span>
+            <span class="kondisi-badge">{{ statusLabel(a.kondisi) }}</span>
           </div>
         </div>
         <div class="header-actions">
-          <button class="btn-secondary" @click="a && printLabelAset([a])">🏷️ Cetak Label</button>
-          <button class="btn-secondary" @click="openMutasi">+ Mutasi</button>
-          <button class="btn-edit" @click="openEdit">Edit</button>
+          <button type="button" class="btn btn-secondary" @click="a && printLabelAset([a])">🏷️ Cetak Label</button>
+          <button type="button" class="btn btn-secondary" @click="openMutasi">+ Mutasi</button>
+          <button type="button" class="btn btn-secondary" @click="openEdit">Edit</button>
         </div>
       </div>
 
@@ -409,7 +410,7 @@ const mutasiColor: Record<string, string> = {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 900px; }
+.page { max-width: 900px; }
 .breadcrumb { font-size: 13px; color: #64748b; margin-bottom: 16px; }
 .link { cursor: pointer; color: #3b82f6; }
 .link:hover { text-decoration: underline; }
@@ -420,19 +421,17 @@ const mutasiColor: Record<string, string> = {
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 .header-left .kode { font-size: 13px; font-weight: 700; color: #3b82f6; margin-bottom: 4px; }
 .header-left h2 { margin: 0 0 8px; font-size: 22px; color: #0f172a; }
-.sub-row { display: flex; align-items: center; gap: 8px; }
+.sub-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sub { font-size: 14px; color: #64748b; }
 .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; }
 .kondisi-badge { padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; background: #f1f5f9; color: #475569; }
-.header-actions { display: flex; gap: 10px; }
-.btn-secondary { padding: 9px 18px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-edit { padding: 9px 18px; background: #f1f5f9; color: #374151; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .info-bar { display: flex; flex-wrap: wrap; gap: 0; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 20px 24px; margin-bottom: 24px; }
 .info-item { flex: 0 0 auto; min-width: 160px; padding: 8px 20px 8px 0; border-right: 1px solid #f1f5f9; margin-right: 20px; margin-bottom: 8px; }
 .info-item:last-child { border-right: none; }
 .info-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; margin-bottom: 4px; }
-.info-value { font-size: 14px; color: #0f172a; font-weight: 600; }
+.info-value { font-size: 14px; color: var(--text-1); font-weight: 600; overflow-wrap: anywhere; }
 .mono { font-family: monospace; font-size: 13px; }
 
 .section { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 20px 24px; }
@@ -451,19 +450,18 @@ const mutasiColor: Record<string, string> = {
 .empty-state { text-align: center; color: #94a3b8; padding: 32px; font-size: 14px; }
 
 .sim-section { margin-bottom: 20px; }
-.sim-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.sim-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .sim-header h3 { margin: 0; font-size: 16px; color: #0f172a; }
 .btn-link-sim { padding: 7px 14px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-unlink-sim { padding: 7px 14px; background: #fff1f2; color: #be123c; border: 1.5px solid #fecdd3; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .sim-info { display: flex; flex-direction: column; gap: 10px; }
 .sim-row { display: flex; align-items: center; gap: 12px; }
 .sim-label { font-size: 12px; color: #94a3b8; text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; min-width: 100px; }
-.sim-val { font-size: 14px; color: #0f172a; font-weight: 600; }
+.sim-val { font-size: 14px; color: var(--text-1); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .sim-val.link { color: #3b82f6; cursor: pointer; }
 .sim-val.link:hover { text-decoration: underline; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 500px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 500px; }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -479,4 +477,11 @@ const mutasiColor: Record<string, string> = {
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 768px) {
+  .info-bar { padding: 16px; }
+  .info-item { min-width: 0; flex: 1 1 140px; border-right: none; margin-right: 12px; padding-right: 0; }
+}
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

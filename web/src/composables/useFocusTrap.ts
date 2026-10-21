@@ -23,8 +23,8 @@ export function useFocusTrap(getEl: () => HTMLElement | null) {
     if (!el) return
     const focusable = getFocusable(el)
     if (!focusable.length) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
+    const first = focusable[0]!
+    const last = focusable[focusable.length - 1]!
     if (e.key !== 'Tab') return
     if (e.shiftKey) {
       if (document.activeElement === first) { e.preventDefault(); last.focus() }
@@ -38,7 +38,7 @@ export function useFocusTrap(getEl: () => HTMLElement | null) {
     const el = getEl()
     if (!el) return
     const focusable = getFocusable(el)
-    if (focusable.length) focusable[0].focus()
+    if (focusable.length) focusable[0]!.focus()
     document.addEventListener('keydown', trap)
   }
 

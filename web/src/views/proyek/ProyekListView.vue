@@ -5,6 +5,7 @@ import { useProyekStore } from '@/stores/proyek'
 import { useMasterStore } from '@/stores/master'
 import { fmtDateShort as fmtDate } from '@/composables/useFormat'
 import api from '@/services/api'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 import BasePagination from '@/components/BasePagination.vue'
 
 const router = useRouter()
@@ -68,13 +69,18 @@ async function handleSubmit() {
 }
 
 async function hapusProyek(id: number, nomor: string) {
-  if (!confirm(`Hapus project "${nomor}" ini?`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Project?',
+    message: `Hapus project "${nomor}" ini?`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete(`/projects/${id}`)
     await proyek.fetchSummary()
     fetchData()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus project')
+    await alertError(e, 'Gagal menghapus project')
   }
 }
 
@@ -87,14 +93,14 @@ async function hapusProyek(id: number, nomor: string) {
         <h2>Proyek</h2>
         <p class="sub">Delivery project instalasi & implementasi</p>
       </div>
-      <button class="btn-primary" @click="showModal = true">+ Buat Project</button>
+      <button type="button" class="btn btn-primary" @click="showModal = true">+ Buat Project</button>
     </div>
 
     <!-- Summary chips -->
     <div class="summary-row">
       <div
         v-for="s in proyek.summary" :key="s.status"
-        class="summary-chip"
+        :class="['summary-chip', { active: filterStatus === s.status }]"
         :style="{ borderLeftColor: STATUS_COLOR[s.status]?.color || '#94a3b8' }"
         @click="filterStatus = filterStatus === s.status ? '' : s.status; doFilter()"
       >
@@ -232,11 +238,11 @@ async function hapusProyek(id: number, nomor: string) {
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 
 .summary-row { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .summary-chip { background: #fff; border-radius: 8px; padding: 12px 16px; border-left: 4px solid #94a3b8; box-shadow: 0 1px 3px rgba(0,0,0,0.07); cursor: pointer; min-width: 100px; }
 .summary-chip:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+.summary-chip.active { background: var(--primary-light); box-shadow: 0 0 0 1.5px var(--primary-border); }
 .sc-count { font-size: 22px; font-weight: 800; color: #0f172a; }
 .sc-label { font-size: 12px; color: #64748b; }
 
@@ -265,7 +271,6 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 540px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { confirmDialog, alertDialog, promptDialog } from '@/composables/useDialog'
 import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
 import BasePagination from '@/components/BasePagination.vue'
 
@@ -29,10 +30,11 @@ const approveNomor = ref('')
 const approveForm = ref({ status_approval: 'Approved', id_approver: 0, catatan_approval: '' })
 const approveSubmitting = ref(false)
 const successMsg = ref('')
+const msgIsError = ref(false)
 
 onMounted(async () => {
   await sales.fetchSalesList()
-  if (sales.salesList.length) approveForm.value.id_approver = sales.salesList[0].id_karyawan
+  if (sales.salesList.length) approveForm.value.id_approver = sales.salesList[0]!.id_karyawan
   fetchData()
 })
 
@@ -56,17 +58,24 @@ async function handleApprove() {
   try {
     await sales.approveQuotation(approveId.value, approveForm.value)
     showApprove.value = false
+    msgIsError.value = false
     successMsg.value = `Quotation ${approveForm.value.status_approval}`
     setTimeout(() => successMsg.value = '', 3000)
     fetchData()
   } catch (e: any) {
+    msgIsError.value = true
     successMsg.value = e.response?.data?.message || 'Gagal proses approval'
     setTimeout(() => successMsg.value = '', 4000)
   } finally { approveSubmitting.value = false }
 }
 
 async function hapusQuotation(id: number, nomor: string) {
-  if (!confirm(`Hapus quotation "${nomor}" ini?`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Quotation?',
+    message: `Hapus quotation "${nomor}" ini?`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete(`/sales/quotation/${id}`)
     fetchData()
@@ -74,24 +83,36 @@ async function hapusQuotation(id: number, nomor: string) {
     const msg = e.response?.data?.message || 'Gagal menghapus quotation'
     // Quotation non-Draft → tawarkan force delete (Admin/Director)
     if (e.response?.status === 400 && String(msg).includes('force delete')) {
-      if (!canForce.value) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
-      const ketik = prompt(
-        `⚠️ PERINGATAN — Quotation "${nomor}" akan DIHAPUS PERMANEN.\n\n` +
-        `Kontrak yang terhubung TIDAK ikut terhapus, hanya dilepas dari quotation ini.\n\n` +
-        `Ketik nomor quotation "${nomor}" untuk konfirmasi:`,
-      )
+      if (!canForce.value) {
+        await alertDialog({ title: 'Tidak Dapat Dihapus', message: msg + '\n\nHubungi Admin untuk force delete.', variant: 'warning' })
+        return
+      }
+      const ketik = await promptDialog({
+        title: 'Force Delete Quotation',
+        message:
+          `PERINGATAN — Quotation "${nomor}" akan DIHAPUS PERMANEN.\n\n` +
+          `Kontrak yang terhubung TIDAK ikut terhapus, hanya dilepas dari quotation ini.`,
+        label: `Ketik nomor quotation "${nomor}" untuk konfirmasi:`,
+        placeholder: nomor,
+        requireText: nomor,
+        variant: 'danger',
+        confirmLabel: 'Hapus Permanen',
+      })
       if (ketik === null) return
-      if (ketik.trim() !== nomor) { alert('Nomor quotation tidak cocok — dibatalkan.'); return }
+      if (ketik.trim() !== nomor) {
+        await alertDialog({ title: 'Dibatalkan', message: 'Nomor quotation tidak cocok — dibatalkan.', variant: 'warning' })
+        return
+      }
       try {
         const r = await api.delete(`/sales/quotation/${id}?force=true`)
         fetchData()
-        alert(r.data?.message || 'Quotation dihapus (force)')
+        await alertDialog({ message: r.data?.message || 'Quotation dihapus (force)', variant: 'success' })
       } catch (e2: any) {
-        alert(e2.response?.data?.message || 'Force delete gagal')
+        await alertDialog({ message: e2.response?.data?.message || 'Force delete gagal', variant: 'danger' })
       }
       return
     }
-    alert(msg)
+    await alertDialog({ message: String(msg), variant: 'danger' })
   }
 }
 
@@ -120,7 +141,7 @@ const fmtDate = fmtDateShort
       </div>
     </div>
 
-    <div v-if="successMsg" class="alert-success">{{ successMsg }}</div>
+    <div v-if="successMsg" :class="msgIsError ? 'alert-error' : 'alert-success'">{{ successMsg }}</div>
     <div v-if="sales.error" class="alert-error">{{ sales.error }}</div>
 
     <div class="table-card">
@@ -231,7 +252,7 @@ const fmtDate = fmtDateShort
 .page-header h2 { margin: 0; font-size: 22px; color: #0f172a; }
 
 .filter-bar { margin-bottom: 16px; }
-.status-pills { display: flex; gap: 8px; }
+.status-pills { display: flex; gap: 8px; flex-wrap: wrap; }
 .pill { padding: 6px 16px; border: 1.5px solid #e2e8f0; border-radius: 20px; font-size: 13px; font-weight: 600; background: #fff; color: #64748b; cursor: pointer; }
 .pill.active { background: #1e40af; color: #fff; border-color: #1e40af; }
 
@@ -257,7 +278,6 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 480px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }

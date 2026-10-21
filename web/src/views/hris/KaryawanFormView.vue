@@ -137,7 +137,7 @@ async function submit() {
 <template>
   <div class="page">
     <div class="page-header">
-      <button class="btn-back" @click="router.push('/hris/karyawan')">← Kembali</button>
+      <button type="button" class="btn-back" @click="router.push('/hris/karyawan')">← Kembali</button>
       <h2>{{ isEdit ? 'Edit Karyawan' : 'Tambah Karyawan' }}</h2>
     </div>
 
@@ -297,10 +297,11 @@ async function submit() {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 800px; }
+.page { max-width: 800px; }
 
-.page-header { margin-bottom: 24px; }
-.page-header h2 { margin: 8px 0 0; font-size: 22px; color: #0f172a; }
+/* Tombol kembali di atas judul (global .page-header = baris space-between) */
+.page-header { flex-direction: column; align-items: flex-start; gap: 0; }
+.page-header h2 { margin: 8px 0 0; font-size: 22px; color: var(--text-1); }
 
 .btn-back {
   background: none;
@@ -401,4 +402,8 @@ async function submit() {
   cursor: pointer;
 }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 768px) {
+  .form-card { padding: 20px 16px; }
+  .page-header .btn-back { width: auto !important; }
+}
 </style>

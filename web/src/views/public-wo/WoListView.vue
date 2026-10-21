@@ -3,11 +3,13 @@ import { ref, computed, onMounted, watch } from 'vue'
 import BasePagination from '@/components/BasePagination.vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
-import { fmtDateShort as fmtDate } from '@/composables/useFormat'
+import { fmtDateTime as fmtDate } from '@/composables/useFormat'
+import { alertError } from '@/composables/useDialog'
 
 const router = useRouter()
 
 const loading    = ref(false)
+const loadError  = ref('')
 const wos        = ref<any[]>([])
 const summary    = ref<{ status: string; count: number }[]>([])
 const teknisis   = ref<any[]>([])
@@ -36,9 +38,9 @@ const JENIS_WO = ['Instalasi', 'Maintenance', 'Perbaikan', 'Relokasi', 'Upgrade'
 const STATUS_STYLE: Record<string, string> = {
   Open:       'badge-blue',
   Dispatch:   'badge-blue',
-  'On-Site':  'badge-yellow',
+  'On-Site':  'badge-amber',
   Selesai:    'badge-green',
-  Ditunda:    'badge-yellow',
+  Ditunda:    'badge-amber',
   Dibatalkan: 'badge-gray',
 }
 const STATUS_LABEL: Record<string, string> = {
@@ -57,6 +59,7 @@ function goPage(p: number) { page.value = p; fetchList() }
 
 async function fetchList() {
   loading.value = true
+  loadError.value = ''
   try {
     const params: any = { page: page.value, limit: 20 }
     if (search.value)        params.search     = search.value
@@ -66,6 +69,8 @@ async function fetchList() {
     const { data } = await api.get('/public-wo', { params })
     wos.value  = data.data
     meta.value = data.meta
+  } catch (e: any) {
+    loadError.value = e?.response?.data?.message || 'Gagal memuat Work Order'
   } finally {
     loading.value = false
   }
@@ -116,7 +121,7 @@ async function submitWo() {
     fetchList()
     router.push(`/public-wo/${data.data.id_wo}`)
   } catch (e: any) {
-    alert(e?.response?.data?.message || 'Gagal membuat WO')
+    alertError(e, 'Gagal membuat WO')
   } finally {
     saving.value = false
   }
@@ -135,7 +140,7 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
         <h2>Work Order</h2>
         <p class="sub">Manajemen pekerjaan lapangan & teknisi</p>
       </div>
-      <button class="btn-primary" @click="openModal">+ Buat WO</button>
+      <button type="button" class="btn btn-primary" @click="openModal">+ Buat WO</button>
     </div>
 
     <!-- Summary cards -->
@@ -170,12 +175,13 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
         <option value="">Semua Teknisi</option>
         <option v-for="t in teknisis" :key="t.id_karyawan" :value="t.id_karyawan">{{ t.nama_lengkap }}</option>
       </select>
-      <button class="btn-reset" @click="resetFilter">Reset</button>
+      <button type="button" class="btn-reset" @click="resetFilter">Reset</button>
     </div>
 
     <!-- Table -->
     <div class="table-card">
       <div v-if="loading" class="state">Memuat data…</div>
+      <div v-else-if="loadError" class="state state-error">{{ loadError }}</div>
       <div v-else-if="!wos.length" class="state">Tidak ada Work Order ditemukan</div>
       <table v-else class="table">
         <thead>
@@ -207,9 +213,11 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
             </td>
             <td>{{ fmtDate(w.tgl_jadwal) }}</td>
             <td><span :class="['badge', STATUS_STYLE[w.status_wo]]">{{ STATUS_LABEL[w.status_wo] || w.status_wo }}</span></td>
-            <td class="count-cell">
-              <span title="Foto">📷 {{ w._count?.foto ?? 0 }}</span>
-              <span title="Berita Acara">📄 {{ w._count?.berita_acara ?? 0 }}</span>
+            <td>
+              <div class="count-cell">
+                <span title="Foto">📷 {{ w._count?.foto ?? 0 }}</span>
+                <span title="Berita Acara">📄 {{ w._count?.berita_acara ?? 0 }}</span>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -223,8 +231,8 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal">
         <div class="modal-header">
-          <h3>Buat Work Order Baru</h3>
-          <button class="btn-close" @click="showModal = false">✕</button>
+          <h3 class="modal-title">Buat Work Order Baru</h3>
+          <button type="button" class="btn-modal-close" @click="showModal = false">✕</button>
         </div>
         <div class="modal-body">
           <div class="form-row">
@@ -268,9 +276,10 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-secondary" @click="showModal = false">Batal</button>
+          <button type="button" class="btn btn-secondary" @click="showModal = false">Batal</button>
           <button
-            class="btn-primary"
+            type="button"
+            class="btn btn-primary"
             :disabled="saving || !form.id_site || !form.tgl_jadwal || !form.deskripsi_tugas"
             @click="submitWo"
           >
@@ -287,20 +296,17 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
-.btn-primary { padding: 8px 18px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-primary:hover:not(:disabled) { background: #1e40af; }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-secondary { padding: 8px 16px; background: #f1f5f9; color: #374151; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-reset { padding: 7px 14px; background: #f1f5f9; border: 1.5px solid #e2e8f0; border-radius: 7px; font-size: 13px; cursor: pointer; color: #475569; }
 
 .summary-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
 .sum-card { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); min-width: 110px; }
 .sum-num { font-size: 26px; font-weight: 700; color: #0f172a; }
 .sum-label { font-size: 12px; color: #64748b; margin-top: 2px; }
-.sum-open .sum-num { color: #2563eb; }
-.sum-in-progress .sum-num { color: #d97706; }
-.sum-completed .sum-num { color: #16a34a; }
-.sum-cancelled .sum-num { color: #94a3b8; }
+/* Kelas dari status_wo: Open, Dispatch, On-Site, Selesai, Ditunda, Dibatalkan */
+.sum-open .sum-num, .sum-dispatch .sum-num { color: #2563eb; }
+.sum-on-site .sum-num, .sum-ditunda .sum-num { color: var(--warning); }
+.sum-selesai .sum-num { color: var(--success); }
+.sum-dibatalkan .sum-num { color: var(--text-muted); }
 
 .filter-bar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
 .search-input { flex: 1; min-width: 200px; padding: 8px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; }
@@ -309,6 +315,7 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
 
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
 .state { padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 14px; }
+.state-error { color: var(--danger); }
 .table { width: 100%; border-collapse: collapse; }
 .table th { padding: 12px 16px; background: #f8fafc; font-size: 12px; font-weight: 600; text-transform: uppercase; color: #64748b; text-align: left; border-bottom: 1px solid #f1f5f9; }
 .table td { padding: 13px 16px; font-size: 13px; color: #1e293b; border-bottom: 1px solid #f8fafc; vertical-align: middle; }
@@ -319,22 +326,11 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
 .sub-text { font-size: 12px; color: #94a3b8; margin-top: 2px; }
 .count-cell { display: flex; gap: 10px; font-size: 12px; color: #64748b; }
 
-.badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-.badge-blue   { background: #eff6ff; color: #2563eb; }
-.badge-yellow { background: #fffbeb; color: #d97706; }
-.badge-green  { background: #f0fdf4; color: #16a34a; }
-.badge-gray   { background: #f1f5f9; color: #64748b; }
-.badge-outline { background: transparent; border: 1px solid #e2e8f0; color: #475569; }
+/* .badge / .badge-* dari main.css */
+.badge-outline { background: transparent; border: 1px solid var(--border); color: #475569; }
 
-
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
-.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px 0; }
-.modal-header h3 { margin: 0; font-size: 17px; color: #0f172a; }
-.btn-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; padding: 4px 8px; border-radius: 6px; }
-.btn-close:hover { background: #f1f5f9; }
-.modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
-.modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid #f1f5f9; }
+/* .modal-overlay / .modal / .modal-header / .modal-footer dari main.css */
+.modal-body { display: flex; flex-direction: column; gap: 14px; }
 .form-row { display: flex; gap: 12px; }
 .form-row .form-group { flex: 1; }
 .form-group { display: flex; flex-direction: column; gap: 5px; }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
+import { confirmDialog, alertDialog, promptDialog, alertError } from '@/composables/useDialog'
 
 const users    = ref<any[]>([])
 const loading  = ref(true)
@@ -9,15 +10,22 @@ const addForm  = ref({ id_pelanggan: 0, email: '', password: '', nama: '' })
 const addError = ref('')
 const addSave  = ref(false)
 const pelList  = ref<any[]>([])
+const loadError = ref('')
+const busyId   = ref<number | null>(null)
 
 onMounted(async () => {
-  const [u, p] = await Promise.all([
-    api.get('/portal/admin/users'),
-    api.get('/master/pelanggan', { params: { limit: 500 } }),
-  ])
-  users.value  = u.data.data
-  pelList.value = p.data.data
-  loading.value = false
+  try {
+    const [u, p] = await Promise.all([
+      api.get('/portal/admin/users'),
+      api.get('/master/pelanggan', { params: { limit: 500 } }),
+    ])
+    users.value  = u.data.data
+    pelList.value = p.data.data
+  } catch (e: any) {
+    loadError.value = e.response?.data?.message || 'Gagal memuat akun portal'
+  } finally {
+    loading.value = false
+  }
 })
 
 async function handleAdd() {
@@ -34,21 +42,50 @@ async function handleAdd() {
 }
 
 async function toggleUser(u: any) {
-  const res = await api.patch(`/portal/admin/users/${u.id_user}/toggle`)
-  u.is_aktif = res.data.data.is_aktif
+  if (busyId.value !== null) return
+  busyId.value = u.id_user
+  try {
+    const res = await api.patch(`/portal/admin/users/${u.id_user}/toggle`)
+    u.is_aktif = res.data.data.is_aktif
+  } catch (e: any) {
+    alertError(e, 'Gagal mengubah status akun')
+  } finally { busyId.value = null }
 }
 
 async function resetPw(u: any) {
-  const pw = prompt(`Reset password untuk ${u.email}:\nMasukkan password baru (min 8 karakter)`)
-  if (!pw || pw.length < 8) { if (pw !== null) alert('Password min 8 karakter'); return }
-  await api.patch(`/portal/admin/users/${u.id_user}/reset-password`, { password: pw })
-  alert('Password berhasil direset')
+  const pw = await promptDialog({
+    title: 'Reset Password',
+    message: `Untuk ${u.email}`,
+    label: 'Password baru',
+    inputType: 'password',
+    validate: v => v.length < 8 ? 'Minimal 8 karakter' : null,
+    confirmLabel: 'Reset',
+    variant: 'warning',
+  })
+  if (!pw) return
+  busyId.value = u.id_user
+  try {
+    await api.patch(`/portal/admin/users/${u.id_user}/reset-password`, { password: pw })
+    await alertDialog({ message: 'Password berhasil direset', variant: 'success' })
+  } catch (e: any) {
+    alertError(e, 'Gagal mereset password')
+  } finally { busyId.value = null }
 }
 
 async function deleteUser(u: any) {
-  if (!confirm(`Hapus akun portal "${u.email}"?\nAksi ini tidak dapat dibatalkan.`)) return
-  await api.delete(`/portal/admin/users/${u.id_user}`)
-  users.value = users.value.filter(x => x.id_user !== u.id_user)
+  if (!(await confirmDialog({
+    title: 'Hapus Akun Portal',
+    message: `Hapus akun portal "${u.email}"?\nAksi ini tidak dapat dibatalkan.`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
+  busyId.value = u.id_user
+  try {
+    await api.delete(`/portal/admin/users/${u.id_user}`)
+    users.value = users.value.filter(x => x.id_user !== u.id_user)
+  } catch (e: any) {
+    alertError(e, 'Gagal menghapus akun')
+  } finally { busyId.value = null }
 }
 
 function fmtDate(d: string | null) {
@@ -64,10 +101,11 @@ function fmtDate(d: string | null) {
         <h2>Akun Portal Pelanggan</h2>
         <p class="sub">Kelola akun login untuk dashboard monitoring pelanggan</p>
       </div>
-      <button class="btn-primary" @click="showAdd = true; addForm = { id_pelanggan: 0, email: '', password: '', nama: '' }; addError = ''">+ Tambah Akun</button>
+      <button type="button" class="btn btn-primary" @click="showAdd = true; addForm = { id_pelanggan: 0, email: '', password: '', nama: '' }; addError = ''">+ Tambah Akun</button>
     </div>
 
     <div v-if="loading" class="loading">Memuat...</div>
+    <div v-else-if="loadError" class="form-error" role="alert">{{ loadError }}</div>
 
     <div class="table-card" v-else>
       <table>
@@ -86,21 +124,21 @@ function fmtDate(d: string | null) {
             <td colspan="6" class="empty">Belum ada akun portal</td>
           </tr>
           <tr v-for="u in users" :key="u.id_user">
-            <td class="fw">{{ u.email }}</td>
+            <td class="fw td-email">{{ u.email }}</td>
             <td class="text-gray">{{ u.nama || '—' }}</td>
             <td>
-              <div class="fw">{{ u.pelanggan?.nama_pelanggan }}</div>
+              <div class="fw">{{ u.pelanggan?.nama_pelanggan || '—' }}</div>
               <div class="text-sm text-gray">{{ u.pelanggan?.kode_pelanggan }}</div>
             </td>
             <td>
-              <span :class="['badge', u.is_aktif ? 'badge-aktif' : 'badge-inaktif']">{{ u.is_aktif ? 'Aktif' : 'Nonaktif' }}</span>
+              <span :class="['badge', u.is_aktif ? 'badge-green' : 'badge-gray']">{{ u.is_aktif ? 'Aktif' : 'Nonaktif' }}</span>
             </td>
             <td class="text-gray text-sm">{{ fmtDate(u.last_login) }}</td>
             <td>
-              <div style="display:flex;gap:6px">
-                <button class="act-btn" @click="toggleUser(u)">{{ u.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
-                <button class="act-btn" @click="resetPw(u)">Reset PW</button>
-                <button class="act-btn act-btn-danger" @click="deleteUser(u)">Hapus</button>
+              <div class="act-group">
+                <button type="button" class="act-btn" :disabled="busyId === u.id_user" @click="toggleUser(u)">{{ u.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
+                <button type="button" class="act-btn" :disabled="busyId === u.id_user" @click="resetPw(u)">Reset PW</button>
+                <button type="button" class="act-btn act-btn-danger" :disabled="busyId === u.id_user" @click="deleteUser(u)">Hapus</button>
               </div>
             </td>
           </tr>
@@ -109,9 +147,9 @@ function fmtDate(d: string | null) {
     </div>
 
     <!-- Modal tambah -->
-    <div v-if="showAdd" class="modal-overlay" @click.self="showAdd = false">
-      <div class="modal">
-        <h3>Tambah Akun Portal</h3>
+    <div v-if="showAdd" class="modal-overlay" @click.self="showAdd = false" @keydown.esc="showAdd = false">
+      <div class="modal" v-focus-trap aria-labelledby="portal-add-title">
+        <h3 id="portal-add-title">Tambah Akun Portal</h3>
         <div class="form-grid">
           <div class="field full">
             <label>Pelanggan <span class="req">*</span></label>
@@ -133,10 +171,10 @@ function fmtDate(d: string | null) {
             <input v-model="addForm.password" type="password" placeholder="Min 8 karakter" />
           </div>
         </div>
-        <p v-if="addError" class="form-error">{{ addError }}</p>
+        <p v-if="addError" class="form-error" role="alert">{{ addError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" @click="showAdd = false">Batal</button>
-          <button class="btn-submit" @click="handleAdd" :disabled="addSave">{{ addSave ? 'Menyimpan...' : 'Buat Akun' }}</button>
+          <button type="button" class="btn-cancel" @click="showAdd = false">Batal</button>
+          <button type="button" class="btn-submit" @click="handleAdd" :disabled="addSave">{{ addSave ? 'Menyimpan...' : 'Buat Akun' }}</button>
         </div>
       </div>
     </div>
@@ -144,11 +182,10 @@ function fmtDate(d: string | null) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1000px; }
+.page { max-width: 1000px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .loading { color: #94a3b8; padding: 40px; text-align: center; }
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
 table { width: 100%; border-collapse: collapse; }
@@ -159,16 +196,18 @@ td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .fw { font-weight: 600; }
 .text-sm { font-size: 12px; }
 .text-gray { color: #64748b; }
-.badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
-.badge-aktif  { background: #f0fdf4; color: #15803d; }
-.badge-inaktif{ background: #f8fafc; color: #94a3b8; }
+.td-email { overflow-wrap: anywhere; }
+.act-group { display: flex; gap: 6px; flex-wrap: nowrap; }
 .act-btn { padding: 5px 10px; background: #f1f5f9; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; color: #374151; }
 .act-btn:hover { background: #e2e8f0; }
 .act-btn-danger { color: #dc2626; }
 .act-btn-danger:hover { background: #fee2e2; }
+.act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.act-btn { white-space: nowrap; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+/* .modal-overlay pakai global (z-index 200, blur). Padding lokal tetap. */
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 480px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+@media (max-width: 768px) { .modal { padding: 20px 18px; } }
 .modal h3 { margin: 0 0 18px; font-size: 18px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }

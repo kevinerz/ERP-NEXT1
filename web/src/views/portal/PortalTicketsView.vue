@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import portalApi from '@/services/portalApi'
-import { statusLabel } from '@/composables/useFormat'
+import { statusLabel, fmtDateTime } from '@/composables/useFormat'
 
 const TICKET_LIMIT = 200
 
@@ -94,10 +94,7 @@ async function submitTicket() {
   } finally { saving.value = false }
 }
 
-function fmtDate(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
+const fmtDate = fmtDateTime
 
 function statusBadge(s: string): { bg: string; fg: string } {
   if (s === 'Open')        return { bg: '#fef9ec', fg: '#b45309' }
@@ -154,7 +151,7 @@ function waktuSelesai(t: any): string | null {
         <div class="eyebrow">TIKET SUPPORT</div>
         <h1 class="pg-title">Riwayat &amp; Permintaan Bantuan</h1>
       </div>
-      <button class="btn-create" @click="showForm = true">+ Buat Tiket</button>
+      <button type="button" class="btn-create" @click="showForm = true">+ Buat Tiket</button>
     </div>
 
     <!-- KPI strip -->
@@ -203,7 +200,7 @@ function waktuSelesai(t: any): string | null {
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input v-model="search" class="search-inp" placeholder="Cari nomor, judul, atau site…" />
-          <button v-if="search" class="search-clear" @click="search = ''">✕</button>
+          <button v-if="search" type="button" class="search-clear" aria-label="Hapus pencarian" @click="search = ''">✕</button>
         </div>
         <select v-model="filterSite" class="site-sel">
           <option :value="0">Semua Site</option>
@@ -275,7 +272,7 @@ function waktuSelesai(t: any): string | null {
             <div class="eyebrow" style="color:#1A56DB">{{ detail.nomor_tiket }}</div>
             <div class="modal-title">{{ detail.judul_tiket ?? detail.judul }}</div>
           </div>
-          <button class="modal-close" @click="detail = null">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="detail = null">✕</button>
         </div>
 
         <!-- Meta strip -->
@@ -371,7 +368,7 @@ function waktuSelesai(t: any): string | null {
             <div class="eyebrow" style="color:#1A56DB">PERMINTAAN BARU</div>
             <div class="modal-title">Buat Tiket Support</div>
           </div>
-          <button class="modal-close" @click="showForm = false; formErr = ''">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="showForm = false; formErr = ''">✕</button>
         </div>
 
         <div class="form-stack">
@@ -395,8 +392,8 @@ function waktuSelesai(t: any): string | null {
         </div>
 
         <div class="modal-foot">
-          <button class="btn-cancel" @click="showForm = false; formErr = ''">Batal</button>
-          <button class="btn-submit" @click="submitTicket" :disabled="saving">
+          <button type="button" class="btn-cancel" @click="showForm = false; formErr = ''">Batal</button>
+          <button type="button" class="btn-submit" @click="submitTicket" :disabled="saving">
             {{ saving ? 'Mengirim…' : 'Kirim Tiket' }}
           </button>
         </div>
@@ -407,7 +404,6 @@ function waktuSelesai(t: any): string | null {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 .pg { font-family: 'Inter', system-ui, sans-serif; padding: 28px 32px; max-width: 1060px; background: #f8fafc; box-sizing: border-box; }
 
@@ -468,7 +464,7 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; white-space: nowrap; line-height: 1.5; }
 
 /* Overlay */
-.overlay { position: fixed; inset: 0; background: rgba(11,29,53,.55); display: flex; align-items: center; justify-content: center; z-index: 300; }
+.overlay { position: fixed; inset: 0; background: rgba(11,29,53,.55); display: flex; align-items: center; justify-content: center; z-index: 1100; padding: 16px; }
 
 /* Modal */
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 560px; max-width: 95vw; max-height: 86vh; overflow-y: auto; box-shadow: 0 24px 64px rgba(0,0,0,.2); }
@@ -543,4 +539,25 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .btn-submit { padding: 10px 26px; background: #0B1D35; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .btn-submit:hover { background: #162d52; }
 .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+.btn-submit:disabled:hover { background: #0B1D35; }
+
+.tbl-card { overflow-x: auto; }
+.tbl { min-width: 720px; }
+.meta-val, .dt-val, .log-body { overflow-wrap: anywhere; }
+
+@media (max-width: 768px) {
+  .pg { padding: 16px; }
+  .pg-head { flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+  .pg-title { font-size: 18px; }
+  .kpi-strip { flex-wrap: wrap; padding: 14px 16px; row-gap: 12px; }
+  .kpi { flex: 1 1 40%; padding: 0; }
+  .kpi-div { display: none; }
+  .kpi-n { font-size: 24px; }
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tab { white-space: nowrap; flex-shrink: 0; }
+  .filter-row { flex-direction: column; align-items: stretch; }
+  .site-sel { min-width: 0; width: 100%; }
+  .modal { padding: 20px 18px; }
+  .meta-strip, .downtime-grid { grid-template-columns: 1fr; }
+}
 </style>

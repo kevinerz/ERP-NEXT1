@@ -214,14 +214,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mtk-page">
+  <div class="page mtk-page">
     <!-- Header -->
-    <div class="mtk-header">
+    <div class="page-header mtk-header">
       <div>
         <h2 class="mtk-title">🔌 Remote Mikrotik</h2>
         <p class="mtk-sub">Konfigurasi massal perangkat Mikrotik via SSH</p>
       </div>
-      <button class="btn-cfg" @click="showConfig = !showConfig">⚙ Kredensial</button>
+      <button type="button" class="btn btn-secondary" :class="{ 'btn-cfg-active': showConfig }" @click="showConfig = !showConfig">⚙ Kredensial</button>
     </div>
 
     <!-- Config panel -->
@@ -235,12 +235,12 @@ onMounted(() => {
           <label>SSH Password {{ cfgHasPass ? '(sudah diset)' : '' }}</label>
           <input v-model="cfgPass" type="password" :placeholder="cfgHasPass ? '••••••••' : 'password'" class="inp" />
         </div>
-        <div class="field" style="max-width:120px">
+        <div class="field field-port">
           <label>API Port</label>
           <input v-model.number="cfgPort" type="number" class="inp" />
         </div>
-        <div class="field" style="align-self:flex-end">
-          <button class="btn-save" @click="saveConfig" :disabled="cfgSaving">
+        <div class="field field-action">
+          <button type="button" class="btn btn-primary" @click="saveConfig" :disabled="cfgSaving">
             {{ cfgSaving ? 'Menyimpan...' : 'Simpan' }}
           </button>
         </div>
@@ -263,9 +263,12 @@ onMounted(() => {
 
         <div v-if="loadingDevices" class="dp-empty">Memuat perangkat...</div>
         <div v-else-if="devError" class="dp-empty dp-err">{{ devError }}</div>
-        <div v-else-if="!filteredDevices.length" class="dp-empty">
+        <div v-else-if="!devices.length" class="dp-empty">
           Tidak ada perangkat Mikrotik terdaftar.<br/>
           <small>Tambahkan perangkat dengan jenis 'Mikrotik' atau 'Router' di Master Site.</small>
+        </div>
+        <div v-else-if="!filteredDevices.length" class="dp-empty">
+          Tidak ada perangkat yang cocok dengan "{{ search }}".
         </div>
         <template v-else>
           <div class="dp-select-all" @click="toggleAll">
@@ -305,6 +308,7 @@ onMounted(() => {
           <button
             v-for="q in quickCmds"
             :key="q.cmd"
+            type="button"
             class="quick-btn"
             :class="{ active: command === q.cmd }"
             @click="command = q.cmd"
@@ -322,14 +326,15 @@ onMounted(() => {
           ></textarea>
           <div class="cmd-actions">
             <button
+              type="button"
               class="btn-run"
               @click="requestRun"
               :disabled="running || confirmRun || !selected.size || !command.trim()"
             >
               <span v-if="running">⏳ Menjalankan...</span>
-              <span v-else>▶ Jalankan ({{ selected.size }} device)</span>
+              <span v-else>▶ Jalankan ({{ selected.size }} perangkat)</span>
             </button>
-            <button class="btn-clear" @click="results = []" v-if="results.length">✕ Clear</button>
+            <button type="button" class="btn-clear" @click="results = []" v-if="results.length && !running">✕ Bersihkan</button>
           </div>
           <div v-if="confirmRun" class="run-confirm" role="alertdialog" aria-label="Konfirmasi command">
             <div class="run-confirm-title">⚠ Command ini dapat mengubah konfigurasi router</div>
@@ -338,8 +343,8 @@ onMounted(() => {
             </div>
             <pre class="run-confirm-cmd">{{ command.trim() }}</pre>
             <div class="run-confirm-actions">
-              <button class="btn-clear" @click="confirmRun = false">Batal</button>
-              <button class="btn-run btn-run-danger" @click="runCommand">Ya, jalankan di {{ selected.size }} router</button>
+              <button type="button" class="btn-clear" @click="confirmRun = false">Batal</button>
+              <button type="button" class="btn-run btn-run-danger" :disabled="running" @click="runCommand">Ya, jalankan di {{ selected.size }} router</button>
             </div>
           </div>
         </div>
@@ -350,16 +355,16 @@ onMounted(() => {
             HASIL
             <span class="res-ok">{{ results.filter(r => r.success).length }} OK</span>
             <span class="res-err" v-if="results.filter(r => !r.success).length">
-              {{ results.filter(r => !r.success).length }} Error
+              {{ results.filter(r => !r.success).length }} Gagal
             </span>
           </div>
           <div v-for="r in results" :key="r.ip" :class="['res-card', r.success ? 'res-ok-card' : 'res-err-card']">
             <div class="res-top">
               <span class="res-ip">{{ deviceName(r.ip) }}</span>
               <span :class="['res-status', r.success ? 'st-ok' : 'st-err']">
-                {{ r.success ? '✓ OK' : '✗ Error' }}
+                {{ r.success ? '✓ OK' : '✗ Gagal' }}
               </span>
-              <span class="res-dur">{{ r.duration }}ms</span>
+              <span class="res-dur">{{ (r.duration || 0).toLocaleString('id-ID') }} ms</span>
             </div>
             <pre v-if="r.success && r.output" class="res-output">{{ r.output.trim() }}</pre>
             <div v-if="!r.success" class="res-errmsg">{{ r.error }}</div>
@@ -370,7 +375,7 @@ onMounted(() => {
           Pilih perangkat di sebelah kiri, lalu jalankan command
         </div>
         <div v-else-if="!running && selected.size && !results.length" class="cmd-hint">
-          {{ selected.size }} device dipilih · klik Jalankan
+          {{ selected.size }} perangkat dipilih · klik Jalankan
         </div>
       </div>
     </div>
@@ -378,35 +383,18 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.mtk-page {
-  padding: 24px 28px;
-  max-width: 1400px;
-}
-
 /* Header */
-.mtk-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.mtk-title { font-size: 1.2rem; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
-.mtk-sub   { font-size: 13px; color: #64748b; margin: 0; }
-.btn-cfg {
-  padding: 8px 16px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 13px; font-weight: 600; color: #475569;
-  cursor: pointer; white-space: nowrap;
-}
-.btn-cfg:hover { background: #e2e8f0; }
+.mtk-header { margin-bottom: 16px; }
+.mtk-title { font-size: 22px; font-weight: 700; color: var(--text-1); margin: 0 0 4px; }
+.mtk-sub   { font-size: 13px; color: var(--text-3); margin: 0; }
+.btn-cfg-active { background: var(--primary-light); border-color: var(--primary-border); color: var(--primary); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* Config panel */
 .cfg-panel {
   background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
   padding: 16px 20px;
   margin-bottom: 16px;
 }
@@ -417,32 +405,23 @@ onMounted(() => {
   align-items: flex-end;
 }
 .field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 160px; }
-.field label { font-size: 12px; font-weight: 600; color: #64748b; }
+.field-port { flex: 0 0 120px; min-width: 110px; }
+.field-action { flex: 0 0 auto; min-width: 0; }
+.field label { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
 .inp {
   padding: 8px 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
   font-size: 13.5px;
-  color: #0f172a;
-  background: #fff;
+  color: var(--text-1);
+  background: var(--surface);
   outline: none;
+  font-family: inherit;
 }
-.inp:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
-.btn-save {
-  padding: 9px 20px;
-  background: #1d4ed8;
-  color: #fff;
-  border: none;
-  border-radius: 7px;
-  font-size: 13px; font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn-save:hover:not(:disabled) { background: #1e40af; }
+.inp:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
 .cfg-msg { font-size: 12.5px; margin-top: 8px; font-weight: 600; }
-.cfg-ok  { color: #16a34a; }
-.cfg-err { color: #dc2626; }
+.cfg-ok  { color: var(--success); }
+.cfg-err { color: var(--danger); }
 
 /* Main layout */
 .mtk-main {
@@ -454,9 +433,9 @@ onMounted(() => {
 
 /* Device panel */
 .device-panel {
-  background: #fff;
-  border: 1px solid #e8edf5;
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -543,10 +522,11 @@ onMounted(() => {
 }
 
 .dev-info { flex: 1; min-width: 0; }
-.dev-ip { font-weight: 700; color: #1d4ed8; font-family: monospace; font-size: 13px; }
-.dev-site { font-size: 12.5px; color: #0f172a; margin-top: 1px; }
-.dev-pelanggan { font-size: 11.5px; color: #94a3b8; }
-.dev-model { font-size: 11.5px; color: #64748b; }
+.dev-ip { font-weight: 700; color: var(--primary); font-family: monospace; font-size: 13px; }
+.dev-site, .dev-pelanggan, .dev-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-site { font-size: 12.5px; color: var(--text-1); margin-top: 1px; }
+.dev-pelanggan { font-size: 11.5px; color: var(--text-muted); }
+.dev-model { font-size: 11.5px; color: var(--text-3); }
 
 /* Command panel */
 .cmd-panel {
@@ -572,9 +552,9 @@ onMounted(() => {
 .quick-btn.active { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
 
 .cmd-box {
-  background: #fff;
-  border: 1px solid #e8edf5;
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
   padding: 14px 16px;
 }
 .cmd-label {
@@ -679,9 +659,9 @@ onMounted(() => {
 .res-err { color: #dc2626; font-weight: 800; }
 
 .res-card {
-  background: #fff;
-  border: 1px solid #e8edf5;
-  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
   overflow: hidden;
 }
 .res-ok-card  { border-left: 3px solid #22c55e; }
@@ -694,8 +674,9 @@ onMounted(() => {
   padding: 10px 14px;
   border-bottom: 1px solid #f1f5f9;
 }
-.res-ip { font-weight: 700; color: #0f172a; font-size: 13.5px; flex: 1; }
-.res-status { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+.res-ip { font-weight: 700; color: var(--text-1); font-size: 13.5px; flex: 1; min-width: 0; word-break: break-word; }
+.res-status { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.res-dur { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .st-ok  { background: #f0fdf4; color: #15803d; }
 .st-err { background: #fef2f2; color: #dc2626; }
 .res-dur { font-size: 11px; color: #94a3b8; }
@@ -720,8 +701,14 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
-  .mtk-page { padding: 16px; }
   .mtk-main { grid-template-columns: 1fr; }
+  .field, .field-port { flex: 1 1 100%; }
+  .field-action .btn { width: 100%; }
+  .res-top { flex-wrap: wrap; }
+  .res-ip { flex-basis: 100%; }
+  .inp, .cmd-ta { font-size: 16px; }
+  .run-confirm-actions { flex-direction: column-reverse; }
+  .run-confirm-actions .btn-run, .run-confirm-actions .btn-clear { width: 100%; }
   .device-panel { max-height: 300px; }
   .dp-list { max-height: 200px; }
 }

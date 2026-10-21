@@ -160,7 +160,7 @@ export const useMasterStore = defineStore('master', {
     async toggleLayanan(id: number) {
       const { data } = await api.patch(`/master/layanan/${id}/toggle`)
       const idx = this.layananList.findIndex((l) => l.id_layanan === id)
-      if (idx >= 0) this.layananList[idx].is_aktif = data.data.is_aktif
+      if (idx >= 0) this.layananList[idx]!.is_aktif = data.data.is_aktif
       return data.data
     },
 
@@ -192,7 +192,7 @@ export const useMasterStore = defineStore('master', {
     async toggleVendor(id: number) {
       const { data } = await api.patch(`/master/vendor/${id}/toggle`)
       const idx = this.vendorList.findIndex((v) => v.id_vendor === id)
-      if (idx >= 0) this.vendorList[idx].is_aktif = data.data.is_aktif
+      if (idx >= 0) this.vendorList[idx]!.is_aktif = data.data.is_aktif
       return data.data
     },
 

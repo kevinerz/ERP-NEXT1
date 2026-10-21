@@ -89,7 +89,7 @@ async function handleSubmit() {
 
 function slaInfo(t: any): { label: string; cls: string } {
   if (['Resolved', 'Closed'].includes(t.status_tiket)) {
-    return t.sla_breached ? { label: 'TELAT', cls: 'sla-late-done' } : { label: '✓ On Time', cls: 'sla-ok' }
+    return t.sla_breached ? { label: 'TELAT', cls: 'sla-late-done' } : { label: '✓ Tepat Waktu', cls: 'sla-ok' }
   }
   if (!t.sla_due) return { label: '—', cls: 'sla-none' }
   const sisaMs = new Date(t.sla_due).getTime() - Date.now()
@@ -119,8 +119,8 @@ function rowClass(t: any) {
         <h2>Gangguan & Tiket</h2>
         <p class="sub">Monitor real-time · Helpdesk · NOC</p>
       </div>
-      <button class="btn-new" @click="showModal = true; formError = ''">
-        <span>+</span> Buat Tiket
+      <button type="button" class="btn btn-primary btn-new" @click="showModal = true; formError = ''">
+        <span class="btn-plus">+</span> Buat Tiket
       </button>
     </div>
 
@@ -149,6 +149,7 @@ function rowClass(t: any) {
       <div class="chip-group">
         <button
           v-for="s in STATUS_LIST" :key="s"
+          type="button"
           class="chip"
           :class="{ 'chip-active': filterStatus === s }"
           :style="filterStatus === s ? { background: STATUS_CFG[s]?.bg, color: STATUS_CFG[s]?.color, borderColor: STATUS_CFG[s]?.border } : {}"
@@ -157,26 +158,27 @@ function rowClass(t: any) {
       </div>
 
       <div class="right-filters">
-        <select v-model="filterPrioritas" @change="doFilter" class="fsel">
+        <select v-model="filterPrioritas" @change="doFilter" class="filter-select">
           <option value="">Semua Prioritas</option>
           <option v-for="p in PRIORITAS_LIST" :key="p" :value="p">{{ p }}</option>
         </select>
-        <select v-model="filterSumber" @change="doFilter" class="fsel">
+        <select v-model="filterSumber" @change="doFilter" class="filter-select">
           <option value="">Semua Sumber</option>
           <option v-for="src in SUMBER_LIST" :key="src" :value="src">{{ src }}</option>
         </select>
-        <button v-if="filterStatus || filterPrioritas || filterSumber || search" class="btn-reset" @click="filterStatus='';filterPrioritas='';filterSumber='';search='';doFilter()">✕ Reset</button>
+        <button v-if="filterStatus || filterPrioritas || filterSumber || search" type="button" class="btn-reset" @click="filterStatus='';filterPrioritas='';filterSumber='';search='';doFilter()">✕ Reset</button>
       </div>
     </div>
 
-    <div v-if="ops.error" class="alert-err">{{ ops.error }}</div>
+    <div v-if="ops.error" class="alert alert-danger alert-err">{{ ops.error }}</div>
 
     <!-- Table -->
-    <div class="table-wrap">
+    <div class="table-card">
       <div v-if="ops.loading" class="loading-state">
         <span class="spinner"></span> Memuat tiket…
       </div>
-      <table v-else>
+      <div v-else class="table-wrap">
+      <table class="tiket-table">
         <thead>
           <tr>
             <th style="width:140px">No. Tiket</th>
@@ -242,6 +244,7 @@ function rowClass(t: any) {
           </tr>
         </tbody>
       </table>
+      </div>
 
       <div class="table-foot">
         <BasePagination :page="page" :total-pages="ops.meta.total_pages" @change="goPage" />
@@ -250,35 +253,36 @@ function rowClass(t: any) {
     </div>
 
     <!-- Modal Buat Tiket -->
-    <div v-if="showModal" class="overlay" @click.self="showModal = false">
+    <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal">
-        <div class="modal-hdr">
-          <h3>Buat Tiket Baru</h3>
-          <button class="close-btn" @click="showModal = false">✕</button>
+        <div class="modal-header">
+          <h3 class="modal-title">Buat Tiket Baru</h3>
+          <button type="button" class="btn-modal-close" @click="showModal = false">✕</button>
         </div>
+        <div class="modal-body">
         <div class="form-grid">
-          <div class="field full">
-            <label>Site <span class="req">*</span></label>
-            <select v-model="form.id_site">
+          <div class="form-group full">
+            <label class="form-label form-required">Site</label>
+            <select v-model="form.id_site" class="form-select">
               <option :value="0">— Pilih Site —</option>
               <option v-for="s in proyek.siteList" :key="s.id_site" :value="s.id_site">
                 [{{ s.kode_site }}] {{ s.nama_site }} — {{ s.pelanggan?.nama_pelanggan }}
               </option>
             </select>
           </div>
-          <div class="field full">
-            <label>Judul Tiket <span class="req">*</span></label>
-            <input v-model="form.judul_tiket" placeholder="Link down, lambat, gangguan..." />
+          <div class="form-group full">
+            <label class="form-label form-required">Judul Tiket</label>
+            <input v-model="form.judul_tiket" class="form-input" placeholder="Link down, lambat, gangguan..." />
           </div>
-          <div class="field">
-            <label>Prioritas</label>
-            <select v-model="form.prioritas">
+          <div class="form-group">
+            <label class="form-label">Prioritas</label>
+            <select v-model="form.prioritas" class="form-select">
               <option v-for="p in PRIORITAS_LIST" :key="p" :value="p">{{ p }}</option>
             </select>
           </div>
-          <div class="field">
-            <label>Sumber</label>
-            <select v-model="form.sumber_tiket">
+          <div class="form-group">
+            <label class="form-label">Sumber</label>
+            <select v-model="form.sumber_tiket" class="form-select">
               <option value="Internal">Internal</option>
               <option value="Email">Email</option>
               <option value="WhatsApp">WhatsApp</option>
@@ -286,22 +290,23 @@ function rowClass(t: any) {
               <option value="PRTG">PRTG</option>
             </select>
           </div>
-          <div class="field full">
-            <label>Assign Teknisi</label>
-            <select v-model="form.id_teknisi_pic">
+          <div class="form-group full">
+            <label class="form-label">Teknisi PIC</label>
+            <select v-model="form.id_teknisi_pic" class="form-select">
               <option :value="0">— Belum di-assign —</option>
               <option v-for="tek in ops.teknisiList" :key="tek.id_karyawan" :value="tek.id_karyawan">{{ tek.nama_lengkap }}</option>
             </select>
           </div>
-          <div class="field full">
-            <label>Deskripsi Masalah</label>
-            <textarea v-model="form.deskripsi_masalah" rows="3" placeholder="Detail gejala / keluhan pelanggan..."></textarea>
+          <div class="form-group full">
+            <label class="form-label">Deskripsi Masalah</label>
+            <textarea v-model="form.deskripsi_masalah" class="form-textarea" rows="3" placeholder="Detail gejala / keluhan pelanggan..."></textarea>
           </div>
         </div>
-        <p v-if="formError" class="form-err">{{ formError }}</p>
-        <div class="modal-foot">
-          <button class="btn-cancel" @click="showModal = false">Batal</button>
-          <button class="btn-submit" @click="handleSubmit" :disabled="submitting">
+        <div v-if="formError" class="alert alert-danger form-err">{{ formError }}</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showModal = false">Batal</button>
+          <button type="button" class="btn btn-primary" @click="handleSubmit" :disabled="submitting">
             {{ submitting ? 'Membuat…' : 'Buat Tiket' }}
           </button>
         </div>
@@ -312,23 +317,13 @@ function rowClass(t: any) {
 
 <style scoped>
 /* ─── Page ─────────────────────────────────────────────────── */
-.page { padding: 24px 28px; max-width: 1300px; }
+.page-header { margin-bottom: 20px; }
+.page-header h2 { margin: 0 0 2px; font-size: 24px; font-weight: 800; color: var(--text-1); letter-spacing: -0.5px; }
+.sub { margin: 0; font-size: 12.5px; color: var(--text-3); font-weight: 500; }
 
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 2px; font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px; }
-.sub { margin: 0; font-size: 12.5px; color: #64748b; font-weight: 500; }
-
-.btn-new {
-  display: flex; align-items: center; gap: 6px;
-  padding: 10px 20px;
-  background: linear-gradient(135deg, #1e40af, #2563eb);
-  color: #fff; border: none; border-radius: 10px;
-  font-size: 14px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 2px 8px #3b82f640;
-  transition: transform .12s, box-shadow .12s;
-}
-.btn-new:hover { transform: translateY(-1px); box-shadow: 0 4px 16px #3b82f650; }
-.btn-new span { font-size: 18px; line-height: 1; }
+.btn-new { padding: 10px 20px; font-size: 14px; }
+.btn-plus { font-size: 18px; line-height: 1; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* ─── Summary tiles ─────────────────────────────────────────── */
 .summary-grid { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -359,8 +354,9 @@ function rowClass(t: any) {
 
 .search-wrap { position: relative; flex: 1; min-width: 220px; max-width: 320px; }
 .search-ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: #94a3b8; }
-.search-inp { width: 100%; padding: 9px 12px 9px 34px; border: 1.5px solid #e2e8f0; border-radius: 9px; font-size: 14px; outline: none; box-sizing: border-box; background: #fff; }
-.search-inp:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px #3b82f620; }
+.search-inp { width: 100%; height: 36px; padding: 0 12px 0 34px; border: 1px solid var(--border); border-radius: var(--r); font-size: 13.5px; color: var(--text-2); outline: none; box-sizing: border-box; background: var(--surface); }
+.search-inp::placeholder { color: var(--text-muted); }
+.search-inp:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
 
 .chip-group { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { padding: 6px 13px; border: 1.5px solid #e2e8f0; border-radius: 20px; font-size: 12.5px; font-weight: 600; cursor: pointer; background: #f8fafc; color: #475569; transition: all .12s; white-space: nowrap; }
@@ -368,23 +364,21 @@ function rowClass(t: any) {
 .chip-active { font-weight: 700; }
 
 .right-filters { display: flex; gap: 8px; align-items: center; margin-left: auto; }
-.fsel { padding: 8px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; outline: none; background: #fff; cursor: pointer; }
-.fsel:focus { border-color: #3b82f6; }
-.btn-reset { padding: 7px 12px; background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.filter-select { cursor: pointer; }
+.btn-reset { height: 36px; padding: 0 12px; background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .btn-reset:hover { background: #fee2e2; }
 
 /* ─── Table ─────────────────────────────────────────────────── */
-.alert-err { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.alert-err { margin-bottom: 12px; }
 
-.table-wrap { background: #fff; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,0.08); overflow: hidden; border: 1px solid #e2e8f0; }
-
-.loading-state { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px; color: #94a3b8; font-size: 14px; }
-.spinner { width: 18px; height: 18px; border: 2px solid #e2e8f0; border-top-color: #3b82f6; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+.loading-state { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--primary-hover); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-table { width: 100%; border-collapse: collapse; }
-thead tr { background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
-th { padding: 11px 13px; font-size: 11px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap; }
+.tiket-table { width: 100%; border-collapse: collapse; }
+@media (max-width: 1024px) { .tiket-table { min-width: 960px; } }
+thead tr { background: #f8fafc; border-bottom: 1px solid var(--border); }
+th { padding: 11px 13px; font-size: 11px; font-weight: 700; color: var(--text-3); text-align: left; text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap; }
 
 .trow { cursor: pointer; border-bottom: 1px solid #f1f5f9; transition: background .12s; }
 .trow:last-child { border-bottom: none; }
@@ -442,27 +436,18 @@ td { padding: 11px 13px; font-size: 13.5px; color: #0f172a; vertical-align: midd
 .total-label { font-size: 12px; color: #94a3b8; }
 
 /* ─── Modal ─────────────────────────────────────────────────── */
-.overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; backdrop-filter: blur(2px); }
-.modal { background: #fff; border-radius: 16px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 64px rgba(0,0,0,0.25); }
+.modal-title { margin: 0; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-group.full { grid-column: 1 / -1; }
+.form-err { margin-top: 14px; }
 
-.modal-hdr { display: flex; justify-content: space-between; align-items: center; padding: 22px 28px 0; }
-.modal-hdr h3 { margin: 0; font-size: 18px; font-weight: 800; color: #0f172a; }
-.close-btn { background: none; border: none; font-size: 18px; color: #94a3b8; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
-.close-btn:hover { background: #f1f5f9; color: #475569; }
-
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 20px 28px; }
-.field { display: flex; flex-direction: column; gap: 6px; }
-.field.full { grid-column: 1 / -1; }
-.field label { font-size: 12.5px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.4px; }
-.req { color: #ef4444; }
-.field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; transition: border-color .12s; }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; box-shadow: 0 0 0 3px #3b82f615; }
-
-.form-err { margin: 0 28px 4px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 9px 13px; }
-.modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 28px 22px; border-top: 1px solid #f1f5f9; }
-.btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
-.btn-cancel:hover { background: #e2e8f0; }
-.btn-submit { padding: 9px 24px; background: linear-gradient(135deg, #1e40af, #2563eb); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px #3b82f640; }
-.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-submit:hover:not(:disabled) { background: linear-gradient(135deg, #1e3a8a, #1d4ed8); }
+/* ─── Mobile ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .summary-tile { max-width: none; min-width: calc(50% - 5px); }
+  .search-wrap { max-width: none; min-width: 100%; }
+  .search-inp { height: 42px; font-size: 16px; }
+  .right-filters { margin-left: 0; width: 100%; flex-wrap: wrap; }
+  .right-filters .filter-select { flex: 1; min-width: 140px; }
+  .table-foot { flex-wrap: wrap; gap: 8px; }
+}
 </style>

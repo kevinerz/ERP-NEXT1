@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import api from '@/services/api'
+import { fmtDateShort } from '@/composables/useFormat'
+import BasePagination from '@/components/BasePagination.vue'
 
 interface Layanan { id_layanan: number; kode_layanan: string; nama_layanan: string }
 
@@ -188,23 +190,21 @@ function searchDebounced() {
 }
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.limit)))
+function goPage(p: number) { filters.page = p; fetchSurveys() }
 
 function badgeOdp(s: string) {
-  return { Tersedia: 'badge-green', Penuh: 'badge-red', Tidak_Ada_Coverage: 'badge-gray', Belum_Survey: 'badge-yellow' }[s] ?? 'badge-gray'
+  return { Tersedia: 'badge-green', Penuh: 'badge-red', Tidak_Ada_Coverage: 'badge-gray', Belum_Survey: 'badge-amber' }[s] ?? 'badge-gray'
 }
 function badgeOrder(s: string) {
-  return { Selesai: 'badge-green', Gagal: 'badge-red', Proses: 'badge-blue', Submitted: 'badge-yellow', Belum_Order: 'badge-gray' }[s] ?? 'badge-gray'
+  return { Selesai: 'badge-green', Gagal: 'badge-red', Proses: 'badge-blue', Submitted: 'badge-amber', Belum_Order: 'badge-gray' }[s] ?? 'badge-gray'
 }
 function badgePresales(s: string) {
-  return { Provisioned: 'badge-green', Cancelled: 'badge-red', Ordered: 'badge-blue', Survey_Done: 'badge-yellow', Draft: 'badge-gray' }[s] ?? 'badge-gray'
+  return { Provisioned: 'badge-green', Cancelled: 'badge-red', Ordered: 'badge-blue', Survey_Done: 'badge-amber', Draft: 'badge-gray' }[s] ?? 'badge-gray'
 }
 function labelPresales(s: string) {
   return { Draft: 'Draft', Survey_Done: 'Survey ✓', Ordered: 'Ordered', Provisioned: 'Provisioned', Cancelled: 'Batal' }[s] ?? s
 }
-function fmtDate(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
+const fmtDate = fmtDateShort
 function prospecName(s: Survey) {
   if (s.opportunity) return s.opportunity.lead?.nama_perusahaan || s.opportunity.lead?.nama_prospek || s.nama_prospek || '—'
   return s.nama_prospek || '—'
@@ -212,13 +212,13 @@ function prospecName(s: Survey) {
 </script>
 
 <template>
-  <div class="ps-page">
-    <div class="ps-header">
+  <div class="page">
+    <div class="page-header ps-header">
       <div class="ps-title-block">
         <h1>Pre-Sales Survey</h1>
         <span class="ps-count">{{ total }} survey</span>
       </div>
-      <button class="btn-primary" @click="openCreate">+ Tambah Survey</button>
+      <button type="button" class="btn-primary" @click="openCreate">+ Tambah Survey</button>
     </div>
 
     <!-- Filter bar -->
@@ -267,7 +267,7 @@ function prospecName(s: Survey) {
             <th>Status Order</th>
             <th>Tgl Survey</th>
             <th>Status</th>
-            <th>Pic</th>
+            <th>PIC</th>
             <th></th>
           </tr>
         </thead>
@@ -291,7 +291,7 @@ function prospecName(s: Survey) {
             <td><span class="badge" :class="badgePresales(s.status_presales)">{{ labelPresales(s.status_presales) }}</span></td>
             <td>{{ s.presales_pic?.nama_lengkap || '—' }}</td>
             <td class="td-action" @click.stop>
-              <button class="btn-del" @click="confirmDel = s.id_survey" title="Hapus">✕</button>
+              <button type="button" class="btn-del" @click="confirmDel = s.id_survey" title="Hapus" aria-label="Hapus survey">✕</button>
             </td>
           </tr>
         </tbody>
@@ -299,11 +299,7 @@ function prospecName(s: Survey) {
     </div>
 
     <!-- Pagination -->
-    <div v-if="totalPages > 1" class="ps-pagination">
-      <button :disabled="filters.page <= 1" @click="filters.page--; fetchSurveys()">‹ Prev</button>
-      <span>{{ filters.page }} / {{ totalPages }}</span>
-      <button :disabled="filters.page >= totalPages" @click="filters.page++; fetchSurveys()">Next ›</button>
-    </div>
+    <BasePagination :page="filters.page" :total-pages="totalPages" @change="goPage" />
 
     <!-- Modal Create/Edit -->
     <Teleport to="body">
@@ -311,7 +307,7 @@ function prospecName(s: Survey) {
         <div class="modal-box">
           <div class="modal-head">
             <h2>{{ editId ? 'Edit Survey' : 'Tambah Survey' }}</h2>
-            <button class="modal-close" @click="showModal = false">✕</button>
+            <button type="button" class="modal-close" aria-label="Tutup" @click="showModal = false">✕</button>
           </div>
 
           <form class="modal-form" @submit.prevent="save">
@@ -461,9 +457,7 @@ function prospecName(s: Survey) {
 <style scoped>
 .save-error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 10px; }
 
-.ps-page { padding: 24px 28px; }
-
-.ps-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.ps-header { align-items: center; margin-bottom: 18px; }
 .ps-title-block { display: flex; align-items: baseline; gap: 10px; }
 .ps-title-block h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin: 0; }
 .ps-count { font-size: 13px; color: #64748b; }
@@ -483,7 +477,7 @@ function prospecName(s: Survey) {
 .ps-pipeline { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .pipe-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; transition: opacity .15s; user-select: none; }
 
-.ps-table-wrap { overflow-x: auto; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+.ps-table-wrap { overflow-x: auto; border-radius: var(--r-lg); border: 1px solid var(--border); box-shadow: var(--shadow-sm); background: var(--surface); }
 .ps-table { width: 100%; border-collapse: collapse; font-size: 13.5px; background: #fff; }
 .ps-table thead { background: #f8fafc; }
 .ps-table thead th {
@@ -505,19 +499,8 @@ function prospecName(s: Survey) {
 .btn-del { background: none; border: none; cursor: pointer; color: #94a3b8; font-size: 14px; padding: 4px 6px; border-radius: 6px; }
 .btn-del:hover { background: #fef2f2; color: #dc2626; }
 
-/* Badges */
-.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-.badge-green  { background: #f0fdf4; color: #15803d; }
-.badge-red    { background: #fef2f2; color: #dc2626; }
-.badge-blue   { background: #eff6ff; color: #1d4ed8; }
-.badge-yellow { background: #fffbeb; color: #b45309; }
-.badge-gray   { background: #f1f5f9; color: #64748b; }
-
-/* Pagination */
-.ps-pagination { display: flex; align-items: center; gap: 12px; margin-top: 16px; justify-content: flex-end; font-size: 13px; }
-.ps-pagination button { padding: 6px 14px; border: 1.5px solid #e2e8f0; border-radius: 7px; background: #fff; cursor: pointer; font-size: 13px; }
-.ps-pagination button:disabled { opacity: .4; cursor: default; }
-.ps-pagination span { color: #64748b; }
+/* Badges: .badge / .badge-* dari main.css */
+.ps-table { min-width: 1100px; }
 
 /* Buttons */
 .btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -547,4 +530,10 @@ function prospecName(s: Survey) {
 .font-mono { font-family: 'Courier New', monospace; }
 
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+
+@media (max-width: 480px) {
+  .modal-head { padding: 18px 18px 0; }
+  .modal-form { padding: 14px 18px 20px; }
+  .modal-small { padding: 24px 20px; }
+}
 </style>

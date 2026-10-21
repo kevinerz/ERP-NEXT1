@@ -89,6 +89,10 @@ body {
   flex-wrap: wrap;
 }
 
+/* Judul & subjudul halaman bersama (opsional; view lama masih styling h2 sendiri) */
+.page-title    { font-size: 22px; font-weight: 700; color: var(--text-1); margin: 0 0 4px; line-height: 1.3; }
+.page-subtitle { font-size: 13.5px; color: var(--text-3); margin: 0; }
+
 .header-row {
   display: flex;
   align-items: center;
@@ -165,12 +169,12 @@ body {
   box-shadow: 0 4px 12px rgba(30,64,175,0.3);
 }
 
-.btn-action, .btn-secondary {
+.btn-action, .btn-secondary, .btn-outline {
   background: var(--surface);
   color: var(--text-2);
   border: 1px solid var(--border);
 }
-.btn-action:hover, .btn-secondary:hover {
+.btn-action:hover, .btn-secondary:hover, .btn-outline:hover {
   background: #f8fafc;
   border-color: #cbd5e1;
 }
@@ -197,6 +201,19 @@ body {
 .btn-sm  { padding: 5px 10px; font-size: 12px; border-radius: var(--r-sm); }
 .btn-lg  { padding: 11px 22px; font-size: 15px; }
 .btn-block { width: 100%; }
+
+/* Disabled/loading — sebelumnya tidak ada gaya global, sehingga tombol .btn
+   yang sedang memproses tetap tampak aktif (dan hover-nya masih "naik"). */
+.btn:disabled, .btn[disabled], .btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+.btn:focus-visible, .btn-modal-close:focus-visible {
+  outline: 2px solid var(--primary-hover);
+  outline-offset: 2px;
+}
 
 /* ── Filter bar ── */
 .filter-bar {
@@ -305,7 +322,9 @@ body {
   position: fixed; inset: 0;
   background: rgba(15,23,42,0.45);
   display: flex; align-items: center; justify-content: center;
-  z-index: 200;
+  /* > pane/kontrol Leaflet (s/d 1000); < toast & ConfirmDialog (9999).
+     Sidebar (50), topbar (40), dropdown topbar (100) tetap di bawah. */
+  z-index: 1100;
   padding: 16px;
   backdrop-filter: blur(2px);
 }
@@ -376,6 +395,12 @@ body {
   box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
 }
 .form-input::placeholder, .form-textarea::placeholder { color: var(--text-muted); }
+.form-input:disabled, .form-select:disabled, .form-textarea:disabled,
+.form-input[readonly] {
+  background: #f8fafc;
+  color: var(--text-3);
+}
+.form-input:disabled, .form-select:disabled, .form-textarea:disabled { cursor: not-allowed; }
 .form-textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
 .form-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
 .form-error { font-size: 11.5px; color: var(--danger); margin-top: 3px; }
@@ -391,7 +416,7 @@ body {
 .alert-info    { background: var(--info-light);    border-color: #bae6fd; color: #075985; }
 .alert-success { background: var(--success-light); border-color: #bbf7d0; color: #166534; }
 .alert-warning { background: var(--warning-light); border-color: #fde68a; color: #92400e; }
-.alert-danger  { background: var(--danger-light);  border-color: #fecaca; color: #991b1b; }
+.alert-danger, .alert-error { background: var(--danger-light);  border-color: #fecaca; color: #991b1b; }
 
 /* ── Stat / KPI tile ── */
 .stat-tile {
@@ -473,6 +498,12 @@ body {
   .page-header button:not(.btn-modal-close) {
     width: 100% !important;
     justify-content: center !important;
+  }
+  /* ...kecuali tombol kembali / aksi kecil / isi breadcrumb */
+  .page-header :is(button, a):is(.btn-back, .back-btn, .btn-ghost, .btn-sm, .btn-link),
+  .page-header :is(.breadcrumb, .back-link) :is(button, a) {
+    width: auto !important;
+    align-self: flex-start;
   }
 
   /* Modal full width */

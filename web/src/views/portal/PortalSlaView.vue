@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import portalApi from '@/services/portalApi'
+import { fmtDateTime } from '@/composables/useFormat'
 
 // ── Period selector ───────────────────────────────────────
 const BULAN_LIST = [
@@ -96,12 +97,13 @@ function labelX(i: number) {
 }
 
 // ── Formatting ────────────────────────────────────────────
-function fmtPct(n: number) { return n.toFixed(1) + '%' }
-function fmtDate(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+function fmtPct(n: number | null | undefined) {
+  if (n === null || n === undefined || isNaN(Number(n))) return '—'
+  return Number(n).toFixed(1) + '%'
 }
-function fmtMttr(menit: number) {
+const fmtDate = fmtDateTime
+function fmtMttr(val: number | null | undefined) {
+  const menit = Math.round(Number(val) || 0)
   if (menit < 60) return `${menit} mnt`
   const h = Math.floor(menit / 60)
   const m = menit % 60
@@ -142,7 +144,7 @@ function prioritasCls(p: string) {
           <input type="checkbox" v-model="perTahun" />
           <span class="toggle-label">Per Tahun</span>
         </label>
-        <button class="btn-show" @click="fetchSla">Tampilkan</button>
+        <button type="button" class="btn-show" :disabled="loading" @click="fetchSla">{{ loading ? 'Memuat...' : 'Tampilkan' }}</button>
       </div>
     </div>
 
@@ -208,7 +210,7 @@ function prioritasCls(p: string) {
             <!-- Y-axis labels -->
             <text x="2" :y="chartInnerH - (chartInnerH - 20) * 1 + 5" font-size="10" fill="#94a3b8" font-family="Inter,sans-serif">100%</text>
             <text x="2" :y="chartInnerH - (chartInnerH - 20) * 0.5 + 5" font-size="10" fill="#94a3b8" font-family="Inter,sans-serif">50%</text>
-            <text x="2" y="15" font-size="10" fill="#94a3b8" font-family="Inter,sans-serif">0%</text>
+            <text x="2" :y="chartInnerH + 4" font-size="10" fill="#94a3b8" font-family="Inter,sans-serif">0%</text>
 
             <!-- Grid lines -->
             <line :x1="AXIS_L" :y1="chartInnerH - (chartInnerH - 20)" :x2="CHART_W" :y2="chartInnerH - (chartInnerH - 20)" stroke="#f1f5f9" stroke-width="1" />
@@ -232,7 +234,7 @@ function prioritasCls(p: string) {
                 :fill="barColor(m.compliance_pct)"
                 font-family="Inter,sans-serif"
                 font-weight="700"
-              >{{ m.compliance_pct.toFixed(1) }}%</text>
+              >{{ fmtPct(m.compliance_pct) }}</text>
               <!-- X label -->
               <text
                 :x="labelX(i)"
@@ -301,6 +303,9 @@ function prioritasCls(p: string) {
                   </span>
                 </td>
               </tr>
+              <tr v-if="!data.per_site?.length">
+                <td colspan="5" class="tc muted empty-cell">Belum ada data site pada periode ini</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -339,7 +344,7 @@ function prioritasCls(p: string) {
       </div>
 
       <!-- No breach message -->
-      <div class="section" v-else-if="summary.total_tiket > 0 && summary.total_breach === 0">
+      <div class="section" v-else-if="(summary?.total_tiket ?? 0) > 0 && summary?.total_breach === 0">
         <div class="no-breach">
           <span class="no-breach-icon">🎉</span>
           <div>
@@ -354,7 +359,8 @@ function prioritasCls(p: string) {
 
 <style scoped>
 .page        { padding: 28px 32px; max-width: 960px; }
-.page-header { margin-bottom: 20px; }
+/* block: judul & subjudul ditumpuk (global .page-header = flex row) */
+.page-header { display: block; margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; font-weight: 800; }
 .page-sub    { margin: 0; font-size: 14px; color: #64748b; }
 .loading     { padding: 60px; text-align: center; color: #94a3b8; }
@@ -369,7 +375,9 @@ function prioritasCls(p: string) {
 .toggle-wrap { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 13px; font-weight: 500; color: #374151; align-self: flex-end; padding-bottom: 2px; }
 .toggle-label { user-select: none; }
 .btn-show    { padding: 8px 20px; background: #1d4ed8; color: #fff; border: none; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; align-self: flex-end; }
-.btn-show:hover { background: #1e40af; }
+.btn-show:hover:not(:disabled) { background: #1e40af; }
+.btn-show:disabled { opacity: 0.6; cursor: not-allowed; }
+.empty-cell { padding: 24px 14px !important; }
 
 /* Status banner */
 .status-banner { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 10px; margin-bottom: 24px; font-size: 14px; flex-wrap: wrap; }
@@ -434,4 +442,11 @@ function prioritasCls(p: string) {
 .no-breach-icon { font-size: 32px; }
 .no-breach-title { font-size: 15px; font-weight: 700; color: #15803d; }
 .no-breach-sub   { font-size: 13px; color: #16a34a; margin-top: 2px; }
+
+@media (max-width: 768px) {
+  .top-row { flex-direction: column; align-items: stretch; gap: 20px; }
+  .summary-cards { gap: 10px; }
+  .card { flex: 1 1 140px; padding: 16px; }
+  .tbl { min-width: 520px; }
+}
 </style>

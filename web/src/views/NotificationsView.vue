@@ -40,6 +40,7 @@ function fmtTime(d: string) {
       </div>
       <button
         v-if="notif.count > 0"
+        type="button"
         class="btn-read-all"
         @click="notif.markAllRead()"
       >
@@ -50,6 +51,12 @@ function fmtTime(d: string) {
     <div class="notif-card">
       <div v-if="notif.loading && !notif.notifications.length" class="state">
         Memuat notifikasi...
+      </div>
+
+      <div v-else-if="notif.error && !notif.notifications.length" class="state error">
+        <div class="empty-icon">⚠️</div>
+        <div>{{ notif.error }}</div>
+        <button type="button" class="btn-load-more" style="margin-top:14px" @click="notif.fetchNotifications()">Coba Lagi</button>
       </div>
 
       <div v-else-if="!notif.notifications.length" class="state empty">
@@ -78,7 +85,7 @@ function fmtTime(d: string) {
 
         <!-- Load more -->
         <div v-if="notif.meta.page < notif.meta.total_pages" class="load-more">
-          <button class="btn-load-more" @click="loadMore" :disabled="notif.loading">
+          <button type="button" class="btn-load-more" @click="loadMore" :disabled="notif.loading">
             {{ notif.loading ? 'Memuat...' : 'Muat lebih banyak' }}
           </button>
         </div>
@@ -94,17 +101,18 @@ function fmtTime(d: string) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 800px; }
+.page { max-width: 800px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 .btn-read-all { padding: 8px 16px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-read-all:hover { background: #dbeafe; }
 
-.notif-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
+.notif-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
 
 .state { padding: 60px 20px; text-align: center; color: #94a3b8; font-size: 14px; }
-.state.empty .empty-icon { font-size: 40px; margin-bottom: 12px; }
+.state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+.state.error { color: var(--danger); }
 
 .notif-item {
   display: flex;
@@ -123,13 +131,13 @@ function fmtTime(d: string) {
 .notif-ico { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
 
 .notif-body { flex: 1; min-width: 0; }
-.notif-judul { font-size: 14px; font-weight: 600; color: #0f172a; line-height: 1.4; }
-.notif-desc { font-size: 13px; color: #64748b; margin-top: 3px; }
+.notif-judul { font-size: 14px; font-weight: 600; color: #0f172a; line-height: 1.4; overflow-wrap: anywhere; }
+.notif-desc { font-size: 13px; color: #64748b; margin-top: 3px; overflow-wrap: anywhere; }
 .notif-time { font-size: 12px; color: #94a3b8; margin-top: 5px; }
 
 .notif-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
 .unread-dot { width: 10px; height: 10px; border-radius: 50%; background: #3b82f6; margin-top: 6px; display: block; }
-.read-label { font-size: 11px; color: #cbd5e1; margin-top: 6px; }
+.read-label { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 
 .load-more { padding: 14px 20px; text-align: center; border-top: 1px solid #f1f5f9; }
 .btn-load-more { padding: 8px 24px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-weight: 600; color: #374151; cursor: pointer; }
@@ -138,4 +146,9 @@ function fmtTime(d: string) {
 
 .footer-info { padding: 10px 20px; background: #f8fafc; border-top: 1px solid #f1f5f9; font-size: 12px; color: #94a3b8; text-align: center; }
 .footer-info strong { color: #1d4ed8; }
+
+@media (max-width: 768px) {
+  .notif-item { padding: 14px 14px; gap: 10px; }
+  .notif-ico { font-size: 20px; }
+}
 </style>

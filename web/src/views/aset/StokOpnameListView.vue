@@ -68,10 +68,10 @@ function persenSelesai(o: any) {
         <h2>Stok Opname</h2>
         <p class="sub">Audit fisik aset per gudang — cocokkan data sistem dengan barang di lapangan</p>
       </div>
-      <button class="btn-primary" @click="showModal = true; formGudang = 0; formCatatan = ''; formError = ''">+ Mulai Opname</button>
+      <button type="button" class="btn btn-primary" @click="showModal = true; formGudang = 0; formCatatan = ''; formError = ''">+ Mulai Opname</button>
     </div>
 
-    <div class="filters">
+    <div class="filter-bar">
       <select v-model.number="filterGudang" @change="doFilter" class="filter-select">
         <option :value="0">Semua Gudang</option>
         <option v-for="g in gudangList" :key="g.id_gudang" :value="g.id_gudang">[{{ g.kode_gudang }}] {{ g.nama_gudang }}</option>
@@ -156,15 +156,10 @@ function persenSelesai(o: any) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
 
-.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.filter-select { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.alert-error { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 
 .table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
 table { width: 100%; border-collapse: collapse; }
@@ -185,8 +180,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .row-link:hover td { background: #f8fafc; }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 460px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 460px; }
 .modal h3 { margin: 0 0 8px; font-size: 18px; color: #0f172a; }
 .modal-desc { margin: 0 0 18px; font-size: 13px; color: #64748b; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
@@ -199,4 +193,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

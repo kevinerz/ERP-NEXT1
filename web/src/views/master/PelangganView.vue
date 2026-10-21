@@ -270,15 +270,15 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
       </div>
       <div class="header-actions">
         <div class="view-toggle">
-          <button :class="['toggle-btn', viewMode === 'grup' && 'active']" @click="viewMode = 'grup'">
+          <button type="button" :class="['toggle-btn', viewMode === 'grup' && 'active']" @click="viewMode = 'grup'">
             Per Grup
           </button>
-          <button :class="['toggle-btn', viewMode === 'list' && 'active']" @click="viewMode = 'list'">
+          <button type="button" :class="['toggle-btn', viewMode === 'list' && 'active']" @click="viewMode = 'list'">
             Daftar
           </button>
         </div>
-        <button class="btn btn-outline" @click="openAddGrup">+ Tambah Grup</button>
-        <button class="btn btn-primary" @click="openAdd">+ Tambah Pelanggan</button>
+        <button type="button" class="btn btn-outline" @click="openAddGrup">+ Tambah Grup</button>
+        <button type="button" class="btn btn-primary" @click="openAdd">+ Tambah Pelanggan</button>
       </div>
     </div>
 
@@ -406,6 +406,12 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
             </table>
           </div>
         </div>
+
+        <div v-if="!master.grupList.length && !master.pelangganList.some(p => !p.id_grup)" class="grup-card empty-state">
+          <div class="empty-icon">🏢</div>
+          <div class="empty-title">Belum ada grup atau pelanggan</div>
+          <div class="empty-desc">Tambahkan grup / holding atau pelanggan baru untuk memulai.</div>
+        </div>
       </template>
     </div>
 
@@ -413,7 +419,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
     <template v-if="viewMode === 'list'">
       <div class="toolbar">
         <input v-model="search" @keyup.enter="doSearch" placeholder="Cari nama / kode..." class="search-input" />
-        <button class="btn btn-secondary" @click="doSearch">Cari</button>
+        <button type="button" class="btn btn-secondary" @click="doSearch">Cari</button>
       </div>
 
       <div class="table-card">
@@ -491,10 +497,10 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
     <div v-if="showGrupModal" class="modal-overlay" @click.self="showGrupModal = false">
       <div class="modal modal-sm">
         <div class="modal-header">
-          <h3>{{ grupEditId ? 'Edit Grup / Holding' : 'Tambah Grup / Holding Baru' }}</h3>
-          <button class="modal-close" @click="showGrupModal = false">✕</button>
+          <h3 class="modal-title">{{ grupEditId ? 'Edit Grup / Holding' : 'Tambah Grup / Holding Baru' }}</h3>
+          <button type="button" class="btn-modal-close" @click="showGrupModal = false">✕</button>
         </div>
-        <div class="form-section" style="border-top:none; padding-top:16px;">
+        <div class="modal-body">
           <div class="field">
             <label>Kode Grup <span class="req">*</span></label>
             <input v-model="grupForm.kode_grup" placeholder="MAP, SOURSALLY, dll" style="text-transform:uppercase" @input="grupForm.kode_grup = grupForm.kode_grup.toUpperCase()" />
@@ -508,11 +514,11 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
             <label>Deskripsi</label>
             <input v-model="grupForm.deskripsi" placeholder="Retail / F&B / Property, dll" />
           </div>
+          <div v-if="grupFormError" class="alert alert-danger form-err">{{ grupFormError }}</div>
         </div>
-        <p v-if="grupFormError" class="form-error" style="margin: 0 28px 8px;">{{ grupFormError }}</p>
-        <div class="modal-actions">
-          <button class="btn btn-secondary" @click="showGrupModal = false">Batal</button>
-          <button class="btn btn-primary" @click="handleGrupSubmit" :disabled="grupSubmitting">
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showGrupModal = false">Batal</button>
+          <button type="button" class="btn btn-primary" @click="handleGrupSubmit" :disabled="grupSubmitting">
             {{ grupSubmitting ? 'Menyimpan...' : 'Simpan Grup' }}
           </button>
         </div>
@@ -523,10 +529,11 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal modal-lg">
         <div class="modal-header">
-          <h3>{{ editId ? 'Edit Data Pelanggan' : 'Tambah Pelanggan Baru' }}</h3>
-          <button class="modal-close" @click="showModal = false">✕</button>
+          <h3 class="modal-title">{{ editId ? 'Edit Data Pelanggan' : 'Tambah Pelanggan Baru' }}</h3>
+          <button type="button" class="btn-modal-close" @click="showModal = false">✕</button>
         </div>
 
+        <div class="modal-body modal-body-flush">
         <!-- SEKSI 1: INFORMASI PERUSAHAAN -->
         <div class="form-section">
           <div class="section-title">
@@ -654,10 +661,11 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
           </div>
         </div>
 
-        <p v-if="formError" class="form-error">{{ formError }}</p>
-        <div class="modal-actions">
-          <button class="btn btn-secondary" @click="showModal = false">Batal</button>
-          <button class="btn btn-primary" @click="handleSubmit" :disabled="submitting">
+        <div v-if="formError" class="alert alert-danger form-err form-err-flush">{{ formError }}</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showModal = false">Batal</button>
+          <button type="button" class="btn btn-primary" @click="handleSubmit" :disabled="submitting">
             {{ submitting ? 'Menyimpan...' : 'Simpan Data' }}
           </button>
         </div>
@@ -667,11 +675,10 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; font-weight: 700; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
-.header-actions { display: flex; align-items: center; gap: 10px; }
+.page-header { margin-bottom: 20px; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); font-weight: 700; }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
+.header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* Toggle */
 .view-toggle { display: flex; background: #f1f5f9; border-radius: 8px; padding: 3px; gap: 2px; }
@@ -680,7 +687,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
 
 /* Grup view */
 .grup-view { display: flex; flex-direction: column; gap: 10px; }
-.grup-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.07); overflow: hidden; }
+.grup-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
 .grup-card.standalone { opacity: .85; }
 .grup-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-left: 4px solid #1d4ed8; cursor: pointer; gap: 12px; user-select: none; }
 .grup-header:hover { background: #f8fafc; }
@@ -706,15 +713,8 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
 
 /* List view */
 .toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
-.search-input { flex: 1; max-width: 320px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.search-input:focus { border-color: #3b82f6; }
-.table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.07); overflow: hidden; }
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table thead tr { background: #f8fafc; }
-.data-table th { padding: 11px 13px; font-size: 11.5px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; letter-spacing: .04em; }
-.data-table td { padding: 12px 13px; font-size: 14px; color: #0f172a; border-top: 1px solid #f1f5f9; }
-.empty { text-align: center; color: #94a3b8; padding: 48px; }
-.loading-state { padding: 48px; text-align: center; color: #94a3b8; }
+.toolbar .search-input { flex: 1; max-width: 320px; }
+.empty { text-align: center; color: var(--text-muted); padding: 48px; }
 .kode-cell { font-weight: 700; color: #1d4ed8; font-size: 13px; white-space: nowrap; }
 .nama-perusahaan { font-weight: 600; }
 .meta-text { font-size: 12px; color: #94a3b8; margin-top: 2px; }
@@ -726,46 +726,44 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
 /* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-start; justify-content: center; z-index: 100; padding: 24px 16px; overflow-y: auto; }
-.modal { background: #fff; border-radius: 14px; width: 680px; max-width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
-.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 22px 28px 0; }
-.modal-header h3 { margin: 0; font-size: 17px; font-weight: 700; color: #0f172a; }
-.modal-close { background: none; border: none; font-size: 18px; color: #94a3b8; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
-.modal-close:hover { background: #f1f5f9; color: #475569; }
-.form-section { padding: 20px 28px; border-top: 1px solid #f1f5f9; }
+.modal-title { margin: 0; }
+.modal-body-flush { padding: 0; }
+.form-section { padding: 20px 22px; border-top: 1px solid var(--border-light); }
 .form-section:first-of-type { border-top: none; padding-top: 18px; }
-.section-title { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 16px; }
-.section-num { width: 22px; height: 22px; background: #1d4ed8; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.section-title { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 16px; }
+.section-num { width: 22px; height: 22px; background: var(--primary); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field.full { grid-column: 1 / -1; }
-.field label { font-size: 12.5px; font-weight: 600; color: #374151; }
-.req { color: #ef4444; }
+.field label { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+.req { color: var(--danger); }
 .field input, .field textarea, .field select {
-  padding: 8px 11px; border: 1.5px solid #e2e8f0; border-radius: 8px;
-  font-size: 13.5px; outline: none; background: #f8fafc; color: #0f172a; font-family: inherit;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r);
+  font-size: 13.5px; outline: none; background: var(--surface); color: var(--text-1); font-family: inherit; width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.field input:focus, .field textarea:focus, .field select:focus { border-color: #3b82f6; background: #fff; }
-.form-error { margin: 4px 28px 0; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 28px; border-top: 1px solid #f1f5f9; }
-.btn { padding: 9px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-.btn-primary { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; }
-.btn-secondary { background: #f1f5f9; color: #475569; }
-.btn-outline { background: #fff; color: #1d4ed8; border: 1.5px solid #bfdbfe; }
-.btn-outline:hover { background: #eff6ff; }
-.btn:disabled { opacity: .55; cursor: not-allowed; }
-.modal-sm { width: 420px; }
+.field textarea { resize: vertical; line-height: 1.5; }
+.field input:focus, .field textarea:focus, .field select:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+.field input::placeholder, .field textarea::placeholder { color: var(--text-muted); }
+.form-err { margin-top: 14px; }
+.form-err-flush { margin: 0 22px 18px; }
+.btn-outline { background: var(--surface); color: var(--primary); border: 1px solid var(--primary-border); }
+.btn-outline:hover { background: var(--primary-light); }
+.btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
 .grup-actions { display: flex; gap: 6px; }
-.field-hint { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-.alert { border-radius: 8px; font-size: 13px; padding: 10px 14px; margin-bottom: 14px; }
-.alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
-.alert-danger { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+.field-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.alert { margin-bottom: 14px; }
+.modal-body > .field + .field { margin-top: 12px; }
 
 @media (max-width: 768px) {
-  .page { padding: 16px !important; }
-  .modal { border-radius: 14px 14px 0 0; }
   .form-grid { grid-template-columns: 1fr !important; }
   .field.full { grid-column: 1; }
-  .header-actions { flex-direction: column; align-items: flex-end; gap: 8px; }
+  .header-actions { flex-direction: column; align-items: stretch; gap: 8px; }
+  .view-toggle { width: 100%; }
+  .view-toggle .toggle-btn { flex: 1; }
+  .grup-header { flex-wrap: wrap; }
+  .grup-right { width: 100%; justify-content: flex-end; gap: 12px; }
+  .toolbar .search-input { max-width: none; }
+  .pt-table { min-width: 560px; }
 }
 </style>

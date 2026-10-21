@@ -20,8 +20,8 @@ function makeTrap(el: HTMLElement) {
     if (e.key !== 'Tab') return
     const focusable = getFocusable(el)
     if (!focusable.length) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
+    const first = focusable[0]!
+    const last = focusable[focusable.length - 1]!
     if (e.shiftKey) {
       if (document.activeElement === first) { e.preventDefault(); last.focus() }
     } else {
@@ -40,21 +40,25 @@ export const vFocusTrap: Directive<FocusTrapEl, boolean> = {
     document.addEventListener('keydown', el._trapHandler)
     // move focus into the modal
     const focusable = getFocusable(el)
-    if (focusable.length) focusable[0].focus()
+    focusable[0]?.focus()
     // accessibility attributes
     el.setAttribute('role', 'dialog')
     el.setAttribute('aria-modal', 'true')
   },
   updated(el, binding) {
-    if (binding.value && !el._trapHandler) {
+    // `v-focus-trap` tanpa nilai (undefined) = aktif, sama seperti di mounted().
+    // Sebelumnya undefined dianggap "mati" sehingga setiap re-render (mis. ketik
+    // di input modal, loading berubah) melepas trap dan melempar fokus keluar.
+    const enabled = binding.value !== false
+    if (enabled && !el._trapHandler) {
       el._prevFocus = document.activeElement as HTMLElement
       el._trapHandler = makeTrap(el)
       document.addEventListener('keydown', el._trapHandler)
       const focusable = getFocusable(el)
-      if (focusable.length) focusable[0].focus()
+      focusable[0]?.focus()
       el.setAttribute('role', 'dialog')
       el.setAttribute('aria-modal', 'true')
-    } else if (!binding.value && el._trapHandler) {
+    } else if (!enabled && el._trapHandler) {
       document.removeEventListener('keydown', el._trapHandler)
       el._trapHandler = undefined
       el._prevFocus?.focus()

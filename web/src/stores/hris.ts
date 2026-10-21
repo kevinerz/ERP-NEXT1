@@ -12,14 +12,34 @@ export interface Karyawan {
   tgl_bergabung?: string
   status_aktif: boolean
   created_at: string
+  foto_url?: string
+  tempat_lahir?: string
+  tgl_lahir?: string
+  jenis_kelamin?: string
+  agama?: string
+  status_pernikahan?: string
+  no_ktp?: string
+  alamat_ktp?: string
+  no_npwp?: string
+  pendidikan_terakhir?: string
+  kontak_darurat_nama?: string
+  kontak_darurat_hp?: string
+  kontak_darurat_hubungan?: string
+  bank_nama?: string
+  bank_no_rekening?: string
+  bank_atas_nama?: string
   user?: {
     id_user: number
     username: string
     is_aktif: boolean
     last_login?: string
+    modul_akses?: string[]
     user_roles: { role: { id_role: number; nama_role: string } }[]
   }
 }
+
+/** Payload create/update: field opsional boleh dikirim null untuk mengosongkan. */
+export type KaryawanPayload = { [K in keyof Karyawan]?: Karyawan[K] | null }
 
 export interface KaryawanMeta {
   total: number
@@ -69,12 +89,12 @@ export const useHrisStore = defineStore('hris', {
       }
     },
 
-    async createKaryawan(payload: Partial<Karyawan>) {
+    async createKaryawan(payload: KaryawanPayload) {
       const { data } = await api.post('/hris/karyawan', payload)
       return data.data
     },
 
-    async updateKaryawan(id: number, payload: Partial<Karyawan>) {
+    async updateKaryawan(id: number, payload: KaryawanPayload) {
       const { data } = await api.patch(`/hris/karyawan/${id}`, payload)
       return data.data
     },
@@ -82,7 +102,7 @@ export const useHrisStore = defineStore('hris', {
     async toggleStatus(id: number) {
       const { data } = await api.patch(`/hris/karyawan/${id}/toggle-status`)
       const idx = this.list.findIndex((k) => k.id_karyawan === id)
-      if (idx >= 0) this.list[idx].status_aktif = data.data.status_aktif
+      if (idx >= 0) this.list[idx]!.status_aktif = data.data.status_aktif
       return data.data
     },
 

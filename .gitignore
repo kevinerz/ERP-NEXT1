@@ -40,3 +40,8 @@ Thumbs.db
 firebase-service-account.json
 mobile/google-services.json
 mobile/android/app/google-services.json
+
+# Arsip backup/deploy & file cadangan di server
+*.tar.gz
+*.bak
+*.bak-*

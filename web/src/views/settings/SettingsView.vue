@@ -1,8 +1,10 @@
 <template>
-  <div class="settings-page">
+  <div class="page settings-page">
     <div class="page-header">
-      <h1>Pengaturan Aplikasi</h1>
-      <p class="subtitle">Konfigurasi informasi perusahaan, logo, dan preferensi sistem</p>
+      <div>
+        <h1>Pengaturan Aplikasi</h1>
+        <p class="subtitle">Konfigurasi informasi perusahaan, logo, dan preferensi sistem</p>
+      </div>
     </div>
 
     <div class="settings-layout">
@@ -16,8 +18,8 @@
             <span>Belum ada logo</span>
           </div>
         </div>
-        <label class="upload-btn">
-          <input type="file" accept="image/png,image/jpeg,image/webp" @change="handleLogoUpload" hidden />
+        <label class="upload-btn" :class="{ disabled: uploading }">
+          <input type="file" accept="image/png,image/jpeg,image/webp" :disabled="uploading" @change="handleLogoUpload" hidden />
           <span>{{ uploading ? 'Mengunggah...' : '📁 Pilih Logo' }}</span>
         </label>
         <p class="hint">Format: PNG/JPG/WebP, maks 2MB. Rekomendasi persegi 512×512px, transparan, tanpa tulisan (nama brand dirender terpisah).</p>
@@ -111,8 +113,8 @@
     <!-- Save bar -->
     <div class="save-bar">
       <div v-if="saved" class="save-ok">✓ Pengaturan berhasil disimpan</div>
-      <div v-if="saveError" class="save-err">{{ saveError }}</div>
-      <button class="btn-save" :disabled="saving" @click="handleSave">
+      <div v-if="saveError" class="save-err" role="alert">{{ saveError }}</div>
+      <button type="button" class="btn btn-primary btn-save" :disabled="saving" @click="handleSave">
         {{ saving ? 'Menyimpan...' : 'Simpan Pengaturan' }}
       </button>
     </div>
@@ -179,10 +181,9 @@ async function handleLogoUpload(e: Event) {
 </script>
 
 <style scoped>
-.settings-page { padding: 24px; max-width: 1100px; }
-.page-header { margin-bottom: 28px; }
-.page-header h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 4px; }
-.subtitle { color: #6b7280; font-size: 0.9rem; margin: 0; }
+.settings-page { max-width: 1100px; }
+.page-header h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: var(--text-1); }
+.subtitle { color: var(--text-3); font-size: 13px; margin: 0; }
 
 .settings-layout {
   display: grid;
@@ -192,10 +193,12 @@ async function handleLogoUpload(e: Event) {
 }
 
 .settings-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
   padding: 24px;
+  min-width: 0;
 }
 .logo-card { grid-row: 1 / 3; }
 .info-card { grid-column: 2; grid-row: 1; }
@@ -233,6 +236,7 @@ h2 { font-size: 1rem; font-weight: 600; margin: 0 0 16px; color: #111827; }
   transition: background 0.15s;
 }
 .upload-btn:hover { background: #e5e7eb; }
+.upload-btn.disabled { opacity: 0.6; cursor: not-allowed; }
 
 .divider { height: 1px; background: #f3f4f6; margin: 20px 0; }
 
@@ -249,7 +253,7 @@ h2 { font-size: 1rem; font-weight: 600; margin: 0 0 16px; color: #111827; }
   font-family: inherit;
   resize: vertical;
 }
-.field input:focus, .field textarea:focus, .field select:focus { border-color: #6366f1; }
+.field input:focus, .field textarea:focus, .field select:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
 .req { color: #ef4444; }
 
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -260,7 +264,9 @@ h2 { font-size: 1rem; font-weight: 600; margin: 0 0 16px; color: #111827; }
   position: sticky;
   bottom: 0;
   background: #fff;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--border);
+  z-index: 5;
+  flex-wrap: wrap;
   padding: 14px 0;
   margin-top: 24px;
   display: flex;
@@ -268,19 +274,16 @@ h2 { font-size: 1rem; font-weight: 600; margin: 0 0 16px; color: #111827; }
   gap: 16px;
   justify-content: flex-end;
 }
-.btn-save {
-  background: #6366f1;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 28px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.btn-save:hover:not(:disabled) { background: #4f46e5; }
-.btn-save:disabled { opacity: 0.6; cursor: default; }
+.btn-save { padding: 10px 28px; }
 .save-ok { color: #16a34a; font-size: 0.875rem; font-weight: 500; }
 .save-err { color: #dc2626; font-size: 0.875rem; }
+
+/* Mobile: main.css memaksa .settings-layout 1 kolom, tapi grid-column: 2
+   di info/doc card membuat kolom implisit kedua -> layout pecah. */
+@media (max-width: 768px) {
+  .logo-card, .info-card, .doc-card { grid-column: auto; grid-row: auto; }
+  .settings-card { padding: 18px; }
+  .save-bar { justify-content: stretch; }
+  .btn-save { width: 100%; }
+}
 </style>
