@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
 import { printInvoiceDoc } from '@/composables/usePrint'
-import { fmtRupiah, fmtDate, statusLabel } from '@/composables/useFormat'
+import { fmtRupiah, fmtDate, statusLabel, todayLocal } from '@/composables/useFormat'
 import api from '@/services/api'
 
 const route = useRoute()
@@ -42,7 +42,7 @@ const submitting = ref(false)
 const processing = ref(false)
 const formError = ref('')
 const bayarForm = ref({
-  tgl_bayar: new Date().toISOString().slice(0, 10),
+  tgl_bayar: todayLocal(),
   jumlah: 0,
   metode: 'Transfer',
   referensi: '',
@@ -50,6 +50,7 @@ const bayarForm = ref({
 })
 
 onMounted(async () => {
+  finance.currentInvoice = null
   await load()
   // Kalau gagal dicek, anggap simulasi (asumsi paling aman — tombol & konfirmasi
   // jadi konsisten, tidak menyiratkan "live" padahal statusnya tak diketahui)
@@ -120,7 +121,7 @@ async function handleHapus() {
 
 function openBayar() {
   bayarForm.value = {
-    tgl_bayar: new Date().toISOString().slice(0, 10),
+    tgl_bayar: todayLocal(),
     jumlah: sisa.value,
     metode: 'Transfer',
     referensi: '',

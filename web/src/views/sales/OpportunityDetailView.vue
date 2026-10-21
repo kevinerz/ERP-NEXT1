@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useMasterStore } from '@/stores/master'
-import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
+import { fmtRupiahPenuh, fmtDateShort, todayLocal, toDatetimeLocal } from '@/composables/useFormat'
 
 const router = useRouter()
 const route = useRoute()
@@ -20,7 +20,7 @@ const editError = ref('')
 
 // Add Quotation
 const showAddQt = ref(false)
-const qtForm = ref({ tgl_quotation: new Date().toISOString().substring(0, 10), tgl_berlaku_sampai: '', harga_mrc: 0, harga_otc: 0, catatan: '' })
+const qtForm = ref({ tgl_quotation: todayLocal(), tgl_berlaku_sampai: '', harga_mrc: 0, harga_otc: 0, catatan: '' })
 const qtSubmitting = ref(false)
 const qtError = ref('')
 
@@ -29,6 +29,7 @@ const showApprove = ref(false)
 const approveId = ref(0)
 const approveForm = ref({ status_approval: 'Approved', id_approver: 0, catatan_approval: '' })
 const approveSubmitting = ref(false)
+const approveError = ref('')
 
 // Buat Site dari Opportunity
 const showBuatSite = ref(false)
@@ -39,7 +40,7 @@ const siteError = ref('')
 // Add / Edit Activity
 const showAddActivity = ref(false)
 const editingActivityId = ref<number | null>(null)
-const actForm = ref({ jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' })
+const actForm = ref({ jenis_aktivitas: 'Call', tanggal_aktivitas: toDatetimeLocal(new Date()), ringkasan: '', hasil: 'Netral' })
 const actSubmitting = ref(false)
 const actError = ref('')
 
@@ -56,13 +57,22 @@ const QT_STATUS_COLOR: Record<string, string> = {
   Draft: '#64748b', Approved: '#15803d', Rejected: '#dc2626',
 }
 
+const pageLoading = ref(true)
+const loadError = ref('')
+
 onMounted(async () => {
-  await Promise.all([
-    sales.fetchOneOpportunity(id),
-    sales.fetchSalesList(),
-    master.fetchLayanan(),
-    master.fetchPelangganDropdown(),
-  ])
+  sales.currentOpp = null
+  try {
+    const [opp] = await Promise.all([
+      sales.fetchOneOpportunity(id),
+      sales.fetchSalesList(),
+      master.fetchLayanan(),
+      master.fetchPelangganDropdown(),
+    ])
+    if (!opp) loadError.value = sales.error || 'Opportunity tidak ditemukan'
+  } catch (e: any) {
+    if (!sales.currentOpp) loadError.value = e.response?.data?.message || 'Gagal memuat opportunity'
+  } finally { pageLoading.value = false }
   if (sales.salesList.length) approveForm.value.id_approver = sales.salesList[0].id_karyawan
 })
 
@@ -112,7 +122,7 @@ async function handleAddQt() {
     })
     await sales.fetchOneOpportunity(id)
     showAddQt.value = false
-    qtForm.value = { tgl_quotation: new Date().toISOString().substring(0, 10), tgl_berlaku_sampai: '', harga_mrc: 0, harga_otc: 0, catatan: '' }
+    qtForm.value = { tgl_quotation: todayLocal(), tgl_berlaku_sampai: '', harga_mrc: 0, harga_otc: 0, catatan: '' }
     flash('Quotation dibuat')
   } catch (e: any) { qtError.value = e.response?.data?.message || 'Gagal' }
   finally { qtSubmitting.value = false }
@@ -121,23 +131,24 @@ async function handleAddQt() {
 function openApprove(qtId: number) {
   approveId.value = qtId
   approveForm.value = { status_approval: 'Approved', id_approver: sales.salesList[0]?.id_karyawan || 0, catatan_approval: '' }
+  approveError.value = ''
   showApprove.value = true
 }
 
 async function handleApprove() {
-  approveSubmitting.value = true
+  approveSubmitting.value = true; approveError.value = ''
   try {
     await sales.approveQuotation(approveId.value, approveForm.value)
     await sales.fetchOneOpportunity(id)
     showApprove.value = false
     flash(`Quotation ${approveForm.value.status_approval}`)
-  } catch (e: any) { flash(e.response?.data?.message || 'Gagal approve') }
+  } catch (e: any) { approveError.value = e.response?.data?.message || 'Gagal approve' }
   finally { approveSubmitting.value = false }
 }
 
 function openAddActivity() {
   editingActivityId.value = null
-  actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' }
+  actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: toDatetimeLocal(new Date()), ringkasan: '', hasil: 'Netral' }
   actError.value = ''
   showAddActivity.value = true
 }
@@ -146,7 +157,7 @@ function openEditActivity(a: any) {
   editingActivityId.value = a.id_activity
   actForm.value = {
     jenis_aktivitas: a.jenis_aktivitas,
-    tanggal_aktivitas: a.tanggal_aktivitas ? new Date(a.tanggal_aktivitas).toISOString().substring(0, 16) : '',
+    tanggal_aktivitas: toDatetimeLocal(a.tanggal_aktivitas),
     ringkasan: a.ringkasan,
     hasil: a.hasil || 'Netral',
   }
@@ -188,7 +199,7 @@ async function handleAddActivity() {
     showAddActivity.value = false
     flash(editingActivityId.value ? 'Aktivitas diperbarui' : 'Aktivitas dicatat')
     editingActivityId.value = null
-    actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' }
+    actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: toDatetimeLocal(new Date()), ringkasan: '', hasil: 'Netral' }
   } catch (e: any) { actError.value = e.response?.data?.message || 'Gagal' }
   finally { actSubmitting.value = false }
 }
@@ -238,8 +249,12 @@ function fmtDatetime(d: string) {
 
 <template>
   <div class="page">
-    <div v-if="sales.loading && !sales.currentOpp" class="loading-page">Memuat...</div>
-    <template v-else-if="sales.currentOpp">
+    <div v-if="pageLoading" class="loading-page">Memuat...</div>
+    <div v-else-if="loadError || !sales.currentOpp" class="loading-page">
+      <p class="form-error">{{ loadError || 'Opportunity tidak ditemukan' }}</p>
+      <button class="btn-back" @click="router.push('/sales/opportunity')">← Kembali ke Opportunity</button>
+    </div>
+    <template v-else>
       <!-- Header -->
       <div class="page-header">
         <div>
@@ -456,6 +471,7 @@ function fmtDatetime(d: string) {
               <textarea v-model="approveForm.catatan_approval" rows="2"></textarea>
             </div>
           </div>
+          <p v-if="approveError" class="form-error">{{ approveError }}</p>
           <div class="modal-actions">
             <button class="btn-cancel" @click="showApprove = false">Batal</button>
             <button class="btn-submit" @click="handleApprove" :disabled="approveSubmitting">

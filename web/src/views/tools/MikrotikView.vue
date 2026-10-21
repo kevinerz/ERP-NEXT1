@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/services/api'
 
 interface Device {
@@ -162,7 +162,25 @@ async function saveConfig() {
   }
 }
 
+// Command dianggap read-only bila setiap pernyataannya diakhiri print/monitor/getall.
+function isReadOnlyCommand(cmd: string): boolean {
+  const parts = cmd.split(/[\n;]/).map(s => s.trim()).filter(Boolean)
+  return parts.length > 0 && parts.every(s => /(^|[\s/])(print|monitor|getall)$/i.test(s))
+}
+
+const confirmRun = ref(false)
+
+function requestRun() {
+  if (!selected.value.size || !command.value.trim()) return
+  if (isReadOnlyCommand(command.value)) runCommand()
+  else confirmRun.value = true
+}
+
+watch(command, () => { confirmRun.value = false })
+watch(selected, () => { confirmRun.value = false })
+
 async function runCommand() {
+  confirmRun.value = false
   if (!selected.value.size) return
   if (!command.value.trim()) return
   running.value = true
@@ -305,13 +323,24 @@ onMounted(() => {
           <div class="cmd-actions">
             <button
               class="btn-run"
-              @click="runCommand"
-              :disabled="running || !selected.size || !command.trim()"
+              @click="requestRun"
+              :disabled="running || confirmRun || !selected.size || !command.trim()"
             >
               <span v-if="running">⏳ Menjalankan...</span>
               <span v-else>▶ Jalankan ({{ selected.size }} device)</span>
             </button>
             <button class="btn-clear" @click="results = []" v-if="results.length">✕ Clear</button>
+          </div>
+          <div v-if="confirmRun" class="run-confirm" role="alertdialog" aria-label="Konfirmasi command">
+            <div class="run-confirm-title">⚠ Command ini dapat mengubah konfigurasi router</div>
+            <div class="run-confirm-text">
+              Command berikut akan dijalankan di <strong>{{ selected.size }} router</strong>:
+            </div>
+            <pre class="run-confirm-cmd">{{ command.trim() }}</pre>
+            <div class="run-confirm-actions">
+              <button class="btn-clear" @click="confirmRun = false">Batal</button>
+              <button class="btn-run btn-run-danger" @click="runCommand">Ya, jalankan di {{ selected.size }} router</button>
+            </div>
           </div>
         </div>
 
@@ -600,6 +629,31 @@ onMounted(() => {
   cursor: pointer;
 }
 .btn-clear:hover { background: #e2e8f0; }
+
+.run-confirm {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+}
+.run-confirm-title { font-size: 13px; font-weight: 700; color: #92400e; margin-bottom: 4px; }
+.run-confirm-text { font-size: 13px; color: #78350f; }
+.run-confirm-cmd {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow: auto;
+}
+.run-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.run-confirm-actions .btn-run { flex: 0 1 auto; }
+.btn-run-danger { background: #dc2626; }
 
 .cmd-hint {
   text-align: center;

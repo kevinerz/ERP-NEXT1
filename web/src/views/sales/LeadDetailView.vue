@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useMasterStore } from '@/stores/master'
-import { fmtRupiahPenuh, fmtDateShort, fmtDateTime } from '@/composables/useFormat'
+import { fmtRupiahPenuh, fmtDateShort, fmtDateTime, toDatetimeLocal } from '@/composables/useFormat'
 
 const router = useRouter()
 const route = useRoute()
@@ -27,7 +27,7 @@ const oppError = ref('')
 // Add / Edit Activity modal
 const showAddActivity = ref(false)
 const editingActivityId = ref<number | null>(null)
-const actForm = ref({ jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' })
+const actForm = ref({ jenis_aktivitas: 'Call', tanggal_aktivitas: toDatetimeLocal(new Date()), ringkasan: '', hasil: 'Netral' })
 const actSubmitting = ref(false)
 const actError = ref('')
 
@@ -44,12 +44,21 @@ const TAHAPAN_COLOR: Record<string, string> = {
   Negosiasi: '#f97316', Penawaran: '#06b6d4', Won: '#22c55e', Lost: '#ef4444',
 }
 
+const pageLoading = ref(true)
+const loadError = ref('')
+
 onMounted(async () => {
-  await Promise.all([
-    sales.fetchOneLead(id),
-    sales.fetchSalesList(),
-    master.fetchLayanan(),
-  ])
+  sales.currentLead = null
+  try {
+    const [lead] = await Promise.all([
+      sales.fetchOneLead(id),
+      sales.fetchSalesList(),
+      master.fetchLayanan(),
+    ])
+    if (!lead) loadError.value = sales.error || 'Lead tidak ditemukan'
+  } catch (e: any) {
+    if (!sales.currentLead) loadError.value = e.response?.data?.message || 'Gagal memuat lead'
+  } finally { pageLoading.value = false }
 })
 
 function openEditLead() {
@@ -103,7 +112,7 @@ async function handleAddOpp() {
 
 function openAddActivity() {
   editingActivityId.value = null
-  actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' }
+  actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: toDatetimeLocal(new Date()), ringkasan: '', hasil: 'Netral' }
   actError.value = ''
   showAddActivity.value = true
 }
@@ -112,7 +121,7 @@ function openEditActivity(a: any) {
   editingActivityId.value = a.id_activity
   actForm.value = {
     jenis_aktivitas: a.jenis_aktivitas,
-    tanggal_aktivitas: a.tanggal_aktivitas ? new Date(a.tanggal_aktivitas).toISOString().substring(0, 16) : '',
+    tanggal_aktivitas: toDatetimeLocal(a.tanggal_aktivitas),
     ringkasan: a.ringkasan,
     hasil: a.hasil || 'Netral',
   }
@@ -154,7 +163,7 @@ async function handleAddActivity() {
     showAddActivity.value = false
     flash(editingActivityId.value ? 'Aktivitas diperbarui' : 'Aktivitas dicatat')
     editingActivityId.value = null
-    actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: new Date().toISOString().substring(0, 16), ringkasan: '', hasil: 'Netral' }
+    actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: toDatetimeLocal(new Date()), ringkasan: '', hasil: 'Netral' }
   } catch (e: any) { actError.value = e.response?.data?.message || 'Gagal' }
   finally { actSubmitting.value = false }
 }
@@ -171,8 +180,12 @@ const fmtDatetime = fmtDateTime
 
 <template>
   <div class="page">
-    <div v-if="sales.loading && !sales.currentLead" class="loading-page">Memuat...</div>
-    <template v-else-if="sales.currentLead">
+    <div v-if="pageLoading" class="loading-page">Memuat...</div>
+    <div v-else-if="loadError || !sales.currentLead" class="loading-page">
+      <p class="form-error">{{ loadError || 'Lead tidak ditemukan' }}</p>
+      <button class="btn-back" @click="router.push('/sales/lead')">← Kembali ke Lead</button>
+    </div>
+    <template v-else>
       <!-- Header -->
       <div class="page-header">
         <div>

@@ -9,6 +9,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt.guard';
 import { Public } from '../../common/decorators/public.decorator';
+import { Throttle } from '@nestjs/throttler';
 
 // Guard untuk customer (portal JWT)
 const CustomerGuard = () => UseGuards(AuthGuard('customer-jwt'));
@@ -22,6 +23,7 @@ export class PortalController {
 
   // ── Public: login portal ─────────────────────────────────
   @Public()
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
   @Post('auth/login')
   @HttpCode(200)
   async login(@Body() body: { email: string; password: string }) {

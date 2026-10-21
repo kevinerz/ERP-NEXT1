@@ -56,7 +56,9 @@ export class HrisController {
   }
 
   // DELETE /api/hris/karyawan/:id
+  // Ikut menghapus akun login (CoreUser) karyawan — dibatasi seperti endpoint akun di bawah.
   @Delete('karyawan/:id')
+  @Roles('Admin', 'Director')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.hrisService.deleteKaryawan(id);
   }

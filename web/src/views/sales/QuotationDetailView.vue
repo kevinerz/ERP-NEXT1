@@ -5,7 +5,7 @@ import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import { printQuotation } from '@/composables/usePrint'
-import { fmtRupiahPenuh, fmtDate, fmtDateTime } from '@/composables/useFormat'
+import { fmtRupiahPenuh, fmtDate, fmtDateTime, todayLocal } from '@/composables/useFormat'
 
 const route  = useRoute()
 const router = useRouter()
@@ -22,6 +22,7 @@ const error   = ref('')
 const showApprove    = ref(false)
 const approveForm    = ref({ status_approval: 'Approved', id_approver: 0, catatan_approval: '' })
 const approveSubmit  = ref(false)
+const approveError   = ref('')
 const successMsg     = ref('')
 
 // Edit modal
@@ -32,6 +33,7 @@ const editForm   = ref({ tgl_quotation: '', tgl_berlaku_sampai: '', harga_mrc: 0
 // Buat Kontrak modal
 const showKontrakModal = ref(false)
 const savingKontrak    = ref(false)
+const kontrakError     = ref('')
 const sites            = ref<any[]>([])
 const kontrakForm      = ref({ id_site: 0, tgl_mulai: '', durasi_bulan: 12 })
 
@@ -65,6 +67,7 @@ function openApprove() {
     id_approver: sales.salesList[0]?.id_karyawan || 0,
     catatan_approval: '',
   }
+  approveError.value = ''
   showApprove.value = true
 }
 
@@ -104,14 +107,15 @@ async function submitEdit() {
 }
 
 function openKontrak() {
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayLocal()
   kontrakForm.value = { id_site: 0, tgl_mulai: today, durasi_bulan: 12 }
+  kontrakError.value = ''
   showKontrakModal.value = true
 }
 
 async function submitKontrak() {
   if (!kontrakForm.value.id_site) return
-  savingKontrak.value = true
+  savingKontrak.value = true; kontrakError.value = ''
   try {
     const payload = {
       id_site: kontrakForm.value.id_site,
@@ -126,13 +130,12 @@ async function submitKontrak() {
     showKontrakModal.value = false
     router.push(`/contracts/${r.data.data.id_kontrak}`)
   } catch (e: any) {
-    successMsg.value = e?.response?.data?.message || 'Gagal membuat kontrak'
-    setTimeout(() => successMsg.value = '', 4000)
+    kontrakError.value = e?.response?.data?.message || 'Gagal membuat kontrak'
   } finally { savingKontrak.value = false }
 }
 
 async function handleApprove() {
-  approveSubmit.value = true
+  approveSubmit.value = true; approveError.value = ''
   try {
     await sales.approveQuotation(id, approveForm.value)
     showApprove.value = false
@@ -140,8 +143,7 @@ async function handleApprove() {
     setTimeout(() => successMsg.value = '', 3000)
     await fetchQuotation()
   } catch (e: any) {
-    successMsg.value = e?.response?.data?.message || 'Gagal proses approval'
-    setTimeout(() => successMsg.value = '', 4000)
+    approveError.value = e?.response?.data?.message || 'Gagal proses approval'
   } finally { approveSubmit.value = false }
 }
 
@@ -390,6 +392,7 @@ const prospekName = computed(() => {
           <label>Durasi (bulan)</label>
           <input type="number" v-model.number="kontrakForm.durasi_bulan" min="1" max="120" />
         </div>
+        <p v-if="kontrakError" class="form-error">{{ kontrakError }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showKontrakModal = false">Batal</button>
           <button class="btn-submit" @click="submitKontrak"
@@ -429,6 +432,7 @@ const prospekName = computed(() => {
           <label>Catatan Approval</label>
           <textarea v-model="approveForm.catatan_approval" rows="3" placeholder="Opsional..."></textarea>
         </div>
+        <p v-if="approveError" class="form-error">{{ approveError }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showApprove = false">Batal</button>
           <button class="btn-submit" @click="handleApprove" :disabled="approveSubmit">
@@ -465,6 +469,7 @@ const prospekName = computed(() => {
 .btn-print { padding: 9px 16px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-print:hover { background: #dcfce7; }
 
+.form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 4px 0 12px; }
 .alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 16px; }
 
 /* Info grid */

@@ -105,7 +105,22 @@ export class MekariService {
   }
 
   // ─── SYNC INVOICE (AR → Mekari Sales Invoice) ────────────────
+  private syncInvoiceInFlight = new Set<number>();
+
+  // Dua klik sync bersamaan sama-sama lolos cek isSyncedUid → invoice terposting ganda di Jurnal
   async syncInvoice(id_invoice: number) {
+    if (this.syncInvoiceInFlight.has(id_invoice)) {
+      throw new BadRequestException('Sinkron invoice ini sedang berjalan — tunggu hasilnya');
+    }
+    this.syncInvoiceInFlight.add(id_invoice);
+    try {
+      return await this.syncInvoiceLocked(id_invoice);
+    } finally {
+      this.syncInvoiceInFlight.delete(id_invoice);
+    }
+  }
+
+  private async syncInvoiceLocked(id_invoice: number) {
     const inv = await this.prisma.invoice.findUnique({
       where: { id_invoice },
       include: {

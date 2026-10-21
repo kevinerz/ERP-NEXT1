@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DocumentNumberService } from '../../common/document-number/document-number.service';
+import { UPLOAD_ROOT, imageExtOrThrow } from '../../common/upload/upload-root';
 import {
   CreateInstalasiDto,
   UpdateInstalasiDto,
@@ -31,6 +32,17 @@ const INSTALASI_DETAIL_INCLUDE = {
   logs: { orderBy: { created_at: 'desc' as const } },
   bast: true,
 };
+
+// Alur status (lihat schema InstalasiOrder.status_instalasi):
+// Draft → Dijadwalkan → Dalam_Proses → Selesai; Dibatalkan dari status non-final.
+// Mundur satu langkah diizinkan; Selesai final; Dibatalkan bisa dibuka lagi ke Draft.
+const INSTALASI_TRANSISI = {
+  Draft: ['Dijadwalkan', 'Dibatalkan'],
+  Dijadwalkan: ['Dalam_Proses', 'Draft', 'Dibatalkan'],
+  Dalam_Proses: ['Selesai', 'Dijadwalkan', 'Dibatalkan'],
+  Selesai: [],
+  Dibatalkan: ['Draft'],
+} as const;
 
 @Injectable()
 export class InstalasiService {
@@ -74,7 +86,8 @@ export class InstalasiService {
       this.prisma.instalasiOrder.count({ where }),
     ]);
 
-    return { data, total, page, limit };
+    // `total` di level atas dibuang oleh interceptor — kembalikan lewat meta (dibaca store web)
+    return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
   }
 
   async findOne(id: number) {
@@ -144,39 +157,68 @@ export class InstalasiService {
     return { data, message: 'Order instalasi dibuat' };
   }
 
-  async update(id: number, dto: UpdateInstalasiDto) {
+  /** Validasi transisi status sesuai alur Draft → Dijadwalkan → Dalam_Proses → Selesai. */
+  private cekTransisi(dari: string, ke: string) {
+    const TRANSISI = INSTALASI_TRANSISI as Record<string, readonly string[]>;
+    if (!(ke in TRANSISI)) throw new BadRequestException(`Status instalasi "${ke}" tidak dikenal`);
+    const boleh = TRANSISI[dari] ?? [];
+    if (!boleh.includes(ke))
+      throw new BadRequestException(
+        `Tidak bisa ubah status dari ${dari} ke ${ke}` +
+          (boleh.length ? ` — status berikutnya yang valid: ${boleh.join(', ')}` : ' — status ini sudah final'),
+      );
+  }
+
+  /**
+   * @param logCatatan catatan untuk log perubahan status (dipakai addLog agar log hanya ditulis sekali)
+   */
+  async update(id: number, dto: UpdateInstalasiDto, logCatatan?: string | null) {
     const row = await this.prisma.instalasiOrder.findUnique({ where: { id_instalasi: id } });
     if (!row) throw new NotFoundException('Order instalasi tidak ditemukan');
 
     const updateData: any = { ...dto };
     if (dto.tgl_jadwal) updateData.tgl_jadwal = new Date(dto.tgl_jadwal);
 
-    // Status transitions
-    if (dto.status_instalasi && dto.status_instalasi !== row.status_instalasi) {
-      if (dto.status_instalasi === 'Dalam_Proses') updateData.tgl_mulai = new Date();
-      if (dto.status_instalasi === 'Selesai') {
-        updateData.tgl_selesai = new Date();
-        // Aktifkan site
-        await this.prisma.sitePelanggan.update({
-          where: { id_site: row.id_site },
-          data: { status_site: 'Aktif', tgl_aktif: new Date() },
+    const gantiStatus = !!dto.status_instalasi && dto.status_instalasi !== row.status_instalasi;
+    if (gantiStatus) this.cekTransisi(row.status_instalasi, dto.status_instalasi!);
+
+    // Satu transaksi: ubah status order (bersyarat) + log + aktivasi site
+    const data = await this.prisma.$transaction(async (tx) => {
+      if (gantiStatus) {
+        const ke = dto.status_instalasi!;
+        if (ke === 'Dalam_Proses') updateData.tgl_mulai = new Date();
+        if (ke === 'Selesai') updateData.tgl_selesai = new Date();
+
+        // Flip bersyarat pada status yang dibaca — cegah dua perubahan bersamaan sama-sama lolos
+        const flip = await tx.instalasiOrder.updateMany({
+          where: { id_instalasi: id, status_instalasi: row.status_instalasi },
+          data: { status_instalasi: ke },
+        });
+        if (flip.count === 0)
+          throw new BadRequestException('Status order baru saja diubah oleh user lain — muat ulang halaman');
+
+        if (ke === 'Selesai') {
+          await tx.sitePelanggan.update({
+            where: { id_site: row.id_site },
+            data: { status_site: 'Aktif', tgl_aktif: new Date() },
+          });
+        }
+
+        await tx.instalasiLog.create({
+          data: {
+            id_instalasi: id,
+            status_dari: row.status_instalasi,
+            status_ke: ke,
+            catatan: logCatatan ?? null,
+          },
         });
       }
 
-      // Catat log perubahan status
-      await this.prisma.instalasiLog.create({
-        data: {
-          id_instalasi: id,
-          status_dari: row.status_instalasi,
-          status_ke: dto.status_instalasi,
-        },
+      return tx.instalasiOrder.update({
+        where: { id_instalasi: id },
+        data: updateData,
+        include: INSTALASI_DETAIL_INCLUDE,
       });
-    }
-
-    const data = await this.prisma.instalasiOrder.update({
-      where: { id_instalasi: id },
-      data: updateData,
-      include: INSTALASI_DETAIL_INCLUDE,
     });
 
     return { data, message: 'Order instalasi diperbarui' };
@@ -186,18 +228,24 @@ export class InstalasiService {
     const row = await this.prisma.instalasiOrder.findUnique({ where: { id_instalasi: dto.id_instalasi } });
     if (!row) throw new NotFoundException('Order instalasi tidak ditemukan');
 
+    // Dengan perubahan status: log ditulis SEKALI oleh update() (sebelumnya tercatat dua kali)
+    if (dto.status_ke && dto.status_ke !== row.status_instalasi) {
+      await this.update(dto.id_instalasi, { status_instalasi: dto.status_ke }, dto.catatan ?? null);
+      const log = await this.prisma.instalasiLog.findFirst({
+        where: { id_instalasi: dto.id_instalasi, status_ke: dto.status_ke },
+        orderBy: { id_log: 'desc' },
+      });
+      return { data: log };
+    }
+
     const log = await this.prisma.instalasiLog.create({
       data: {
         id_instalasi: dto.id_instalasi,
-        status_dari: dto.status_ke ? row.status_instalasi : null,
-        status_ke: dto.status_ke ?? null,
+        status_dari: null,
+        status_ke: null,
         catatan: dto.catatan ?? null,
       },
     });
-
-    if (dto.status_ke) {
-      await this.update(dto.id_instalasi, { status_instalasi: dto.status_ke });
-    }
 
     return { data: log };
   }
@@ -228,11 +276,11 @@ export class InstalasiService {
     const row = await this.prisma.instalasiOrder.findUnique({ where: { id_instalasi: id } });
     if (!row) throw new NotFoundException('Order instalasi tidak ditemukan');
 
-    const ext = file.mimetype.split('/')[1] ?? 'jpg';
+    const ext = imageExtOrThrow(file.mimetype);
     const filename = `instalasi_${id}_${Date.now()}.${ext}`;
     const fs = await import('fs');
     const path = await import('path');
-    const dir = path.join(process.cwd(), 'uploads', 'instalasi', String(id));
+    const dir = path.join(UPLOAD_ROOT, 'instalasi', String(id));
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, filename), file.buffer);
 
@@ -249,7 +297,7 @@ export class InstalasiService {
 
     const path = await import('path');
     const fs = await import('fs');
-    const filePath = path.join(process.cwd(), 'uploads', 'instalasi', String(foto.id_instalasi), foto.filename);
+    const filePath = path.join(UPLOAD_ROOT, 'instalasi', String(foto.id_instalasi), foto.filename);
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
     await this.prisma.instalasiPhoto.delete({ where: { id_foto } });

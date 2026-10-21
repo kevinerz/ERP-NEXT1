@@ -1,15 +1,57 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { addMonths, dateMonthRange, wibMonthRange, wibYearMonth, wibYearRange } from '../../common/utils/wib';
+
+// Status project yang dihitung "berjalan" (lihat ProjectsService.getStatusSummary:
+// Perencanaan | Instalasi | Testing | Selesai | Ditahan)
+const PROYEK_BERJALAN = ['Perencanaan', 'Instalasi', 'Testing'];
+
+const BULAN_LABEL = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+/** Validasi & default bulan/tahun laporan (default: bulan berjalan menurut WIB). */
+function parseBulanTahun(bulanRaw: any, tahunRaw: any): { bulan: number; tahun: number } {
+  const cur = wibYearMonth();
+  const tahun = Number(tahunRaw) || cur.year;
+  const bulan = Number(bulanRaw) || cur.month;
+  if (!Number.isInteger(bulan) || bulan < 1 || bulan > 12) throw new BadRequestException('Bulan harus 1â€“12');
+  if (!Number.isInteger(tahun) || tahun < 2000 || tahun > 2100) throw new BadRequestException('Tahun tidak valid');
+  return { bulan, tahun };
+}
+
+/** Label bulan pendek, mis. "Okt 26". */
+function labelBulanPendek(year: number, month1to12: number): string {
+  return new Date(Date.UTC(year, month1to12 - 1, 1))
+    .toLocaleDateString('id-ID', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+}
+
+/** Gabungkan interval [start,end] (ms) yang tumpang-tindih, kembalikan total menit. */
+function totalMenitGabungan(intervals: Array<[number, number]>): number {
+  const sorted = intervals.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0]);
+  let total = 0;
+  let curStart = -1;
+  let curEnd = -1;
+  for (const [a, b] of sorted) {
+    if (curEnd < 0 || a > curEnd) {
+      if (curEnd >= 0) total += curEnd - curStart;
+      curStart = a;
+      curEnd = b;
+    } else if (b > curEnd) {
+      curEnd = b;
+    }
+  }
+  if (curEnd >= 0) total += curEnd - curStart;
+  return Math.round(total / 60000);
+}
 
 @Injectable()
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
-  // ─── DASHBOARD UTAMA ──────────────────────────────────────────
+  // â”€â”€â”€ DASHBOARD UTAMA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async getDashboardKpi() {
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const in30 = new Date(); in30.setDate(in30.getDate() + 30);
 
     const [
@@ -27,7 +69,7 @@ export class ReportsService {
       }),
       this.prisma.operationTicket.count({ where: { status_tiket: 'Open' } }),
       this.prisma.operationTicket.count({ where: { status_tiket: 'In_Progress' } }),
-      this.prisma.projectDelivery.count({ where: { status_project: { in: ['Kickoff', 'Instalasi', 'Testing'] } } }),
+      this.prisma.projectDelivery.count({ where: { status_project: { in: PROYEK_BERJALAN } } }),
       this.prisma.gudangAset.count({ where: { status_aset: 'Di_Gudang' } }),
       this.prisma.kontrakLayanan.aggregate({
         _sum: { harga_mrc: true },
@@ -48,55 +90,64 @@ export class ReportsService {
     };
   }
 
-  // ─── LAPORAN REVENUE (MRC per bulan 12 bulan terakhir) ────────
+  // â”€â”€â”€ LAPORAN REVENUE (MRC per bulan 12 bulan terakhir) â”€â”€â”€â”€â”€â”€â”€â”€
 
   async getRevenueChart() {
-    const months: { label: string; mrc: number; kontrak_count: number }[] = [];
-    const now = new Date();
+    // Kontrak dihitung di bulan M bila periodenya (tgl_mulai .. tgl_berakhir / tanggal_terminasi)
+    // beririsan dengan M â€” TIDAK bergantung status saat ini, supaya bulan lalu tidak "menyusut"
+    // ketika kontrak berakhir/diterminasi. Status yang ada: Aktif | Akan_Berakhir | Berakhir |
+    // Terminasi (tidak ada draft/batal). Kolom tanggal = @db.Date â†’ bandingkan per tanggal kalender.
+    const cur = wibYearMonth();
+    const bulanList = Array.from({ length: 12 }, (_, i) => addMonths(cur.year, cur.month, i - 11));
+    const first = dateMonthRange(bulanList[0].year, bulanList[0].month);
+    const last = dateMonthRange(cur.year, cur.month);
 
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
-      const kontrak = await this.prisma.kontrakLayanan.findMany({
-        where: {
-          tgl_mulai: { lte: new Date(d.getFullYear(), d.getMonth() + 1, 0) },
-          OR: [
-            { tgl_berakhir: null },
-            { tgl_berakhir: { gte: d } },
-          ],
-          status_kontrak: { in: ['Aktif', 'Akan_Berakhir'] },
-        },
-        select: { harga_mrc: true },
-      });
-      const mrc = kontrak.reduce((s, k) => s + Number(k.harga_mrc), 0);
-      months.push({ label, mrc, kontrak_count: kontrak.length });
-    }
+    const kontrak = await this.prisma.kontrakLayanan.findMany({
+      where: {
+        tgl_mulai: { lt: last.end },
+        OR: [{ tgl_berakhir: null }, { tgl_berakhir: { gte: first.start } }],
+      },
+      select: { harga_mrc: true, tgl_mulai: true, tgl_berakhir: true, tanggal_terminasi: true },
+    });
+
+    const months = bulanList.map(({ year, month }) => {
+      const { start, end } = dateMonthRange(year, month);
+      let mrc = 0;
+      let count = 0;
+      for (const k of kontrak) {
+        const ends = [k.tgl_berakhir, k.tanggal_terminasi].filter((d): d is Date => !!d).map((d) => d.getTime());
+        const akhir = ends.length ? Math.min(...ends) : Infinity;
+        if (k.tgl_mulai.getTime() < end.getTime() && akhir >= start.getTime()) {
+          mrc += Number(k.harga_mrc);
+          count++;
+        }
+      }
+      return { label: labelBulanPendek(year, month), mrc, kontrak_count: count };
+    });
 
     return { data: months };
   }
 
-  // ─── LAPORAN TIKET ────────────────────────────────────────────
+  // â”€â”€â”€ LAPORAN TIKET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async getTicketReport(query: { bulan?: number; tahun?: number }) {
-    const now = new Date();
-    const tahun = Number(query.tahun) || now.getFullYear();
-    const bulan = Number(query.bulan) || now.getMonth() + 1;
-    const start = new Date(tahun, bulan - 1, 1);
-    const end = new Date(tahun, bulan, 0, 23, 59, 59);
+    const { bulan, tahun } = parseBulanTahun(query.bulan, query.tahun);
+    const { start, end } = wibMonthRange(tahun, bulan);
+    const periode = { gte: start, lt: end };
 
     const [byStatus, byPrioritas, total, resolved] = await Promise.all([
       this.prisma.operationTicket.groupBy({
         by: ['status_tiket'],
         _count: { id_ticket: true },
-        where: { tgl_open: { gte: start, lte: end } },
+        where: { tgl_open: periode },
       }),
       this.prisma.operationTicket.groupBy({
         by: ['prioritas'],
         _count: { id_ticket: true },
-        where: { tgl_open: { gte: start, lte: end } },
+        where: { tgl_open: periode },
       }),
-      this.prisma.operationTicket.count({ where: { tgl_open: { gte: start, lte: end } } }),
-      this.prisma.operationTicket.count({ where: { tgl_open: { gte: start, lte: end }, status_tiket: { in: ['Resolved', 'Closed'] } } }),
+      this.prisma.operationTicket.count({ where: { tgl_open: periode } }),
+      this.prisma.operationTicket.count({ where: { tgl_open: periode, status_tiket: { in: ['Resolved', 'Closed'] } } }),
     ]);
 
     return {
@@ -110,7 +161,7 @@ export class ReportsService {
     };
   }
 
-  // ─── LAPORAN PROYEK ───────────────────────────────────────────
+  // â”€â”€â”€ LAPORAN PROYEK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async getProyekReport() {
     const [byStatus, woByStatus, totalProyek] = await Promise.all([
@@ -134,23 +185,32 @@ export class ReportsService {
     };
   }
 
-  // ─── LAPORAN BULANAN SLA PER PELANGGAN ───────────────────────
+  // â”€â”€â”€ LAPORAN BULANAN SLA PER PELANGGAN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async getLaporanBulanan(query: { pelanggan_id: number; bulan: number; tahun: number }) {
     const now = new Date();
     const pelangganId = Number(query.pelanggan_id);
-    const bulan = Number(query.bulan);
-    const tahun = Number(query.tahun);
+    if (!pelangganId) throw new BadRequestException('pelanggan_id wajib diisi');
+    const { bulan, tahun } = parseBulanTahun(query.bulan, query.tahun);
 
-    const start = new Date(tahun, bulan - 1, 1);
-    const end = new Date(tahun, bulan, 0, 23, 59, 59, 999);
+    // Batas bulan menurut WIB (start inklusif, end eksklusif)
+    const { start, end } = wibMonthRange(tahun, bulan);
+    const startMs = start.getTime();
+    const endMs = end.getTime();
 
-    const daysInMonth = new Date(tahun, bulan, 0).getDate();
+    const daysInMonth = new Date(Date.UTC(tahun, bulan, 0)).getUTCDate();
     const total_menit_bulan = daysInMonth * 24 * 60;
 
-    const BULAN_LABEL = ['Januari','Februari','Maret','April','Mei','Juni',
-      'Juli','Agustus','September','Oktober','November','Desember'];
     const bulanStr = BULAN_LABEL[bulan - 1];
+
+    /** Waktu selesai gangguan: resolved â†’ closed â†’ masih berjalan (now). */
+    const selesaiMs = (t: { tgl_resolved: Date | null; tgl_closed: Date | null }) =>
+      (t.tgl_resolved ?? t.tgl_closed ?? now).getTime();
+    /** Interval gangguan dipotong ke bulan laporan: max(open, awal) â†’ min(selesai, akhir). */
+    const clip = (t: { tgl_open: Date; tgl_resolved: Date | null; tgl_closed: Date | null }): [number, number] => [
+      Math.max(t.tgl_open.getTime(), startMs),
+      Math.min(selesaiMs(t), endMs),
+    ];
 
     const durasi_str = (menit: number): string => {
       const m = Math.max(0, Math.round(menit));
@@ -166,7 +226,7 @@ export class ReportsService {
       select: { nama_pelanggan: true, kode_pelanggan: true, nama_pic_utama: true },
     });
 
-    if (!pelanggan) throw new Error('Pelanggan tidak ditemukan');
+    if (!pelanggan) throw new NotFoundException('Pelanggan tidak ditemukan');
 
     const sites = await this.prisma.sitePelanggan.findMany({
       where: { id_pelanggan: pelangganId },
@@ -175,14 +235,21 @@ export class ReportsService {
 
     const siteIds = sites.map(s => s.id_site);
 
-    const tickets = await this.prisma.operationTicket.findMany({
+    // Semua tiket yang gangguannya beririsan dengan bulan laporan â€” termasuk yang dibuka
+    // sebelum bulan ini tapi baru selesai (atau masih open) di dalamnya.
+    const tickets = (await this.prisma.operationTicket.findMany({
       where: {
         id_site: { in: siteIds },
-        tgl_open: { gte: start, lte: end },
+        tgl_open: { lt: end },
+        OR: [
+          { tgl_resolved: { gte: start } },
+          { tgl_resolved: null, tgl_closed: { gte: start } },
+          { tgl_resolved: null, tgl_closed: null },
+        ],
       },
       include: { site: { include: { layanan: true } } },
       orderBy: { tgl_open: 'asc' },
-    });
+    })).filter((t) => { const [a, b] = clip(t); return b > a; });
 
     // Per-site downtime aggregation
     const siteDataMap = new Map<number, {
@@ -196,20 +263,25 @@ export class ReportsService {
         id_site: s.id_site,
         nama_site: s.nama_site,
         kode_site: s.kode_site,
-        kode_layanan: s.layanan?.kode_layanan ?? '—',
-        nama_layanan: s.layanan?.nama_layanan ?? '—',
+        kode_layanan: s.layanan?.kode_layanan ?? 'â€”',
+        nama_layanan: s.layanan?.nama_layanan ?? 'â€”',
         target_sla: Number(s.layanan?.sla_target_pct ?? 95),
         downtime_menit: 0,
         ticket_count: 0,
       });
     }
 
+    // Downtime per site = gabungan interval (tiket yang tumpang-tindih tidak dihitung ganda)
+    const intervalPerSite = new Map<number, Array<[number, number]>>();
     for (const t of tickets) {
       const sd = siteDataMap.get(t.id_site);
       if (!sd) continue;
-      const resolved = t.tgl_resolved ?? now;
-      sd.downtime_menit += Math.round((resolved.getTime() - t.tgl_open.getTime()) / 60000);
+      if (!intervalPerSite.has(t.id_site)) intervalPerSite.set(t.id_site, []);
+      intervalPerSite.get(t.id_site)!.push(clip(t));
       sd.ticket_count++;
+    }
+    for (const [idSite, intervals] of intervalPerSite) {
+      siteDataMap.get(idSite)!.downtime_menit = totalMenitGabungan(intervals);
     }
 
     const sitesResult = Array.from(siteDataMap.values()).map(s => {
@@ -252,8 +324,8 @@ export class ReportsService {
       const layId = s.id_layanan;
       if (!segmenMap.has(layId)) {
         segmenMap.set(layId, {
-          kode_layanan: s.layanan?.kode_layanan ?? '—',
-          nama_layanan: s.layanan?.nama_layanan ?? '—',
+          kode_layanan: s.layanan?.kode_layanan ?? 'â€”',
+          nama_layanan: s.layanan?.nama_layanan ?? 'â€”',
           target_sla: Number(s.layanan?.sla_target_pct ?? 95),
           siteList: [],
         });
@@ -282,26 +354,27 @@ export class ReportsService {
     });
 
     // Top 10 by frequency / duration
-    const siteTicketMap = new Map<number, { nama_site: string; kode_layanan: string; durations: number[] }>();
+    // Durasi per tiket dipotong ke bulan laporan; total per site = downtime gabungan (konsisten dgn SLA)
+    const siteTicketMap = new Map<number, { nama_site: string; kode_layanan: string; downtime: number; durations: number[] }>();
     for (const t of tickets) {
       const sd = siteDataMap.get(t.id_site);
       if (!sd) continue;
       if (!siteTicketMap.has(t.id_site)) {
-        siteTicketMap.set(t.id_site, { nama_site: sd.nama_site, kode_layanan: sd.kode_layanan, durations: [] });
+        siteTicketMap.set(t.id_site, { nama_site: sd.nama_site, kode_layanan: sd.kode_layanan, downtime: sd.downtime_menit, durations: [] });
       }
-      const resolved = t.tgl_resolved ?? now;
-      siteTicketMap.get(t.id_site)!.durations.push(
-        Math.round((resolved.getTime() - t.tgl_open.getTime()) / 60000));
+      const [a, b] = clip(t);
+      siteTicketMap.get(t.id_site)!.durations.push(Math.round((b - a) / 60000));
     }
 
     const siteTicketArr = Array.from(siteTicketMap.values()).map(v => {
-      const total = v.durations.reduce((s, d) => s + d, 0);
+      const total = v.downtime;
       return {
         nama_site: v.nama_site,
         kode_layanan: v.kode_layanan,
         jumlah_tiket: v.durations.length,
         total_durasi_menit: total,
-        rata_durasi_menit: v.durations.length > 0 ? Math.round(total / v.durations.length) : 0,
+        rata_durasi_menit: v.durations.length > 0
+          ? Math.round(v.durations.reduce((s, d) => s + d, 0) / v.durations.length) : 0,
       };
     });
 
@@ -314,16 +387,15 @@ export class ReportsService {
       .map(s => ({ ...s, durasi_str: durasi_str(s.total_durasi_menit) }));
 
     const ticketsResult = tickets.map(t => {
-      const durasi_menit = t.tgl_resolved
-        ? Math.round((t.tgl_resolved.getTime() - t.tgl_open.getTime()) / 60000)
-        : Math.round((now.getTime() - t.tgl_open.getTime()) / 60000);
+      // Durasi tiket penuh (informasi), bukan yang dipotong ke bulan
+      const durasi_menit = Math.round((selesaiMs(t) - t.tgl_open.getTime()) / 60000);
       return {
         nomor_tiket: t.nomor_tiket,
         status_tiket: t.status_tiket,
         tgl_open: t.tgl_open,
         tgl_resolved: t.tgl_resolved,
-        nama_site: t.site?.nama_site ?? '—',
-        kode_layanan: t.site?.layanan?.kode_layanan ?? '—',
+        nama_site: t.site?.nama_site ?? 'â€”',
+        kode_layanan: t.site?.layanan?.kode_layanan ?? 'â€”',
         judul_tiket: t.judul_tiket,
         durasi_menit,
         durasi_str: durasi_str(durasi_menit),
@@ -335,7 +407,7 @@ export class ReportsService {
     return {
       pelanggan,
       periode: `${bulanStr} ${tahun}`,
-      periode_range: `${pad(1)}–${pad(lastDay)} ${bulanStr} ${tahun}`,
+      periode_range: `${pad(1)}â€“${pad(lastDay)} ${bulanStr} ${tahun}`,
       generated_at: now,
       summary: {
         total_site: sitesResult.length,
@@ -353,7 +425,7 @@ export class ReportsService {
     };
   }
 
-  // ─── LAPORAN ASET ─────────────────────────────────────────────
+  // â”€â”€â”€ LAPORAN ASET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async getAsetReport() {
     const [byStatus, byKategori, totalNilai] = await Promise.all([
@@ -380,12 +452,13 @@ export class ReportsService {
     };
   }
 
-  // ─── DASHBOARD SUMMARY (semua data untuk halaman dashboard) ───
+  // â”€â”€â”€ DASHBOARD SUMMARY (semua data untuk halaman dashboard) â”€â”€â”€
 
   async getDashboardSummary() {
     const now = new Date();
     const in30 = new Date(); in30.setDate(in30.getDate() + 30);
-    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const curWib = wibYearMonth(now);
+    const startMonth = wibMonthRange(curWib.year, curWib.month).start;
 
     const [
       totalPelanggan,
@@ -417,7 +490,7 @@ export class ReportsService {
       this.prisma.operationTicket.count({ where: { status_tiket: 'Open' } }),
       this.prisma.operationTicket.count({ where: { status_tiket: 'In_Progress' } }),
       this.prisma.operationTicket.count({ where: { status_tiket: 'Pending' } }),
-      this.prisma.projectDelivery.count({ where: { status_project: { in: ['Kickoff', 'Instalasi', 'Testing'] } } }),
+      this.prisma.projectDelivery.count({ where: { status_project: { in: PROYEK_BERJALAN } } }),
       this.prisma.kontrakLayanan.count({ where: { status_kontrak: 'Aktif', tgl_berakhir: { lte: in30, gte: now } } }),
       this.prisma.gudangAset.count({ where: { status_aset: 'Di_Gudang' } }),
       this.prisma.operationTicket.groupBy({
@@ -503,27 +576,18 @@ export class ReportsService {
     };
   }
 
-  // ─── LAPORAN PELANGGAN ────────────────────────────────────────
+  // â”€â”€â”€ LAPORAN PELANGGAN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  // ─── LAPORAN SLA ──────────────────────────────────────────────
+  // â”€â”€â”€ LAPORAN SLA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async getSlaReport(query: { bulan?: number; tahun?: number; mode?: string }) {
     const now = new Date();
-    const tahun = Number(query.tahun) || now.getFullYear();
-    const bulan = Number(query.bulan) || now.getMonth() + 1;
+    const { bulan, tahun } = parseBulanTahun(query.bulan, query.tahun);
     const mode: 'month' | 'year' = query.mode === 'year' ? 'year' : 'month';
 
-    let start: Date, end: Date;
-    if (mode === 'year') {
-      start = new Date(tahun, 0, 1);
-      end = new Date(tahun, 11, 31, 23, 59, 59);
-    } else {
-      start = new Date(tahun, bulan - 1, 1);
-      end = new Date(tahun, bulan, 0, 23, 59, 59);
-    }
+    // Batas periode WIB (start inklusif, end eksklusif)
+    const { start, end } = mode === 'year' ? wibYearRange(tahun) : wibMonthRange(tahun, bulan);
 
-    const BULAN_LABEL = ['Januari','Februari','Maret','April','Mei','Juni',
-      'Juli','Agustus','September','Oktober','November','Desember'];
     const periode = mode === 'year' ? `${tahun}` : `${BULAN_LABEL[bulan - 1]} ${tahun}`;
 
     const slaPct = (l: { sla_target_pct: any } | null | undefined): number =>
@@ -535,7 +599,7 @@ export class ReportsService {
     // Fetch tickets in period + semua pelanggan & layanan aktif (untuk tampilkan 100% meski 0 tiket)
     const [tickets, activeSites, activeLayanan] = await Promise.all([
       this.prisma.operationTicket.findMany({
-        where: { tgl_open: { gte: start, lte: end } },
+        where: { tgl_open: { gte: start, lt: end } },
         include: { site: { include: { pelanggan: true, layanan: true } } },
       }),
       this.prisma.sitePelanggan.findMany({
@@ -547,7 +611,7 @@ export class ReportsService {
       }),
     ]);
 
-    // Summary — "FO" = semua layanan dengan target >= 99%
+    // Summary â€” "FO" = semua layanan dengan target >= 99%
     const total_tiket = tickets.length;
     const total_resolved = tickets.filter(t => t.status_tiket === 'Resolved' || t.status_tiket === 'Closed').length;
     const total_breach = tickets.filter(t => t.sla_breached).length;
@@ -564,14 +628,14 @@ export class ReportsService {
       bulan: string; total: number; breach: number; compliance_pct: number;
       fo_total: number; fo_breach: number; fo_compliance_pct: number;
     }> = [];
+    const nowWib = wibYearMonth(now);
     for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const mStart = new Date(d.getFullYear(), d.getMonth(), 1);
-      const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
-      const label = d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' });
+      const ym = addMonths(nowWib.year, nowWib.month, -i);
+      const { start: mStart, end: mEnd } = wibMonthRange(ym.year, ym.month);
+      const label = labelBulanPendek(ym.year, ym.month);
 
       const mTickets = await this.prisma.operationTicket.findMany({
-        where: { tgl_open: { gte: mStart, lte: mEnd } },
+        where: { tgl_open: { gte: mStart, lt: mEnd } },
         include: { site: { include: { layanan: true } } },
       });
       const mTotal = mTickets.length;
@@ -591,7 +655,7 @@ export class ReportsService {
       });
     }
 
-    // Per pelanggan — seed dari semua pelanggan aktif, merge tiket
+    // Per pelanggan â€” seed dari semua pelanggan aktif, merge tiket
     const pelangganMap = new Map<number, {
       id_pelanggan: number; nama_pelanggan: string; kode_pelanggan: string;
       total_tiket: number; breach: number; max_target: number;
@@ -648,7 +712,7 @@ export class ReportsService {
       };
     }).sort((a, b) => a.compliance_pct - b.compliance_pct);
 
-    // Per layanan — seed dari semua layanan aktif, merge tiket
+    // Per layanan â€” seed dari semua layanan aktif, merge tiket
     const layananMap = new Map<number, {
       id_layanan: number; kode_layanan: string; nama_layanan: string;
       target_pct: number; total_tiket: number; breach: number;
@@ -686,7 +750,7 @@ export class ReportsService {
 
     // Breach detail: sla_breached tickets in period
     const breachTickets = await this.prisma.operationTicket.findMany({
-      where: { tgl_open: { gte: start, lte: end }, sla_breached: true },
+      where: { tgl_open: { gte: start, lt: end }, sla_breached: true },
       include: { site: { include: { pelanggan: true, layanan: true } } },
       take: 100,
     });
@@ -699,9 +763,9 @@ export class ReportsService {
         nomor_tiket: t.nomor_tiket,
         judul_tiket: t.judul_tiket,
         prioritas: t.prioritas,
-        nama_pelanggan: t.site?.pelanggan?.nama_pelanggan ?? '—',
-        nama_site: t.site?.nama_site ?? '—',
-        kode_layanan: t.site?.layanan?.kode_layanan ?? '—',
+        nama_pelanggan: t.site?.pelanggan?.nama_pelanggan ?? 'â€”',
+        nama_site: t.site?.nama_site ?? 'â€”',
+        kode_layanan: t.site?.layanan?.kode_layanan ?? 'â€”',
         tgl_open: t.tgl_open,
         sla_due: t.sla_due,
         tgl_resolved: t.tgl_resolved,

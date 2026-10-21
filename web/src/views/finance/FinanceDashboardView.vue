@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
-import { fmtRupiah, fmtDateShort as fmtDate, statusLabel } from '@/composables/useFormat'
+import { fmtRupiah, fmtDateShort as fmtDate, statusLabel, todayLocal, monthLocal } from '@/composables/useFormat'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const router = useRouter()
@@ -25,8 +25,8 @@ const formError = ref('')
 const bulkResult = ref('')
 const showBulkResult = ref(false)
 const bulkForm = ref({
-  periode: new Date().toISOString().slice(0, 7),
-  tgl_invoice: new Date().toISOString().slice(0, 10),
+  periode: monthLocal(),
+  tgl_invoice: todayLocal(),
   tgl_jatuh_tempo: '',
   ppn_persen: 11,
 })

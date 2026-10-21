@@ -1,8 +1,7 @@
-import { Controller, Get, Put, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Post, Body } from '@nestjs/common';
 import { MikrotikService } from './mikrotik.service';
-import { JwtAuthGuard } from '../../common/guards/jwt.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
-@UseGuards(JwtAuthGuard)
 @Controller('mikrotik')
 export class MikrotikController {
   constructor(private readonly svc: MikrotikService) {}
@@ -17,6 +16,7 @@ export class MikrotikController {
     return this.svc.getConfig();
   }
 
+  @Roles('Admin', 'Director', 'Manager_Ops')
   @Put('config')
   saveConfig(@Body() body: { user: string; password?: string; apiPort?: number }) {
     return this.svc.saveConfig(body.user, body.password ?? '', body.apiPort ?? 8728);

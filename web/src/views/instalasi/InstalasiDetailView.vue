@@ -41,6 +41,8 @@ const ttdTeknisiCtx = ref<CanvasRenderingContext2D | null>(null)
 const ttdPelangganCtx = ref<CanvasRenderingContext2D | null>(null)
 const drawingTeknisi = ref(false)
 const drawingPelanggan = ref(false)
+const ttdTeknisiHasInk = ref(false)
+const ttdPelangganHasInk = ref(false)
 const bastSubmitting = ref(false)
 const bastError = ref('')
 
@@ -174,6 +176,8 @@ function draw(e: MouseEvent | TouchEvent, which: 'teknisi' | 'pelanggan') {
   if (!ctx || !canvas) return
   const pos = getPos(e, canvas)
   ctx.lineTo(pos.x, pos.y); ctx.stroke()
+  if (which === 'teknisi') ttdTeknisiHasInk.value = true
+  else ttdPelangganHasInk.value = true
   e.preventDefault()
 }
 function stopDraw(which: 'teknisi' | 'pelanggan') {
@@ -184,21 +188,25 @@ function clearCanvas(which: 'teknisi' | 'pelanggan') {
   const canvas = which === 'teknisi' ? ttdTeknisiCanvas.value : ttdPelangganCanvas.value
   const ctx = which === 'teknisi' ? ttdTeknisiCtx.value : ttdPelangganCtx.value
   if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+  if (which === 'teknisi') ttdTeknisiHasInk.value = false
+  else ttdPelangganHasInk.value = false
 }
 function getPos(e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement) {
   const rect = canvas.getBoundingClientRect()
-  if (e instanceof TouchEvent) {
+  if ('touches' in e) {
     return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top }
   }
-  return { x: (e as MouseEvent).clientX - rect.left, y: (e as MouseEvent).clientY - rect.top }
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top }
 }
 
 async function submitBAST() {
   bastSubmitting.value = true; bastError.value = ''
   try {
-    // Upload TTD sebagai PNG, simpan path-nya
-    const ttdTeknisiPath = ttdTeknisiCanvas.value ? await uploadCanvas(ttdTeknisiCanvas.value, 'teknisi') : null
-    const ttdPelangganPath = ttdPelangganCanvas.value ? await uploadCanvas(ttdPelangganCanvas.value, 'pelanggan') : null
+    // Upload TTD sebagai PNG (hanya kanvas yang benar-benar ditandatangani)
+    const ttdTeknisiPath = ttdTeknisiCanvas.value && ttdTeknisiHasInk.value
+      ? await uploadCanvas(ttdTeknisiCanvas.value, 'teknisi') : null
+    const ttdPelangganPath = ttdPelangganCanvas.value && ttdPelangganHasInk.value
+      ? await uploadCanvas(ttdPelangganCanvas.value, 'pelanggan') : null
     await ins.saveBAST(id, {
       ...bastForm.value,
       ...(ttdTeknisiPath ? { ttd_teknisi_path: ttdTeknisiPath } : {}),
@@ -207,21 +215,25 @@ async function submitBAST() {
     await ins.fetchOne(id)
     bastError.value = ''
     alert('BAST berhasil disimpan')
-  } catch (e: any) { bastError.value = e.response?.data?.message || 'Gagal menyimpan BAST' }
+  } catch (e: any) { bastError.value = e.response?.data?.message || e.message || 'Gagal menyimpan BAST' }
   finally { bastSubmitting.value = false }
 }
 
-async function uploadCanvas(canvas: HTMLCanvasElement, type: string): Promise<string | null> {
-  return new Promise(resolve => {
+async function uploadCanvas(canvas: HTMLCanvasElement, type: string): Promise<string> {
+  const label = type === 'teknisi' ? 'teknisi' : 'pelanggan'
+  return new Promise((resolve, reject) => {
     canvas.toBlob(async blob => {
-      if (!blob) { resolve(null); return }
+      if (!blob) { reject(new Error(`Gagal membaca tanda tangan ${label}`)); return }
       const form = new FormData()
       form.append('file', blob, `ttd_${type}_${id}.png`)
       form.append('stage', type)
       try {
         const { data } = await api.post(`/instalasi/${id}/foto`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
-        resolve(`instalasi/${id}/${data.data?.filename}`)
-      } catch { resolve(null) }
+        if (!data.data?.filename) throw new Error()
+        resolve(`instalasi/${id}/${data.data.filename}`)
+      } catch (e: any) {
+        reject(new Error(`Gagal upload tanda tangan ${label}: ${e?.response?.data?.message || 'coba lagi'}`))
+      }
     }, 'image/png')
   })
 }

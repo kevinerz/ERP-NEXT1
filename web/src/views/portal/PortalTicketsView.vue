@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import portalApi from '@/services/portalApi'
+import { statusLabel } from '@/composables/useFormat'
+
+const TICKET_LIMIT = 200
 
 const tickets   = ref<any[]>([])
 const sites     = ref<any[]>([])
 const loading   = ref(true)
+const loadErr   = ref('')
+const refreshErr = ref('')
 const activeTab = ref<'all' | 'open' | 'progress' | 'done'>('all')
 const detail    = ref<any>(null)
 const search    = ref('')
@@ -18,13 +23,13 @@ const form = ref({ id_site: 0, judul_tiket: '', deskripsi_masalah: '' })
 onMounted(async () => {
   try {
     const [t, s] = await Promise.all([
-      portalApi.get('/portal/tickets', { params: { limit: 200 } }),
+      portalApi.get('/portal/tickets', { params: { limit: TICKET_LIMIT } }),
       portalApi.get('/portal/sites'),
     ])
     tickets.value = t.data.data ?? []
     sites.value   = s.data.data ?? []
-  } catch {
-    // biarkan list kosong, loading tetap selesai
+  } catch (e: any) {
+    loadErr.value = e.response?.data?.message || 'Gagal memuat data tiket'
   } finally {
     loading.value = false
   }
@@ -33,7 +38,7 @@ onMounted(async () => {
 const filtered = computed(() => {
   let list = tickets.value
   if (activeTab.value === 'open')     list = list.filter(t => (t.status ?? t.status_tiket) === 'Open')
-  if (activeTab.value === 'progress') list = list.filter(t => (t.status ?? t.status_tiket) === 'In Progress')
+  if (activeTab.value === 'progress') list = list.filter(t => (t.status ?? t.status_tiket) === 'In_Progress')
   if (activeTab.value === 'done')     list = list.filter(t => ['Resolved','Closed'].includes(t.status ?? t.status_tiket))
   if (filterSite.value)               list = list.filter(t => t.site?.id_site === filterSite.value || t.id_site === filterSite.value)
   if (search.value.trim()) {
@@ -50,7 +55,7 @@ const filtered = computed(() => {
 const kpi = computed(() => ({
   total:    tickets.value.length,
   open:     tickets.value.filter(t => (t.status ?? t.status_tiket) === 'Open').length,
-  progress: tickets.value.filter(t => (t.status ?? t.status_tiket) === 'In Progress').length,
+  progress: tickets.value.filter(t => (t.status ?? t.status_tiket) === 'In_Progress').length,
   done:     tickets.value.filter(t => ['Resolved','Closed'].includes(t.status ?? t.status_tiket)).length,
 }))
 
@@ -72,12 +77,20 @@ async function submitTicket() {
       judul_tiket:       form.value.judul_tiket.trim(),
       deskripsi_masalah: form.value.deskripsi_masalah.trim() || undefined,
     })
-    const fresh = await portalApi.get('/portal/tickets', { params: { limit: 100 } })
-    tickets.value = fresh.data.data ?? []
-    showForm.value = false
-    form.value = { id_site: 0, judul_tiket: '', deskripsi_masalah: '' }
   } catch (e: any) {
     formErr.value = e.response?.data?.message || 'Gagal membuat tiket'
+    saving.value = false
+    return
+  }
+  showForm.value = false
+  form.value = { id_site: 0, judul_tiket: '', deskripsi_masalah: '' }
+  try {
+    const fresh = await portalApi.get('/portal/tickets', { params: { limit: TICKET_LIMIT } })
+    tickets.value = fresh.data.data ?? []
+    loadErr.value = ''
+    refreshErr.value = ''
+  } catch {
+    refreshErr.value = 'Tiket berhasil dibuat, tetapi daftar tiket gagal dimuat ulang. Silakan muat ulang halaman.'
   } finally { saving.value = false }
 }
 
@@ -88,7 +101,8 @@ function fmtDate(d: string | null) {
 
 function statusBadge(s: string): { bg: string; fg: string } {
   if (s === 'Open')        return { bg: '#fef9ec', fg: '#b45309' }
-  if (s === 'In Progress') return { bg: '#eff6ff', fg: '#1d4ed8' }
+  if (s === 'In_Progress') return { bg: '#eff6ff', fg: '#1d4ed8' }
+  if (s === 'Pending_Customer') return { bg: '#faf5ff', fg: '#7e22ce' }
   if (s === 'Resolved')    return { bg: '#f0fdf4', fg: '#15803d' }
   if (s === 'Closed')      return { bg: '#f1f5f9', fg: '#475569' }
   return { bg: '#f1f5f9', fg: '#475569' }
@@ -144,7 +158,7 @@ function waktuSelesai(t: any): string | null {
     </div>
 
     <!-- KPI strip -->
-    <div class="kpi-strip" v-if="!loading">
+    <div class="kpi-strip" v-if="!loading && !loadErr">
       <div class="kpi">
         <span class="kpi-n" style="color:#0B1D35">{{ kpi.total }}</span>
         <span class="kpi-l">Total Tiket</span>
@@ -198,7 +212,13 @@ function waktuSelesai(t: any): string | null {
       </div>
     </div>
 
+    <div v-if="refreshErr" class="form-err" style="margin-bottom:16px">{{ refreshErr }}</div>
+
     <div v-if="loading" class="empty-state">Memuat data tiket…</div>
+
+    <div v-else-if="loadErr" class="empty-state" style="color:#dc2626">
+      {{ loadErr }}. Silakan muat ulang halaman.
+    </div>
 
     <!-- Table -->
     <div v-else class="tbl-card">
@@ -235,7 +255,7 @@ function waktuSelesai(t: any): string | null {
             <td>
               <span class="status-badge"
                 :style="{ background: statusBadge(t.status ?? t.status_tiket).bg, color: statusBadge(t.status ?? t.status_tiket).fg }">
-                {{ t.status ?? t.status_tiket }}
+                {{ statusLabel(t.status ?? t.status_tiket) }}
               </span>
             </td>
             <td class="col-pri" :style="{ color: prioritasColor(t.prioritas ?? 'Medium') }">
@@ -264,7 +284,7 @@ function waktuSelesai(t: any): string | null {
             <div class="meta-lbl">Status</div>
             <span class="status-badge"
               :style="{ background: statusBadge(detail.status_tiket ?? detail.status).bg, color: statusBadge(detail.status_tiket ?? detail.status).fg }">
-              {{ detail.status_tiket ?? detail.status }}
+              {{ statusLabel(detail.status_tiket ?? detail.status) }}
             </span>
           </div>
           <div class="meta-cell">
@@ -332,7 +352,7 @@ function waktuSelesai(t: any): string | null {
               <div class="log-dot"></div>
               <div>
                 <div class="log-body">
-                  <span style="font-weight:700;color:#0f172a">{{ log.status_ke }}</span>
+                  <span style="font-weight:700;color:#0f172a">{{ statusLabel(log.status_ke) }}</span>
                   <span v-if="log.catatan" style="color:#64748b"> — {{ log.catatan }}</span>
                 </div>
                 <div class="log-time">{{ fmtDate(log.created_at) }}</div>

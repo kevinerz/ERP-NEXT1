@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
-import { fmtDateShort } from '@/composables/useFormat'
+import { fmtDateShort, escapeHtml } from '@/composables/useFormat'
 import BasePagination from '@/components/BasePagination.vue'
 
 const router = useRouter()
@@ -296,6 +296,10 @@ async function handleSubmit() {
     const payload: any = { ...form.value }
     Object.keys(payload).forEach(k => { if (payload[k] === '' || payload[k] === 0) delete payload[k] })
     if (editId.value) {
+      // Field opsional yang dikosongkan dikirim null supaya benar-benar terhapus.
+      for (const k of ['kota', 'provinsi', 'koordinat_gps', 'tgl_aktif', 'catatan'] as const) {
+        if (!form.value[k]) payload[k] = null
+      }
       delete payload.id_pelanggan; delete payload.kode_site
       await master.updateSite(editId.value, payload)
     } else {
@@ -393,10 +397,10 @@ watch(showModal, (val) => {
 
 // Highlight match dalam text
 function highlight(text: string, q: string) {
-  if (!q || !text) return text
+  if (!q || !text) return escapeHtml(text)
   const idx = text.toLowerCase().indexOf(q.toLowerCase())
-  if (idx < 0) return text
-  return text.slice(0, idx) + '<mark>' + text.slice(idx, idx + q.length) + '</mark>' + text.slice(idx + q.length)
+  if (idx < 0) return escapeHtml(text)
+  return escapeHtml(text.slice(0, idx)) + '<mark>' + escapeHtml(text.slice(idx, idx + q.length)) + '</mark>' + escapeHtml(text.slice(idx + q.length))
 }
 </script>
 

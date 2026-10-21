@@ -1,18 +1,37 @@
 <script setup lang="ts">
-defineProps<{
+import { watch, onBeforeUnmount } from 'vue'
+
+const props = defineProps<{
   modelValue: boolean
   title: string
   message?: string
   confirmLabel?: string
   cancelLabel?: string
   variant?: 'danger' | 'warning' | 'default'
+  loading?: boolean
 }>()
-defineEmits<{ confirm: []; cancel: [] }>()
+const emit = defineEmits<{ confirm: []; cancel: [] }>()
+
+function onConfirm() {
+  if (!props.loading) emit('confirm')
+}
+function onCancel() {
+  if (!props.loading) emit('cancel')
+}
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') onCancel()
+}
+
+watch(() => props.modelValue, (open) => {
+  if (open) document.addEventListener('keydown', onKeydown)
+  else document.removeEventListener('keydown', onKeydown)
+}, { immediate: true })
+onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
   <Teleport to="body">
-    <div v-if="modelValue" class="cd-overlay" @click.self="$emit('cancel')">
+    <div v-if="modelValue" class="cd-overlay" @click.self="onCancel">
       <div class="cd-box" v-focus-trap>
         <div class="cd-icon" :class="variant ?? 'default'">
           <span v-if="variant === 'danger'">🗑</span>
@@ -22,9 +41,9 @@ defineEmits<{ confirm: []; cancel: [] }>()
         <h3 class="cd-title">{{ title }}</h3>
         <p v-if="message" class="cd-message">{{ message }}</p>
         <div class="cd-actions">
-          <button class="cd-cancel" @click="$emit('cancel')">{{ cancelLabel ?? 'Batal' }}</button>
-          <button class="cd-confirm" :class="variant ?? 'default'" @click="$emit('confirm')">
-            {{ confirmLabel ?? 'Ya, Lanjutkan' }}
+          <button class="cd-cancel" :disabled="loading" @click="onCancel">{{ cancelLabel ?? 'Batal' }}</button>
+          <button class="cd-confirm" :class="variant ?? 'default'" :disabled="loading" :aria-busy="loading || undefined" @click="onConfirm">
+            {{ loading ? 'Memproses...' : (confirmLabel ?? 'Ya, Lanjutkan') }}
           </button>
         </div>
       </div>
@@ -73,4 +92,5 @@ defineEmits<{ confirm: []; cancel: [] }>()
 .cd-confirm.warning:hover { background: #b45309; }
 .cd-confirm.default { background: #1d4ed8; color: #fff; }
 .cd-confirm.default:hover { background: #1e40af; }
+.cd-confirm:disabled, .cd-cancel:disabled { opacity: .6; cursor: not-allowed; }
 </style>

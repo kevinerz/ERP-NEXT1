@@ -6,7 +6,7 @@ import { useOperationsStore } from '@/stores/operations'
 import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import { printLaporanTiket } from '@/composables/usePrint'
-import { fmtDateTime as fmtDt, statusLabel } from '@/composables/useFormat'
+import { fmtDateTime as fmtDt, statusLabel, escapeHtml } from '@/composables/useFormat'
 import api from '@/services/api'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -40,6 +40,7 @@ const woError = ref('')
 
 const showTimeline = ref(false)
 const successMsg = ref('')
+const flashType = ref<'success' | 'error'>('success')
 
 // ── FOTOS ────────────────────────────────────────────────────
 const fotos = ref<any[]>([])
@@ -188,6 +189,7 @@ async function loadGraphBlob(sensorId: number, graphId: number) {
       responseType: 'blob',
       timeout: 20000,
     })
+    if (unmounted) return
     graphBlobUrl.value = URL.createObjectURL(resp.data)
   } catch {
     graphLoadError.value = true
@@ -247,7 +249,7 @@ function initMap() {
   mapInstance = L.map(mapContainer.value, { zoomControl: true, scrollWheelZoom: true }).setView(center, 13)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(mapInstance)
   if (siteLatLng) {
-    siteMarker = L.marker(siteLatLng, { icon: iconSite }).addTo(mapInstance).bindPopup(`<b>${site?.nama_site}</b><br>${site?.kota || ''}`)
+    siteMarker = L.marker(siteLatLng, { icon: iconSite }).addTo(mapInstance).bindPopup(`<b>${escapeHtml(site?.nama_site)}</b><br>${escapeHtml(site?.kota)}`)
   }
 }
 
@@ -262,7 +264,7 @@ function updateTeknisiMarker(lat: number, lng: number) {
   if (!mapInstance) return
   const latlng: L.LatLngExpression = [lat, lng]
   if (teknisiMarker) teknisiMarker.setLatLng(latlng)
-  else teknisiMarker = L.marker(latlng, { icon: iconTeknisi }).addTo(mapInstance).bindPopup(`<b>${ops.current?.teknisi?.nama_lengkap}</b><br>Lokasi Teknisi`)
+  else teknisiMarker = L.marker(latlng, { icon: iconTeknisi }).addTo(mapInstance).bindPopup(`<b>${escapeHtml(ops.current?.teknisi?.nama_lengkap)}</b><br>Lokasi Teknisi`)
   const siteLatLng = parseSiteLatLng(ops.current?.site?.koordinat_gps)
   if (siteLatLng) {
     if (polyline) polyline.setLatLngs([latlng, siteLatLng])
@@ -304,18 +306,27 @@ const WO_STATUS_COLOR: Record<string, string> = {
   Selesai: '#22c55e', Ditunda: '#f97316', Dibatalkan: '#ef4444',
 }
 
+let unmounted = false
+
 onMounted(async () => {
+  ops.current = null
   await Promise.all([ops.fetchOne(id), ops.fetchTeknisiList(), ops.fetchKontakTeknisiList(), proyek.fetchSiteList(), fetchJenisGangguan()])
+  if (unmounted) return
   await fetchFotos()
+  if (unmounted) return
   await nextTick()
+  if (unmounted) return
   initMap()
   await fetchTeknisiLokasi()
+  if (unmounted) return
   lokasiInterval = setInterval(fetchTeknisiLokasi, 15000)
   await Promise.all([fetchPrtgSensors(), fetchPrtgTicketEvents()])
+  if (unmounted) return
   startGraphRefresh()
 })
 
 onUnmounted(() => {
+  unmounted = true
   destroyMap()
   if (graphRefreshTimer) clearInterval(graphRefreshTimer)
   if (graphBlobUrl.value) URL.revokeObjectURL(graphBlobUrl.value)
@@ -363,7 +374,7 @@ async function handleEdit() {
 
 async function handleAddLog() {
   if (!logForm.value.status_ke && !logForm.value.catatan?.trim()) {
-    flash('Isi status atau catatan terlebih dahulu'); return
+    flash('Isi status atau catatan terlebih dahulu', 'error'); return
   }
   logSubmitting.value = true
   try {
@@ -372,7 +383,7 @@ async function handleAddLog() {
     showLogModal.value = false
     logForm.value = { status_ke: '', catatan: '' }
     flash('Log ditambahkan')
-  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal tambah log') }
+  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal tambah log', 'error') }
   finally { logSubmitting.value = false }
 }
 
@@ -400,12 +411,15 @@ async function handleAddWo() {
   finally { woSubmitting.value = false }
 }
 
-function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
+function flash(msg: string, type: 'success' | 'error' = 'success') {
+  successMsg.value = msg; flashType.value = type
+  setTimeout(() => successMsg.value = '', type === 'error' ? 5000 : 3000)
+}
 
 const tanganiLoading = ref(false)
 
 async function handleTangani() {
-  if (!auth.user?.id_karyawan) { flash('Akun tidak terhubung ke data karyawan'); return }
+  if (!auth.user?.id_karyawan) { flash('Akun tidak terhubung ke data karyawan', 'error'); return }
   tanganiLoading.value = true
   try {
     const payload: any = { id_teknisi_pic: auth.user.id_karyawan }
@@ -413,7 +427,7 @@ async function handleTangani() {
     await ops.update(id, payload)
     await ops.fetchOne(id)
     flash('Tiket berhasil ditangani')
-  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal') }
+  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal', 'error') }
   finally { tanganiLoading.value = false }
 }
 
@@ -470,12 +484,17 @@ function journeyStep(t: any) {
   return 0
 }
 
+const journeySaving = ref(false)
+
 async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
+  if (journeySaving.value) return
+  journeySaving.value = true
   try {
     await ops.update(id, { [field]: new Date().toISOString() })
     await ops.fetchOne(id)
     flash(field === 'tgl_berangkat' ? 'Waktu berangkat dicatat' : 'Waktu tiba dicatat')
-  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal mencatat waktu') }
+  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal mencatat waktu', 'error') }
+  finally { journeySaving.value = false }
 }
 </script>
 
@@ -524,7 +543,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
         </div>
       </div>
 
-      <div v-if="successMsg" class="alert-success">{{ successMsg }}</div>
+      <div v-if="successMsg" :class="flashType === 'error' ? 'alert-error' : 'alert-success'">{{ successMsg }}</div>
 
       <!-- Info bar -->
       <div class="info-bar">
@@ -864,7 +883,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                   <div class="jstep-time" v-if="ops.current.tgl_berangkat">{{ fmtDt(ops.current.tgl_berangkat) }}</div>
                   <template v-else>
                     <div class="jstep-time pending">—</div>
-                    <button v-if="!['Resolved','Closed'].includes(ops.current.status_tiket)" class="btn-journey" @click="setJourneyTime('tgl_berangkat')">Catat Berangkat</button>
+                    <button v-if="!['Resolved','Closed'].includes(ops.current.status_tiket)" class="btn-journey" :disabled="journeySaving" @click="setJourneyTime('tgl_berangkat')">{{ journeySaving ? 'Menyimpan...' : 'Catat Berangkat' }}</button>
                   </template>
                   <div v-if="teknisiLokasi && ops.current.tgl_berangkat" class="jstep-gps">
                     📡 {{ Number(teknisiLokasi.latitude).toFixed(5) }}, {{ Number(teknisiLokasi.longitude).toFixed(5) }}
@@ -879,7 +898,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                   <div class="jstep-time" v-if="ops.current.tgl_sampai">{{ fmtDt(ops.current.tgl_sampai) }}</div>
                   <template v-else>
                     <div class="jstep-time pending">—</div>
-                    <button v-if="ops.current.tgl_berangkat && !['Resolved','Closed'].includes(ops.current.status_tiket)" class="btn-journey" @click="setJourneyTime('tgl_sampai')">Catat Tiba</button>
+                    <button v-if="ops.current.tgl_berangkat && !['Resolved','Closed'].includes(ops.current.status_tiket)" class="btn-journey" :disabled="journeySaving" @click="setJourneyTime('tgl_sampai')">{{ journeySaving ? 'Menyimpan...' : 'Catat Tiba' }}</button>
                   </template>
                 </div>
               </div>
@@ -1275,6 +1294,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .jstep-gps { font-size: 10px; color: #94a3b8; font-family: monospace; margin-top: 2px; }
 .btn-journey { margin-top: 4px; padding: 3px 10px; font-size: 11px; border: 1px solid #3b82f6; color: #3b82f6; background: transparent; border-radius: 4px; cursor: pointer; }
 .btn-journey:hover { background: #eff6ff; }
+.btn-journey:disabled { opacity: .5; cursor: not-allowed; }
 
 .journey-line { width: 2px; height: 20px; background: #e2e8f0; margin: 2px 0 2px 17px; transition: background 0.2s; border-radius: 2px; }
 .journey-line.done { background: #86efac; }

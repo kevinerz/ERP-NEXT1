@@ -159,9 +159,9 @@ const menuGroups = [
     items: [
       { label: 'Aset',          emoji: '🖥️', to: '/assets',          modul: 'assets' },
       { label: 'SIM Topup',     emoji: '📱', to: '/assets/sim-topup', modul: 'assets' },
-      { label: 'Network Tools', emoji: '🔧', to: '/tools/network',    modul: null },
-      { label: 'NOC Board',     emoji: '📺', to: '/operations/noc',    modul: null },
-      { label: 'Remote Mikrotik', emoji: '🔌', to: '/tools/mikrotik', modul: null },
+      { label: 'Network Tools', emoji: '🔧', to: '/tools/network',    modul: 'operations' },
+      { label: 'NOC Board',     emoji: '📺', to: '/operations/noc',    modul: 'operations' },
+      { label: 'Remote Mikrotik', emoji: '🔌', to: '/tools/mikrotik', modul: 'operations' },
     ],
   },
   {
@@ -422,7 +422,7 @@ const initials = computed(() => {
 
       <!-- Page content -->
       <main class="main-content">
-        <RouterView />
+        <RouterView :key="route.path" />
       </main>
     </div>
 

@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useAuthStore } from '@/stores/auth'
-import { fmtRupiah, fmtDateTime } from '@/composables/useFormat'
+import { fmtRupiah, fmtDateTime, todayLocal } from '@/composables/useFormat'
 import api from '@/services/api'
 
 const route = useRoute()
@@ -21,7 +21,7 @@ const catatanApproval = ref('')
 interface GudangOpt { id_gudang: number; kode_gudang: string; nama_gudang: string }
 const gudangList = ref<GudangOpt[]>([])
 const showSelesaiForm = ref(false)
-const formSelesai = ref({ serial_number: '', harga_aktual: 0, id_gudang: 0, tgl_terima: new Date().toISOString().slice(0, 10) })
+const formSelesai = ref({ serial_number: '', harga_aktual: 0, id_gudang: 0, tgl_terima: todayLocal() })
 const formError = ref('')
 
 onMounted(async () => {

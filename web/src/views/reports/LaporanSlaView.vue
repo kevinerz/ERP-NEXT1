@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
+import { exportCsv as exportCsvFile, type CsvSection } from '@/composables/useExport'
 
 const BULAN_LIST = [
   'Januari','Februari','Maret','April','Mei','Juni',
@@ -118,45 +119,40 @@ const yTicks = [0, 25, 50, 75, 100]
 function exportCsv() {
   if (!data.value) return
   const d = data.value
-  const rows: string[] = []
-
-  rows.push(`LAPORAN SLA — ${d.periode}`)
-  rows.push('')
-  rows.push('RINGKASAN')
-  rows.push('Total Tiket,Total Resolved,Total Breach,Kepatuhan SLA,Kepatuhan FO,Avg MTTR')
   const s = d.summary
-  rows.push(`${s.total_tiket},${s.total_resolved},${s.total_breach},${fmtPct(s.compliance_pct)},${fmtPct(s.compliance_fo_pct)},${fmtMenit(s.avg_mttr_menit)}`)
-
-  rows.push('')
-  rows.push('PER LAYANAN')
-  rows.push('Kode Layanan,Nama Layanan,FO,Target,Kepatuhan,Total Tiket,Breach,Status')
-  for (const l of d.per_layanan) {
-    rows.push(`${l.kode_layanan},"${l.nama_layanan}",${l.is_fo ? 'Ya' : 'Tidak'},${l.target_pct}%,${fmtPct(l.compliance_pct)},${l.total_tiket},${l.breach},${l.status}`)
-  }
-
-  rows.push('')
-  rows.push('PER PELANGGAN')
-  rows.push('Kode,Nama Pelanggan,Total Tiket,Breach,Target,Kepatuhan,Status')
-  for (const p of d.per_pelanggan) {
-    rows.push(`${p.kode_pelanggan},"${p.nama_pelanggan}",${p.total_tiket},${p.breach},${p.target_pct}%,${fmtPct(p.compliance_pct)},${p.status}`)
-  }
-
-  rows.push('')
-  rows.push('DETAIL BREACH')
-  rows.push('No Tiket,Pelanggan,Site,Layanan,Prioritas,Tgl Open,SLA Due,Terlambat,Status')
-  for (const b of d.breach_detail) {
-    rows.push(`${b.nomor_tiket},"${b.nama_pelanggan}","${b.nama_site}",${b.kode_layanan},${b.prioritas},${fmtDate(b.tgl_open)},${fmtDate(b.sla_due)},${fmtMenit(b.terlambat_menit)},${b.status_tiket}`)
-  }
-
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `SLA-${d.periode.replace(/\s+/g, '-')}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const sections: CsvSection[] = [
+    { title: `LAPORAN SLA — ${d.periode}`, headers: [], rows: [] },
+    {
+      title: 'RINGKASAN',
+      headers: ['Total Tiket', 'Total Resolved', 'Total Breach', 'Kepatuhan SLA', 'Kepatuhan FO', 'Avg MTTR'],
+      rows: [[s.total_tiket, s.total_resolved, s.total_breach, fmtPct(s.compliance_pct), fmtPct(s.compliance_fo_pct), fmtMenit(s.avg_mttr_menit)]],
+    },
+    {
+      title: 'PER LAYANAN',
+      headers: ['Kode Layanan', 'Nama Layanan', 'FO', 'Target', 'Kepatuhan', 'Total Tiket', 'Breach', 'Status'],
+      rows: d.per_layanan.map((l: any) => [
+        l.kode_layanan, l.nama_layanan, l.is_fo ? 'Ya' : 'Tidak', `${l.target_pct}%`,
+        fmtPct(l.compliance_pct), l.total_tiket, l.breach, l.status,
+      ]),
+    },
+    {
+      title: 'PER PELANGGAN',
+      headers: ['Kode', 'Nama Pelanggan', 'Total Tiket', 'Breach', 'Target', 'Kepatuhan', 'Status'],
+      rows: d.per_pelanggan.map((p: any) => [
+        p.kode_pelanggan, p.nama_pelanggan, p.total_tiket, p.breach, `${p.target_pct}%`,
+        fmtPct(p.compliance_pct), p.status,
+      ]),
+    },
+    {
+      title: 'DETAIL BREACH',
+      headers: ['No Tiket', 'Pelanggan', 'Site', 'Layanan', 'Prioritas', 'Tgl Open', 'SLA Due', 'Terlambat', 'Status'],
+      rows: d.breach_detail.map((b: any) => [
+        b.nomor_tiket, b.nama_pelanggan, b.nama_site, b.kode_layanan, b.prioritas,
+        fmtDate(b.tgl_open), fmtDate(b.sla_due), fmtMenit(b.terlambat_menit), b.status_tiket,
+      ]),
+    },
+  ]
+  exportCsvFile(`SLA-${d.periode.replace(/\s+/g, '-')}.csv`, sections)
 }
 </script>
 

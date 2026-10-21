@@ -827,7 +827,7 @@ export async function printLabelAset(asetList: any[]) {
   <body>
     <div class="toolbar no-print">
       <span style="font-size:10pt;color:#475569">${asetList.length} label siap cetak — tempel di stiker label ukuran 70×37mm</span>
-      <button onclick="window.print()">🖨 Cetak</button>
+      <button type="button" id="btn-cetak-label">🖨 Cetak</button>
     </div>
     <div class="sheet">${labelsHtml}</div>
   </body></html>`
@@ -835,4 +835,6 @@ export async function printLabelAset(asetList: any[]) {
   win.document.open()
   win.document.write(sanitizeFullDocument(html))
   win.document.close()
+  // onclick inline dibuang DOMPurify, jadi listener dipasang dari sini.
+  win.document.getElementById('btn-cetak-label')?.addEventListener('click', () => { win.focus(); win.print() })
 }

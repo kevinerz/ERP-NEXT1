@@ -400,8 +400,8 @@ export class MasterService {
       where: { id_site: id },
       data: {
         ...dto,
-        tgl_aktif: dto.tgl_aktif ? new Date(dto.tgl_aktif) : undefined,
-        tgl_terminasi: dto.tgl_terminasi ? new Date(dto.tgl_terminasi) : undefined,
+        tgl_aktif: dto.tgl_aktif === null ? null : dto.tgl_aktif ? new Date(dto.tgl_aktif) : undefined,
+        tgl_terminasi: dto.tgl_terminasi === null ? null : dto.tgl_terminasi ? new Date(dto.tgl_terminasi) : undefined,
         updated_at: new Date(),
       },
     });

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { clampPagination } from '../../common/utils/pagination';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateLeadDto, UpdateLeadDto } from './dto/lead.dto';
 import { CreateOpportunityDto, UpdateOpportunityDto } from './dto/opportunity.dto';
@@ -45,9 +46,7 @@ export class SalesService {
     search?: string; status_lead?: string;
     id_sales_pic?: string; page?: number; limit?: number;
   }) {
-    const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = clampPagination(query.page, query.limit, 20);
     const where: any = {};
     if (query.search) {
       where.OR = [
@@ -118,9 +117,7 @@ export class SalesService {
     search?: string; tahapan?: string; id_sales_pic?: string;
     page?: number; limit?: number;
   }) {
-    const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = clampPagination(query.page, query.limit, 20);
     const where: any = {};
     if (query.search) where.nama_opportunity = { contains: query.search };
     if (query.tahapan) where.tahapan = query.tahapan;
@@ -200,9 +197,7 @@ export class SalesService {
     id_opportunity?: string; status_approval?: string;
     page?: number; limit?: number;
   }) {
-    const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = clampPagination(query.page, query.limit, 20);
     const where: any = {};
     if (query.id_opportunity) where.id_opportunity = Number(query.id_opportunity);
     if (query.status_approval) where.status_approval = query.status_approval;
@@ -297,7 +292,11 @@ export class SalesService {
     return { data };
   }
 
-  async approveQuotation(id: number, dto: ApproveQuotationDto) {
+  /**
+   * @param approverKaryawanId id_karyawan user yang login — id_approver dari body diabaikan
+   *   supaya approver tidak bisa dipalsukan.
+   */
+  async approveQuotation(id: number, dto: ApproveQuotationDto, approverKaryawanId: number | null) {
     const qt = await this.prisma.salesQuotation.findUnique({
       where: { id_quotation: id },
       include: { opportunity: { select: { id_opportunity: true, id_lead: true } } },
@@ -309,16 +308,21 @@ export class SalesService {
       throw new BadRequestException(`Quotation sudah ${qt.status_approval} — tidak bisa diproses ulang`);
 
     const data = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.salesQuotation.update({
-        where: { id_quotation: id },
+      // Flip bersyarat: hanya berhasil bila masih Draft — approve & reject bersamaan
+      // tidak bisa sama-sama lolos.
+      const flip = await tx.salesQuotation.updateMany({
+        where: { id_quotation: id, status_approval: 'Draft' },
         data: {
           status_approval: dto.status_approval,
-          id_approver: dto.id_approver,
+          id_approver: approverKaryawanId,
           tgl_approval: new Date(),
           catatan_approval: dto.catatan_approval,
           updated_at: new Date(),
         },
       });
+      if (flip.count === 0)
+        throw new BadRequestException('Quotation baru saja diproses oleh user lain — muat ulang halaman');
+      const updated = await tx.salesQuotation.findUniqueOrThrow({ where: { id_quotation: id } });
       // Approved → deal menang: Opportunity jadi Won, Lead jadi Konversi
       if (dto.status_approval === 'Approved' && qt.opportunity) {
         await tx.salesOpportunity.update({

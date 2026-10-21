@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { clampPagination } from '../../common/utils/pagination';
 import {
   CreateInvoiceDto, UpdateInvoiceDto, CreatePembayaranDto, GenerateBulkDto,
 } from './dto/invoice.dto';
@@ -41,9 +42,7 @@ export class FinanceService {
     search?: string; status?: string; periode?: string;
     id_pelanggan?: string; page?: number; limit?: number;
   }) {
-    const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = clampPagination(query.page, query.limit, 20);
     const where: any = {};
     if (query.status) where.status = query.status;
     if (query.periode) where.periode = query.periode;
@@ -94,7 +93,8 @@ export class FinanceService {
   }
 
   private calcTotals(subtotal: number, ppn_persen: number) {
-    const ppn_nominal = this.round((subtotal * ppn_persen) / 100);
+    // PPN dibulatkan ke rupiah penuh (praktik faktur pajak Indonesia)
+    const ppn_nominal = Math.round((subtotal * ppn_persen) / 100);
     const total = this.round(subtotal + ppn_nominal);
     return { ppn_nominal, total };
   }
@@ -137,6 +137,16 @@ export class FinanceService {
     const inv = await this.prisma.invoice.findUnique({ where: { id_invoice: id } });
     if (!inv) throw new NotFoundException('Invoice tidak ditemukan');
     if (inv.status === 'Lunas') throw new BadRequestException('Invoice sudah Lunas, tidak bisa diubah');
+    if (inv.status === 'Batal') throw new BadRequestException('Invoice sudah Batal, tidak bisa diubah');
+
+    // Status TIDAK boleh diubah lewat edit umum — pakai endpoint khusus:
+    // Kirim (POST /invoice/:id/kirim), Batal (POST /invoice/:id/batal, dibatasi role),
+    // Lunas/Sebagian lewat pembayaran. Satu-satunya pengecualian: Draft → Terkirim
+    // (setara endpoint kirim). Mengirim status yang sama dengan saat ini = no-op.
+    if (dto.status && dto.status !== inv.status && !(inv.status === 'Draft' && dto.status === 'Terkirim'))
+      throw new BadRequestException(
+        'Status invoice tidak bisa diubah lewat edit — gunakan aksi Kirim / Batal / catat pembayaran',
+      );
 
     const subtotal = dto.subtotal ?? Number(inv.subtotal);
     const ppn_persen = dto.ppn_persen ?? Number(inv.ppn_persen);
@@ -146,10 +156,7 @@ export class FinanceService {
     if (total < dibayar)
       throw new BadRequestException(`Total baru (${total}) tidak boleh lebih kecil dari yang sudah dibayar (${dibayar})`);
 
-    // Status manual hanya boleh nilai valid; sisanya dihitung ulang dari pembayaran & jatuh tempo
-    const VALID_STATUS = ['Draft', 'Terkirim', 'Sebagian', 'Lunas', 'Jatuh_Tempo', 'Batal'];
-    if (dto.status && !VALID_STATUS.includes(dto.status))
-      throw new BadRequestException('Status invoice tidak valid');
+    // Status dihitung ulang dari pembayaran & jatuh tempo
     const jatuhTempoBaru = dto.tgl_jatuh_tempo ? new Date(dto.tgl_jatuh_tempo) : inv.tgl_jatuh_tempo;
     const statusBaru = this.computeStatus(total, dibayar, jatuhTempoBaru, dto.status ?? inv.status);
 

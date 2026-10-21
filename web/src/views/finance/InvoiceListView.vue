@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
 import { exportCsv, type CsvSection } from '@/composables/useExport'
-import { fmtRupiah, fmtDateShort as fmtDate, statusLabel } from '@/composables/useFormat'
+import { fmtRupiah, fmtDateShort as fmtDate, statusLabel, todayLocal, monthLocal } from '@/composables/useFormat'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
 
@@ -40,8 +40,8 @@ const submitting = ref(false)
 const formError = ref('')
 const form = ref({
   id_site: 0,
-  periode: new Date().toISOString().slice(0, 7),
-  tgl_invoice: new Date().toISOString().slice(0, 10),
+  periode: monthLocal(),
+  tgl_invoice: todayLocal(),
   tgl_jatuh_tempo: '',
   subtotal: 0,
   ppn_persen: 11,
@@ -123,12 +123,42 @@ async function handleHapus(id: number, nomor: string, ev: Event) {
   }
 }
 
-function handleExport() {
-  if (!finance.invoices.length) { alert('Tidak ada data untuk diekspor.'); return }
+const exporting = ref(false)
+
+async function fetchAllForExport(): Promise<any[]> {
+  const LIMIT = 200
+  const params: any = { limit: LIMIT }
+  if (search.value) params.search = search.value
+  if (filterStatus.value) params.status = filterStatus.value
+  if (filterPeriode.value) params.periode = filterPeriode.value
+  const all: any[] = []
+  for (let p = 1; ; p++) {
+    const r = await api.get('/finance/invoice', { params: { ...params, page: p } })
+    const rows: any[] = r.data.data ?? []
+    all.push(...rows)
+    const totalPages = Number(r.data.meta?.total_pages) || 1
+    if (!rows.length || p >= totalPages) break
+  }
+  return all
+}
+
+async function handleExport() {
+  if (exporting.value) return
+  exporting.value = true
+  let invoices: any[]
+  try {
+    invoices = await fetchAllForExport()
+  } catch (err: any) {
+    alert(err?.response?.data?.message ?? 'Gagal mengambil data invoice untuk diekspor')
+    return
+  } finally {
+    exporting.value = false
+  }
+  if (!invoices.length) { alert('Tidak ada data untuk diekspor.'); return }
   const sections: CsvSection[] = [{
     title: 'DAFTAR INVOICE',
     headers: ['Nomor', 'Pelanggan', 'Periode', 'Total', 'Dibayar', 'Sisa', 'Status', 'Jatuh Tempo'],
-    rows: finance.invoices.map((inv) => [
+    rows: invoices.map((inv) => [
       inv.nomor_invoice,
       inv.site?.pelanggan?.nama_pelanggan ?? '',
       inv.periode,
@@ -139,7 +169,7 @@ function handleExport() {
       fmtDate(inv.tgl_jatuh_tempo),
     ]),
   }]
-  exportCsv(`Invoice-${new Date().toISOString().slice(0, 10)}.csv`, sections)
+  exportCsv(`Invoice-${todayLocal()}.csv`, sections)
 }
 
 function sisa(inv: { total: number; jumlah_dibayar: number }) {
@@ -155,7 +185,7 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
         <p class="sub">Daftar tagihan pelanggan</p>
       </div>
       <div class="header-actions">
-        <button class="btn-export" @click="handleExport">⬇ Export Excel</button>
+        <button class="btn-export" @click="handleExport" :disabled="exporting">{{ exporting ? 'Menyiapkan...' : '⬇ Export Excel' }}</button>
         <button class="btn-primary" @click="showModal = true; formError = ''">+ Buat Invoice</button>
       </div>
     </div>

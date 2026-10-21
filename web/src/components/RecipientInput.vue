@@ -39,16 +39,21 @@ function chipLabel(email: string): string {
   return short.length > 22 ? short.slice(0, 21) + '…' : short
 }
 
+const EMAIL_RE = /^[^\s@<>(),;:"\[\]]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i
+
 function addEmail(raw: string) {
-  for (const part of raw.split(',')) {
-    const m = part.match(/<([^>]+)>/)
-    const email = (m ? m[1] : part).trim().toLowerCase()
-    if (!email || !email.includes('@')) continue
-    if (!props.modelValue.includes(email)) {
-      emit('update:modelValue', [...props.modelValue, email])
-    }
+  const next = [...props.modelValue]
+  const invalid: string[] = []
+  const cleaned = raw.replace(/[^,;<>]*<([^>]+)>/g, ' $1 ')
+  for (const part of cleaned.split(/[,;\s]+/)) {
+    const token = part.trim()
+    if (!token) continue
+    const email = token.toLowerCase()
+    if (!EMAIL_RE.test(email)) { invalid.push(token); continue }
+    if (!next.includes(email)) next.push(email)
   }
-  inputText.value = ''
+  if (next.length !== props.modelValue.length) emit('update:modelValue', next)
+  inputText.value = invalid.join(' ')
   highlightIdx.value = -1
 }
 
@@ -68,7 +73,7 @@ function removeTag(i: number) {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',') {
+  if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',' || e.key === ';') {
     if (highlightIdx.value >= 0 && filtered.value[highlightIdx.value]) {
       e.preventDefault()
       addContact(filtered.value[highlightIdx.value])
@@ -92,11 +97,9 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function onBlur() {
-  setTimeout(() => {
-    focused.value = false
-    if (inputText.value.includes('@')) addEmail(inputText.value)
-    else inputText.value = ''
-  }, 180)
+  focused.value = false
+  if (inputText.value.includes('@')) addEmail(inputText.value)
+  else inputText.value = ''
 }
 
 function onFocus() {
@@ -111,7 +114,7 @@ function focusInput() { inputEl.value?.focus() }
   <div class="ri-wrap" :class="{ focused }" @click="focusInput">
     <span v-for="(tag, i) in modelValue" :key="tag" class="ri-chip" :title="tag">
       <span class="ri-chip-label">{{ chipLabel(tag) }}</span>
-      <button type="button" class="ri-chip-remove" @click.stop="removeTag(i)" tabindex="-1">×</button>
+      <button type="button" class="ri-chip-remove" :aria-label="`Hapus penerima ${tag}`" @click.stop="removeTag(i)">×</button>
     </span>
     <input
       ref="inputEl"

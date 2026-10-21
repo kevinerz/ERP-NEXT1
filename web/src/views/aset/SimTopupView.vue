@@ -237,11 +237,22 @@
               <label>Keterangan</label>
               <input v-model="beliForm.keterangan" type="text" placeholder="Opsional" />
             </div>
+            <div v-if="beliConfirm && beliProduk" class="beli-confirm">
+              <div class="beli-confirm-title">Konfirmasi pembelian (transaksi berbayar, tidak bisa dibatalkan)</div>
+              <div class="beli-confirm-row"><span>Nomor tujuan</span><strong>{{ beliSim?.nomor_pelanggan_isp || '—' }}</strong></div>
+              <div class="beli-confirm-row"><span>Produk</span><strong>{{ beliProduk.nama_produk }}</strong></div>
+              <div class="beli-confirm-row"><span>Harga</span><strong>{{ fmtRp(parseFloat(beliProduk.harga_jual) || 0) }}</strong></div>
+            </div>
           </div>
           <div class="modal-footer">
-            <button class="btn-cancel" @click="showBeliModal = false">Batal</button>
-            <button class="btn-primary" :disabled="beliSubmitting || !beliForm.id_sumber || !beliForm.buyer_sku_code" @click="submitBeli" style="min-width:120px">
-              {{ beliSubmitting ? 'Memproses...' : 'Beli Sekarang' }}
+            <button class="btn-cancel" @click="beliConfirm ? (beliConfirm = false) : (showBeliModal = false)" :disabled="beliSubmitting">
+              {{ beliConfirm ? 'Kembali' : 'Batal' }}
+            </button>
+            <button v-if="!beliConfirm" class="btn-primary" :disabled="beliSubmitting || !beliForm.id_sumber || !beliProduk" @click="mintaKonfirmasiBeli" style="min-width:120px">
+              Beli Sekarang
+            </button>
+            <button v-else class="btn-primary" :disabled="beliSubmitting" @click="submitBeli" style="min-width:120px">
+              {{ beliSubmitting ? 'Memproses...' : 'Ya, Beli' }}
             </button>
           </div>
         </div>
@@ -281,11 +292,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import BasePagination from '@/components/BasePagination.vue'
-import { fmtRupiah, fmtDateShort } from '@/composables/useFormat'
+import { fmtRupiah, fmtDateShort, todayLocal } from '@/composables/useFormat'
 
 const auth = useAuthStore()
 const bisaKelolaDigiflazz = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
@@ -305,7 +316,7 @@ const filterSampai = ref('')
 const showModal  = ref(false)
 const submitting = ref(false)
 const formError  = ref('')
-const form = ref({ id_sumber: '' as number | '', jenis_topup: '', nominal: 0, tgl_topup: new Date().toISOString().slice(0, 10), keterangan: '' })
+const form = ref({ id_sumber: '' as number | '', jenis_topup: '', nominal: 0, tgl_topup: todayLocal(), keterangan: '' })
 
 // ─── DIGIFLAZZ ────────────────────────────────────────────────
 const digiConfigured = ref(false)
@@ -336,6 +347,24 @@ const produkFiltered = computed(() => {
   ).slice(0, 150)
 })
 
+// Produk yang tersembunyi oleh pencarian/kategori tidak boleh tetap terpilih.
+watch(produkFiltered, (list) => {
+  if (beliForm.value.buyer_sku_code && !list.some((p: any) => p.kode_produk === beliForm.value.buyer_sku_code)) {
+    beliForm.value.buyer_sku_code = ''
+  }
+})
+
+const beliConfirm = ref(false)
+const beliProduk = computed(() => produkList.value.find((p: any) => p.kode_produk === beliForm.value.buyer_sku_code) ?? null)
+const beliSim = computed(() => simCards.value.find((s: any) => s.id_sumber === beliForm.value.id_sumber) ?? null)
+watch(() => [beliForm.value.id_sumber, beliForm.value.buyer_sku_code], () => { beliConfirm.value = false })
+
+function mintaKonfirmasiBeli() {
+  beliError.value = ''
+  if (!beliForm.value.id_sumber || !beliProduk.value) return
+  beliConfirm.value = true
+}
+
 const showConfigModal = ref(false)
 const configForm = ref({ username: '', api_key: '' })
 const configHasKey = ref(false)
@@ -356,6 +385,7 @@ async function fetchDigiStatus() {
 async function openBeliModal() {
   beliForm.value = { id_sumber: selectedSim.value?.id_sumber || '', buyer_sku_code: '', keterangan: '' }
   beliError.value = ''
+  beliConfirm.value = false
   produkKategori.value = ''
   produkSearch.value = ''
   showBeliModal.value = true
@@ -369,7 +399,7 @@ async function openBeliModal() {
 
 async function submitBeli() {
   beliError.value = ''
-  if (!beliForm.value.id_sumber || !beliForm.value.buyer_sku_code) return
+  if (!beliConfirm.value || !beliForm.value.id_sumber || !beliProduk.value) return
   beliSubmitting.value = true
   try {
     const r = await api.post('/digiflazz/beli', {
@@ -378,6 +408,7 @@ async function submitBeli() {
       keterangan: beliForm.value.keterangan || undefined,
     })
     showBeliModal.value = false
+    beliConfirm.value = false
     alert(r.data.message || 'Transaksi diproses')
     await Promise.all([fetchTopup(), fetchSimCards(), fetchDigiStatus()])
   } catch (e: any) {
@@ -468,7 +499,7 @@ function openModal() {
   form.value = {
     id_sumber: selectedSim.value?.id_sumber || '',
     jenis_topup: '', nominal: 0,
-    tgl_topup: new Date().toISOString().slice(0, 10),
+    tgl_topup: todayLocal(),
     keterangan: '',
   }
   formError.value = ''
@@ -565,6 +596,9 @@ onMounted(() => Promise.all([fetchSimCards(), fetchTopup(), fetchDigiStatus()]))
 .btn-cek-sm:hover { background: #dbeafe; }
 
 .modal-lg { width: 560px; }
+.beli-confirm { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 12px 14px; margin-top: 12px; font-size: 13px; }
+.beli-confirm-title { font-weight: 700; color: #92400e; margin-bottom: 8px; }
+.beli-confirm-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; color: #78350f; }
 .beli-error-banner { background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; font-weight: 500; }
 .kategori-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { padding: 4px 10px; border-radius: 20px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; cursor: pointer; transition: all .15s; }

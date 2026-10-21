@@ -4,6 +4,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { StarsenderService } from '../integrations/starsender/starsender.service';
 import { FcmService } from '../mobile/fcm.service';
 import { CreateTicketDto, UpdateTicketDto, AddLogDto } from './dto/ticket.dto';
+import { ticketPrefix } from '../../common/utils/ticket-number';
+import { wibStartOfDay, wibYearMonth, wibMonthRange } from '../../common/utils/wib';
 
 const TICKET_INCLUDE = {
   site: {
@@ -138,7 +140,7 @@ export class OperationsService {
   async create(dto: CreateTicketDto, userId?: number) {
     for (let attempt = 0; attempt < 5; attempt++) {
       const now = new Date();
-      const prefix = `TKT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const prefix = ticketPrefix(now);
       const last = await this.prisma.operationTicket.findFirst({
         where: { nomor_tiket: { startsWith: prefix } },
         orderBy: { nomor_tiket: 'desc' },
@@ -228,20 +230,9 @@ export class OperationsService {
       updateData.id_teknisi_pic = null;
     }
 
-    if (dto.status_tiket === 'Resolved') {
-      updateData.tgl_resolved = new Date();
-    }
-    if (dto.status_tiket === 'Closed') {
-      updateData.tgl_closed = new Date();
-    }
-    // Reopen: reset SLA dari sekarang agar tiket tidak langsung tampil TELAT
-    const wasResolved = ['Resolved', 'Closed'].includes(ticket.status_tiket ?? '');
-    const isReopened  = dto.status_tiket && !['Resolved', 'Closed'].includes(dto.status_tiket) && wasResolved;
-    if (isReopened) {
-      updateData.tgl_resolved = null;
-      updateData.sla_due = hitungSlaDue(dto.prioritas ?? ticket.prioritas ?? 'Medium', new Date());
-      updateData.sla_breached = false;
-    }
+    const transisi = this.statusTransitionFields(ticket, dto.status_tiket, dto.prioritas);
+    Object.assign(updateData, transisi);
+    const isReopened = 'sla_due' in transisi;
     // Prioritas berubah → hitung ulang deadline SLA dari tgl_open
     if (!isReopened && dto.prioritas && dto.prioritas !== ticket.prioritas) {
       updateData.sla_due = hitungSlaDue(dto.prioritas, ticket.tgl_open);
@@ -318,26 +309,57 @@ export class OperationsService {
     const ticket = await this.prisma.operationTicket.findUnique({ where: { id_ticket: dto.id_ticket } });
     if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
 
-    const log = await this.prisma.operationTicketLog.create({
-      data: {
-        id_ticket: dto.id_ticket,
-        id_user: userId || null,
-        status_dari: dto.status_ke ? (ticket.status_tiket || null) : null,
-        status_ke: dto.status_ke || null,
-        catatan: dto.catatan || null,
-      },
-      include: { user: { include: { karyawan: { select: { nama_lengkap: true } } } } },
+    const log = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.operationTicketLog.create({
+        data: {
+          id_ticket: dto.id_ticket,
+          id_user: userId || null,
+          status_dari: dto.status_ke ? (ticket.status_tiket || null) : null,
+          status_ke: dto.status_ke || null,
+          catatan: dto.catatan || null,
+        },
+        include: { user: { include: { karyawan: { select: { nama_lengkap: true } } } } },
+      });
+      if (dto.status_ke) {
+        await tx.operationTicket.update({
+          where: { id_ticket: dto.id_ticket },
+          data: {
+            status_tiket: dto.status_ke,
+            updated_at: new Date(),
+            ...this.statusTransitionFields(ticket, dto.status_ke),
+          } as any,
+        });
+      }
+      return created;
     });
 
-    // Update status if status_ke provided
-    if (dto.status_ke) {
-      const updateData: any = { status_tiket: dto.status_ke, updated_at: new Date() };
-      if (dto.status_ke === 'Resolved') updateData.tgl_resolved = new Date();
-      if (dto.status_ke === 'Closed') updateData.tgl_closed = new Date();
-      await this.prisma.operationTicket.update({ where: { id_ticket: dto.id_ticket }, data: updateData });
-    }
-
     return { data: log, message: 'Log ditambahkan' };
+  }
+
+  /**
+   * Field waktu & SLA yang ikut berubah saat status berpindah. Hanya diisi saat
+   * status BENAR-BENAR berubah — mengedit tiket yang sudah Resolved (mis. menambah
+   * root cause) tidak boleh menggeser tgl_resolved ke "sekarang" (MTTR membengkak).
+   */
+  private statusTransitionFields(
+    ticket: { status_tiket: string | null; prioritas: string | null },
+    statusBaru?: string | null,
+    prioritasBaru?: string | null,
+  ): Record<string, any> {
+    if (!statusBaru || statusBaru === ticket.status_tiket) return {};
+    const now = new Date();
+    const fields: Record<string, any> = {};
+    if (statusBaru === 'Resolved') fields.tgl_resolved = now;
+    if (statusBaru === 'Closed') fields.tgl_closed = now;
+    const wasDone = ['Resolved', 'Closed'].includes(ticket.status_tiket ?? '');
+    if (wasDone && !['Resolved', 'Closed'].includes(statusBaru)) {
+      // Reopen: SLA dihitung ulang dari sekarang agar tiket tidak langsung TELAT
+      fields.tgl_resolved = null;
+      fields.tgl_closed = null;
+      fields.sla_due = hitungSlaDue(prioritasBaru ?? ticket.prioritas ?? 'Medium', now);
+      fields.sla_breached = false;
+    }
+    return fields;
   }
 
   // ─── HELPERS ──────────────────────────────────────────────────
@@ -345,7 +367,7 @@ export class OperationsService {
   // ─── NOC BOARD — snapshot real-time untuk wallboard ───────────
   async getNocBoard() {
     const now = new Date();
-    const awalHari = new Date(now); awalHari.setHours(0, 0, 0, 0);
+    const awalHari = wibStartOfDay(now);
 
     const [aktif, resolvedHariIni, woLapangan] = await Promise.all([
       this.prisma.operationTicket.findMany({
@@ -402,11 +424,10 @@ export class OperationsService {
 
   // ─── METRIK NOC: MTTA / MTTR / kepatuhan SLA ──────────────────
   async getMetrics(query: { bulan?: string; tahun?: string }) {
-    const now = new Date();
-    const bulan = Number(query.bulan) || now.getMonth() + 1;
-    const tahun = Number(query.tahun) || now.getFullYear();
-    const awal = new Date(tahun, bulan - 1, 1);
-    const akhir = new Date(tahun, bulan, 1);
+    const kini = wibYearMonth();
+    const bulan = Number(query.bulan) || kini.month;
+    const tahun = Number(query.tahun) || kini.year;
+    const { start: awal, end: akhir } = wibMonthRange(tahun, bulan);
 
     const tikets = await this.prisma.operationTicket.findMany({
       where: { tgl_open: { gte: awal, lt: akhir } },

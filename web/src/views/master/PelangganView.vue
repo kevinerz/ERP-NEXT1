@@ -68,8 +68,11 @@ function hapusGrup(id: number, nama: string) {
   confirmHapusGrup.value = true
 }
 
+const hapusGrupLoading = ref(false)
+
 async function doHapusGrup() {
-  if (!hapusGrupTarget.value) return
+  if (!hapusGrupTarget.value || hapusGrupLoading.value) return
+  hapusGrupLoading.value = true
   try {
     await master.removeGrup(hapusGrupTarget.value.id)
     confirmHapusGrup.value = false
@@ -78,7 +81,7 @@ async function doHapusGrup() {
   } catch (e: any) {
     hapusGrupError.value = e.response?.data?.message || 'Gagal menghapus grup'
     confirmHapusGrup.value = false
-  }
+  } finally { hapusGrupLoading.value = false }
 }
 
 const showModal = ref(false)
@@ -230,6 +233,7 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
 const confirmHapus = ref(false)
 const hapusTarget = ref<{ id: number; nama: string } | null>(null)
 const hapusError = ref('')
+const hapusLoading = ref(false)
 
 function hapusPelanggan(id: number, nama: string) {
   hapusTarget.value = { id, nama }
@@ -238,7 +242,8 @@ function hapusPelanggan(id: number, nama: string) {
 }
 
 async function doHapusPelanggan() {
-  if (!hapusTarget.value) return
+  if (!hapusTarget.value || hapusLoading.value) return
+  hapusLoading.value = true
   try {
     await api.delete(`/master/pelanggan/${hapusTarget.value.id}`)
     confirmHapus.value = false
@@ -248,7 +253,7 @@ async function doHapusPelanggan() {
   } catch (e: any) {
     hapusError.value = e.response?.data?.message || 'Gagal menghapus pelanggan'
     confirmHapus.value = false
-  }
+  } finally { hapusLoading.value = false }
 }
 
 // Warna per grup
@@ -466,6 +471,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
       :message="`Pelanggan &quot;${hapusTarget?.nama}&quot; akan dihapus permanen.`"
       confirm-label="Ya, Hapus"
       variant="danger"
+      :loading="hapusLoading"
       @confirm="doHapusPelanggan"
       @cancel="confirmHapus = false"
     />
@@ -476,6 +482,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
       :message="`Grup &quot;${hapusGrupTarget?.nama}&quot; akan dihapus. Pastikan tidak ada pelanggan di grup ini.`"
       confirm-label="Ya, Hapus"
       variant="danger"
+      :loading="hapusGrupLoading"
       @confirm="doHapusGrup"
       @cancel="confirmHapusGrup = false"
     />

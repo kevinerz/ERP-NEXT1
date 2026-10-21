@@ -5,7 +5,7 @@ import { useEmailStore } from '@/stores/email'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import BasePagination from '@/components/BasePagination.vue'
 import RecipientInput from '@/components/RecipientInput.vue'
-import { fmtDateTime } from '@/composables/useFormat'
+import { fmtDateTime, escapeHtml } from '@/composables/useFormat'
 import api from '@/services/api'
 
 const email = useEmailStore()
@@ -54,7 +54,28 @@ function handleDisconnect() {
 }
 async function doDisconnect() {
   confirmDisconnect.value = false
-  await email.disconnect()
+  email.error = ''
+  try {
+    await email.disconnect()
+  } catch (e: any) {
+    email.error = e.response?.data?.message || 'Gagal memutuskan koneksi email'
+  }
+}
+
+async function unduhLampiran(uid: number, partId: number, filename: string) {
+  email.error = ''
+  try {
+    await email.downloadAttachment(uid, partId, filename)
+  } catch (e: any) {
+    let msg = ''
+    const data = e.response?.data
+    if (data instanceof Blob) {
+      try { msg = JSON.parse(await data.text())?.message || '' } catch { /* bukan JSON */ }
+    } else {
+      msg = data?.message || ''
+    }
+    email.error = msg || 'Gagal mengunduh lampiran'
+  }
 }
 
 // ─── FOLDER & LIST ────────────────────────────────────────────
@@ -88,15 +109,15 @@ async function bukaEditDraft(uid: number) {
   if (!email.current) return
   editingDraftUid.value = uid
   toTags.value = parseEmails(email.current.to || '')
-  ccTags.value = []
-  bccTags.value = []
+  ccTags.value = parseEmails(email.current.cc || '')
+  bccTags.value = parseEmails(email.current.bcc || '')
   composeForm.value = {
     subject: email.current.subject === '(tanpa subjek)' ? '' : email.current.subject,
-    html: email.current.html || email.current.text || '',
+    html: bodyAsHtml(email.current),
     in_reply_to: '',
   }
   composeFiles.value = []
-  showCc.value = false
+  showCc.value = ccTags.value.length > 0 || bccTags.value.length > 0
   sendError.value = ''
   showCompose.value = true
 }
@@ -186,8 +207,15 @@ function insertEmoji(em: string) {
 watch(showCompose, (open) => {
   if (!open) { showEmoji.value = false; return }
   loadContacts()
-  nextTick(() => { if (editorRef.value) editorRef.value.innerHTML = composeForm.value.html || '' })
+  // HTML balasan/draf berasal dari email pihak luar — wajib disanitasi sebelum masuk editor
+  nextTick(() => {
+    if (editorRef.value) editorRef.value.innerHTML = DOMPurify.sanitize(composeForm.value.html || '', { ADD_ATTR: ['target'] })
+  })
 })
+
+function bodyAsHtml(msg: { html?: string | null; text?: string | null }) {
+  return msg.html || escapeHtml(msg.text || '').replace(/\n/g, '<br>')
+}
 
 function bukaCompose() {
   editingDraftUid.value = null
@@ -206,7 +234,7 @@ function bukaBalas() {
   ccTags.value = []; bccTags.value = []
   composeForm.value = {
     subject: email.current.subject.startsWith('Re:') ? email.current.subject : `Re: ${email.current.subject}`,
-    html: `<br><br><hr><p>Pada ${fmtTgl(email.current.date)}, ${email.current.from} menulis:</p><blockquote>${email.current.html || email.current.text || ''}</blockquote>`,
+    html: `<br><br><hr><p>Pada ${fmtTgl(email.current.date)}, ${escapeHtml(email.current.from || '')} menulis:</p><blockquote>${bodyAsHtml(email.current)}</blockquote>`,
     in_reply_to: String(email.current.uid),
   }
   composeFiles.value = []
@@ -345,7 +373,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 
       <p v-if="email.error" class="msg err">{{ email.error }}</p>
 
-      <div class="split">
+      <div :class="['split', { 'show-detail': selectedUid !== null }]">
         <div class="list-pane">
           <div v-if="email.loading" class="loading">Memuat email...</div>
           <div v-else-if="!email.list.length" class="empty">Tidak ada email</div>
@@ -372,6 +400,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
         </div>
 
         <div class="detail-pane">
+          <button type="button" class="back-btn" @click="selectedUid = null">← Kembali ke daftar</button>
           <div v-if="email.loadingMessage" class="loading">Memuat email...</div>
           <div v-else-if="!email.current" class="empty">Pilih email untuk membaca</div>
           <div v-else class="msg-detail">
@@ -386,7 +415,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
             </div>
             <div v-if="email.current.attachments.length" class="attachments">
               <div v-for="a in email.current.attachments" :key="a.partId" class="attachment-chip"
-                @click="email.downloadAttachment(email.current!.uid, a.partId, a.filename)">
+                @click="unduhLampiran(email.current!.uid, a.partId, a.filename)">
                 📎 {{ a.filename }} <span class="text-gray">({{ fmtSize(a.size) }})</span>
               </div>
             </div>
@@ -573,6 +602,20 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .text-gray { color: #94a3b8; }
 .detail-body { font-size: 14px; color: #0f172a; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 14px; overflow-x: auto; }
 .detail-body-text { font-size: 14px; color: #0f172a; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 14px; white-space: pre-wrap; font-family: inherit; }
+.back-btn { display: none; background: none; border: none; padding: 12px 16px 0; font-size: 14px; font-weight: 600; color: #1d4ed8; cursor: pointer; }
+
+@media (max-width: 768px) {
+  .inbox-header { flex-wrap: wrap; gap: 10px; }
+  .header-actions { flex-wrap: wrap; }
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .split.show-detail .list-pane { display: none; }
+  .split:not(.show-detail) .detail-pane { display: none; }
+  .back-btn { display: inline-block; }
+  .msg-list { max-height: none; }
+  .msg-detail { padding: 14px 16px; }
+  .detail-header { flex-wrap: wrap; gap: 8px; }
+  .detail-meta { word-break: break-word; }
+}
 
 /* Compose modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }

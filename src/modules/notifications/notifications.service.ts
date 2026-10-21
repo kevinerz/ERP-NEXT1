@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 interface NotifData {
@@ -10,6 +10,8 @@ interface NotifData {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger('Notifications');
+
   constructor(private prisma: PrismaService) {}
 
   /** Ambil id_user semua user aktif yang bisa akses modul tertentu (termasuk superadmin) */
@@ -39,8 +41,9 @@ export class NotificationsService {
       await this.prisma.notification.createMany({
         data: userIds.map((id) => ({ id_user: id, ...data })),
       });
-    } catch (e) {
-      // Jangan sampai notifikasi gagal merusak proses utama
+    } catch (e: any) {
+      // Jangan sampai notifikasi gagal merusak proses utama — tapi tetap tercatat
+      this.logger.warn(`notifyForModul(${modul}) gagal: ${e?.message}`);
     }
   }
 
@@ -55,8 +58,8 @@ export class NotificationsService {
       await this.prisma.notification.createMany({
         data: users.map((u) => ({ id_user: u.id_user, ...data })),
       });
-    } catch (e) {
-      // Jangan sampai notifikasi gagal merusak proses utama
+    } catch (e: any) {
+      this.logger.warn(`notifyForRoles(${roles.join(',')}) gagal: ${e?.message}`);
     }
   }
 

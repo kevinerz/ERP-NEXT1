@@ -57,7 +57,22 @@ export class DigiflazzService {
     return { data };
   }
 
+  private beliInFlight = new Set<number>();
+
   async beli(dto: BeliDigiflazzDto, userId?: number) {
+    // Klik ganda: dua request sama-sama lolos cek duplikat sebelum ada yang tercatat
+    if (this.beliInFlight.has(dto.id_sumber)) {
+      throw new BadRequestException('Top-up untuk SIM ini sedang diproses — tunggu hasilnya');
+    }
+    this.beliInFlight.add(dto.id_sumber);
+    try {
+      return await this.beliLocked(dto, userId);
+    } finally {
+      this.beliInFlight.delete(dto.id_sumber);
+    }
+  }
+
+  private async beliLocked(dto: BeliDigiflazzDto, userId?: number) {
     const creds = await this.resolveCreds();
 
     const sumber = await this.prisma.sumberInternetSite.findUnique({ where: { id_sumber: dto.id_sumber } });
@@ -82,32 +97,52 @@ export class DigiflazzService {
       );
     }
 
+    // Catat sebagai Pending SEBELUM request ke Haybi: kalau request timeout, transaksi
+    // mungkin tetap dieksekusi — catatan ini yang menahan pembelian ulang (cek duplikat
+    // di atas) dan menyimpan ref_id untuk tombol Cek Status.
     const ref_id = `ERP-${Date.now()}-${randomBytes(3).toString('hex')}`;
-    const result = await this.client.buy(creds, {
-      kode_produk: dto.buyer_sku_code,
-      no_tujuan: sumber.nomor_pelanggan_isp,
-      ref_id,
+    const pending = await this.prisma.simTopup.create({
+      data: {
+        id_sumber: dto.id_sumber,
+        id_aset_sim: sumber.id_aset_sim,
+        id_site: sumber.id_site,
+        jenis_topup: 'Data',
+        nominal: 0,
+        tgl_topup: new Date(),
+        id_user: userId || null,
+        keterangan: dto.keterangan,
+        metode: 'Haybi',
+        buyer_sku_code: dto.buyer_sku_code,
+        customer_no: sumber.nomor_pelanggan_isp,
+        ref_id,
+        status_transaksi: 'Pending',
+      },
     });
+
+    let result: Awaited<ReturnType<HaybiClient['buy']>>;
+    try {
+      result = await this.client.buy(creds, {
+        kode_produk: dto.buyer_sku_code,
+        no_tujuan: sumber.nomor_pelanggan_isp,
+        ref_id,
+      });
+    } catch (err) {
+      this.logger.warn(`Request beli Haybi gagal/timeout ref_id=${ref_id}: ${(err as Error).message}`);
+      throw new BadRequestException(
+        `Request ke Haybi gagal atau timeout (ref: ${ref_id}). Transaksi tercatat Pending — ` +
+        'klik "Cek Status" sebelum mencoba beli lagi, jangan beli ulang.',
+      );
+    }
 
     const status_transaksi = result.status === 'sukses' ? 'Sukses' : result.status === 'error' ? 'Gagal' : 'Pending';
 
     let data;
     try {
-      data = await this.prisma.simTopup.create({
+      data = await this.prisma.simTopup.update({
+        where: { id_topup: pending.id_topup },
         data: {
-          id_sumber: dto.id_sumber,
-          id_aset_sim: sumber.id_aset_sim,
-          id_site: sumber.id_site,
-          jenis_topup: 'Data',
           nominal: result.harga ?? 0,
           harga_modal: result.harga ?? 0,
-          tgl_topup: new Date(),
-          id_user: userId || null,
-          keterangan: dto.keterangan,
-          metode: 'Haybi',
-          buyer_sku_code: dto.buyer_sku_code,
-          customer_no: sumber.nomor_pelanggan_isp,
-          ref_id,
           status_transaksi,
           serial_number: result.sn,
           provider_response: JSON.stringify(result),

@@ -1,6 +1,10 @@
 import { defineStore } from 'pinia'
 import api from '@/services/api'
 
+function maxId(items: any[], current: number): number {
+  return items.reduce((m, n) => Math.max(m, Number(n.id_notif) || 0), current)
+}
+
 export const useNotificationStore = defineStore('notification', {
   state: () => ({
     count: 0,
@@ -11,6 +15,7 @@ export const useNotificationStore = defineStore('notification', {
     toasts: [] as { id: number; judul: string; deskripsi: string; url?: string }[],
     _pollInterval: null as ReturnType<typeof setInterval> | null,
     _lastSeenId: 0,
+    _initialized: false,
   }),
 
   actions: {
@@ -18,6 +23,13 @@ export const useNotificationStore = defineStore('notification', {
       try {
         const r = await api.get('/notifications/unread-count')
         const newCount: number = r.data.data.count
+        // Fetch pertama setelah reload/login: notif yang sudah ada dijadikan
+        // baseline tanpa toast/bunyi, supaya notif lama tidak di-toast ulang.
+        if (!this._initialized) {
+          this._initialized = await this.syncLastSeen()
+          this.count = newCount
+          return
+        }
         // Jika count naik → ada notif baru, fetch terbaru untuk toast
         if (newCount > this.count && this.count >= 0) {
           await this.checkNewToasts()
@@ -32,7 +44,7 @@ export const useNotificationStore = defineStore('notification', {
         const items: any[] = r.data.data || []
         const newest = items.filter(n => !n.is_read && n.id_notif > this._lastSeenId)
         newest.slice(0, 3).forEach(n => this.showToast(n))
-        if (items.length) this._lastSeenId = items[0].id_notif
+        this._lastSeenId = maxId(items, this._lastSeenId)
         // Sync ke panel kalau sudah terbuka
         if (this.notifications.length) {
           this.notifications = items
@@ -40,6 +52,14 @@ export const useNotificationStore = defineStore('notification', {
         }
         this.count = r.data.meta.unread
       } catch {}
+    },
+
+    async syncLastSeen(): Promise<boolean> {
+      try {
+        const r = await api.get('/notifications', { params: { page: 1 } })
+        this._lastSeenId = maxId(r.data.data || [], this._lastSeenId)
+        return true
+      } catch { return false }
     },
 
     async fetchNotifications(page = 1) {
@@ -50,7 +70,7 @@ export const useNotificationStore = defineStore('notification', {
         this.notifications = r.data.data
         this.meta = r.data.meta
         this.count = r.data.meta.unread
-        if (r.data.data.length) this._lastSeenId = r.data.data[0].id_notif
+        this._lastSeenId = maxId(r.data.data || [], this._lastSeenId)
       } catch {
         this.error = 'Gagal memuat notifikasi'
       }
@@ -100,6 +120,7 @@ export const useNotificationStore = defineStore('notification', {
         clearInterval(this._pollInterval)
         this._pollInterval = null
       }
+      this._initialized = false
     },
   },
 })

@@ -19,7 +19,7 @@ onMounted(async () => {
     const res = await api.get('/reports/laporan-bulanan', {
       params: { pelanggan_id, bulan, tahun },
     })
-    data.value = res.data
+    data.value = res.data.data
   } catch (e: any) {
     error.value = e?.response?.data?.message || 'Gagal memuat laporan'
   } finally {

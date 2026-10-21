@@ -26,7 +26,7 @@ export class VendorJwtStrategy extends PassportStrategy(Strategy, 'vendor-jwt') 
       where: { id_kontak: payload.sub },
     });
 
-    if (!vendor) throw new UnauthorizedException('Akun vendor tidak ditemukan');
+    if (!vendor || !vendor.is_aktif) throw new UnauthorizedException('Akun vendor tidak aktif atau tidak ditemukan');
 
     return {
       id_kontak: vendor.id_kontak,

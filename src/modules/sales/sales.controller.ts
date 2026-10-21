@@ -7,6 +7,8 @@ import { CreateLeadDto, UpdateLeadDto } from './dto/lead.dto';
 import { CreateOpportunityDto, UpdateOpportunityDto } from './dto/opportunity.dto';
 import { CreateQuotationDto, UpdateQuotationDto, ApproveQuotationDto } from './dto/quotation.dto';
 import { CreateActivityDto, UpdateActivityDto } from './dto/activity.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('sales')
 export class SalesController {
@@ -45,9 +47,12 @@ export class SalesController {
   @Patch('quotation/:id') updateQuotation(
     @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateQuotationDto,
   ) { return this.salesService.updateQuotation(id, dto); }
-  @Patch('quotation/:id/approve') approveQuotation(
-    @Param('id', ParseIntPipe) id: number, @Body() dto: ApproveQuotationDto,
-  ) { return this.salesService.approveQuotation(id, dto); }
+  // Approve/Reject: hanya level manajemen; approver = user yang login (bukan dari body)
+  @Patch('quotation/:id/approve')
+  @Roles('Admin', 'Director', 'Manager_Ops')
+  approveQuotation(
+    @Param('id', ParseIntPipe) id: number, @Body() dto: ApproveQuotationDto, @CurrentUser() user: any,
+  ) { return this.salesService.approveQuotation(id, dto, user?.id_karyawan ?? null); }
 
   // Activity
   @Post('activity') createActivity(@Body() dto: CreateActivityDto) {

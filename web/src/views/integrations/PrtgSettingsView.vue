@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { todayLocal } from '@/composables/useFormat'
 
 const proyek = useProyekStore()
 const auth = useAuthStore()
@@ -292,14 +293,18 @@ const monitorLastAtDisplay = computed(() => {
   return fmtRelative(monitorLastAt.value)
 })
 
+let unmounted = false
+
 onMounted(async () => {
   await Promise.all([fetchStatus(), fetchConfig(), fetchMapping(), proyek.fetchSiteList(), fetchPending(), fetchMonitor()])
+  if (unmounted) return
   pendingInterval = setInterval(fetchPending, 15_000)
   monitorTimer = setInterval(fetchMonitor, 60_000)
   monitorTickInterval = setInterval(() => monitorTick.value++, 5_000)
 })
 
 onUnmounted(() => {
+  unmounted = true
   if (pendingInterval) clearInterval(pendingInterval)
   if (monitorTimer) clearInterval(monitorTimer)
   if (monitorTickInterval) clearInterval(monitorTickInterval)
@@ -320,6 +325,7 @@ const provSiteId          = ref<number>(0)
 const provForm            = ref({ jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: '', ip_address: '', importComment: false })
 const provSubmitting      = ref(false)
 const provMsg             = ref('')
+const provProvisioned     = ref(false)
 const provAsetFound       = ref<any>(null)
 
 // Import comment standalone (untuk device yang sudah mapped)
@@ -457,6 +463,7 @@ function openProvModal(device: any) {
   provAsetFound.value = null
   linkAset.value = false
   provMsg.value = ''
+  provProvisioned.value = false
   modalSite.query.value = ''
   modalSite.open.value = false
   provModal.value = true
@@ -481,17 +488,20 @@ async function submitProvision() {
   }
   provSubmitting.value = true; provMsg.value = ''
   try {
-    const payload: any = {
-      device_name: provSelected.value.device_name,
-      id_site: provSiteId.value,
-      ip_address: provForm.value.ip_address,
-      jenis_perangkat: provForm.value.jenis_perangkat,
-      merk: provForm.value.merk || undefined,
-      tipe_model: provForm.value.tipe_model || undefined,
-      serial_number: provForm.value.serial_number || undefined,
+    if (!provProvisioned.value) {
+      const payload: any = {
+        device_name: provSelected.value.device_name,
+        id_site: provSiteId.value,
+        ip_address: provForm.value.ip_address,
+        jenis_perangkat: provForm.value.jenis_perangkat,
+        merk: provForm.value.merk || undefined,
+        tipe_model: provForm.value.tipe_model || undefined,
+        serial_number: provForm.value.serial_number || undefined,
+      }
+      if (linkAset.value && provAsetFound.value) payload.id_aset = provAsetFound.value.id_aset
+      await api.post('/prtg/provision', payload)
+      provProvisioned.value = true
     }
-    if (linkAset.value && provAsetFound.value) payload.id_aset = provAsetFound.value.id_aset
-    await api.post('/prtg/provision', payload)
     // Import data dari komentar jika dicentang
     if (provForm.value.importComment && provSelected.value.comments) {
       try {
@@ -502,7 +512,11 @@ async function submitProvision() {
           parsed_ip: provSelected.value.parsed_ip ?? null,
           comment_text: provSelected.value.comments ?? '',
         })
-      } catch {}
+      } catch (e: any) {
+        provMsg.value = `Perangkat sudah ditambahkan, tetapi import data komentar gagal: ${e.response?.data?.message || 'kesalahan tidak diketahui'}. Klik tombol lagi untuk mencoba import ulang, atau Batal.`
+        fetchProvision()
+        return
+      }
     }
     provModal.value = false
     clearInlineSite(provSelected.value.device_name)
@@ -558,7 +572,7 @@ function exportProvisionCSV() {
     else if (!d.ip_address) status = 'No IP'
     return [d.device_name, d.ip_address, status, d.nama_site, d.match_score, d.nama_pelanggan, d.sudah_ada ? 'Ya' : 'Tidak']
   })
-  downloadCSV([header, ...rows], `prtg-provision-${new Date().toISOString().slice(0, 10)}.csv`)
+  downloadCSV([header, ...rows], `prtg-provision-${todayLocal()}.csv`)
 }
 
 function exportKonfirmasiCSV() {
@@ -568,7 +582,7 @@ function exportKonfirmasiCSV() {
   const rows = list.map((d: any) => [
     d.device_name, d.ip_address, d.nama_site, d.match_score, d.nama_pelanggan, d.kode_site ?? '', 'Konfirmasi'
   ])
-  downloadCSV([header, ...rows], `prtg-konfirmasi-${new Date().toISOString().slice(0, 10)}.csv`)
+  downloadCSV([header, ...rows], `prtg-konfirmasi-${todayLocal()}.csv`)
 }
 </script>
 
@@ -1302,7 +1316,7 @@ function exportKonfirmasiCSV() {
           <div class="modal-actions">
             <button class="btn-secondary" @click="provModal = false">Batal</button>
             <button class="btn-submit" @click="submitProvision" :disabled="provSubmitting">
-              {{ provSubmitting ? 'Menyimpan...' : '⚡ Provision Sekarang' }}
+              {{ provSubmitting ? 'Menyimpan...' : provProvisioned ? 'Coba Import Ulang' : '⚡ Provision Sekarang' }}
             </button>
           </div>
         </div>
