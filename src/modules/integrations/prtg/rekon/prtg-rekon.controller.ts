@@ -1,0 +1,51 @@
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import { Public } from '../../../../common/decorators/public.decorator';
+import { PrtgRekonService } from './prtg-rekon.service';
+import { SimpanRekonDto, ToggleDoneDto } from './rekon.dto';
+
+// Halaman SEMENTARA tanpa login — rekonsiliasi nama PRTG ↔ site ERP.
+// Mati total kecuali env PRTG_REKON_ENABLED=true (selain itu 404).
+@Controller('prtg-rekon')
+export class PrtgRekonController {
+  constructor(private readonly rekon: PrtgRekonService) {}
+
+  // GET /api/prtg-rekon
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @Get()
+  list() {
+    return this.rekon.list();
+  }
+
+  // GET /api/prtg-rekon/sites?q=
+  @Public()
+  @Get('sites')
+  sites(@Query('q') q: string) {
+    return this.rekon.cariSite(q);
+  }
+
+  // PATCH /api/prtg-rekon/:objid — simpan draft
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  @Patch(':objid')
+  simpan(@Param('objid', ParseIntPipe) objid: number, @Body() dto: SimpanRekonDto) {
+    return this.rekon.simpan(objid, dto);
+  }
+
+  // PATCH /api/prtg-rekon/:objid/done
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  @Patch(':objid/done')
+  done(@Param('objid', ParseIntPipe) objid: number, @Body() dto: ToggleDoneDto) {
+    return this.rekon.toggleDone(objid, dto.done, dto.device_name);
+  }
+
+  // POST /api/prtg-rekon/:objid/apply — rename PRTG + update ERP
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 30 } })
+  @Post(':objid/apply')
+  apply(@Param('objid', ParseIntPipe) objid: number, @Body() dto: SimpanRekonDto) {
+    return this.rekon.apply(objid, dto);
+  }
+}

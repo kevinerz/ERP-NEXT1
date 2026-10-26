@@ -1168,6 +1168,26 @@ model IntegrationPrtgMapping {
   @@map("integration_prtg_mapping")
 }
 
+// Rekonsiliasi sementara nama device PRTG ↔ site ERP (halaman publik /rekon-prtg)
+model PrtgRekonsiliasi {
+  id               Int       @id @default(autoincrement())
+  prtg_objid       Int       @unique
+  device_name_awal String    @db.VarChar(150)
+  nama_baru        String?   @db.VarChar(150)
+  id_site          Int?
+  kota             String?   @db.VarChar(100)
+  provinsi         String?   @db.VarChar(100)
+  alamat_lengkap   String?   @db.Text
+  koordinat_gps    String?   @db.VarChar(50)
+  catatan          String?   @db.Text
+  is_done          Boolean   @default(false)
+  done_at          DateTime?
+  applied_at       DateTime?
+  updated_at       DateTime  @updatedAt
+
+  @@map("prtg_rekonsiliasi")
+}
+
 // Konfigurasi StarSender — WA gateway untuk notifikasi tiket & monitoring
 model IntegrationStarsenderConfig {
   id         Int      @id @default(1)

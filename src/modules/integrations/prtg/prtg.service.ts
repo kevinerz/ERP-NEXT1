@@ -1008,6 +1008,7 @@ export class PrtgService {
 
       const sudahAda = id_site && ip ? perangkatSet.has(`${id_site}:${ip}`) : false;
       return {
+        objid: d.objid,
         device_name: d.device,
         ip_address: ip,
         prtg_status: d.status,
