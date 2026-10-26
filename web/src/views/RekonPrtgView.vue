@@ -85,7 +85,7 @@ async function load(refresh = false) {
   loadErr.value = ''
   try {
     const { data } = await http.get('', { params: refresh ? { refresh: 1 } : {} })
-    cacheInfo.value = data.dari_cache ? `Dari cache (${new Date(data.cached_at).toLocaleTimeString('id-ID')})` : ''
+    cacheInfo.value = data.meta?.dari_cache ? `Dari cache (${new Date(data.meta.cached_at).toLocaleTimeString('id-ID')})` : ''
     rows.value = data.data as Row[]
     for (const r of rows.value) forms[r.objid] = initForm(r)
   } catch (e) {

@@ -84,7 +84,7 @@ export class PrtgRekonService {
         rekon: r,
       };
     });
-    return { data, cached_at: new Date(at).toISOString(), dari_cache: dariCache };
+    return { data, meta: { cached_at: new Date(at).toISOString(), dari_cache: dariCache } };
   }
 
   async cariSite(q: string) {
