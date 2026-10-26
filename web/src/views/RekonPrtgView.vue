@@ -6,7 +6,22 @@ import axios from 'axios'
 import { confirmDialog } from '@/composables/useDialog'
 
 // Axios polos: halaman publik, tidak boleh ikut alur refresh/redirect login
-const http = axios.create({ baseURL: '/api/prtg-rekon' })
+// Token rekon dibaca dari ?token=... lalu disimpan di sessionStorage (dibuang dari URL)
+function ambilToken(): string {
+  try {
+    const url = new URL(window.location.href)
+    const t = url.searchParams.get('token')
+    if (t) {
+      sessionStorage.setItem('rekon_token', t)
+      url.searchParams.delete('token')
+      window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+    }
+    return sessionStorage.getItem('rekon_token') ?? ''
+  } catch {
+    return ''
+  }
+}
+const http = axios.create({ baseURL: '/api/prtg-rekon', headers: { 'X-Rekon-Token': ambilToken() } })
 
 interface Site {
   id_site: number; kode_site: string; nama_site: string
@@ -44,6 +59,7 @@ const batas = ref(40)
 function errMsg(e: any): string {
   const m = e?.response?.data?.message
   if (e?.response?.status === 404) return 'Halaman rekonsiliasi sedang dimatikan.'
+  if (e?.response?.status === 401) return 'Token salah atau belum ada. Buka lewat link yang memuat ?token=...'
   return Array.isArray(m) ? m.join(', ') : m || e?.message || 'Gagal'
 }
 

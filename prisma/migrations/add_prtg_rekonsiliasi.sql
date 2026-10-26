@@ -17,3 +17,6 @@ CREATE TABLE IF NOT EXISTS `prtg_rekonsiliasi` (
   PRIMARY KEY (`id`),
   UNIQUE INDEX `prtg_rekonsiliasi_prtg_objid_key` (`prtg_objid`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Snapshot data site ERP sebelum apply (nama_site, kota, provinsi, alamat_lengkap, koordinat_gps) untuk rollback
+ALTER TABLE `prtg_rekonsiliasi` ADD COLUMN IF NOT EXISTS `site_awal` JSON NULL AFTER `device_name_awal`;

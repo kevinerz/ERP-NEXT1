@@ -1173,6 +1173,7 @@ model PrtgRekonsiliasi {
   id               Int       @id @default(autoincrement())
   prtg_objid       Int       @unique
   device_name_awal String    @db.VarChar(150)
+  site_awal        Json?
   nama_baru        String?   @db.VarChar(150)
   id_site          Int?
   kota             String?   @db.VarChar(100)

@@ -122,6 +122,15 @@ export class PrtgRekonService {
     if (namaPrtgSekarang !== nama) await this.prtg.renameObject(objid, nama);
 
     // 2) ERP: site + mapping manual ikut nama baru (poll & cariSite berbasis device_name)
+    // Snapshot data site sebelum ditimpa (hanya apply pertama, supaya bisa dikembalikan)
+    const siteAwal = row.site_awal ?? {
+      id_site: site.id_site,
+      nama_site: site.nama_site,
+      kota: site.kota,
+      provinsi: site.provinsi,
+      alamat_lengkap: site.alamat_lengkap,
+      koordinat_gps: site.koordinat_gps,
+    };
     const siteData: Record<string, string> = { nama_site: nama };
     for (const k of ['kota', 'provinsi', 'alamat_lengkap', 'koordinat_gps'] as const) {
       const v = row[k]?.trim();
@@ -139,12 +148,12 @@ export class PrtgRekonService {
       }),
       this.prisma.prtgRekonsiliasi.update({
         where: { prtg_objid: objid },
-        data: { applied_at: new Date(), is_done: true, done_at: new Date() },
+        data: { site_awal: siteAwal, applied_at: new Date(), is_done: true, done_at: new Date() },
       }),
     ]);
 
     this.logger.log(
-      `APPLY objid=${objid} PRTG "${namaPrtgSekarang}" → "${nama}"; site#${site.id_site} "${site.nama_site}" → "${nama}" ${JSON.stringify(siteData)}`,
+      `APPLY objid=${objid} PRTG "${namaPrtgSekarang}" → "${nama}"; site#${site.id_site} "${site.nama_site}" → "${nama}" ${JSON.stringify(siteData)} awal=${JSON.stringify(siteAwal)}`,
     );
     return { data, message: 'Nama ERP & PRTG sudah diperbarui' };
   }
