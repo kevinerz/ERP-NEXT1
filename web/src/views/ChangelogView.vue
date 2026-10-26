@@ -23,7 +23,7 @@ const TYPE_META: Record<string, { label: string; icon: string; color: string }> 
 }
 
 function typeMeta(t: string) {
-  return TYPE_META[t] || TYPE_META.update
+  return TYPE_META[t] ?? TYPE_META.update!
 }
 
 // Kelompokkan entri berurutan dengan versi yang sama jadi satu blok versi,
@@ -67,7 +67,7 @@ const groups = computed(() => {
           <div class="version-heading">
             <span class="version-tag">v{{ g.version }}</span>
             <span v-if="gi === 0" class="latest-chip">Terbaru</span>
-            <span class="version-date">{{ fmtRelativeTime(g.items[0].date) }}</span>
+            <span class="version-date">{{ fmtRelativeTime(g.items[0]?.date) }}</span>
           </div>
           <div class="version-items">
             <div v-for="it in g.items" :key="it.hash" class="entry">
@@ -91,7 +91,7 @@ const groups = computed(() => {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 820px; }
+.page { max-width: 820px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; gap: 16px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
@@ -105,7 +105,7 @@ const groups = computed(() => {
 .cb-version { font-size: 16px; font-weight: 800; color: #1d4ed8; line-height: 1.3; }
 .cb-hash { font-size: 11px; color: #94a3b8; font-family: 'Consolas', monospace; }
 
-.empty-state { padding: 60px 20px; text-align: center; color: #94a3b8; font-size: 14px; background: #fff; border-radius: 12px; }
+.empty-state { padding: 60px 20px; text-align: center; color: #94a3b8; font-size: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); }
 
 .timeline { display: flex; flex-direction: column; }
 
@@ -116,27 +116,26 @@ const groups = computed(() => {
 .version-line { width: 2px; flex: 1; background: #e2e8f0; margin: 4px 0; min-height: 20px; }
 
 .version-content { flex: 1; min-width: 0; padding-bottom: 24px; }
-.version-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.version-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .version-tag { font-size: 14px; font-weight: 800; color: #0f172a; }
 .latest-chip { font-size: 10px; font-weight: 700; color: #1d4ed8; background: #dbeafe; padding: 2px 8px; border-radius: 10px; }
 .version-date { font-size: 12px; color: #94a3b8; margin-left: auto; }
 
 .version-items {
-  background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-xs);
   overflow: hidden;
 }
 .entry { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #f1f5f9; }
 .entry:last-child { border-bottom: none; }
 .entry-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
 .entry-body { flex: 1; min-width: 0; }
-.entry-subject { font-size: 13.5px; color: #1e293b; line-height: 1.5; }
+.entry-subject { font-size: 13.5px; color: #1e293b; line-height: 1.5; overflow-wrap: anywhere; }
 .entry-meta { display: flex; align-items: center; gap: 8px; margin-top: 5px; flex-wrap: wrap; }
 .entry-type { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
 .entry-hash { font-size: 11px; color: #94a3b8; font-family: 'Consolas', monospace; }
-.entry-date { font-size: 11px; color: #cbd5e1; }
+.entry-date { font-size: 11px; color: var(--text-muted); }
 
 @media (max-width: 640px) {
-  .page { padding: 16px; }
   .page-header { flex-direction: column; }
   .current-badge { align-items: flex-start; align-self: stretch; flex-direction: row; justify-content: space-between; }
 }

@@ -3,8 +3,9 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useInstalasiStore } from '@/stores/instalasi'
 import { useAuthStore } from '@/stores/auth'
-import { fmtDateTime as fmtDt } from '@/composables/useFormat'
+import { fmtDateTime as fmtDt, fmtDateShort, fmtRupiah } from '@/composables/useFormat'
 import api from '@/services/api'
+import { confirmDialog, alertDialog, alertError } from '@/composables/useDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -41,6 +42,8 @@ const ttdTeknisiCtx = ref<CanvasRenderingContext2D | null>(null)
 const ttdPelangganCtx = ref<CanvasRenderingContext2D | null>(null)
 const drawingTeknisi = ref(false)
 const drawingPelanggan = ref(false)
+const ttdTeknisiHasInk = ref(false)
+const ttdPelangganHasInk = ref(false)
 const bastSubmitting = ref(false)
 const bastError = ref('')
 
@@ -65,7 +68,8 @@ const FOTO_STAGE = ['Sebelum', 'Proses', 'Sesudah']
 const d = computed(() => ins.current)
 
 onMounted(async () => {
-  await Promise.all([
+  // allSettled: dropdown opsional yang gagal tidak memunculkan unhandled rejection
+  await Promise.allSettled([
     ins.fetchOne(id),
     api.get('/master/layanan').then(r => { layananList.value = r.data.data ?? [] }),
     api.get('/operations/teknisi-list').then(r => { teknisiList.value = r.data.data ?? [] }),
@@ -130,16 +134,16 @@ async function uploadFoto() {
     await ins.uploadFoto(id, fotoFile.value, fotoStage.value, fotoCaption.value)
     await ins.fetchOne(id)
     fotoFile.value = null; fotoCaption.value = ''; fotoStage.value = 'Proses'
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal upload foto') }
+  } catch (e: any) { alertError(e, 'Gagal upload foto') }
   finally { fotoUploading.value = false }
 }
 async function hapusFoto(id_foto: number) {
-  if (!confirm('Hapus foto ini?')) return
+  if (!(await confirmDialog({ title: 'Hapus foto ini?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await ins.deleteFoto(id_foto)
     await ins.fetchOne(id)
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus foto')
+    alertError(e, 'Gagal menghapus foto')
   }
 }
 function fotoUrl(filename: string) {
@@ -174,6 +178,8 @@ function draw(e: MouseEvent | TouchEvent, which: 'teknisi' | 'pelanggan') {
   if (!ctx || !canvas) return
   const pos = getPos(e, canvas)
   ctx.lineTo(pos.x, pos.y); ctx.stroke()
+  if (which === 'teknisi') ttdTeknisiHasInk.value = true
+  else ttdPelangganHasInk.value = true
   e.preventDefault()
 }
 function stopDraw(which: 'teknisi' | 'pelanggan') {
@@ -184,21 +190,25 @@ function clearCanvas(which: 'teknisi' | 'pelanggan') {
   const canvas = which === 'teknisi' ? ttdTeknisiCanvas.value : ttdPelangganCanvas.value
   const ctx = which === 'teknisi' ? ttdTeknisiCtx.value : ttdPelangganCtx.value
   if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+  if (which === 'teknisi') ttdTeknisiHasInk.value = false
+  else ttdPelangganHasInk.value = false
 }
 function getPos(e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement) {
   const rect = canvas.getBoundingClientRect()
-  if (e instanceof TouchEvent) {
-    return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top }
+  if ('touches' in e) {
+    return { x: e.touches[0]!.clientX - rect.left, y: e.touches[0]!.clientY - rect.top }
   }
-  return { x: (e as MouseEvent).clientX - rect.left, y: (e as MouseEvent).clientY - rect.top }
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top }
 }
 
 async function submitBAST() {
   bastSubmitting.value = true; bastError.value = ''
   try {
-    // Upload TTD sebagai PNG, simpan path-nya
-    const ttdTeknisiPath = ttdTeknisiCanvas.value ? await uploadCanvas(ttdTeknisiCanvas.value, 'teknisi') : null
-    const ttdPelangganPath = ttdPelangganCanvas.value ? await uploadCanvas(ttdPelangganCanvas.value, 'pelanggan') : null
+    // Upload TTD sebagai PNG (hanya kanvas yang benar-benar ditandatangani)
+    const ttdTeknisiPath = ttdTeknisiCanvas.value && ttdTeknisiHasInk.value
+      ? await uploadCanvas(ttdTeknisiCanvas.value, 'teknisi') : null
+    const ttdPelangganPath = ttdPelangganCanvas.value && ttdPelangganHasInk.value
+      ? await uploadCanvas(ttdPelangganCanvas.value, 'pelanggan') : null
     await ins.saveBAST(id, {
       ...bastForm.value,
       ...(ttdTeknisiPath ? { ttd_teknisi_path: ttdTeknisiPath } : {}),
@@ -206,22 +216,26 @@ async function submitBAST() {
     })
     await ins.fetchOne(id)
     bastError.value = ''
-    alert('BAST berhasil disimpan')
-  } catch (e: any) { bastError.value = e.response?.data?.message || 'Gagal menyimpan BAST' }
+    await alertDialog({ message: 'BAST berhasil disimpan', variant: 'success' })
+  } catch (e: any) { bastError.value = e.response?.data?.message || e.message || 'Gagal menyimpan BAST' }
   finally { bastSubmitting.value = false }
 }
 
-async function uploadCanvas(canvas: HTMLCanvasElement, type: string): Promise<string | null> {
-  return new Promise(resolve => {
+async function uploadCanvas(canvas: HTMLCanvasElement, type: string): Promise<string> {
+  const label = type === 'teknisi' ? 'teknisi' : 'pelanggan'
+  return new Promise((resolve, reject) => {
     canvas.toBlob(async blob => {
-      if (!blob) { resolve(null); return }
+      if (!blob) { reject(new Error(`Gagal membaca tanda tangan ${label}`)); return }
       const form = new FormData()
       form.append('file', blob, `ttd_${type}_${id}.png`)
       form.append('stage', type)
       try {
         const { data } = await api.post(`/instalasi/${id}/foto`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
-        resolve(`instalasi/${id}/${data.data?.filename}`)
-      } catch { resolve(null) }
+        if (!data.data?.filename) throw new Error()
+        resolve(`instalasi/${id}/${data.data.filename}`)
+      } catch (e: any) {
+        reject(new Error(`Gagal upload tanda tangan ${label}: ${e?.response?.data?.message || 'coba lagi'}`))
+      }
     }, 'image/png')
   })
 }
@@ -232,11 +246,16 @@ function downloadBAST() {
 
 // ── HAPUS ORDER ──────────────────────────────────────────────────
 async function hapusOrder() {
-  if (!confirm(`Hapus order ${d.value?.nomor_instalasi}? Hanya Draft/Dibatalkan yang bisa dihapus.`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Order',
+    message: `Hapus order ${d.value?.nomor_instalasi}? Hanya Draft/Dibatalkan yang bisa dihapus.`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await ins.remove(id)
     router.push('/instalasi')
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus') }
+  } catch (e: any) { alertError(e, 'Gagal menghapus') }
 }
 </script>
 
@@ -248,7 +267,7 @@ async function hapusOrder() {
       <!-- Header -->
       <div class="page-header">
         <div class="header-left">
-          <button class="btn-back" @click="router.push('/instalasi')">← Kembali</button>
+          <button type="button" class="btn-back" @click="router.push('/instalasi')">← Kembali</button>
           <div>
             <div class="nomor">{{ d.nomor_instalasi }}</div>
             <span class="status-badge"
@@ -291,12 +310,12 @@ async function hapusOrder() {
             {{ d.kontak_teknisi?.asal_vendor }} · {{ d.kontak_teknisi?.no_hp }}
           </div>
           <div v-if="d.jenis_pelaksana === 'Vendor' && d.fee_vendor" class="card-sub">
-            Fee: Rp {{ Number(d.fee_vendor).toLocaleString('id') }}
+            Fee: {{ fmtRupiah(d.fee_vendor) }}
           </div>
         </div>
         <div class="info-card">
           <div class="card-label">Jadwal & Waktu</div>
-          <div class="card-sub">Jadwal: <b>{{ d.tgl_jadwal ? d.tgl_jadwal.slice(0,10) : '—' }}</b></div>
+          <div class="card-sub">Jadwal: <b>{{ fmtDateShort(d.tgl_jadwal) }}</b></div>
           <div class="card-sub">Mulai: {{ d.tgl_mulai ? fmtDt(d.tgl_mulai) : '—' }}</div>
           <div class="card-sub">Selesai: {{ d.tgl_selesai ? fmtDt(d.tgl_selesai) : '—' }}</div>
         </div>
@@ -505,7 +524,7 @@ async function hapusOrder() {
           </div>
           <div v-if="editForm.jenis_pelaksana === 'Vendor'" class="field">
             <label>Fee Vendor (Rp)</label>
-            <input type="number" v-model="editForm.fee_vendor" />
+            <input type="number" min="0" v-model.number="editForm.fee_vendor" />
           </div>
           <div class="field full">
             <label>Catatan</label>
@@ -526,7 +545,7 @@ async function hapusOrder() {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1100px; }
+.page { max-width: 1100px; }
 .loading-full { padding: 60px; text-align: center; color: #94a3b8; font-size: 16px; }
 .text-gray { color: #64748b; }
 
@@ -604,13 +623,21 @@ async function hapusOrder() {
 .field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
 .form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 8px 0; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 540px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 540px; }
 .modal h3 { margin: 0 0 16px; font-size: 18px; color: #0f172a; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 768px) {
+  .page-header .btn-back { width: auto !important; flex-shrink: 0; }
+  .tab-content { padding: 16px; }
+  .tabs { overflow-x: auto; }
+  .tab { white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 @media print {
   .page-header, .tabs, .foto-upload-bar, .btn-submit, .btn-clear, .btn-back, .btn-outline, .btn-hapus { display: none !important; }
   .tab-content { box-shadow: none; }

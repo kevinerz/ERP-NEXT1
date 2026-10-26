@@ -10,6 +10,7 @@ import { JwtAuthGuard } from './common/guards/jwt.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { ModulAksesGuard } from './common/guards/modul-akses.guard';
 import { TokenBlacklistService } from './modules/auth/token-blacklist.service';
+import { UPLOAD_ROOT } from './common/upload/upload-root';
 
 // Node mematikan seluruh proses kalau ada promise rejection yang tak tertangani
 // di mana pun (default sejak Node 15) — satu query gagal di satu tempat yang
@@ -24,6 +25,11 @@ process.on('uncaughtException', (err) => {
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // nginx di depan meneruskan IP asli via X-Forwarded-For. Hanya dipercaya bila
+  // koneksi datang dari loopback — tanpa ini semua user terlihat 127.0.0.1 dan
+  // berbagi satu kuota throttle login (5 gagal = semua orang terkunci).
+  app.set('trust proxy', 'loopback');
 
   // Naikkan limit JSON body ke 10mb (untuk base64 logo dll)
   app.use(json({ limit: '10mb' }));
@@ -54,7 +60,7 @@ async function bootstrap() {
   app.setBaseViewsDir(join(__dirname, '..', 'public'));
 
   // Serve upload files (foto tiket, dll)
-  app.useStaticAssets(join(process.env.HOME || '/home/next1', 'erp-next1', 'uploads'), { prefix: '/uploads' });
+  app.useStaticAssets(UPLOAD_ROOT, { prefix: '/uploads' });
 
   // CORS — selalu aktif dengan allowlist dari env (fallback ke localhost dev)
   const corsOrigins = process.env.CORS_ORIGIN

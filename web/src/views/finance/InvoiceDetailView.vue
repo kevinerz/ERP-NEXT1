@@ -3,8 +3,9 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
 import { printInvoiceDoc } from '@/composables/usePrint'
-import { fmtRupiah, fmtDate, statusLabel } from '@/composables/useFormat'
+import { fmtRupiah, fmtDate, statusLabel, todayLocal } from '@/composables/useFormat'
 import api from '@/services/api'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,7 +43,7 @@ const submitting = ref(false)
 const processing = ref(false)
 const formError = ref('')
 const bayarForm = ref({
-  tgl_bayar: new Date().toISOString().slice(0, 10),
+  tgl_bayar: todayLocal(),
   jumlah: 0,
   metode: 'Transfer',
   referensi: '',
@@ -50,6 +51,7 @@ const bayarForm = ref({
 })
 
 onMounted(async () => {
+  finance.currentInvoice = null
   await load()
   // Kalau gagal dicek, anggap simulasi (asumsi paling aman — tombol & konfirmasi
   // jadi konsisten, tidak menyiratkan "live" padahal statusnya tak diketahui)
@@ -68,37 +70,50 @@ async function load() {
 async function handleSyncMekari() {
   if (!inv.value) return
   const label = mekariMode.value === 'live' ? 'Mekari Jurnal' : 'Mekari (simulasi)'
-  if (!confirm(`Sinkron invoice ${inv.value.nomor_invoice} ke ${label}?`)) return
+  if (!(await confirmDialog({
+    title: 'Sinkron Invoice?',
+    message: `Sinkron invoice ${inv.value.nomor_invoice} ke ${label}?`,
+    confirmLabel: 'Ya, Sinkron',
+  }))) return
   syncing.value = true
   try {
     await api.post(`/mekari/sync/invoice/${id}`)
     await load()
   } catch (err: any) {
-    alert(err?.response?.data?.message ?? 'Gagal sinkron ke Mekari')
+    await alertError(err, 'Gagal sinkron ke Mekari')
   } finally {
     syncing.value = false
   }
 }
 
 async function handleKirim() {
-  if (!confirm('Kirim invoice ini? Status akan berubah menjadi Terkirim.')) return
+  if (!(await confirmDialog({
+    title: 'Kirim Invoice?',
+    message: 'Status invoice akan berubah menjadi Terkirim.',
+    confirmLabel: 'Ya, Kirim',
+  }))) return
   processing.value = true
   try {
     await finance.kirim(id)
   } catch (err: any) {
-    alert(err?.response?.data?.message ?? 'Gagal mengirim invoice')
+    await alertError(err, 'Gagal mengirim invoice')
   } finally {
     processing.value = false
   }
 }
 
 async function handleBatal() {
-  if (!confirm('Batalkan invoice ini?')) return
+  if (!(await confirmDialog({
+    title: 'Batalkan Invoice?',
+    message: 'Invoice ini akan dibatalkan.',
+    variant: 'danger',
+    confirmLabel: 'Ya, Batalkan',
+  }))) return
   processing.value = true
   try {
     await finance.batal(id)
   } catch (err: any) {
-    alert(err?.response?.data?.message ?? 'Gagal membatalkan invoice')
+    await alertError(err, 'Gagal membatalkan invoice')
   } finally {
     processing.value = false
   }
@@ -106,13 +121,18 @@ async function handleBatal() {
 
 async function handleHapus() {
   if (!inv.value) return
-  if (!confirm(`Hapus invoice ${inv.value.nomor_invoice}?`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Invoice?',
+    message: `Invoice ${inv.value.nomor_invoice} akan dihapus.`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   processing.value = true
   try {
     await finance.remove(id)
     router.push('/finance/invoice')
   } catch (err: any) {
-    alert(err?.response?.data?.message ?? 'Gagal menghapus invoice')
+    await alertError(err, 'Gagal menghapus invoice')
   } finally {
     processing.value = false
   }
@@ -120,7 +140,7 @@ async function handleHapus() {
 
 function openBayar() {
   bayarForm.value = {
-    tgl_bayar: new Date().toISOString().slice(0, 10),
+    tgl_bayar: todayLocal(),
     jumlah: sisa.value,
     metode: 'Transfer',
     referensi: '',
@@ -152,12 +172,17 @@ async function handleBayar() {
 }
 
 async function handleHapusPembayaran(idPembayaran: number) {
-  if (!confirm('Hapus pembayaran ini?')) return
+  if (!(await confirmDialog({
+    title: 'Hapus Pembayaran?',
+    message: 'Pembayaran ini akan dihapus.',
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await finance.removePembayaran(idPembayaran)
     await load()
   } catch (err: any) {
-    alert(err?.response?.data?.message ?? 'Gagal menghapus pembayaran')
+    await alertError(err, 'Gagal menghapus pembayaran')
   }
 }
 
@@ -193,7 +218,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
         <div class="header-actions">
           <button class="btn-print" @click="printInvoiceDoc(inv)">🖨 Cetak</button>
           <button v-if="inv.status === 'Draft'" class="btn-edit" :disabled="processing" @click="handleKirim">Kirim</button>
-          <button v-if="inv.status !== 'Lunas' && inv.status !== 'Batal'" class="btn-danger" :disabled="processing" @click="handleBatal">Batal</button>
+          <button v-if="inv.status !== 'Lunas' && inv.status !== 'Batal'" class="btn-danger" :disabled="processing" @click="handleBatal">Batalkan</button>
           <button v-if="inv.status === 'Draft' && !(inv.pembayaran?.length)" class="btn-danger" :disabled="processing" @click="handleHapus">Hapus</button>
           <button
             v-if="inv.status !== 'Draft' && inv.status !== 'Batal' && !inv.mekari_uid"
@@ -204,7 +229,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
           <span
             v-else-if="inv.mekari_uid"
             class="mekari-badge"
-            :style="{ background: (MEKARI_STATUS_COLOR[inv.mekari_status] || MEKARI_STATUS_COLOR.Belum).bg, color: (MEKARI_STATUS_COLOR[inv.mekari_status] || MEKARI_STATUS_COLOR.Belum).color }"
+            :style="{ background: (MEKARI_STATUS_COLOR[inv.mekari_status ?? ''] || MEKARI_STATUS_COLOR.Belum)?.bg, color: (MEKARI_STATUS_COLOR[inv.mekari_status ?? ''] || MEKARI_STATUS_COLOR.Belum)?.color }"
             :title="`Mekari UID: ${inv.mekari_uid}`"
           >Mekari: {{ inv.mekari_status }}</span>
         </div>
@@ -325,7 +350,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 900px; }
+.page { max-width: 900px; }
 .breadcrumb { font-size: 13px; color: #64748b; margin-bottom: 16px; }
 .link { cursor: pointer; color: #3b82f6; }
 .link:hover { text-decoration: underline; }
@@ -333,11 +358,10 @@ async function handleHapusPembayaran(idPembayaran: number) {
 .loading-full { padding: 60px; text-align: center; color: #94a3b8; }
 .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; }
 
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 16px; }
 .header-left .nomor { font-size: 13px; font-weight: 700; color: #3b82f6; margin-bottom: 4px; }
-.header-left h2 { margin: 0 0 8px; font-size: 22px; color: #0f172a; }
-.sub-row { display: flex; align-items: center; gap: 8px; }
-.sub { font-size: 14px; color: #64748b; }
+.header-left h2 { margin: 0 0 8px; font-size: 22px; color: var(--text-1); }
+.sub-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sub { font-size: 14px; color: var(--text-3); }
 .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; }
 .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn-print { padding: 9px 18px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -370,7 +394,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
 
 .desc-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #475569; margin-bottom: 16px; white-space: pre-wrap; }
 
-.section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .section-title { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
 .btn-add { padding: 7px 14px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .pay-empty { color: #94a3b8; font-size: 13px; }
@@ -386,8 +410,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
 .mini-btn.hapus { background: #fef2f2; color: #dc2626; }
 .mini-btn.hapus:hover { background: #fee2e2; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 480px; }
 .modal h3 { margin: 0 0 16px; font-size: 18px; color: #0f172a; }
 .hint-text { font-size: 13px; color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; }
 .hint-text strong { color: #dc2626; }
@@ -403,4 +426,11 @@ async function handleHapusPembayaran(idPembayaran: number) {
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 768px) {
+  .info-bar, .amount-card { padding: 16px; }
+  .info-item { min-width: 0; flex: 1 1 140px; border-right: none; margin-right: 12px; padding-right: 0; }
+}
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

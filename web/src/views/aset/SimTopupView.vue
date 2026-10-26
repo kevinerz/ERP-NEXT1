@@ -1,5 +1,5 @@
 <template>
-  <div class="sim-page">
+  <div class="page sim-page">
 
     <!-- KPI strip -->
     <div class="kpi-row">
@@ -68,7 +68,7 @@
             <input v-model="filterSampai" type="date" @change="fetchTopup" />
             <button class="btn-reset" @click="resetFilter">Reset</button>
             <button v-if="digiConfigured" class="btn-beli" @click="openBeliModal">⚡ Beli Haybi H2H</button>
-            <button class="btn-primary" @click="openModal">+ Tambah Topup</button>
+            <button type="button" class="btn btn-primary" @click="openModal">+ Tambah Topup</button>
             <button v-if="bisaKelolaDigiflazz" class="btn-config" @click="openConfigModal" title="Konfigurasi Haybi H2H">⚙️</button>
           </div>
           <p v-if="digiConfigured && digiSaldo !== null" class="saldo-info">💰 Saldo Haybi H2H: {{ fmtRp(digiSaldo) }}</p>
@@ -85,7 +85,7 @@
           </div>
 
           <div class="table-wrap">
-            <table>
+            <table class="data-table">
               <thead>
                 <tr>
                   <th>Tanggal</th>
@@ -143,7 +143,7 @@
         <div class="modal">
           <div class="modal-header">
             <h3>Tambah Topup SIM</h3>
-            <button class="modal-close" @click="showModal = false">✕</button>
+            <button type="button" class="btn-modal-close" @click="showModal = false">✕</button>
           </div>
 
           <div class="modal-body">
@@ -180,8 +180,8 @@
           </div>
 
           <div class="modal-footer">
-            <button class="btn-cancel" @click="showModal = false">Batal</button>
-            <button class="btn-primary" :disabled="submitting" @click="submitTopup">
+            <button type="button" class="btn btn-secondary" @click="showModal = false">Batal</button>
+            <button type="button" class="btn btn-primary" :disabled="submitting" @click="submitTopup">
               {{ submitting ? 'Menyimpan…' : 'Simpan' }}
             </button>
           </div>
@@ -195,7 +195,7 @@
         <div class="modal modal-lg">
           <div class="modal-header">
             <h3>⚡ Beli Pulsa/Paket Data — Haybi H2H</h3>
-            <button class="modal-close" @click="showBeliModal = false">✕</button>
+            <button type="button" class="btn-modal-close" @click="showBeliModal = false">✕</button>
           </div>
           <div class="modal-body">
             <div v-if="beliError" class="beli-error-banner">⚠️ {{ beliError }}</div>
@@ -237,11 +237,22 @@
               <label>Keterangan</label>
               <input v-model="beliForm.keterangan" type="text" placeholder="Opsional" />
             </div>
+            <div v-if="beliConfirm && beliProduk" class="beli-confirm">
+              <div class="beli-confirm-title">Konfirmasi pembelian (transaksi berbayar, tidak bisa dibatalkan)</div>
+              <div class="beli-confirm-row"><span>Nomor tujuan</span><strong>{{ beliSim?.nomor_pelanggan_isp || '—' }}</strong></div>
+              <div class="beli-confirm-row"><span>Produk</span><strong>{{ beliProduk.nama_produk }}</strong></div>
+              <div class="beli-confirm-row"><span>Harga</span><strong>{{ fmtRp(parseFloat(beliProduk.harga_jual) || 0) }}</strong></div>
+            </div>
           </div>
           <div class="modal-footer">
-            <button class="btn-cancel" @click="showBeliModal = false">Batal</button>
-            <button class="btn-primary" :disabled="beliSubmitting || !beliForm.id_sumber || !beliForm.buyer_sku_code" @click="submitBeli" style="min-width:120px">
-              {{ beliSubmitting ? 'Memproses...' : 'Beli Sekarang' }}
+            <button type="button" class="btn btn-secondary" @click="beliConfirm ? (beliConfirm = false) : (showBeliModal = false)" :disabled="beliSubmitting">
+              {{ beliConfirm ? 'Kembali' : 'Batal' }}
+            </button>
+            <button v-if="!beliConfirm" type="button" class="btn btn-primary" :disabled="beliSubmitting || !beliForm.id_sumber || !beliProduk" @click="mintaKonfirmasiBeli" style="min-width:120px">
+              Beli Sekarang
+            </button>
+            <button v-else type="button" class="btn btn-primary" :disabled="beliSubmitting" @click="submitBeli" style="min-width:120px">
+              {{ beliSubmitting ? 'Memproses...' : 'Ya, Beli' }}
             </button>
           </div>
         </div>
@@ -254,7 +265,7 @@
         <div class="modal">
           <div class="modal-header">
             <h3>⚙️ Konfigurasi Haybi H2H</h3>
-            <button class="modal-close" @click="showConfigModal = false">✕</button>
+            <button type="button" class="btn-modal-close" @click="showConfigModal = false">✕</button>
           </div>
           <div class="modal-body">
             <div class="form-row">
@@ -269,8 +280,8 @@
             <p v-if="configMsg" class="config-msg">{{ configMsg }}</p>
           </div>
           <div class="modal-footer">
-            <button class="btn-cancel" @click="showConfigModal = false">Tutup</button>
-            <button class="btn-primary" :disabled="configSaving" @click="submitConfig">
+            <button type="button" class="btn btn-secondary" @click="showConfigModal = false">Tutup</button>
+            <button type="button" class="btn btn-primary" :disabled="configSaving" @click="submitConfig">
               {{ configSaving ? 'Menyimpan...' : 'Simpan & Verifikasi' }}
             </button>
           </div>
@@ -281,11 +292,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { confirmDialog, alertDialog, alertError } from '@/composables/useDialog'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import BasePagination from '@/components/BasePagination.vue'
-import { fmtRupiah, fmtDateShort } from '@/composables/useFormat'
+import { fmtRupiah, fmtDateShort, todayLocal } from '@/composables/useFormat'
 
 const auth = useAuthStore()
 const bisaKelolaDigiflazz = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'))
@@ -305,7 +317,7 @@ const filterSampai = ref('')
 const showModal  = ref(false)
 const submitting = ref(false)
 const formError  = ref('')
-const form = ref({ id_sumber: '' as number | '', jenis_topup: '', nominal: 0, tgl_topup: new Date().toISOString().slice(0, 10), keterangan: '' })
+const form = ref({ id_sumber: '' as number | '', jenis_topup: '', nominal: 0, tgl_topup: todayLocal(), keterangan: '' })
 
 // ─── DIGIFLAZZ ────────────────────────────────────────────────
 const digiConfigured = ref(false)
@@ -336,6 +348,24 @@ const produkFiltered = computed(() => {
   ).slice(0, 150)
 })
 
+// Produk yang tersembunyi oleh pencarian/kategori tidak boleh tetap terpilih.
+watch(produkFiltered, (list) => {
+  if (beliForm.value.buyer_sku_code && !list.some((p: any) => p.kode_produk === beliForm.value.buyer_sku_code)) {
+    beliForm.value.buyer_sku_code = ''
+  }
+})
+
+const beliConfirm = ref(false)
+const beliProduk = computed(() => produkList.value.find((p: any) => p.kode_produk === beliForm.value.buyer_sku_code) ?? null)
+const beliSim = computed(() => simCards.value.find((s: any) => s.id_sumber === beliForm.value.id_sumber) ?? null)
+watch(() => [beliForm.value.id_sumber, beliForm.value.buyer_sku_code], () => { beliConfirm.value = false })
+
+function mintaKonfirmasiBeli() {
+  beliError.value = ''
+  if (!beliForm.value.id_sumber || !beliProduk.value) return
+  beliConfirm.value = true
+}
+
 const showConfigModal = ref(false)
 const configForm = ref({ username: '', api_key: '' })
 const configHasKey = ref(false)
@@ -356,6 +386,7 @@ async function fetchDigiStatus() {
 async function openBeliModal() {
   beliForm.value = { id_sumber: selectedSim.value?.id_sumber || '', buyer_sku_code: '', keterangan: '' }
   beliError.value = ''
+  beliConfirm.value = false
   produkKategori.value = ''
   produkSearch.value = ''
   showBeliModal.value = true
@@ -369,7 +400,7 @@ async function openBeliModal() {
 
 async function submitBeli() {
   beliError.value = ''
-  if (!beliForm.value.id_sumber || !beliForm.value.buyer_sku_code) return
+  if (!beliConfirm.value || !beliForm.value.id_sumber || !beliProduk.value) return
   beliSubmitting.value = true
   try {
     const r = await api.post('/digiflazz/beli', {
@@ -378,7 +409,8 @@ async function submitBeli() {
       keterangan: beliForm.value.keterangan || undefined,
     })
     showBeliModal.value = false
-    alert(r.data.message || 'Transaksi diproses')
+    beliConfirm.value = false
+    await alertDialog({ message: r.data.message || 'Transaksi diproses', variant: 'success' })
     await Promise.all([fetchTopup(), fetchSimCards(), fetchDigiStatus()])
   } catch (e: any) {
     beliError.value = e.response?.data?.message || 'Gagal memproses pembelian'
@@ -414,10 +446,10 @@ async function submitConfig() {
 async function cekStatus(id_topup: number) {
   try {
     const r = await api.post(`/digiflazz/topup/${id_topup}/check-status`)
-    alert(r.data.message)
+    await alertDialog({ title: 'Status Transaksi', message: r.data.message })
     await fetchTopup()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal cek status')
+    await alertError(e, 'Gagal cek status')
   }
 }
 
@@ -468,7 +500,7 @@ function openModal() {
   form.value = {
     id_sumber: selectedSim.value?.id_sumber || '',
     jenis_topup: '', nominal: 0,
-    tgl_topup: new Date().toISOString().slice(0, 10),
+    tgl_topup: todayLocal(),
     keterangan: '',
   }
   formError.value = ''
@@ -497,12 +529,12 @@ async function submitTopup() {
 }
 
 async function deleteTopup(id_topup: number) {
-  if (!confirm('Hapus catatan topup ini?')) return
+  if (!(await confirmDialog({ title: 'Hapus Catatan Topup?', message: 'Hapus catatan topup ini?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete('/assets/sim-topup/' + id_topup)
     await fetchTopup()
   } catch (e: any) {
-    alert(e?.response?.data?.message ?? 'Gagal menghapus topup')
+    await alertError(e, 'Gagal menghapus topup')
   }
 }
 
@@ -522,10 +554,10 @@ onMounted(() => Promise.all([fetchSimCards(), fetchTopup(), fetchDigiStatus()]))
 .sim-page { display: flex; flex-direction: column; gap: 16px; }
 
 .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.kpi-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px 20px; }
+.kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px 20px; min-width: 0; }
 .kpi-card.blue { background: linear-gradient(135deg,#1e40af,#3b82f6); color:#fff; border:none; }
 .kpi-card.blue .kpi-label { color: rgba(255,255,255,.8); }
-.kpi-val { font-size: 22px; font-weight: 700; }
+.kpi-val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .kpi-label { font-size: 12px; color: #6b7280; margin-top: 2px; }
 
 .page-body { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
@@ -564,7 +596,10 @@ onMounted(() => Promise.all([fetchSimCards(), fetchTopup(), fetchDigiStatus()]))
 .btn-cek-sm { padding: 4px 10px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; margin-right: 6px; }
 .btn-cek-sm:hover { background: #dbeafe; }
 
-.modal-lg { width: 560px; }
+.modal-lg { max-width: 560px; }
+.beli-confirm { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 12px 14px; margin-top: 12px; font-size: 13px; }
+.beli-confirm-title { font-weight: 700; color: #92400e; margin-bottom: 8px; }
+.beli-confirm-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; color: #78350f; }
 .beli-error-banner { background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; font-weight: 500; }
 .kategori-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { padding: 4px 10px; border-radius: 20px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; cursor: pointer; transition: all .15s; }
@@ -580,12 +615,6 @@ onMounted(() => Promise.all([fetchSimCards(), fetchTopup(), fetchDigiStatus()]))
 .produk-price { font-size: 13px; font-weight: 700; color: #1d4ed8; white-space: nowrap; }
 .config-msg { font-size: 12px; color: #15803d; margin: 0; }
 
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 10px 12px; background: #f8fafc; color: #475569; font-weight: 600; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
-td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-tr:last-child td { border-bottom: none; }
-tr:hover td { background: #fafafa; }
 .cell-main { font-weight: 500; }
 .cell-sub { font-size: 11px; color: #94a3b8; }
 .nowrap { white-space: nowrap; }
@@ -603,29 +632,21 @@ tr:hover td { background: #fafafa; }
 .btn-hapus-sm:hover { background: #fee2e2; }
 
 
-.card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 20px; }
-.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px 20px; }
+.card-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .card-title { font-size: 14px; font-weight: 600; }
 .card-sub { color: #6b7280; font-weight: 400; }
 .search-sm { padding: 5px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; width: 130px; }
 .empty-state { text-align: center; color: #94a3b8; padding: 24px; font-size: 13px; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal { background: #fff; border-radius: 12px; width: 440px; box-shadow: 0 20px 60px rgba(0,0,0,.2); overflow: hidden; }
-.modal-header { padding: 18px 20px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f1f5f9; }
-.modal-header h3 { margin: 0; font-size: 15px; }
-.modal-close { background: none; border: none; font-size: 16px; cursor: pointer; color: #6b7280; }
-.modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.modal { max-width: 440px; }
+.modal-header h3 { margin: 0; font-size: 15px; color: var(--text-1); }
+.modal-body { display: flex; flex-direction: column; gap: 12px; }
 .form-row { display: flex; flex-direction: column; gap: 4px; }
 .form-row label { font-size: 12px; font-weight: 500; color: #6b7280; }
 .form-row input, .form-row select { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
 .form-row input:focus, .form-row select:focus { outline: none; border-color: #3b82f6; }
 .form-error { color: #dc2626; font-size: 12px; margin: 0; }
-.modal-footer { padding: 14px 20px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #f1f5f9; }
-.btn-cancel { background: none; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
-.btn-primary { background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-size: 13px; font-weight: 500; cursor: pointer; }
-.btn-primary:hover:not(:disabled) { background: #1d4ed8; }
-.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
 
 @media (max-width: 768px) { .page-body { grid-template-columns: 1fr; } .kpi-row { grid-template-columns: 1fr 1fr; } }
 </style>

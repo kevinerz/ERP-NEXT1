@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import portalApi from '@/services/portalApi'
+import { statusLabel, fmtDateTime } from '@/composables/useFormat'
+
+const TICKET_LIMIT = 200
 
 const tickets   = ref<any[]>([])
 const sites     = ref<any[]>([])
 const loading   = ref(true)
+const loadErr   = ref('')
+const refreshErr = ref('')
 const activeTab = ref<'all' | 'open' | 'progress' | 'done'>('all')
 const detail    = ref<any>(null)
 const search    = ref('')
@@ -18,13 +23,13 @@ const form = ref({ id_site: 0, judul_tiket: '', deskripsi_masalah: '' })
 onMounted(async () => {
   try {
     const [t, s] = await Promise.all([
-      portalApi.get('/portal/tickets', { params: { limit: 200 } }),
+      portalApi.get('/portal/tickets', { params: { limit: TICKET_LIMIT } }),
       portalApi.get('/portal/sites'),
     ])
     tickets.value = t.data.data ?? []
     sites.value   = s.data.data ?? []
-  } catch {
-    // biarkan list kosong, loading tetap selesai
+  } catch (e: any) {
+    loadErr.value = e.response?.data?.message || 'Gagal memuat data tiket'
   } finally {
     loading.value = false
   }
@@ -33,7 +38,7 @@ onMounted(async () => {
 const filtered = computed(() => {
   let list = tickets.value
   if (activeTab.value === 'open')     list = list.filter(t => (t.status ?? t.status_tiket) === 'Open')
-  if (activeTab.value === 'progress') list = list.filter(t => (t.status ?? t.status_tiket) === 'In Progress')
+  if (activeTab.value === 'progress') list = list.filter(t => (t.status ?? t.status_tiket) === 'In_Progress')
   if (activeTab.value === 'done')     list = list.filter(t => ['Resolved','Closed'].includes(t.status ?? t.status_tiket))
   if (filterSite.value)               list = list.filter(t => t.site?.id_site === filterSite.value || t.id_site === filterSite.value)
   if (search.value.trim()) {
@@ -50,7 +55,7 @@ const filtered = computed(() => {
 const kpi = computed(() => ({
   total:    tickets.value.length,
   open:     tickets.value.filter(t => (t.status ?? t.status_tiket) === 'Open').length,
-  progress: tickets.value.filter(t => (t.status ?? t.status_tiket) === 'In Progress').length,
+  progress: tickets.value.filter(t => (t.status ?? t.status_tiket) === 'In_Progress').length,
   done:     tickets.value.filter(t => ['Resolved','Closed'].includes(t.status ?? t.status_tiket)).length,
 }))
 
@@ -72,23 +77,29 @@ async function submitTicket() {
       judul_tiket:       form.value.judul_tiket.trim(),
       deskripsi_masalah: form.value.deskripsi_masalah.trim() || undefined,
     })
-    const fresh = await portalApi.get('/portal/tickets', { params: { limit: 100 } })
-    tickets.value = fresh.data.data ?? []
-    showForm.value = false
-    form.value = { id_site: 0, judul_tiket: '', deskripsi_masalah: '' }
   } catch (e: any) {
     formErr.value = e.response?.data?.message || 'Gagal membuat tiket'
+    saving.value = false
+    return
+  }
+  showForm.value = false
+  form.value = { id_site: 0, judul_tiket: '', deskripsi_masalah: '' }
+  try {
+    const fresh = await portalApi.get('/portal/tickets', { params: { limit: TICKET_LIMIT } })
+    tickets.value = fresh.data.data ?? []
+    loadErr.value = ''
+    refreshErr.value = ''
+  } catch {
+    refreshErr.value = 'Tiket berhasil dibuat, tetapi daftar tiket gagal dimuat ulang. Silakan muat ulang halaman.'
   } finally { saving.value = false }
 }
 
-function fmtDate(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
+const fmtDate = fmtDateTime
 
 function statusBadge(s: string): { bg: string; fg: string } {
   if (s === 'Open')        return { bg: '#fef9ec', fg: '#b45309' }
-  if (s === 'In Progress') return { bg: '#eff6ff', fg: '#1d4ed8' }
+  if (s === 'In_Progress') return { bg: '#eff6ff', fg: '#1d4ed8' }
+  if (s === 'Pending_Customer') return { bg: '#faf5ff', fg: '#7e22ce' }
   if (s === 'Resolved')    return { bg: '#f0fdf4', fg: '#15803d' }
   if (s === 'Closed')      return { bg: '#f1f5f9', fg: '#475569' }
   return { bg: '#f1f5f9', fg: '#475569' }
@@ -140,11 +151,11 @@ function waktuSelesai(t: any): string | null {
         <div class="eyebrow">TIKET SUPPORT</div>
         <h1 class="pg-title">Riwayat &amp; Permintaan Bantuan</h1>
       </div>
-      <button class="btn-create" @click="showForm = true">+ Buat Tiket</button>
+      <button type="button" class="btn-create" @click="showForm = true">+ Buat Tiket</button>
     </div>
 
     <!-- KPI strip -->
-    <div class="kpi-strip" v-if="!loading">
+    <div class="kpi-strip" v-if="!loading && !loadErr">
       <div class="kpi">
         <span class="kpi-n" style="color:#0B1D35">{{ kpi.total }}</span>
         <span class="kpi-l">Total Tiket</span>
@@ -189,7 +200,7 @@ function waktuSelesai(t: any): string | null {
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input v-model="search" class="search-inp" placeholder="Cari nomor, judul, atau site…" />
-          <button v-if="search" class="search-clear" @click="search = ''">✕</button>
+          <button v-if="search" type="button" class="search-clear" aria-label="Hapus pencarian" @click="search = ''">✕</button>
         </div>
         <select v-model="filterSite" class="site-sel">
           <option :value="0">Semua Site</option>
@@ -198,7 +209,13 @@ function waktuSelesai(t: any): string | null {
       </div>
     </div>
 
+    <div v-if="refreshErr" class="form-err" style="margin-bottom:16px">{{ refreshErr }}</div>
+
     <div v-if="loading" class="empty-state">Memuat data tiket…</div>
+
+    <div v-else-if="loadErr" class="empty-state" style="color:#dc2626">
+      {{ loadErr }}. Silakan muat ulang halaman.
+    </div>
 
     <!-- Table -->
     <div v-else class="tbl-card">
@@ -235,7 +252,7 @@ function waktuSelesai(t: any): string | null {
             <td>
               <span class="status-badge"
                 :style="{ background: statusBadge(t.status ?? t.status_tiket).bg, color: statusBadge(t.status ?? t.status_tiket).fg }">
-                {{ t.status ?? t.status_tiket }}
+                {{ statusLabel(t.status ?? t.status_tiket) }}
               </span>
             </td>
             <td class="col-pri" :style="{ color: prioritasColor(t.prioritas ?? 'Medium') }">
@@ -255,7 +272,7 @@ function waktuSelesai(t: any): string | null {
             <div class="eyebrow" style="color:#1A56DB">{{ detail.nomor_tiket }}</div>
             <div class="modal-title">{{ detail.judul_tiket ?? detail.judul }}</div>
           </div>
-          <button class="modal-close" @click="detail = null">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="detail = null">✕</button>
         </div>
 
         <!-- Meta strip -->
@@ -264,7 +281,7 @@ function waktuSelesai(t: any): string | null {
             <div class="meta-lbl">Status</div>
             <span class="status-badge"
               :style="{ background: statusBadge(detail.status_tiket ?? detail.status).bg, color: statusBadge(detail.status_tiket ?? detail.status).fg }">
-              {{ detail.status_tiket ?? detail.status }}
+              {{ statusLabel(detail.status_tiket ?? detail.status) }}
             </span>
           </div>
           <div class="meta-cell">
@@ -332,7 +349,7 @@ function waktuSelesai(t: any): string | null {
               <div class="log-dot"></div>
               <div>
                 <div class="log-body">
-                  <span style="font-weight:700;color:#0f172a">{{ log.status_ke }}</span>
+                  <span style="font-weight:700;color:#0f172a">{{ statusLabel(log.status_ke) }}</span>
                   <span v-if="log.catatan" style="color:#64748b"> — {{ log.catatan }}</span>
                 </div>
                 <div class="log-time">{{ fmtDate(log.created_at) }}</div>
@@ -351,7 +368,7 @@ function waktuSelesai(t: any): string | null {
             <div class="eyebrow" style="color:#1A56DB">PERMINTAAN BARU</div>
             <div class="modal-title">Buat Tiket Support</div>
           </div>
-          <button class="modal-close" @click="showForm = false; formErr = ''">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="showForm = false; formErr = ''">✕</button>
         </div>
 
         <div class="form-stack">
@@ -375,8 +392,8 @@ function waktuSelesai(t: any): string | null {
         </div>
 
         <div class="modal-foot">
-          <button class="btn-cancel" @click="showForm = false; formErr = ''">Batal</button>
-          <button class="btn-submit" @click="submitTicket" :disabled="saving">
+          <button type="button" class="btn-cancel" @click="showForm = false; formErr = ''">Batal</button>
+          <button type="button" class="btn-submit" @click="submitTicket" :disabled="saving">
             {{ saving ? 'Mengirim…' : 'Kirim Tiket' }}
           </button>
         </div>
@@ -387,7 +404,6 @@ function waktuSelesai(t: any): string | null {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 .pg { font-family: 'Inter', system-ui, sans-serif; padding: 28px 32px; max-width: 1060px; background: #f8fafc; box-sizing: border-box; }
 
@@ -448,7 +464,7 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 700; white-space: nowrap; line-height: 1.5; }
 
 /* Overlay */
-.overlay { position: fixed; inset: 0; background: rgba(11,29,53,.55); display: flex; align-items: center; justify-content: center; z-index: 300; }
+.overlay { position: fixed; inset: 0; background: rgba(11,29,53,.55); display: flex; align-items: center; justify-content: center; z-index: 1100; padding: 16px; }
 
 /* Modal */
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 560px; max-width: 95vw; max-height: 86vh; overflow-y: auto; box-shadow: 0 24px 64px rgba(0,0,0,.2); }
@@ -523,4 +539,25 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .btn-submit { padding: 10px 26px; background: #0B1D35; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .btn-submit:hover { background: #162d52; }
 .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+.btn-submit:disabled:hover { background: #0B1D35; }
+
+.tbl-card { overflow-x: auto; }
+.tbl { min-width: 720px; }
+.meta-val, .dt-val, .log-body { overflow-wrap: anywhere; }
+
+@media (max-width: 768px) {
+  .pg { padding: 16px; }
+  .pg-head { flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+  .pg-title { font-size: 18px; }
+  .kpi-strip { flex-wrap: wrap; padding: 14px 16px; row-gap: 12px; }
+  .kpi { flex: 1 1 40%; padding: 0; }
+  .kpi-div { display: none; }
+  .kpi-n { font-size: 24px; }
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tab { white-space: nowrap; flex-shrink: 0; }
+  .filter-row { flex-direction: column; align-items: stretch; }
+  .site-sel { min-width: 0; width: 100%; }
+  .modal { padding: 20px 18px; }
+  .meta-strip, .downtime-grid { grid-template-columns: 1fr; }
+}
 </style>

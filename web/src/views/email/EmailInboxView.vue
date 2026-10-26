@@ -5,8 +5,9 @@ import { useEmailStore } from '@/stores/email'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import BasePagination from '@/components/BasePagination.vue'
 import RecipientInput from '@/components/RecipientInput.vue'
-import { fmtDateTime } from '@/composables/useFormat'
+import { fmtDateTime, escapeHtml } from '@/composables/useFormat'
 import api from '@/services/api'
+import { promptDialog } from '@/composables/useDialog'
 
 const email = useEmailStore()
 
@@ -54,7 +55,28 @@ function handleDisconnect() {
 }
 async function doDisconnect() {
   confirmDisconnect.value = false
-  await email.disconnect()
+  email.error = ''
+  try {
+    await email.disconnect()
+  } catch (e: any) {
+    email.error = e.response?.data?.message || 'Gagal memutuskan koneksi email'
+  }
+}
+
+async function unduhLampiran(uid: number, partId: number, filename: string) {
+  email.error = ''
+  try {
+    await email.downloadAttachment(uid, partId, filename)
+  } catch (e: any) {
+    let msg = ''
+    const data = e.response?.data
+    if (data instanceof Blob) {
+      try { msg = JSON.parse(await data.text())?.message || '' } catch { /* bukan JSON */ }
+    } else {
+      msg = data?.message || ''
+    }
+    email.error = msg || 'Gagal mengunduh lampiran'
+  }
 }
 
 // ─── FOLDER & LIST ────────────────────────────────────────────
@@ -79,7 +101,7 @@ function parseEmails(str: string): string[] {
   if (!str) return []
   return str.split(',').map(s => {
     const m = s.match(/<([^>]+)>/)
-    return (m ? m[1] : s).trim().toLowerCase()
+    return (m ? m[1]! : s).trim().toLowerCase()
   }).filter(s => s.includes('@'))
 }
 
@@ -88,15 +110,15 @@ async function bukaEditDraft(uid: number) {
   if (!email.current) return
   editingDraftUid.value = uid
   toTags.value = parseEmails(email.current.to || '')
-  ccTags.value = []
-  bccTags.value = []
+  ccTags.value = parseEmails(email.current.cc || '')
+  bccTags.value = parseEmails(email.current.bcc || '')
   composeForm.value = {
     subject: email.current.subject === '(tanpa subjek)' ? '' : email.current.subject,
-    html: email.current.html || email.current.text || '',
+    html: bodyAsHtml(email.current),
     in_reply_to: '',
   }
   composeFiles.value = []
-  showCc.value = false
+  showCc.value = ccTags.value.length > 0 || bccTags.value.length > 0
   sendError.value = ''
   showCompose.value = true
 }
@@ -171,9 +193,25 @@ function exec(cmd: string, val?: string) {
   editorRef.value?.focus()
   onEditorInput()
 }
-function addLink() {
-  const url = prompt('Masukkan URL (mis. https://contoh.com)')
-  if (url) exec('createLink', url)
+async function addLink() {
+  // Dialog mencuri fokus & menghapus seleksi editor — simpan dulu, pulihkan sebelum exec.
+  const sel = window.getSelection()
+  const savedRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null
+  const url = await promptDialog({
+    title: 'Sisip Tautan',
+    label: 'URL',
+    placeholder: 'https://contoh.com',
+    inputType: 'url',
+    confirmLabel: 'Sisipkan',
+  })
+  if (!url) return
+  editorRef.value?.focus()
+  if (savedRange) {
+    const s = window.getSelection()
+    s?.removeAllRanges()
+    s?.addRange(savedRange)
+  }
+  exec('createLink', url)
 }
 function insertEmoji(em: string) {
   editorRef.value?.focus()
@@ -186,8 +224,15 @@ function insertEmoji(em: string) {
 watch(showCompose, (open) => {
   if (!open) { showEmoji.value = false; return }
   loadContacts()
-  nextTick(() => { if (editorRef.value) editorRef.value.innerHTML = composeForm.value.html || '' })
+  // HTML balasan/draf berasal dari email pihak luar — wajib disanitasi sebelum masuk editor
+  nextTick(() => {
+    if (editorRef.value) editorRef.value.innerHTML = DOMPurify.sanitize(composeForm.value.html || '', { ADD_ATTR: ['target'] })
+  })
 })
+
+function bodyAsHtml(msg: { html?: string | null; text?: string | null }) {
+  return msg.html || escapeHtml(msg.text || '').replace(/\n/g, '<br>')
+}
 
 function bukaCompose() {
   editingDraftUid.value = null
@@ -206,7 +251,7 @@ function bukaBalas() {
   ccTags.value = []; bccTags.value = []
   composeForm.value = {
     subject: email.current.subject.startsWith('Re:') ? email.current.subject : `Re: ${email.current.subject}`,
-    html: `<br><br><hr><p>Pada ${fmtTgl(email.current.date)}, ${email.current.from} menulis:</p><blockquote>${email.current.html || email.current.text || ''}</blockquote>`,
+    html: `<br><br><hr><p>Pada ${fmtTgl(email.current.date)}, ${escapeHtml(email.current.from || '')} menulis:</p><blockquote>${bodyAsHtml(email.current)}</blockquote>`,
     in_reply_to: String(email.current.uid),
   }
   composeFiles.value = []
@@ -325,8 +370,8 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
           <p class="sub">{{ email.account.email_address }}</p>
         </div>
         <div class="header-actions">
-          <button class="btn-primary" @click="bukaCompose">✏️ Tulis Email</button>
-          <button class="btn-secondary" @click="handleDisconnect">Putuskan</button>
+          <button type="button" class="btn btn-primary" @click="bukaCompose">✏️ Tulis Email</button>
+          <button type="button" class="btn btn-secondary btn-putus" @click="handleDisconnect">Putuskan</button>
         </div>
       </div>
 
@@ -345,7 +390,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 
       <p v-if="email.error" class="msg err">{{ email.error }}</p>
 
-      <div class="split">
+      <div :class="['split', { 'show-detail': selectedUid !== null }]">
         <div class="list-pane">
           <div v-if="email.loading" class="loading">Memuat email...</div>
           <div v-else-if="!email.list.length" class="empty">Tidak ada email</div>
@@ -372,12 +417,13 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
         </div>
 
         <div class="detail-pane">
+          <button type="button" class="back-btn" @click="selectedUid = null">← Kembali ke daftar</button>
           <div v-if="email.loadingMessage" class="loading">Memuat email...</div>
           <div v-else-if="!email.current" class="empty">Pilih email untuk membaca</div>
           <div v-else class="msg-detail">
             <div class="detail-header">
               <h3>{{ email.current.subject }}</h3>
-              <button v-if="email.currentFolder !== 'sent'" class="btn-primary sm" @click="bukaBalas">↩️ Balas</button>
+              <button v-if="email.currentFolder !== 'sent'" type="button" class="btn btn-primary btn-sm" @click="bukaBalas">↩️ Balas</button>
             </div>
             <div class="detail-meta">
               <div><strong>Dari:</strong> {{ email.current.from }}</div>
@@ -386,7 +432,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
             </div>
             <div v-if="email.current.attachments.length" class="attachments">
               <div v-for="a in email.current.attachments" :key="a.partId" class="attachment-chip"
-                @click="email.downloadAttachment(email.current!.uid, a.partId, a.filename)">
+                @click="unduhLampiran(email.current!.uid, a.partId, a.filename)">
                 📎 {{ a.filename }} <span class="text-gray">({{ fmtSize(a.size) }})</span>
               </div>
             </div>
@@ -474,7 +520,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
           </label>
           <div v-if="composeFiles.length" class="file-list">
             <span v-for="(f, i) in composeFiles" :key="f.name + f.size" class="file-chip">
-              {{ f.name }} <button @click="hapusFile(i)">×</button>
+              {{ f.name }} <button type="button" title="Hapus lampiran" @click="hapusFile(i)">×</button>
             </span>
           </div>
         </div>
@@ -494,12 +540,12 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1300px; }
+.page { max-width: 1300px; }
 .loading, .empty { padding: 40px; text-align: center; color: #94a3b8; }
 
 /* Connect form */
 .connect-wrap { display: flex; justify-content: center; padding-top: 20px; }
-.connect-card { background: #fff; border-radius: 14px; padding: 32px; width: 480px; max-width: 95vw; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+.connect-card { background: var(--surface); border-radius: var(--r-lg); padding: 32px; width: 100%; max-width: 480px; box-shadow: var(--shadow-sm); }
 .connect-card h2 { margin: 0 0 8px; font-size: 20px; color: #0f172a; }
 .sub { margin: 0 0 16px; font-size: 13px; color: #64748b; }
 .btn-preset { width: 100%; padding: 9px; margin-bottom: 16px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -524,8 +570,14 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .editor { min-height: 180px; max-height: 320px; overflow-y: auto; border: 1.5px solid #e2e8f0; border-radius: 0 0 8px 8px; padding: 10px 12px; font-size: 14px; line-height: 1.6; color: #0f172a; outline: none; background: #fff; }
 .editor:focus { border-color: #3b82f6; }
 .editor:empty::before { content: attr(data-placeholder); color: #94a3b8; }
-.editor ul, .editor ol { margin: 6px 0; padding-left: 22px; }
-.editor a { color: #1d4ed8; }
+/* Isi editor & body email disisipkan lewat innerHTML/v-html → butuh :deep() */
+.editor :deep(ul), .editor :deep(ol) { margin: 6px 0; padding-left: 22px; }
+.editor :deep(a) { color: #1d4ed8; }
+.editor :deep(blockquote), .detail-body :deep(blockquote) { margin: 8px 0; padding-left: 12px; border-left: 3px solid var(--border); color: var(--text-3); }
+.detail-body :deep(ul), .detail-body :deep(ol) { margin: 6px 0; padding-left: 22px; }
+.detail-body :deep(p) { margin: 0 0 8px; }
+.detail-body :deep(img) { max-width: 100%; height: auto; }
+.detail-body :deep(a) { color: #1d4ed8; }
 .btn-submit { padding: 10px 18px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 .connect-card .btn-submit { width: 100%; margin-top: 6px; }
@@ -536,9 +588,8 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .inbox-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .inbox-header h2 { margin: 0 0 2px; font-size: 22px; color: #0f172a; }
 .header-actions { display: flex; gap: 10px; }
-.btn-primary { padding: 10px 18px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-primary.sm { padding: 6px 14px; font-size: 13px; }
-.btn-secondary { padding: 10px 16px; background: #fff; color: #dc2626; border: 1.5px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-putus { color: var(--danger); border-color: #fecaca; }
+.btn-putus:hover { background: var(--danger-light); border-color: #fca5a5; }
 
 .folder-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
 .folder-tab { padding: 8px 14px; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; }
@@ -556,8 +607,9 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .msg-row:hover { background: #f8fafc; }
 .msg-row.active { background: #eff6ff; }
 .msg-row.unread .msg-from, .msg-row.unread .msg-subject { font-weight: 700; }
-.msg-row-top { display: flex; justify-content: space-between; font-size: 12px; color: #64748b; margin-bottom: 2px; }
-.msg-from { font-weight: 600; color: #0f172a; }
+.msg-row-top { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: #64748b; margin-bottom: 2px; }
+.msg-from { font-weight: 600; color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-date { flex-shrink: 0; }
 .msg-subject { font-size: 13px; color: #334155; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .msg-actions { display: flex; gap: 10px; }
 .link-btn { background: none; border: none; padding: 0; font-size: 11px; color: #1d4ed8; cursor: pointer; }
@@ -565,7 +617,8 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 
 .msg-detail { padding: 20px 24px; }
 .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-.detail-header h3 { margin: 0; font-size: 17px; color: #0f172a; }
+.detail-header { gap: 12px; }
+.detail-header h3 { margin: 0; font-size: 17px; color: #0f172a; min-width: 0; overflow-wrap: anywhere; }
 .detail-meta { font-size: 13px; color: #475569; margin-bottom: 14px; display: flex; flex-direction: column; gap: 3px; }
 .attachments { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .attachment-chip { padding: 6px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; font-size: 12px; cursor: pointer; }
@@ -573,10 +626,28 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .text-gray { color: #94a3b8; }
 .detail-body { font-size: 14px; color: #0f172a; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 14px; overflow-x: auto; }
 .detail-body-text { font-size: 14px; color: #0f172a; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 14px; white-space: pre-wrap; font-family: inherit; }
+.back-btn { display: none; background: none; border: none; padding: 12px 16px 0; font-size: 14px; font-weight: 600; color: #1d4ed8; cursor: pointer; }
+
+@media (max-width: 768px) {
+  .inbox-header { flex-wrap: wrap; gap: 10px; }
+  .header-actions { flex-wrap: wrap; }
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .split.show-detail .list-pane { display: none; }
+  .split:not(.show-detail) .detail-pane { display: none; }
+  .back-btn { display: inline-block; }
+  .msg-list { max-height: none; }
+  .msg-detail { padding: 14px 16px; }
+  .detail-header { flex-wrap: wrap; gap: 8px; }
+  .detail-meta { word-break: break-word; }
+}
 
 /* Compose modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; }
+.modal > .link-btn { align-self: flex-start; margin-bottom: 12px; font-size: 12px; }
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+  .connect-card { padding: 22px 18px; }
+}
 .modal h3 { margin: 0 0 16px; font-size: 18px; color: #0f172a; }
 .upload-label { display: inline-block; padding: 8px 14px; background: #f1f5f9; border-radius: 8px; font-size: 13px; cursor: pointer; }
 .file-list { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }

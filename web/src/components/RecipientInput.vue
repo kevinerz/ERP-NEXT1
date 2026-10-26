@@ -34,21 +34,26 @@ function chipLabel(email: string): string {
   if (!c) return email
   const parts = c.nama_lengkap.trim().split(' ')
   const short = parts.length > 1
-    ? parts[0] + ' ' + parts[parts.length - 1][0] + '.'
-    : parts[0]
+    ? parts[0] + ' ' + parts[parts.length - 1]![0] + '.'
+    : parts[0]!
   return short.length > 22 ? short.slice(0, 21) + '…' : short
 }
 
+const EMAIL_RE = /^[^\s@<>(),;:"\[\]]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i
+
 function addEmail(raw: string) {
-  for (const part of raw.split(',')) {
-    const m = part.match(/<([^>]+)>/)
-    const email = (m ? m[1] : part).trim().toLowerCase()
-    if (!email || !email.includes('@')) continue
-    if (!props.modelValue.includes(email)) {
-      emit('update:modelValue', [...props.modelValue, email])
-    }
+  const next = [...props.modelValue]
+  const invalid: string[] = []
+  const cleaned = raw.replace(/[^,;<>]*<([^>]+)>/g, ' $1 ')
+  for (const part of cleaned.split(/[,;\s]+/)) {
+    const token = part.trim()
+    if (!token) continue
+    const email = token.toLowerCase()
+    if (!EMAIL_RE.test(email)) { invalid.push(token); continue }
+    if (!next.includes(email)) next.push(email)
   }
-  inputText.value = ''
+  if (next.length !== props.modelValue.length) emit('update:modelValue', next)
+  inputText.value = invalid.join(' ')
   highlightIdx.value = -1
 }
 
@@ -68,10 +73,10 @@ function removeTag(i: number) {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',') {
+  if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',' || e.key === ';') {
     if (highlightIdx.value >= 0 && filtered.value[highlightIdx.value]) {
       e.preventDefault()
-      addContact(filtered.value[highlightIdx.value])
+      addContact(filtered.value[highlightIdx.value]!)
     } else if (inputText.value.trim()) {
       e.preventDefault()
       addEmail(inputText.value)
@@ -92,11 +97,9 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function onBlur() {
-  setTimeout(() => {
-    focused.value = false
-    if (inputText.value.includes('@')) addEmail(inputText.value)
-    else inputText.value = ''
-  }, 180)
+  focused.value = false
+  if (inputText.value.includes('@')) addEmail(inputText.value)
+  else inputText.value = ''
 }
 
 function onFocus() {
@@ -111,7 +114,7 @@ function focusInput() { inputEl.value?.focus() }
   <div class="ri-wrap" :class="{ focused }" @click="focusInput">
     <span v-for="(tag, i) in modelValue" :key="tag" class="ri-chip" :title="tag">
       <span class="ri-chip-label">{{ chipLabel(tag) }}</span>
-      <button type="button" class="ri-chip-remove" @click.stop="removeTag(i)" tabindex="-1">×</button>
+      <button type="button" class="ri-chip-remove" :aria-label="`Hapus penerima ${tag}`" @click.stop="removeTag(i)">×</button>
     </span>
     <input
       ref="inputEl"
@@ -225,7 +228,8 @@ input::placeholder { color: #94a3b8; }
   border: 1.5px solid #e2e8f0;
   border-radius: 10px;
   box-shadow: 0 10px 28px rgba(0,0,0,.13);
-  overflow: hidden;
+  max-height: 320px;
+  overflow-y: auto;
 }
 .ri-item {
   display: flex;
@@ -243,6 +247,8 @@ input::placeholder { color: #94a3b8; }
   font-size: 13.5px;
   font-weight: 600;
   color: #1e293b;
+  flex-shrink: 0;
+  max-width: 60%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -250,8 +256,12 @@ input::placeholder { color: #94a3b8; }
 .ri-item-email {
   font-size: 12px;
   color: #64748b;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
   text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Transition */

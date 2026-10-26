@@ -34,6 +34,8 @@ export interface MessageDetail {
   subject: string
   from?: string
   to?: string
+  cc?: string
+  bcc?: string
   date?: string
   html: string | null
   text: string | null

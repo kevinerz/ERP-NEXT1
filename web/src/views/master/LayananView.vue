@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 import { useMasterStore, type Layanan } from '@/stores/master'
 import api from '@/services/api'
 
@@ -85,14 +86,14 @@ async function handleToggle(l: Layanan) {
 }
 
 async function hapusLayanan(layanan: Layanan) {
-  if (!confirm('Hapus layanan ' + layanan.nama_layanan + '?')) return
+  if (!(await confirmDialog({ title: 'Hapus Layanan?', message: 'Hapus layanan ' + layanan.nama_layanan + '?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete('/master/layanan/' + layanan.id_layanan)
     master.layananList = master.layananList.filter((l: Layanan) => l.id_layanan !== layanan.id_layanan)
     successMsg.value = 'Layanan dihapus'
     setTimeout(() => successMsg.value = '', 3000)
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus layanan')
+    await alertError(e, 'Gagal menghapus layanan')
   }
 }
 </script>
@@ -104,42 +105,42 @@ async function hapusLayanan(layanan: Layanan) {
         <h2>Layanan</h2>
         <p class="sub">Daftar layanan internet yang dikelola</p>
       </div>
-      <button class="btn-primary" @click="openAdd">+ Tambah Layanan</button>
+      <button type="button" class="btn btn-primary" @click="openAdd">+ Tambah Layanan</button>
     </div>
 
     <!-- Filter -->
     <div class="filter-bar">
-      <input v-model="search" @keyup.enter="doSearch" placeholder="Cari kode / nama..." class="input-search" />
-      <select v-model="filterAktif" @change="doSearch" class="select-filter">
+      <input v-model="search" @keyup.enter="doSearch" placeholder="Cari kode / nama..." class="search-input" />
+      <select v-model="filterAktif" @change="doSearch" class="filter-select">
         <option value="">Semua Status</option>
         <option value="true">Aktif</option>
         <option value="false">Nonaktif</option>
       </select>
-      <button class="btn-search" @click="doSearch">Cari</button>
+      <button type="button" class="btn btn-secondary" @click="doSearch">Cari</button>
     </div>
 
     <!-- Alert -->
-    <div v-if="successMsg" class="alert-success">{{ successMsg }}</div>
-    <div v-if="master.error" class="alert-error">{{ master.error }}</div>
+    <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
+    <div v-if="master.error" class="alert alert-danger">{{ master.error }}</div>
 
     <!-- Table -->
     <div class="table-card">
-      <div v-if="master.layananLoading" class="loading">Memuat...</div>
-      <table v-else>
+      <div v-if="master.layananLoading" class="loading-state">Memuat...</div>
+      <table v-else class="data-table">
         <thead>
           <tr>
             <th style="width:100px">Kode</th>
             <th>Nama Layanan</th>
             <th>Deskripsi</th>
-            <th style="width:90px">Target SLA</th>
+            <th style="width:110px">Target SLA</th>
             <th style="width:120px">Tipe</th>
             <th style="width:110px">Status</th>
-            <th style="width:180px">Aksi</th>
+            <th style="width:220px">Aksi</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!master.layananList.length">
-            <td colspan="6">
+            <td colspan="7">
               <div class="empty-state">
                 <div class="empty-icon">🌐</div>
                 <div class="empty-title">Belum ada layanan</div>
@@ -147,32 +148,36 @@ async function hapusLayanan(layanan: Layanan) {
               </div>
             </td>
           </tr>
-          <tr v-for="l in master.layananList" :key="l.id_layanan" class="table-row">
+          <tr v-for="l in master.layananList" :key="l.id_layanan">
             <td><span class="kode-badge">{{ l.kode_layanan }}</span></td>
             <td class="fw600">{{ l.nama_layanan }}</td>
             <td class="text-gray">{{ l.deskripsi || '—' }}</td>
-            <td><span class="sla-badge">{{ Number(l.sla_target_pct).toFixed(1) }}%</span></td>
+            <td><span class="sla-badge">{{ Number(l.sla_target_pct).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }}%</span></td>
             <td>
-              <span :class="l.is_managed ? 'badge-managed' : 'badge-unmanaged'">
+              <span :class="['badge', l.is_managed ? 'badge-sky' : 'badge-gray']">
                 {{ l.is_managed ? 'Managed' : 'Unmanaged' }}
               </span>
             </td>
             <td>
-              <span :class="l.is_aktif ? 'badge-aktif' : 'badge-nonaktif'">
+              <span :class="['badge', l.is_aktif ? 'badge-green' : 'badge-red']">
                 {{ l.is_aktif ? 'Aktif' : 'Nonaktif' }}
               </span>
             </td>
-            <td class="actions">
-              <button class="btn-edit" @click="openEdit(l)">Edit</button>
-              <button
-                :class="l.is_aktif ? 'btn-nonaktif' : 'btn-aktif'"
-                @click="handleToggle(l)"
-              >{{ l.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
-              <button
-                v-if="!l.is_aktif"
-                class="btn-hapus"
-                @click="hapusLayanan(l)"
-              >Hapus</button>
+            <td>
+              <div class="actions">
+                <button type="button" class="btn btn-sm btn-soft-blue" @click="openEdit(l)">Edit</button>
+                <button
+                  type="button"
+                  :class="['btn btn-sm', l.is_aktif ? 'btn-soft-warning' : 'btn-soft-success']"
+                  @click="handleToggle(l)"
+                >{{ l.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
+                <button
+                  v-if="!l.is_aktif"
+                  type="button"
+                  class="btn btn-sm btn-soft-danger"
+                  @click="hapusLayanan(l)"
+                >Hapus</button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -182,43 +187,48 @@ async function hapusLayanan(layanan: Layanan) {
     <!-- Modal -->
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
       <div class="modal">
-        <h3>{{ isEdit ? 'Edit Layanan' : 'Tambah Layanan' }}</h3>
-        <div class="field">
-          <label>Kode Layanan <span class="req">*</span></label>
-          <input v-model="form.kode_layanan" :disabled="isEdit" placeholder="Contoh: FO, M2M" />
+        <div class="modal-header">
+          <h3 class="modal-title">{{ isEdit ? 'Edit Layanan' : 'Tambah Layanan' }}</h3>
+          <button type="button" class="btn-modal-close" @click="showModal = false">×</button>
         </div>
-        <div class="field">
-          <label>Nama Layanan <span class="req">*</span></label>
-          <input v-model="form.nama_layanan" placeholder="Nama layanan" />
-        </div>
-        <div class="field">
-          <label>Deskripsi</label>
-          <textarea v-model="form.deskripsi" rows="3" placeholder="Opsional"></textarea>
-        </div>
-        <div class="field">
-          <label>Target SLA (%)</label>
-          <input v-model.number="form.sla_target_pct" type="number" min="0" max="100" step="0.1" placeholder="Contoh: 95, 99, 99.5" />
-        </div>
-        <div class="field-row">
-          <div class="field">
-            <label>Managed Service?</label>
-            <select v-model="form.is_managed">
-              <option :value="true">Ya (Managed)</option>
-              <option :value="false">Tidak (Unmanaged)</option>
-            </select>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label form-required">Kode Layanan</label>
+            <input v-model="form.kode_layanan" class="form-input" :disabled="isEdit" placeholder="Contoh: FO, M2M" />
           </div>
-          <div class="field" v-if="isEdit">
-            <label>Status</label>
-            <select v-model="form.is_aktif">
-              <option :value="true">Aktif</option>
-              <option :value="false">Nonaktif</option>
-            </select>
+          <div class="form-group">
+            <label class="form-label form-required">Nama Layanan</label>
+            <input v-model="form.nama_layanan" class="form-input" placeholder="Nama layanan" />
           </div>
+          <div class="form-group">
+            <label class="form-label">Deskripsi</label>
+            <textarea v-model="form.deskripsi" class="form-textarea" rows="3" placeholder="Opsional"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target SLA (%)</label>
+            <input v-model.number="form.sla_target_pct" class="form-input" type="number" min="0" max="100" step="0.1" placeholder="Contoh: 95, 99, 99.5" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Managed Service?</label>
+              <select v-model="form.is_managed" class="form-select">
+                <option :value="true">Ya (Managed)</option>
+                <option :value="false">Tidak (Unmanaged)</option>
+              </select>
+            </div>
+            <div class="form-group" v-if="isEdit">
+              <label class="form-label">Status</label>
+              <select v-model="form.is_aktif" class="form-select">
+                <option :value="true">Aktif</option>
+                <option :value="false">Nonaktif</option>
+              </select>
+            </div>
+          </div>
+          <div v-if="formError" class="alert alert-danger">{{ formError }}</div>
         </div>
-        <p v-if="formError" class="form-error">{{ formError }}</p>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showModal = false">Batal</button>
-          <button class="btn-submit" @click="handleSubmit" :disabled="submitting">
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showModal = false">Batal</button>
+          <button type="button" class="btn btn-primary" @click="handleSubmit" :disabled="submitting">
             {{ submitting ? 'Menyimpan...' : 'Simpan' }}
           </button>
         </div>
@@ -228,94 +238,31 @@ async function hapusLayanan(layanan: Layanan) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 960px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
+.page { max-width: 960px; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; font-weight: 700; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
 
-.filter-bar { display: flex; gap: 10px; margin-bottom: 16px; }
-.input-search {
-  flex: 1; padding: 9px 12px; border: 1.5px solid #e2e8f0;
-  border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc;
-}
-.input-search:focus { border-color: #3b82f6; background: #fff; }
-.select-filter {
-  padding: 9px 12px; border: 1.5px solid #e2e8f0;
-  border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc;
-}
-.btn-search {
-  padding: 9px 18px; background: #f1f5f9; border: none;
-  border-radius: 8px; font-size: 14px; font-weight: 600; color: #374151; cursor: pointer;
-}
+.filter-bar .search-input { flex: 1; min-width: 200px; }
 
-.alert-success {
-  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
-  color: #15803d; font-size: 13px; padding: 10px 14px; margin-bottom: 12px;
-}
-.alert-error {
-  background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
-  color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px;
-}
+.alert { margin-bottom: 12px; }
+.modal-body .alert { margin-bottom: 0; }
+.modal-body { display: flex; flex-direction: column; gap: 14px; }
+.form-input:disabled { opacity: 0.6; cursor: not-allowed; background: var(--border-light); }
 
-.table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
-table { width: 100%; border-collapse: collapse; }
-thead tr { background: #f8fafc; }
-th { padding: 12px 16px; font-size: 12px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; letter-spacing: 0.5px; }
-td { padding: 13px 16px; font-size: 14px; color: #0f172a; border-top: 1px solid #f1f5f9; }
-.table-row { transition: background 0.15s; }
-.table-row:hover { background: #f8fafc; }
-.empty-state { text-align: center; padding: 52px 20px; }
-.empty-icon { font-size: 36px; margin-bottom: 12px; }
-.empty-title { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 6px; }
-.empty-desc { font-size: 13px; color: #94a3b8; }
-.loading { padding: 40px; text-align: center; color: #94a3b8; }
-.fw600 { font-weight: 600; }
-.text-gray { color: #64748b; }
+.fw600 { font-weight: 600; color: var(--text-1); }
+.text-gray { color: var(--text-3); }
 
-.kode-badge { background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
-.sla-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
-.badge-managed { background: #f0f9ff; color: #0369a1; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; border: 1px solid #bae6fd; }
-.badge-unmanaged { background: #f8fafc; color: #64748b; padding: 3px 10px; border-radius: 12px; font-size: 12px; border: 1px solid #e2e8f0; }
-.badge-aktif { background: #dcfce7; color: #15803d; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-.badge-nonaktif { background: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+.kode-badge { display: inline-block; background: var(--primary-light); color: var(--primary); padding: 3px 8px; border-radius: var(--r-sm); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.sla-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary-border); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-.actions { display: flex; gap: 6px; align-items: center; }
-.btn-edit { padding: 5px 12px; background: #eff6ff; color: #1d4ed8; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.btn-nonaktif { padding: 5px 12px; background: #fff7ed; color: #c2410c; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.btn-aktif { padding: 5px 12px; background: #f0fdf4; color: #15803d; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.btn-hapus { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.8rem; }
-
-.btn-primary {
-  padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6);
-  color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
-}
-
-/* Modal */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-  display: flex; align-items: center; justify-content: center; z-index: 100;
-}
-.modal {
-  background: #fff; border-radius: 14px; padding: 28px 32px;
-  width: 480px; max-width: 95vw; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-}
-.modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
-.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.field label { font-size: 13px; font-weight: 600; color: #374151; }
-.req { color: #ef4444; }
-.field input, .field select, .field textarea {
-  padding: 9px 12px; border: 1.5px solid #e2e8f0;
-  border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a;
-}
-.field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
-.field input:disabled { opacity: 0.6; cursor: not-allowed; }
-.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.form-error {
-  background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
-  color: #dc2626; font-size: 13px; padding: 8px 12px; margin-bottom: 12px;
-}
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
-.btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
-.btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.btn-soft-blue { background: var(--primary-light); color: var(--primary); }
+.btn-soft-blue:hover { background: #dbeafe; }
+.btn-soft-warning { background: #fff7ed; color: #c2410c; }
+.btn-soft-warning:hover { background: #ffedd5; }
+.btn-soft-success { background: var(--success-light); color: var(--success); }
+.btn-soft-success:hover { background: #dcfce7; }
+.btn-soft-danger { background: var(--danger-light); color: var(--danger); border: 1px solid #fecaca; }
+.btn-soft-danger:hover { background: #fee2e2; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 </style>

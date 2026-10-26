@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useSalesStore, type Lead } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { confirmDialog, alertDialog, promptDialog } from '@/composables/useDialog'
 import { fmtDateShort } from '@/composables/useFormat'
 import BasePagination from '@/components/BasePagination.vue'
 
@@ -27,13 +28,13 @@ const STATUS_LEAD = ['Baru', 'Dihubungi', 'Qualified', 'Tidak Tertarik', 'Konver
 const SUMBER_LEAD = ['Referral', 'Cold Call', 'Website', 'Media Sosial', 'Pameran', 'Lainnya']
 
 const STATUS_COLOR: Record<string, string> = {
-  Baru: 'badge-blue', Dihubungi: 'badge-purple', Qualified: 'badge-yellow',
+  Baru: 'badge-blue', Dihubungi: 'badge-purple', Qualified: 'badge-amber',
   'Tidak Tertarik': 'badge-red', Konversi: 'badge-green',
 }
 
 onMounted(async () => {
   await sales.fetchSalesList()
-  if (sales.salesList.length) form.value.id_sales_pic = sales.salesList[0].id_karyawan
+  if (sales.salesList.length) form.value.id_sales_pic = sales.salesList[0]!.id_karyawan
   if (route.query.new) showModal.value = true
   fetchData()
 })
@@ -72,7 +73,12 @@ async function handleSubmit() {
 const formatDate = fmtDateShort
 
 async function hapusLead(id: number, nama: string) {
-  if (!confirm(`Hapus lead "${nama}" ini?`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Lead?',
+    message: `Hapus lead "${nama}" ini?`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete(`/sales/lead/${id}`)
     fetchData()
@@ -80,24 +86,36 @@ async function hapusLead(id: number, nama: string) {
     const msg = e.response?.data?.message || 'Gagal menghapus lead'
     // Lead masih punya data terkait → tawarkan force delete (Admin/Director)
     if (e.response?.status === 400 && String(msg).includes('force delete')) {
-      if (!canForce.value) { alert(msg + '\n\nHubungi Admin untuk force delete.'); return }
-      const ketik = prompt(
-        `⚠️ PERINGATAN — Lead "${nama}" akan DIHAPUS PERMANEN.\n\n` +
-        `Seluruh opportunity, quotation, dan aktivitas milik lead ini ikut terhapus permanen.\n\n` +
-        `Ketik nama prospek "${nama}" untuk konfirmasi:`,
-      )
+      if (!canForce.value) {
+        await alertDialog({ title: 'Tidak Dapat Dihapus', message: msg + '\n\nHubungi Admin untuk force delete.', variant: 'warning' })
+        return
+      }
+      const ketik = await promptDialog({
+        title: 'Force Delete Lead',
+        message:
+          `PERINGATAN — Lead "${nama}" akan DIHAPUS PERMANEN.\n\n` +
+          `Seluruh opportunity, quotation, dan aktivitas milik lead ini ikut terhapus permanen.`,
+        label: `Ketik nama prospek "${nama}" untuk konfirmasi:`,
+        placeholder: nama,
+        requireText: nama,
+        variant: 'danger',
+        confirmLabel: 'Hapus Permanen',
+      })
       if (ketik === null) return
-      if (ketik.trim() !== nama) { alert('Nama prospek tidak cocok — dibatalkan.'); return }
+      if (ketik.trim() !== nama) {
+        await alertDialog({ title: 'Dibatalkan', message: 'Nama prospek tidak cocok — dibatalkan.', variant: 'warning' })
+        return
+      }
       try {
         const r = await api.delete(`/sales/lead/${id}?force=true`)
         fetchData()
-        alert(r.data?.message || 'Lead + data terkait dihapus')
+        await alertDialog({ message: r.data?.message || 'Lead + data terkait dihapus', variant: 'success' })
       } catch (e2: any) {
-        alert(e2.response?.data?.message || 'Force delete gagal')
+        await alertDialog({ message: e2.response?.data?.message || 'Force delete gagal', variant: 'danger' })
       }
       return
     }
-    alert(msg)
+    await alertDialog({ message: String(msg), variant: 'danger' })
   }
 }
 </script>
@@ -109,7 +127,7 @@ async function hapusLead(id: number, nama: string) {
         <button class="btn-back" @click="router.push('/sales')">← Sales</button>
         <h2>Lead</h2>
       </div>
-      <button class="btn-primary" @click="showModal = true">+ Tambah Lead</button>
+      <button type="button" class="btn btn-primary" @click="showModal = true">+ Tambah Lead</button>
     </div>
 
     <div class="filter-bar">
@@ -152,7 +170,7 @@ async function hapusLead(id: number, nama: string) {
             <td>{{ l.no_kontak || '—' }}</td>
             <td><span class="sumber-badge">{{ l.sumber_lead }}</span></td>
             <td>{{ l.sales_pic?.nama_lengkap }}</td>
-            <td><span :class="['status-badge', STATUS_COLOR[l.status_lead] || 'badge-gray']">{{ l.status_lead }}</span></td>
+            <td><span :class="['badge', STATUS_COLOR[l.status_lead] || 'badge-gray']">{{ l.status_lead }}</span></td>
             <td class="center">{{ l._count?.opportunities ?? 0 }}</td>
             <td class="text-gray text-sm">{{ formatDate(l.created_at) }}</td>
             <td @click.stop>
@@ -234,7 +252,6 @@ async function hapusLead(id: number, nama: string) {
 .input-search:focus { border-color: #3b82f6; background: #fff; }
 .select-filter { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; }
 .btn-search { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #374151; cursor: pointer; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 
 .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 
@@ -253,18 +270,10 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .row-link:hover td { background: #f8fafc; }
 
 .sumber-badge { background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
-.status-badge { padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-.badge-blue { background: #eff6ff; color: #1d4ed8; }
-.badge-purple { background: #f5f3ff; color: #6d28d9; }
-.badge-yellow { background: #fffbeb; color: #b45309; }
-.badge-red { background: #fef2f2; color: #dc2626; }
-.badge-green { background: #f0fdf4; color: #15803d; }
-.badge-gray { background: #f1f5f9; color: #64748b; }
 
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
 /* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 540px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }

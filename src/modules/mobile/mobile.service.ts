@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import * as fs from 'fs';
 import * as path from 'path';
+import { UPLOAD_ROOT } from '../../common/upload/upload-root';
 
 @Injectable()
 export class MobileService {
@@ -268,9 +269,11 @@ export class MobileService {
     if (!ticket) throw new NotFoundException('Tiket tidak ditemukan');
     if (ticket.id_teknisi_pic !== id_karyawan) throw new ForbiddenException('Bukan tiket Anda');
 
-    const uploadDir = path.join(process.env.HOME || '/home/next1', 'erp-next1', 'uploads', 'tickets', String(id_ticket));
+    const uploadDir = path.join(UPLOAD_ROOT, 'tickets', String(id_ticket));
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
+    // stage masuk ke nama file — buang karakter path supaya tidak bisa "../" keluar folder
+    stage = String(stage || 'foto').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 30) || 'foto';
     const filename = `${stage}_${Date.now()}.jpg`;
     const filepath = path.join(uploadDir, filename);
     const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');

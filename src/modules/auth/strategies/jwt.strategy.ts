@@ -9,7 +9,12 @@ export interface JwtPayload {
   username: string;
   id_karyawan: number;
   roles: string[];
+  type?: string;
 }
+
+// Token portal pelanggan & vendor ditandatangani dengan secret yang sama, tapi
+// `sub`-nya id dari tabel lain — tanpa penolakan ini, pelanggan id=1 dianggap staff id=1.
+const NON_STAFF_TOKEN_TYPES = new Set(['customer', 'vendor_teknisi']);
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -25,6 +30,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
+    if (payload.type && NON_STAFF_TOKEN_TYPES.has(payload.type)) {
+      throw new UnauthorizedException('Token tidak berlaku untuk aplikasi internal');
+    }
+
     const user = await this.prisma.coreUser.findUnique({
       where: { id_user: payload.sub },
       include: {

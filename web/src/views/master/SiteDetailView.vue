@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
+import { confirmDialog } from '@/composables/useDialog'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateShort, fmtRupiah } from '@/composables/useFormat'
@@ -61,6 +62,7 @@ const SITE_STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Aktif:     { bg: '#f0fdf4', color: '#15803d' },
   Prospek:   { bg: '#eff6ff', color: '#1d4ed8' },
   Terminasi: { bg: '#fef2f2', color: '#dc2626' },
+  Suspend:   { bg: '#fef9c3', color: '#a16207' },
 }
 
 onMounted(async () => {
@@ -136,7 +138,7 @@ async function uploadDokumen() {
 }
 
 async function deleteDokumen(doc: any) {
-  if (!confirm(`Hapus dokumen "${doc.nama_file}"?`)) return
+  if (!(await confirmDialog({ title: 'Hapus Dokumen?', message: `Hapus dokumen "${doc.nama_file}"?`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete(`/master/site/dokumen/${doc.id_dokumen}`)
     await loadDokumen()
@@ -205,7 +207,7 @@ async function saveSumber() {
 }
 
 async function deleteSumber(s: any) {
-  if (!confirm(`Hapus sumber internet ${s.vendor?.nama_vendor}?`)) return
+  if (!(await confirmDialog({ title: 'Hapus Sumber Internet?', message: `Hapus sumber internet ${s.vendor?.nama_vendor}?`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete(`/master/sumber-internet/${s.id_sumber}`)
     await loadSite()
@@ -267,7 +269,7 @@ async function savePerangkat() {
 }
 
 async function deletePerangkat(p: any) {
-  if (!confirm(`Hapus perangkat ${p.aset?.nama_perangkat || p.jenis_perangkat}?`)) return
+  if (!(await confirmDialog({ title: 'Hapus Perangkat?', message: `Hapus perangkat ${p.aset?.nama_perangkat || p.jenis_perangkat}?`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete(`/master/perangkat/${p.id_perangkat}`)
     await loadSite()
@@ -304,7 +306,7 @@ async function savePic() {
 }
 
 async function deletePic(p: any) {
-  if (!confirm(`Hapus PIC ${p.nama_pic}?`)) return
+  if (!(await confirmDialog({ title: 'Hapus PIC?', message: `Hapus PIC ${p.nama_pic}?`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete(`/master/pic/${p.id_pic}`)
     await loadSite()
@@ -330,10 +332,11 @@ const isGsm = computed(() => {
       <span>{{ site?.kode_site || '...' }}</span>
     </div>
 
-    <div v-if="loading && !site" class="loading-full">Memuat...</div>
-    <div v-else-if="error" class="alert-error">{{ error }}</div>
+    <div v-if="loading && !site" class="loading-state">Memuat data site...</div>
+    <div v-else-if="error && !site" class="alert alert-danger">{{ error }}</div>
 
     <template v-else-if="site">
+      <div v-if="error" class="alert alert-danger page-alert">{{ error }}</div>
       <!-- Header -->
       <div class="page-header">
         <div>
@@ -414,15 +417,15 @@ const isGsm = computed(() => {
                 <div class="sumber-tipe">{{ s.vendor?.tipe_vendor }}</div>
               </div>
               <div class="sumber-badges">
-                <span class="peruntukan-badge" :class="s.peruntukan_link.toLowerCase()">{{ s.peruntukan_link }}</span>
+                <span class="peruntukan-badge" :class="s.peruntukan_link?.toLowerCase()">{{ s.peruntukan_link }}</span>
                 <span class="link-badge"
                   :style="{ background: LINK_COLOR[s.status_link]?.bg, color: LINK_COLOR[s.status_link]?.color }">
                   {{ s.status_link }}
                 </span>
               </div>
               <div class="sumber-actions">
-                <button class="btn-icon" @click="openEditSumber(s)">✏️</button>
-                <button class="btn-icon red" @click="deleteSumber(s)">🗑️</button>
+                <button type="button" class="btn-icon" title="Edit" @click="openEditSumber(s)">✏️</button>
+                <button type="button" class="btn-icon red" title="Hapus" @click="deleteSumber(s)">🗑️</button>
               </div>
             </div>
             <div class="sumber-details">
@@ -462,7 +465,8 @@ const isGsm = computed(() => {
           <button class="btn-add" @click="openAddPerangkat">+ Tambah Perangkat</button>
         </div>
         <div v-if="!site.perangkat?.length" class="empty-state">Belum ada perangkat terdaftar</div>
-        <table v-else class="perangkat-table">
+        <div v-else class="table-card table-wrap">
+        <table class="perangkat-table">
           <thead>
             <tr>
               <th>Aset</th>
@@ -490,17 +494,18 @@ const isGsm = computed(() => {
               </td>
               <td class="text-sm text-gray">{{ p.tgl_pasang ? fmtDate(p.tgl_pasang) : '—' }}</td>
               <td>
-                <span :class="['perangkat-status', p.status_perangkat.toLowerCase()]">{{ p.status_perangkat }}</span>
+                <span :class="['perangkat-status', p.status_perangkat?.toLowerCase()]">{{ p.status_perangkat }}</span>
               </td>
               <td>
                 <div class="action-row">
-                  <button class="btn-icon" @click="openEditPerangkat(p)">✏️</button>
-                  <button class="btn-icon red" @click="deletePerangkat(p)">🗑️</button>
+                  <button type="button" class="btn-icon" title="Edit" @click="openEditPerangkat(p)">✏️</button>
+                  <button type="button" class="btn-icon red" title="Hapus" @click="deletePerangkat(p)">🗑️</button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
 
       <!-- Tab: PIC -->
@@ -521,8 +526,8 @@ const isGsm = computed(() => {
                 <div class="pic-jabatan text-gray">{{ p.jabatan }}</div>
               </div>
               <div class="action-row">
-                <button class="btn-icon" @click="openEditPic(p)">✏️</button>
-                <button class="btn-icon red" @click="deletePic(p)">🗑️</button>
+                <button type="button" class="btn-icon" title="Edit" @click="openEditPic(p)">✏️</button>
+                <button type="button" class="btn-icon red" title="Hapus" @click="deletePic(p)">🗑️</button>
               </div>
             </div>
             <div class="pic-kontak">
@@ -553,7 +558,7 @@ const isGsm = computed(() => {
               </span>
             </div>
             <div class="lr-right">
-              <span class="status-chip" :class="`pstatus-${p.status_project.toLowerCase()}`">
+              <span class="status-chip" :class="`pstatus-${p.status_project?.toLowerCase()}`">
                 {{ p.status_project }}
               </span>
               <span class="lr-arrow">›</span>
@@ -610,12 +615,12 @@ const isGsm = computed(() => {
               class="dok-ket-input"
               placeholder="Keterangan (opsional)"
             />
-            <button class="btn-upload" @click="uploadDokumen" :disabled="dokumenUploading || !dokumenFile">
+            <button type="button" class="btn-upload" @click="uploadDokumen" :disabled="dokumenUploading || !dokumenFile">
               {{ dokumenUploading ? 'Mengupload...' : 'Upload' }}
             </button>
           </div>
           <div class="dok-hint">Format: PDF, JPG, JPEG, PNG · Maks 10 MB</div>
-          <p v-if="dokumenError" class="form-error">{{ dokumenError }}</p>
+          <p v-if="dokumenError" class="form-error-box">{{ dokumenError }}</p>
         </div>
 
         <!-- Dokumen list -->
@@ -632,12 +637,12 @@ const isGsm = computed(() => {
               <div class="dok-meta">
                 <span v-if="doc.keterangan" class="dok-ket">{{ doc.keterangan }}</span>
                 <span class="dok-size">{{ fmtBytes(doc.ukuran_byte) }}</span>
-                <span class="dok-date">{{ new Date(doc.created_at).toLocaleDateString('id-ID') }}</span>
+                <span class="dok-date">{{ fmtDate(doc.created_at) }}</span>
               </div>
             </div>
             <div class="dok-actions">
-              <a :href="doc.url_file" target="_blank" class="btn-view">Buka</a>
-              <button class="btn-icon red" @click="deleteDokumen(doc)" title="Hapus">🗑️</button>
+              <a :href="doc.url_file" target="_blank" rel="noopener" class="btn-view">Buka</a>
+              <button type="button" class="btn-icon red" @click="deleteDokumen(doc)" title="Hapus">🗑️</button>
             </div>
           </div>
         </div>
@@ -647,7 +652,11 @@ const isGsm = computed(() => {
     <!-- Modal Sumber Internet -->
     <div v-if="showSumberModal" class="modal-overlay" @click.self="showSumberModal = false">
       <div class="modal">
-        <h3>{{ editSumber ? 'Edit Sumber Internet' : 'Tambah Sumber Internet' }}</h3>
+        <div class="modal-header">
+          <h3 class="modal-title">{{ editSumber ? 'Edit Sumber Internet' : 'Tambah Sumber Internet' }}</h3>
+          <button type="button" class="btn-modal-close" @click="showSumberModal = false">✕</button>
+        </div>
+        <div class="modal-body">
         <div class="form-grid">
           <div class="field full">
             <label>Vendor / Operator <span class="req">*</span></label>
@@ -705,10 +714,11 @@ const isGsm = computed(() => {
             <textarea v-model="sumberForm.catatan" rows="2" placeholder="Info tambahan..."></textarea>
           </div>
         </div>
-        <p v-if="sumberError" class="form-error">{{ sumberError }}</p>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showSumberModal = false">Batal</button>
-          <button class="btn-submit" @click="saveSumber" :disabled="sumberSubmitting">
+        <p v-if="sumberError" class="form-error-box">{{ sumberError }}</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showSumberModal = false">Batal</button>
+          <button type="button" class="btn btn-primary" @click="saveSumber" :disabled="sumberSubmitting">
             {{ sumberSubmitting ? 'Menyimpan...' : 'Simpan' }}
           </button>
         </div>
@@ -718,7 +728,11 @@ const isGsm = computed(() => {
     <!-- Modal Perangkat — picker dari Aset -->
     <div v-if="showPerangkatModal" class="modal-overlay" @click.self="showPerangkatModal = false">
       <div class="modal">
-        <h3>{{ editPerangkat ? 'Edit Perangkat' : 'Tambah Perangkat dari Aset' }}</h3>
+        <div class="modal-header">
+          <h3 class="modal-title">{{ editPerangkat ? 'Edit Perangkat' : 'Tambah Perangkat dari Aset' }}</h3>
+          <button type="button" class="btn-modal-close" @click="showPerangkatModal = false">✕</button>
+        </div>
+        <div class="modal-body">
 
         <!-- Pilih Aset -->
         <div class="field" style="margin-bottom: 16px;">
@@ -788,10 +802,11 @@ const isGsm = computed(() => {
           </div>
         </div>
 
-        <p v-if="perangkatError" class="form-error">{{ perangkatError }}</p>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showPerangkatModal = false">Batal</button>
-          <button class="btn-submit" @click="savePerangkat" :disabled="perangkatSubmitting">
+        <p v-if="perangkatError" class="form-error-box">{{ perangkatError }}</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showPerangkatModal = false">Batal</button>
+          <button type="button" class="btn btn-primary" @click="savePerangkat" :disabled="perangkatSubmitting">
             {{ perangkatSubmitting ? 'Menyimpan...' : 'Simpan' }}
           </button>
         </div>
@@ -800,8 +815,12 @@ const isGsm = computed(() => {
 
     <!-- Modal PIC -->
     <div v-if="showPicModal" class="modal-overlay" @click.self="showPicModal = false">
-      <div class="modal-pic">
-        <h3>{{ editPic ? 'Edit PIC' : 'Tambah PIC' }}</h3>
+      <div class="modal modal-sm">
+        <div class="modal-header">
+          <h3 class="modal-title">{{ editPic ? 'Edit PIC' : 'Tambah PIC' }}</h3>
+          <button type="button" class="btn-modal-close" @click="showPicModal = false">✕</button>
+        </div>
+        <div class="modal-body">
         <div class="pic-form">
           <div class="field">
             <label>Nama PIC <span class="req">*</span></label>
@@ -824,10 +843,11 @@ const isGsm = computed(() => {
             <span>Jadikan PIC Utama</span>
           </label>
         </div>
-        <p v-if="picError" class="form-error">{{ picError }}</p>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showPicModal = false">Batal</button>
-          <button class="btn-submit" @click="savePic" :disabled="picSubmitting">
+        <p v-if="picError" class="form-error-box">{{ picError }}</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" @click="showPicModal = false">Batal</button>
+          <button type="button" class="btn btn-primary" @click="savePic" :disabled="picSubmitting">
             {{ picSubmitting ? 'Menyimpan...' : 'Simpan' }}
           </button>
         </div>
@@ -837,22 +857,21 @@ const isGsm = computed(() => {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1100px; }
-.breadcrumb { font-size: 13px; color: #64748b; margin-bottom: 16px; }
-.link { cursor: pointer; color: #3b82f6; }
+.page { max-width: 1100px; }
+.breadcrumb { font-size: 13px; color: var(--text-3); margin-bottom: 16px; }
+.link { cursor: pointer; color: var(--primary-hover); }
 .link:hover { text-decoration: underline; }
 .sep { margin: 0 6px; }
-.loading-full { padding: 60px; text-align: center; color: #94a3b8; }
-.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; }
+.page-alert { margin-bottom: 16px; }
 
 .page-header { margin-bottom: 16px; }
-.kode { font-size: 13px; font-weight: 700; color: #3b82f6; margin-bottom: 4px; }
-.page-header h2 { margin: 0 0 8px; font-size: 22px; color: #0f172a; }
-.sub-row { display: flex; align-items: center; gap: 8px; }
-.pelanggan { font-size: 14px; color: #64748b; font-weight: 600; }
-.status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.kode { font-size: 13px; font-weight: 700; color: var(--primary-hover); margin-bottom: 4px; }
+.page-header h2 { margin: 0 0 8px; font-size: 22px; color: var(--text-1); word-break: break-word; }
+.sub-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pelanggan { font-size: 14px; color: var(--text-3); font-weight: 600; }
+.status-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 
-.info-bar { display: flex; flex-wrap: wrap; gap: 0; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 16px 24px; margin-bottom: 20px; }
+.info-bar { display: flex; flex-wrap: wrap; gap: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: 16px 24px; margin-bottom: 20px; }
 .info-item { flex: 0 0 auto; min-width: 130px; padding: 6px 20px 6px 0; border-right: 1px solid #f1f5f9; margin-right: 20px; margin-bottom: 4px; }
 .info-item:last-child { border-right: none; }
 .info-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; margin-bottom: 3px; }
@@ -861,22 +880,22 @@ const isGsm = computed(() => {
 .mono { font-family: monospace; font-size: 12px; }
 
 /* Tabs */
-.tabs { display: flex; gap: 4px; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px; }
-.tab { padding: 10px 18px; border: none; background: none; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
-.tab:hover { color: #1d4ed8; }
-.tab.active { color: #1d4ed8; border-bottom-color: #1d4ed8; }
+.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin-bottom: 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.tab { padding: 10px 18px; border: none; background: none; font-size: 14px; font-weight: 600; color: var(--text-3); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; white-space: nowrap; flex-shrink: 0; }
+.tab:hover { color: var(--primary); }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 
-.tab-content { }
-.tab-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.tab-header h3 { margin: 0; font-size: 16px; color: #0f172a; }
-.btn-add { padding: 8px 16px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
-.empty-state { text-align: center; color: #94a3b8; padding: 40px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
+.tab-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.tab-header h3 { margin: 0; font-size: 16px; color: var(--text-1); }
+.btn-add { padding: 8px 16px; background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary-border); border-radius: var(--r); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-add:hover { background: #dbeafe; }
+.empty-state { padding: 40px 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); font-size: 13.5px; }
 
 /* Sumber Internet */
 .sumber-list { display: flex; flex-direction: column; gap: 12px; }
-.sumber-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 16px 20px; }
+.sumber-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: 16px 20px; }
 .sumber-top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
-.sumber-main { flex: 1; }
+.sumber-main { flex: 1; min-width: 0; }
 .sumber-vendor { font-weight: 700; font-size: 15px; color: #0f172a; }
 .sumber-tipe { font-size: 12px; color: #94a3b8; margin-top: 2px; }
 .sumber-badges { display: flex; gap: 6px; align-items: center; }
@@ -892,9 +911,10 @@ const isGsm = computed(() => {
 .dv { font-size: 13px; color: #0f172a; font-weight: 600; }
 
 /* Perangkat */
-.perangkat-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
-.perangkat-table th { padding: 11px 14px; font-size: 12px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; background: #f8fafc; }
-.perangkat-table td { padding: 12px 14px; font-size: 14px; border-top: 1px solid #f1f5f9; }
+.perangkat-table { width: 100%; border-collapse: collapse; min-width: 640px; }
+.perangkat-table th { padding: 11px 14px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: left; text-transform: uppercase; letter-spacing: 0.6px; background: #f8fafc; white-space: nowrap; }
+.perangkat-table td { padding: 12px 14px; font-size: 13.5px; color: var(--text-2); border-top: 1px solid var(--border-light); vertical-align: middle; }
+.perangkat-status { white-space: nowrap; }
 .fw600 { font-weight: 600; }
 .kode-aset { font-family: monospace; font-size: 12px; background: #f1f5f9; padding: 2px 7px; border-radius: 4px; color: #1d4ed8; font-weight: 600; }
 .text-gray { color: #64748b; }
@@ -916,11 +936,12 @@ const isGsm = computed(() => {
 .apv.green { color: #15803d; }
 .apv.orange { color: #d97706; }
 
-.hint-text { font-size: 12px; color: #f59e0b; margin-top: 4px; }
+.hint-text { font-size: 12px; color: var(--warning); margin-top: 4px; }
 
 /* PIC */
 .pic-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.pic-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 16px 20px; }
+.pic-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: 16px 20px; min-width: 0; }
+.pic-kontak span { overflow-wrap: anywhere; }
 .pic-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
 .pic-nama { font-weight: 700; font-size: 15px; color: #0f172a; display: flex; align-items: center; gap: 8px; }
 .utama-badge { font-size: 10px; background: #eff6ff; color: #1d4ed8; padding: 2px 7px; border-radius: 8px; font-weight: 700; }
@@ -946,7 +967,7 @@ const isGsm = computed(() => {
 .pstatus-selesai      { background: #f0fdf4; color: #15803d; }
 .pstatus-ditahan      { background: #fef2f2; color: #dc2626; }
 .tstatus-open              { background: #f1f5f9; color: #64748b; }
-.tstatus-in_progress       { background: #eff6ff; color: #1d4ed8; }
+.tstatus-in-progress       { background: #eff6ff; color: #1d4ed8; }
 .tstatus-pending-customer  { background: #fef9c3; color: #a16207; }
 .tstatus-resolved          { background: #f0fdf4; color: #15803d; }
 .tstatus-closed            { background: #e2e8f0; color: #475569; }
@@ -956,13 +977,7 @@ const isGsm = computed(() => {
 .prio-low      { background: #f0fdf4; color: #15803d; }
 .prio-critical { background: #fdf2f8; color: #9d174d; }
 
-/* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 16px; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 560px; max-width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-.modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
-/* Modal PIC khusus — single column, lebih compact */
-.modal-pic { background: #fff; border-radius: 14px; padding: 24px 28px; width: 380px; max-width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-.modal-pic h3 { margin: 0 0 18px; font-size: 17px; color: #0f172a; font-weight: 700; }
+/* Modal — struktur & tampilan dari main.css (.modal-header/.modal-body/.modal-footer) */
 .pic-form { display: flex; flex-direction: column; gap: 12px; }
 .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #374151; cursor: pointer; margin-top: 4px; }
 .checkbox-label input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #1d4ed8; }
@@ -972,13 +987,11 @@ const isGsm = computed(() => {
 .field label { font-size: 13px; font-weight: 600; color: #374151; }
 .row-label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: #374151; }
 .req { color: #ef4444; }
-.field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; background: #f8fafc; color: #0f172a; }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: #3b82f6; background: #fff; }
-.form-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 8px 12px; margin: 8px 0; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
-.btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
-.btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.field input, .field select, .field textarea { padding: 9px 12px; border: 1.5px solid var(--border); border-radius: var(--r); font-size: 14px; outline: none; background: #f8fafc; color: var(--text-1); font-family: inherit; width: 100%; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: #93c5fd; background: var(--surface); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+.checkbox-label input[type="checkbox"] { width: 16px; }
+.form-error-box { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 8px 12px; margin: 12px 0 0; }
+.btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* Dokumen */
 .dok-upload-box { background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 12px; padding: 16px 20px; margin-bottom: 20px; }
@@ -991,7 +1004,7 @@ const isGsm = computed(() => {
 .btn-upload { padding: 8px 20px; background: #1d4ed8; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-upload:disabled { opacity: 0.5; cursor: not-allowed; }
 .dok-list { display: flex; flex-direction: column; gap: 10px; }
-.dok-card { display: flex; align-items: center; gap: 14px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 14px 18px; }
+.dok-card { display: flex; align-items: center; gap: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: 14px 18px; }
 .dok-icon { font-size: 28px; flex-shrink: 0; }
 .dok-info { flex: 1; min-width: 0; }
 .dok-nama { font-size: 14px; font-weight: 600; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1002,4 +1015,24 @@ const isGsm = computed(() => {
 .dok-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
 .btn-view { padding: 6px 14px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
 .btn-view:hover { background: #dbeafe; }
+
+@media (max-width: 768px) {
+  .info-bar { padding: 12px 16px; }
+  .info-item { flex: 1 1 100%; border-right: none; margin-right: 0; padding: 6px 0; border-bottom: 1px solid var(--border-light); }
+  .info-item:last-child { border-bottom: none; }
+  .sumber-top { flex-wrap: wrap; }
+  .sumber-main { flex-basis: 100%; }
+  .sumber-actions { margin-left: auto; }
+  .sumber-card, .pic-card { padding: 14px 16px; }
+  .sumber-detail-item { flex-wrap: wrap; }
+  .list-row { flex-wrap: wrap; gap: 8px 12px; }
+  .lr-left { flex-basis: 100%; }
+  .lr-mid { min-width: 0; }
+  .lr-right { margin-left: auto; }
+  .pic-list { grid-template-columns: 1fr; }
+  .dok-card { padding: 12px 14px; gap: 10px; }
+  .dok-icon { font-size: 22px; }
+  .dok-upload-box { padding: 14px; }
+  .btn-upload { width: 100%; }
+}
 </style>

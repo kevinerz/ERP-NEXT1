@@ -122,12 +122,12 @@ async function sendTest() {
         <p class="sub">Riwayat semua email keluar dari sistem (noreply) — onboarding, broadcast, notifikasi</p>
       </div>
       <div class="header-actions">
-        <button class="btn-test" @click="openTest">✉️ Kirim Test</button>
-        <button class="btn-refresh" @click="refresh">↻ Muat ulang</button>
+        <button type="button" class="btn-test" @click="openTest">✉️ Kirim Test</button>
+        <button type="button" class="btn-refresh" :disabled="loading" @click="refresh">↻ Muat ulang</button>
       </div>
     </div>
 
-    <div v-if="error" class="alert-error">{{ error }}</div>
+    <div v-if="error" class="alert-error" role="alert">{{ error }}</div>
     <div v-if="!stats.configured" class="alert-warn">
       ⚠️ Mailer belum dikonfigurasi (MAIL_* di .env server). Email otomatis tidak akan terkirim sampai diisi.
     </div>
@@ -170,8 +170,8 @@ async function sendTest() {
         <input v-model="fDari" type="date" class="f-date" />
         <label class="date-label">s/d</label>
         <input v-model="fSampai" type="date" class="f-date" />
-        <button class="btn-filter" @click="doFilter">Terapkan</button>
-        <button v-if="hasFilter" class="btn-clear" @click="clearFilter">Reset</button>
+        <button type="button" class="btn-filter" @click="doFilter">Terapkan</button>
+        <button v-if="hasFilter" type="button" class="btn-clear" @click="clearFilter">Reset</button>
         <span class="total-badge" v-if="meta.total">{{ meta.total.toLocaleString('id-ID') }} log</span>
       </div>
     </div>
@@ -195,9 +195,9 @@ async function sendTest() {
             <td colspan="6" class="empty">Belum ada email terkirim</td>
           </tr>
           <tr v-for="log in logs" :key="log.id_email_log">
-            <td class="td-time">{{ fmtTime(log.created_at) }}</td>
+            <td class="td-time">{{ log.created_at ? fmtTime(log.created_at) : '—' }}</td>
             <td class="td-to mono">{{ log.to_address }}</td>
-            <td class="td-subject">{{ log.subject }}</td>
+            <td class="td-subject">{{ log.subject || '—' }}</td>
             <td class="td-modul">{{ log.modul || '—' }}</td>
             <td>
               <span class="status-badge"
@@ -220,11 +220,11 @@ async function sendTest() {
     </div>
 
     <!-- Modal test kirim -->
-    <div v-if="showTest" class="modal-overlay" @click.self="showTest = false">
-      <div class="modal-card">
+    <div v-if="showTest" class="modal-overlay" @click.self="showTest = false" @keydown.esc="showTest = false">
+      <div class="modal-card" v-focus-trap aria-labelledby="email-test-title">
         <div class="modal-head">
-          <h3>Kirim Email Test</h3>
-          <button class="modal-x" @click="showTest = false">×</button>
+          <h3 id="email-test-title">Kirim Email Test</h3>
+          <button type="button" class="modal-x" aria-label="Tutup" @click="showTest = false">×</button>
         </div>
         <div class="modal-body">
           <p class="modal-hint">Email dikirim dari akun noreply sistem, lengkap dengan header &amp; footer brand.</p>
@@ -242,8 +242,8 @@ async function sendTest() {
           <div v-if="testErr" class="msg-err">{{ testErr }}</div>
         </div>
         <div class="modal-foot">
-          <button class="btn-cancel" @click="showTest = false">Tutup</button>
-          <button class="btn-send" :disabled="sending" @click="sendTest">
+          <button type="button" class="btn-cancel" @click="showTest = false">Tutup</button>
+          <button type="button" class="btn-send" :disabled="sending" @click="sendTest">
             {{ sending ? 'Mengirim...' : 'Kirim' }}
           </button>
         </div>
@@ -253,18 +253,20 @@ async function sendTest() {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
+.page { max-width: 1200px; }
 .page-header { margin-bottom: 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .btn-refresh { padding: 8px 14px; background: #f1f5f9; color: #334155; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-refresh:hover { background: #e2e8f0; }
+.btn-refresh:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-test { padding: 8px 14px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 
 /* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 16px; }
-.modal-card { background: #fff; border-radius: 14px; width: 100%; max-width: 460px; box-shadow: 0 20px 50px rgba(0,0,0,0.25); overflow: hidden; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal-card { background: #fff; border-radius: 14px; width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.25); }
+.msg-err { overflow-wrap: anywhere; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #f1f5f9; }
 .modal-head h3 { margin: 0; font-size: 16px; color: #0f172a; }
 .modal-x { background: none; border: none; font-size: 24px; color: #94a3b8; cursor: pointer; line-height: 1; }
@@ -315,8 +317,8 @@ th { padding: 11px 12px; font-size: 11px; font-weight: 700; color: #64748b; text
 td { padding: 11px 12px; border-top: 1px solid #f1f5f9; vertical-align: top; }
 .empty { text-align: center; color: #94a3b8; padding: 40px; }
 .td-time { font-size: 12px; color: #374151; white-space: nowrap; font-family: monospace; }
-.td-to { font-size: 12px; color: #0f172a; }
-.td-subject { font-size: 13px; color: #374151; max-width: 260px; }
+.td-to { font-size: 12px; color: #0f172a; overflow-wrap: anywhere; }
+.td-subject { font-size: 13px; color: #374151; max-width: 260px; overflow-wrap: anywhere; }
 .td-modul { font-size: 12px; color: #64748b; font-weight: 600; }
 .status-badge { padding: 3px 8px; border-radius: 8px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .td-error { font-size: 12px; color: #dc2626; max-width: 260px; word-break: break-word; }
@@ -325,7 +327,10 @@ td { padding: 11px 12px; border-top: 1px solid #f1f5f9; vertical-align: top; }
 .table-foot { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 
 @media (max-width: 768px) {
-  .page { padding: 0; }
   .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .filter-card { padding: 14px; }
+  .f-input, .f-input.wide, .f-select.narrow { flex: 1 1 100%; max-width: none; min-width: 0; }
+  .f-date { flex: 1 1 0; min-width: 0; }
+  .total-badge { margin-left: 0; }
 }
 </style>

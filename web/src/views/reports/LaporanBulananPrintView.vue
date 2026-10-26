@@ -19,7 +19,7 @@ onMounted(async () => {
     const res = await api.get('/reports/laporan-bulanan', {
       params: { pelanggan_id, bulan, tahun },
     })
-    data.value = res.data
+    data.value = res.data.data
   } catch (e: any) {
     error.value = e?.response?.data?.message || 'Gagal memuat laporan'
   } finally {
@@ -53,6 +53,14 @@ function fmtPct(n: number | undefined): string {
 function fmtPct1(n: number | undefined): string {
   if (n === undefined || n === null) return '—'
   return Number(n).toFixed(1) + '%'
+}
+
+// MTTR bisa pecahan dari backend (rata-rata) — bulatkan dulu agar tidak tampil "12.333 menit"
+function fmtMttr(n: number | undefined | null, short = false): string {
+  const m = Math.round(Number(n) || 0)
+  if (m < 60) return short ? `${m}m` : `${m} menit`
+  const j = Math.floor(m / 60)
+  return short ? `${j}j ${m % 60}m` : `${j} jam ${m % 60} menit`
 }
 
 // ── Daily distribution for bar chart ────────────────────────────
@@ -103,7 +111,7 @@ const summaryParagraf = computed(() => {
     + `Sebanyak ${s.site_memenuhi_sla} site (${Math.round(s.site_memenuhi_sla / Math.max(s.total_site, 1) * 100)}%) `
     + `memenuhi target SLA yang disepakati, dengan ${s.site_tanpa_gangguan} site tidak mengalami gangguan sama sekali. `
     + `Total gangguan yang tercatat sebanyak ${s.total_tiket} tiket dengan rata-rata waktu penanganan (MTTR) `
-    + `${s.avg_mttr_menit < 60 ? s.avg_mttr_menit + ' menit' : Math.floor(s.avg_mttr_menit / 60) + ' jam ' + (s.avg_mttr_menit % 60) + ' menit'}.`
+    + `${fmtMttr(s.avg_mttr_menit)}.`
 })
 
 // ── Ticket chunks for pages 6-8 ──────────────────────────────────
@@ -137,7 +145,7 @@ const ticketPages = computed(() => {
       <!-- Print button (hidden in print) -->
       <div class="no-print print-bar">
         <span class="print-bar-title">Laporan Bulanan — {{ data.pelanggan?.nama_pelanggan }} — {{ data.periode }}</span>
-        <button class="btn-print" @click="printPage()">🖨 Print / Simpan PDF</button>
+        <button type="button" class="btn-print" @click="printPage()">🖨 Cetak / Simpan PDF</button>
       </div>
 
       <!-- ═══════════════════════════════════════════════════════════ -->
@@ -217,7 +225,7 @@ const ticketPages = computed(() => {
             <div class="kl">Total Tiket Gangguan</div>
           </div>
           <div class="kpi-card gray">
-            <div class="kv">{{ data.summary.avg_mttr_menit < 60 ? data.summary.avg_mttr_menit + 'm' : Math.floor(data.summary.avg_mttr_menit / 60) + 'j ' + (data.summary.avg_mttr_menit % 60) + 'm' }}</div>
+            <div class="kv">{{ fmtMttr(data.summary.avg_mttr_menit, true) }}</div>
             <div class="kl">Avg MTTR</div>
           </div>
           <div class="kpi-card gray">
@@ -534,13 +542,13 @@ const ticketPages = computed(() => {
   </div>
 </template>
 
-<style>
-/* ── Reset & base ─────────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; background: #f1f5f9; }
+<style scoped>
+/* Scoped agar class umum (.kpi-card, .section-title, .btn-print, .tc, …) tidak bocor
+   ke halaman lain. Reset * dan base font yang dulu di-set pada body kini dipasang
+   di .print-root (main.css sudah melakukan reset global). */
 
 /* ── Print root wrapper ───────────────────────────────────────────── */
-.print-root { max-width: 900px; margin: 0 auto; }
+.print-root { max-width: 900px; margin: 0 auto; font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; }
 
 /* ── Print bar ────────────────────────────────────────────────────── */
 .print-bar {
@@ -744,14 +752,29 @@ body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e29
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Layar sempit (preview di HP/tablet) — tidak memengaruhi cetak ─── */
+@media screen and (max-width: 768px) {
+  .print-bar { flex-wrap: wrap; padding: 10px 14px; }
+  .print-bar-title { flex: 1 1 100%; overflow-wrap: anywhere; }
+  .print-page { overflow-x: auto; }
+  .cover-inner { padding: 32px 20px 20px; }
+  .cover-title { font-size: 28px; }
+  .cover-kpi-row { flex-wrap: wrap; }
+  .cover-kpi { flex: 1 1 30%; }
+  .cover-footer { flex-direction: column; gap: 4px; }
+  .body-page { padding: 16px 14px 52px; }
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .rpt-table { min-width: 560px; }
+}
+
 /* ═══════════════════════════════════════════════════════════════════ */
 /* PRINT MEDIA                                                         */
 /* ═══════════════════════════════════════════════════════════════════ */
 @media print {
   @page { size: A4; margin: 0; }
 
-  body { background: #fff; font-size: 10px; }
-  .print-root { max-width: 100%; }
+  :global(body) { background: #fff; }
+  .print-root { max-width: 100%; font-size: 10px; }
 
   .no-print { display: none !important; }
 

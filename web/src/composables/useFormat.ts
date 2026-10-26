@@ -28,6 +28,26 @@ export function fmtDateTime(d: string | null | undefined): string {
   })
 }
 
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+// Tanggal/bulan berjalan menurut zona waktu lokal (WIB), bukan UTC seperti
+// toISOString() yang sebelum jam 07:00 masih menghasilkan tanggal kemarin.
+export function todayLocal(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+export function monthLocal(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`
+}
+
+// Nilai untuk <input type="datetime-local"> (YYYY-MM-DDTHH:mm, waktu lokal).
+export function toDatetimeLocal(d: string | Date | null | undefined): string {
+  if (!d) return ''
+  const dt = new Date(d)
+  if (isNaN(dt.getTime())) return ''
+  return `${todayLocal(dt)}T${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`
+}
+
 export function statusLabel(s: string | null | undefined): string {
   return (s || '').replace(/_/g, ' ')
 }
@@ -45,4 +65,9 @@ export function fmtRelativeTime(d: string | null | undefined, compact = false): 
   const diffD = Math.floor(diffH / 24)
   if (diffD < 7) return `${diffD} hari lalu`
   return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+/** Escape teks sebelum disisipkan ke HTML (v-html, popup Leaflet, editor). */
+export function escapeHtml(s: string | number | null | undefined): string {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 }

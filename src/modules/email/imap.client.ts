@@ -25,6 +25,8 @@ export interface MessageDetail {
   subject: string;
   from?: string;
   to?: string;
+  cc?: string;
+  bcc?: string;
   date?: Date;
   html: string | null;
   text: string | null;
@@ -113,6 +115,13 @@ export class ImapClientService implements OnModuleDestroy {
       // biarkan imapflow handle IDLE per-lock saja bukan seisi sesi.
       disableAutoIdle: true,
     } as any);
+    // Tanpa listener, event 'error' (mis. socket timeout pada koneksi idle di pool)
+    // jadi uncaught exception dan mematikan seluruh proses.
+    const key = this.poolKey(creds);
+    client.on('error', (err: any) => {
+      this.logger.warn(`Koneksi IMAP error (${key}): ${err?.message}`);
+      if (this.pool.get(key)?.client === client) this.evict(key, `error: ${err?.message}`);
+    });
     try {
       await this.raceTimeout(
         client.connect(),
@@ -139,7 +148,13 @@ export class ImapClientService implements OnModuleDestroy {
       existing.timer = setTimeout(() => this.evict(key, 'idle timeout'), ImapClientService.IDLE_TIMEOUT_MS);
       return { client: existing.client, key };
     }
-    if (existing) this.pool.delete(key); // stale — bukan usable lagi
+    if (existing) {
+      // stale — timer lamanya harus ikut dibersihkan, kalau tidak ia akan
+      // meng-evict koneksi BARU dengan key yang sama di tengah request
+      clearTimeout(existing.timer);
+      this.pool.delete(key);
+      try { existing.client.close(); } catch {}
+    }
 
     // Beberapa request bisa datang bersamaan sebelum ada koneksi tercache
     // (mis. buka halaman Email langsung memicu /account, /folders, /messages
@@ -295,6 +310,8 @@ export class ImapClientService implements OnModuleDestroy {
         subject: parsed.subject || '(tanpa subjek)',
         from: parsed.from?.text,
         to: parsed.to && 'text' in parsed.to ? parsed.to.text : undefined,
+        cc: parsed.cc && 'text' in parsed.cc ? parsed.cc.text : undefined,
+        bcc: parsed.bcc && 'text' in parsed.bcc ? parsed.bcc.text : undefined,
         date: parsed.date,
         html: parsed.html || null,
         text: parsed.text || null,

@@ -4,6 +4,8 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { StarsenderService } from '../starsender/starsender.service';
 import { SLA_JAM } from '../../operations/operations.service';
+import { withNextTicketNumber } from '../../../common/utils/ticket-number';
+import { cariSiteDariNama } from '../../../common/utils/site-match';
 
 const STATUS_TIKET_AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
 
@@ -66,20 +68,7 @@ export class UptimeKumaService {
     });
     if (mapping) return mapping.site;
 
-    const nama = monitorName.trim();
-    if (!nama) return null;
-
-    const site = await this.prisma.sitePelanggan.findFirst({
-      where: { nama_site: { contains: nama } },
-      select: { id_site: true, nama_site: true },
-    });
-    if (site) return site;
-    const semua = await this.prisma.sitePelanggan.findMany({
-      select: { id_site: true, nama_site: true },
-      take: 1000,
-    });
-    const lower = nama.toLowerCase();
-    return semua.find((s) => lower.includes(s.nama_site.toLowerCase())) ?? null;
+    return cariSiteDariNama(this.prisma, monitorName);
   }
 
   // ─── HANDLER WEBHOOK ────────────────────────────────────────────
@@ -110,7 +99,21 @@ export class UptimeKumaService {
     return { message: 'OK' };
   }
 
+  // Dua webhook DOWN yang datang hampir bersamaan (dua notifikasi / retry) sama-sama
+  // lolos cek duplikat sebelum penanda tersimpan — kunci per monitor (proses PM2 tunggal).
+  private downInFlight = new Set<string>();
+
   private async prosesDown(monitorId: string, monitorName: string, msg: string) {
+    if (this.downInFlight.has(monitorId)) return;
+    this.downInFlight.add(monitorId);
+    try {
+      await this.prosesDownLocked(monitorId, monitorName, msg);
+    } finally {
+      this.downInFlight.delete(monitorId);
+    }
+  }
+
+  private async prosesDownLocked(monitorId: string, monitorName: string, msg: string) {
     const existing = await this.prisma.integrationUptimeKumaWebhook.findFirst({
       where: {
         monitor_id: monitorId,
@@ -186,36 +189,31 @@ export class UptimeKumaService {
     }).catch(() => {});
   }
 
-  private async genNomorTiket(now: Date): Promise<string> {
-    const prefix = `TKT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.operationTicket.findFirst({
-      where: { nomor_tiket: { startsWith: prefix } },
-      orderBy: { nomor_tiket: 'desc' },
-    });
-    const seq = (last ? (parseInt(last.nomor_tiket.split('-')[2], 10) || 0) : 0) + 1;
-    return `${prefix}-${String(seq).padStart(4, '0')}`;
-  }
-
   private async buatTiketUptimeKuma(
     info: { monitorId: string; monitorName: string; msg: string },
     site: { id_site: number; nama_site: string },
   ) {
     const now = new Date();
-    const nomor = await this.genNomorTiket(now);
-    const ticket = await this.prisma.operationTicket.create({
-      data: {
-        nomor_tiket: nomor,
-        id_site: site.id_site,
-        judul_tiket: `[Uptime Kuma] ${info.monitorName} — DOWN`,
-        deskripsi_masalah: info.msg || `Monitor ${info.monitorName} down`,
-        prioritas: 'Critical',
-        sumber_tiket: 'Uptime Kuma',
-        sla_due: new Date(now.getTime() + (SLA_JAM['Critical'] ?? 4) * 3600_000),
-      },
-    });
-    await this.prisma.operationTicketLog.create({
-      data: { id_ticket: ticket.id_ticket, status_ke: 'Open', catatan: `Tiket dibuat otomatis dari Uptime Kuma (monitor #${info.monitorId})` },
-    });
+    const ticket = await withNextTicketNumber(this.prisma, now, (nomor_tiket) =>
+      this.prisma.$transaction(async (tx) => {
+        const t = await tx.operationTicket.create({
+          data: {
+            nomor_tiket,
+            id_site: site.id_site,
+            judul_tiket: `[Uptime Kuma] ${info.monitorName} — DOWN`,
+            deskripsi_masalah: info.msg || `Monitor ${info.monitorName} down`,
+            prioritas: 'Critical',
+            sumber_tiket: 'Uptime Kuma',
+            sla_due: new Date(now.getTime() + (SLA_JAM['Critical'] ?? 4) * 3600_000),
+          },
+        });
+        await tx.operationTicketLog.create({
+          data: { id_ticket: t.id_ticket, status_ke: 'Open', catatan: `Tiket dibuat otomatis dari Uptime Kuma (monitor #${info.monitorId})` },
+        });
+        return t;
+      }),
+    );
+    const nomor = ticket.nomor_tiket;
     this.notif.notifyForModul('operations', {
       tipe: 'tiket_baru',
       judul: `🔴 [Uptime Kuma] ${info.monitorName} DOWN`,

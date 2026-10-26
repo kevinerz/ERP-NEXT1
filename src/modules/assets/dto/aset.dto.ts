@@ -25,7 +25,7 @@ export class CreateAsetDto {
   @IsOptional() @IsString() tipe_model?: string;
   @IsOptional() @IsString() serial_number?: string;
   @IsOptional() @IsBoolean() is_serialized?: boolean;
-  @IsOptional() @IsInt() stok_jumlah?: number;
+  @IsOptional() @IsInt() @Min(0) stok_jumlah?: number;
   @IsString() kategori: string;
   @IsOptional() @IsString() kondisi?: string;
   @IsOptional() @IsInt() id_site?: number;

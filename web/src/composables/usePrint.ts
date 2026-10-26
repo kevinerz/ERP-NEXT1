@@ -1,6 +1,7 @@
 import DOMPurify from 'dompurify'
 import { useSettingsStore } from '@/stores/settings'
 import QRCode from 'qrcode'
+import { alertDialog } from '@/composables/useDialog'
 
 function getCompany() {
   try {
@@ -31,7 +32,7 @@ function sanitizeFullDocument(html: string): string {
 
 export function printDocument(html: string) {
   const win = window.open('', '_blank', 'width=900,height=1000,scrollbars=yes')
-  if (!win) { alert('Pop-up diblokir browser. Izinkan pop-up untuk halaman ini.'); return }
+  if (!win) { alertDialog({ title: 'Pop-up Diblokir', message: 'Pop-up diblokir browser. Izinkan pop-up untuk halaman ini.', variant: 'warning' }); return }
   win.document.open()
   win.document.write(sanitizeFullDocument(html))
   win.document.close()
@@ -712,6 +713,7 @@ export function printLaporan(payload: {
 // INVOICE (dari modul Finance — data invoice nyata)
 // ─────────────────────────────────────────────
 export function printInvoiceDoc(inv: any) {
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '-'
   const fmtRp = (n: any) => 'Rp ' + (Number(n) || 0).toLocaleString('id-ID')
   const pelanggan = inv.site?.pelanggan?.nama_pelanggan || '-'
   const sisa = (Number(inv.total) || 0) - (Number(inv.jumlah_dibayar) || 0)
@@ -773,7 +775,7 @@ export async function printLabelAset(asetList: any[]) {
   // window.open HARUS dipanggil sinkron (langsung dari klik user) agar
   // tidak diblokir popup blocker — baru generate QR (async) setelah itu.
   const win = window.open('', '_blank', 'width=900,height=700,scrollbars=yes')
-  if (!win) { alert('Pop-up diblokir browser. Izinkan pop-up untuk halaman ini.'); return }
+  if (!win) { alertDialog({ title: 'Pop-up Diblokir', message: 'Pop-up diblokir browser. Izinkan pop-up untuk halaman ini.', variant: 'warning' }); return }
   win.document.write('<p style="padding:40px;font-family:sans-serif;color:#64748b">Menyiapkan label…</p>')
 
   const baseUrl = window.location.origin
@@ -827,7 +829,7 @@ export async function printLabelAset(asetList: any[]) {
   <body>
     <div class="toolbar no-print">
       <span style="font-size:10pt;color:#475569">${asetList.length} label siap cetak — tempel di stiker label ukuran 70×37mm</span>
-      <button onclick="window.print()">🖨 Cetak</button>
+      <button type="button" id="btn-cetak-label">🖨 Cetak</button>
     </div>
     <div class="sheet">${labelsHtml}</div>
   </body></html>`
@@ -835,4 +837,6 @@ export async function printLabelAset(asetList: any[]) {
   win.document.open()
   win.document.write(sanitizeFullDocument(html))
   win.document.close()
+  // onclick inline dibuang DOMPurify, jadi listener dipasang dari sini.
+  win.document.getElementById('btn-cetak-label')?.addEventListener('click', () => { win.focus(); win.print() })
 }

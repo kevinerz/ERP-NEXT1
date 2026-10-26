@@ -2,8 +2,9 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 import { printSuratTugas, printBeritaAcara, printSuratJalan } from '@/composables/usePrint'
-import { fmtDate, fmtDateTime, fmtRupiahPenuh as fmtRp } from '@/composables/useFormat'
+import { fmtDateTime, fmtRupiahPenuh as fmtRp } from '@/composables/useFormat'
 
 const route  = useRoute()
 const router = useRouter()
@@ -25,8 +26,8 @@ const STATUS_LABEL: Record<string, string> = {
   Selesai: 'Selesai', Ditunda: 'Ditunda', Dibatalkan: 'Dibatalkan',
 }
 const STATUS_STYLE: Record<string, string> = {
-  Open: 'badge-blue', Dispatch: 'badge-blue', 'On-Site': 'badge-yellow',
-  Selesai: 'badge-green', Ditunda: 'badge-yellow', Dibatalkan: 'badge-gray',
+  Open: 'badge-blue', Dispatch: 'badge-blue', 'On-Site': 'badge-amber',
+  Selesai: 'badge-green', Ditunda: 'badge-amber', Dibatalkan: 'badge-gray',
 }
 
 // Berita Acara modal
@@ -127,32 +128,32 @@ async function advanceStatus() {
     await api.patch(`/public-wo/${id}`, { status_wo: next })
     await fetchWo()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal update status Work Order')
+    alertError(e, 'Gagal update status Work Order')
   } finally {
     updatingStatus.value = false
   }
 }
 
 async function cancelWo() {
-  if (!confirm('Batalkan Work Order ini?')) return
+  if (!(await confirmDialog({ title: 'Batalkan Work Order ini?', variant: 'danger', confirmLabel: 'Ya, Batalkan', cancelLabel: 'Tidak' }))) return
   updatingStatus.value = true
   try {
     await api.patch(`/public-wo/${id}`, { status_wo: 'Dibatalkan' })
     await fetchWo()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal membatalkan Work Order')
+    alertError(e, 'Gagal membatalkan Work Order')
   } finally {
     updatingStatus.value = false
   }
 }
 
 async function hapusWo() {
-  if (!confirm('Hapus Work Order ini?')) return
+  if (!(await confirmDialog({ title: 'Hapus Work Order ini?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete(`/public-wo/${id}`)
     router.push('/public-wo')
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus Work Order')
+    alertError(e, 'Gagal menghapus Work Order')
   }
 }
 
@@ -172,7 +173,7 @@ async function submitBa() {
     showBaModal.value = false
     await fetchWo()
   } catch (e: any) {
-    alert(e?.response?.data?.message || 'Gagal membuat BA')
+    alertError(e, 'Gagal membuat BA')
   } finally {
     savingBa.value = false
   }
@@ -190,7 +191,7 @@ async function saveCatatan() {
     await fetchWo()
     editingCatatan.value = false
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menyimpan catatan')
+    alertError(e, 'Gagal menyimpan catatan')
   } finally {
     savingCatatan.value = false
   }
@@ -216,10 +217,10 @@ onMounted(fetchWo)
         <div>
           <div class="wo-nomor">{{ wo.nomor_wo }}</div>
           <div class="wo-meta">
-            <span :class="['badge', STATUS_STYLE[wo.status_wo]]">{{ STATUS_LABEL[wo.status_wo] }}</span>
+            <span :class="['badge', STATUS_STYLE[wo.status_wo] || 'badge-gray']">{{ STATUS_LABEL[wo.status_wo] || wo.status_wo }}</span>
             <span class="badge badge-outline">{{ wo.jenis_wo }}</span>
             <span class="meta-sep">·</span>
-            <span class="meta-text">Jadwal: {{ fmtDate(wo.tgl_jadwal) }}</span>
+            <span class="meta-text">Jadwal: {{ fmtDateTime(wo.tgl_jadwal) }}</span>
             <span v-if="wo.ticket" class="meta-sep">·</span>
             <span v-if="wo.ticket" class="meta-link" @click="router.push(`/operations/${wo.ticket.id_ticket}`)">
               ↳ Tiket {{ wo.ticket.nomor_tiket }}
@@ -234,7 +235,7 @@ onMounted(fetchWo)
             :disabled="updatingStatus"
             @click="advanceStatus"
           >
-            {{ updatingStatus ? '…' : `→ ${STATUS_LABEL[STATUS_NEXT[wo.status_wo]]}` }}
+            {{ updatingStatus ? '…' : `→ ${STATUS_LABEL[STATUS_NEXT[wo.status_wo]!]}` }}
           </button>
           <button
             v-if="wo.status_wo !== 'Selesai' && wo.status_wo !== 'Dibatalkan'"
@@ -258,13 +259,13 @@ onMounted(fetchWo)
             <div class="card-title">Informasi Work Order</div>
             <dl class="info-list">
               <dt>Jenis</dt><dd>{{ wo.jenis_wo }}</dd>
-              <dt>Eksekutor</dt><dd>{{ wo.tipe_eksekutor.replace('_', ' ') }}</dd>
+              <dt>Eksekutor</dt><dd>{{ wo.tipe_eksekutor?.replace('_', ' ') || '-' }}</dd>
               <dt>Teknisi</dt><dd>{{ wo.teknisi?.nama_lengkap || '-' }}</dd>
               <dt>Vendor</dt><dd>{{ wo.vendor?.nama_vendor || '-' }}</dd>
               <dt v-if="wo.vendor">Fee Vendor</dt><dd v-if="wo.vendor">{{ fmtRp(Number(wo.fee_vendor)) }}</dd>
               <dt v-if="wo.vendor">Status Fee</dt>
               <dd v-if="wo.vendor">
-                <span :class="['badge', wo.status_pembayaran_fee === 'Sudah_Dibayar' ? 'badge-green' : 'badge-yellow']">
+                <span :class="['badge', wo.status_pembayaran_fee === 'Sudah_Dibayar' ? 'badge-green' : 'badge-amber']">
                   {{ wo.status_pembayaran_fee?.replace('_', ' ') }}
                 </span>
               </dd>
@@ -363,7 +364,7 @@ onMounted(fetchWo)
                 </div>
                 <div class="ba-meta">
                   <span class="badge badge-outline">{{ p.jenis_pengiriman.replace('_', ' ') }}</span>
-                  <span :class="['badge', p.status_pengiriman === 'Diterima' ? 'badge-green' : 'badge-yellow']">
+                  <span :class="['badge', p.status_pengiriman === 'Diterima' ? 'badge-green' : 'badge-amber']">
                     {{ p.status_pengiriman }}
                   </span>
                 </div>
@@ -399,8 +400,8 @@ onMounted(fetchWo)
     <div v-if="showBaModal" class="modal-overlay" @click.self="showBaModal = false">
       <div class="modal">
         <div class="modal-header">
-          <h3>Buat Berita Acara</h3>
-          <button class="btn-close" @click="showBaModal = false">✕</button>
+          <h3 class="modal-title">Buat Berita Acara</h3>
+          <button type="button" class="btn-modal-close" @click="showBaModal = false">✕</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
@@ -464,8 +465,8 @@ onMounted(fetchWo)
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-secondary" @click="showBaModal = false">Batal</button>
-          <button class="btn-primary" :disabled="savingBa" @click="submitBa">
+          <button type="button" class="btn-secondary" @click="showBaModal = false">Batal</button>
+          <button type="button" class="btn-primary" :disabled="savingBa" @click="submitBa">
             {{ savingBa ? 'Menyimpan…' : 'Buat Berita Acara' }}
           </button>
         </div>
@@ -484,20 +485,16 @@ onMounted(fetchWo)
 .state { padding: 60px 20px; text-align: center; color: #94a3b8; font-size: 14px; }
 .state.error { color: #ef4444; }
 
-.detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-.wo-nomor { font-size: 22px; font-weight: 700; color: #0f172a; font-family: monospace; margin-bottom: 8px; }
+.detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+.wo-nomor { font-size: 22px; font-weight: 700; color: #0f172a; font-family: monospace; margin-bottom: 8px; overflow-wrap: anywhere; }
 .wo-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .meta-sep { color: #cbd5e1; }
 .meta-text { font-size: 13px; color: #64748b; }
 .meta-link { font-size: 13px; color: #2563eb; cursor: pointer; }
 .meta-link:hover { text-decoration: underline; }
-.action-group { display: flex; gap: 8px; }
+.action-group { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
-.badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-.badge-blue   { background: #eff6ff; color: #2563eb; }
-.badge-yellow { background: #fffbeb; color: #d97706; }
-.badge-green  { background: #f0fdf4; color: #16a34a; }
-.badge-gray   { background: #f1f5f9; color: #64748b; }
+/* .badge / .badge-* dari main.css */
 .badge-outline { border: 1px solid #e2e8f0; background: transparent; color: #475569; }
 
 .grid-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
@@ -509,16 +506,16 @@ onMounted(fetchWo)
 
 .info-list { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; margin: 0; font-size: 13px; }
 .info-list dt { color: #64748b; font-weight: 500; white-space: nowrap; }
-.info-list dd { color: #1e293b; margin: 0; }
+.info-list dd { color: #1e293b; margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
-.desc-text { margin: 0; font-size: 13px; color: #374151; line-height: 1.6; white-space: pre-wrap; }
+.desc-text { margin: 0; font-size: 13px; color: #374151; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .desc-text.empty { color: #94a3b8; font-style: italic; }
 .empty-section { font-size: 13px; color: #94a3b8; text-align: center; padding: 16px 0; }
 
 .ba-list { display: flex; flex-direction: column; gap: 10px; }
 .ba-item { padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #f1f5f9; }
 .ba-nomor { font-family: monospace; font-size: 13px; font-weight: 700; color: #1d4ed8; margin-bottom: 6px; }
-.ba-meta { display: flex; gap: 6px; margin-bottom: 6px; }
+.ba-meta { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 .ba-signs { font-size: 12px; color: #64748b; display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
 .ba-material { font-size: 12px; color: #475569; }
 .ba-material-count { margin-bottom: 4px; }
@@ -544,7 +541,6 @@ onMounted(fetchWo)
 .btn-print-sm { padding: 3px 8px; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .btn-print-sm:hover { background: #dcfce7; }
 .ba-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.btn-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; padding: 4px 8px; border-radius: 6px; }
 
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .form-control { padding: 8px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; width: 100%; box-sizing: border-box; }
@@ -566,14 +562,15 @@ textarea.form-control { resize: vertical; font-family: inherit; }
 .material-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 .material-hint-error { color: #d97706; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
-.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px 0; }
-.modal-header h3 { margin: 0; font-size: 17px; color: #0f172a; }
-.modal-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
-.modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid #f1f5f9; }
+/* .modal-overlay / .modal / .modal-header / .modal-footer dari main.css */
+.modal-body { display: flex; flex-direction: column; gap: 14px; }
 
 @media (max-width: 900px) {
   .grid-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .foto-grid { grid-template-columns: repeat(2, 1fr); }
+  .info-list { grid-template-columns: 1fr; gap: 2px; }
+  .info-list dd { margin-bottom: 6px; }
 }
 </style>

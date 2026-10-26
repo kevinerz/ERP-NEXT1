@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { clampPagination } from '../../common/utils/pagination';
 import { CreateKontrakDto, UpdateKontrakDto, TerminasiDto } from './dto/kontrak.dto';
 
 const KONTRAK_INCLUDE = {
@@ -20,9 +21,7 @@ export class ContractsService {
     search?: string; status_kontrak?: string; id_pelanggan?: number;
     page?: number; limit?: number;
   }) {
-    const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = clampPagination(query.page, query.limit, 20);
     const where: any = {};
 
     if (query.status_kontrak) where.status_kontrak = query.status_kontrak;
@@ -122,6 +121,11 @@ export class ContractsService {
     if (!row) throw new NotFoundException('Kontrak tidak ditemukan');
     if (row.status_kontrak === 'Terminasi')
       throw new BadRequestException('Kontrak yang sudah diterminasi tidak bisa diubah');
+    // Terminasi wajib lewat endpoint khusus (cek project berjalan + nonaktifkan site)
+    if (dto.status_kontrak === 'Terminasi')
+      throw new BadRequestException(
+        'Status Terminasi tidak bisa diset lewat edit — gunakan aksi Terminasi (POST /contracts/:id/terminasi)',
+      );
     const data = await this.prisma.kontrakLayanan.update({
       where: { id_kontrak: id },
       data: dto,

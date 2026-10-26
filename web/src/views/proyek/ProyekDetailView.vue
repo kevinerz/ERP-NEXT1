@@ -5,6 +5,7 @@ import { useProyekStore } from '@/stores/proyek'
 import { printBAST } from '@/composables/usePrint'
 import { fmtDateShort as fmtDate, fmtDateTime as fmtDt } from '@/composables/useFormat'
 import api from '@/services/api'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 
 const router = useRouter()
 const route = useRoute()
@@ -95,29 +96,44 @@ async function handleEdit() {
 }
 
 async function handleDelete() {
-  if (!confirm(`Hapus project ${proyek.current?.nomor_project}? Tindakan ini tidak bisa dibatalkan.`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Project?',
+    message: `Hapus project ${proyek.current?.nomor_project}? Tindakan ini tidak bisa dibatalkan.`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete(`/projects/${id}`)
     router.push('/projects')
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus project') }
+  } catch (e: any) { await alertError(e, 'Gagal menghapus project') }
 }
 
 async function handleDeleteWo(wo: any) {
-  if (!confirm(`Hapus Work Order ${wo.nomor_wo}?`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Work Order?',
+    message: `Work Order ${wo.nomor_wo} akan dihapus.`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete(`/projects/wo/${wo.id_wo}`)
     await proyek.fetchOne(id)
     flash('Work Order dihapus')
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus Work Order') }
+  } catch (e: any) { await alertError(e, 'Gagal menghapus Work Order') }
 }
 
 async function handleDeleteBast(b: any) {
-  if (!confirm(`Hapus BAST ${b.nomor_bast}?`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus BAST?',
+    message: `BAST ${b.nomor_bast} akan dihapus.`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete(`/projects/bast/${b.id_dokumen}`)
     await proyek.fetchOne(id)
     flash('BAST dihapus')
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal menghapus BAST') }
+  } catch (e: any) { await alertError(e, 'Gagal menghapus BAST') }
 }
 
 async function handleAddWo() {
@@ -191,14 +207,17 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
 <template>
   <div class="page">
     <div v-if="proyek.loading && !proyek.current" class="loading-page">Memuat...</div>
-    <div v-else-if="proyek.error" class="alert-error">{{ proyek.error }}</div>
+    <div v-else-if="proyek.error">
+      <button type="button" class="btn-back" @click="router.push('/projects')">← Proyek</button>
+      <div class="alert-error">{{ proyek.error }}</div>
+    </div>
     <template v-else-if="proyek.current">
       <!-- Header -->
       <div class="page-header">
         <div>
           <button class="btn-back" @click="router.push('/projects')">← Proyek</button>
           <h2>{{ proyek.current.nomor_project }}</h2>
-          <p class="sub">{{ proyek.current.site?.nama_site }} · {{ proyek.current.site?.kota }}</p>
+          <p class="sub">{{ proyek.current.site?.nama_site || '—' }}<template v-if="proyek.current.site?.kota"> · {{ proyek.current.site?.kota }}</template></p>
         </div>
         <div class="header-right">
           <span class="status-big"
@@ -467,7 +486,9 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
 .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
-.header-right { display: flex; align-items: center; gap: 10px; }
+.header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.btn-hapus { padding: 9px 18px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.btn-hapus:hover { background: #fee2e2; }
 .status-big { padding: 5px 14px; border-radius: 20px; font-size: 14px; font-weight: 700; }
 .btn-print { padding: 9px 16px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-print:hover { background: #dcfce7; }
@@ -478,7 +499,7 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
 .info-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .info-chip { background: #fff; border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); flex: 1; min-width: 130px; }
 .info-chip-link { cursor: pointer; transition: box-shadow 0.15s; }
-.info-chip-link:hover { box-shadow: 0 2px 8px rgba(59,130,246,0.2); border: 1px solid #bfdbfe; }
+.info-chip-link:hover { box-shadow: 0 0 0 1px var(--primary-border), 0 2px 8px rgba(59,130,246,0.2); }
 .ic-label { display: block; font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
 .ic-value { font-size: 14px; color: #0f172a; }
 .ic-status { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; margin-top: 4px; }
@@ -489,7 +510,7 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
 .field-hint { font-size: 11px; color: #94a3b8; font-weight: 400; }
 .fw { font-weight: 700; }
 
-.catatan-box { background: #f8fafc; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #475569; margin-bottom: 4px; }
+.catatan-box { background: #f8fafc; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #475569; margin-bottom: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .section-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); }
 .mt16 { margin-top: 16px; }
@@ -503,8 +524,8 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
 .wo-nomor { font-size: 13px; font-weight: 700; color: #1d4ed8; }
 .wo-jenis { font-size: 12px; color: #64748b; margin: 2px 0; }
 .wo-date { font-size: 11px; color: #94a3b8; }
-.wo-mid { flex: 1; }
-.wo-desc { margin: 0 0 4px; font-size: 14px; color: #0f172a; }
+.wo-mid { flex: 1; min-width: 0; }
+.wo-desc { margin: 0 0 4px; font-size: 14px; color: #0f172a; white-space: pre-wrap; overflow-wrap: anywhere; }
 .wo-exec { font-size: 12px; color: #64748b; }
 .wo-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; min-width: 90px; }
 .wo-status { font-size: 13px; font-weight: 700; }
@@ -521,8 +542,7 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
 .sync-yes { background: #f0fdf4; color: #15803d; }
 .sync-no { background: #fef2f2; color: #dc2626; }
 
-/* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+/* Modal (overlay pakai global .modal-overlay) */
 .modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -537,4 +557,13 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 768px) {
+  .wo-item, .bast-item { flex-wrap: wrap; gap: 8px 16px; }
+  .wo-left, .bast-nomor { min-width: 0; }
+  .wo-mid, .bast-detail { flex-basis: 100%; }
+  .wo-right { flex-direction: row; align-items: center; width: 100%; justify-content: flex-end; min-width: 0; }
+  .bast-date { min-width: 0; text-align: left; }
+  .modal { padding: 22px 20px; }
+}
 </style>

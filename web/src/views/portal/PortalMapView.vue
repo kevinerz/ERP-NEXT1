@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import portalApi from '@/services/portalApi'
+import { escapeHtml } from '@/composables/useFormat'
 
 const sites      = ref<any[]>([])
 const downStatus = ref<{ id_site: number; sensors: string[] }[]>([])
@@ -11,7 +12,7 @@ let   leafletMap: any = null
 function parseCoord(gps: string | null): [number, number] | null {
   if (!gps) return null
   const parts = gps.split(',').map((p: string) => parseFloat(p.trim()))
-  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return [parts[0], parts[1]]
+  if (parts.length === 2 && !isNaN(parts[0]!) && !isNaN(parts[1]!)) return [parts[0]!, parts[1]!]
   return null
 }
 
@@ -80,22 +81,22 @@ async function initMap() {
     const sensorsHtml = downList.length
       ? `<div style="margin-top:8px;border-top:1px solid #fecaca;padding-top:6px">
            <div style="font-size:11px;font-weight:700;color:#dc2626;margin-bottom:4px">⚠ Sensor Down</div>
-           ${downList.slice(0, 5).map(s => `<div style="font-size:11px;color:#7f1d1d;margin-bottom:2px">• ${s}</div>`).join('')}
+           ${downList.slice(0, 5).map(s => `<div style="font-size:11px;color:#7f1d1d;margin-bottom:2px">• ${escapeHtml(s)}</div>`).join('')}
            ${downList.length > 5 ? `<div style="font-size:11px;color:#9f1239">+ ${downList.length - 5} lainnya</div>` : ''}
          </div>`
       : ''
 
     const popup = `
       <div style="font-family:system-ui,sans-serif;min-width:200px;max-width:260px">
-        <div style="font-weight:700;font-size:14px;color:#0f172a;margin-bottom:2px">${site.nama_site}</div>
-        <div style="font-size:11px;color:#64748b;margin-bottom:8px">${site.kode_site}${site.layanan?.nama_layanan ? ' · ' + site.layanan.nama_layanan : ''}</div>
+        <div style="font-weight:700;font-size:14px;color:#0f172a;margin-bottom:2px">${escapeHtml(site.nama_site)}</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:8px">${escapeHtml(site.kode_site)}${site.layanan?.nama_layanan ? ' · ' + escapeHtml(site.layanan.nama_layanan) : ''}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
           <span style="background:${isDown?'#fef2f2':tiket>0?'#fffbeb':'#f0fdf4'};color:${isDown?'#dc2626':tiket>0?'#d97706':'#15803d'};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">
             ${isDown ? '● Down' : tiket > 0 ? '● Ada Tiket' : '● Online'}
           </span>
           ${tiket > 0 ? `<span style="background:#eff6ff;color:#1d4ed8;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${tiket} Tiket</span>` : ''}
         </div>
-        ${site.kota || site.provinsi ? `<div style="font-size:11px;color:#64748b">📍 ${[site.kota, site.provinsi].filter(Boolean).join(', ')}</div>` : ''}
+        ${site.kota || site.provinsi ? `<div style="font-size:11px;color:#64748b">📍 ${escapeHtml([site.kota, site.provinsi].filter(Boolean).join(', '))}</div>` : ''}
         ${sensorsHtml}
       </div>`
 
@@ -179,7 +180,6 @@ const sitesDown       = () => downStatus.value.length
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 * { box-sizing: border-box; }
 
@@ -332,11 +332,16 @@ const sitesDown       = () => downStatus.value.length
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Pulse for down markers */
-@keyframes pulse-marker {
-  0%   { box-shadow: 0 0 0 2px #dc2626, 0 0 0 5px rgba(220,38,38,0.35); }
-  50%  { box-shadow: 0 0 0 2px #dc2626, 0 0 0 10px rgba(220,38,38,0); }
-  100% { box-shadow: 0 0 0 2px #dc2626, 0 0 0 5px rgba(220,38,38,0.35); }
+/* Keyframes pulse-marker ada di blok <style> non-scoped di bawah:
+   scoped CSS mengganti nama keyframes, sedangkan marker Leaflet memakai
+   inline style "animation:pulse-marker" sehingga animasinya tidak pernah jalan. */
+
+@media (max-width: 768px) {
+  .map-header { padding: 16px; }
+  .map-legend { flex-wrap: wrap; gap: 8px 14px; }
+  .stat-item { flex: 1; padding: 8px 10px; }
+  .geo-map { min-height: 60vh; }
+  .map-state, .map-error { padding: 48px 16px; text-align: center; }
 }
 
 /* Leaflet popup */
@@ -346,5 +351,14 @@ const sitesDown       = () => downStatus.value.length
 }
 :deep(.leaflet-popup-content) {
   margin: 12px 14px;
+}
+</style>
+
+<style>
+/* Global (tidak di-scope) karena dipakai dari HTML marker Leaflet */
+@keyframes pulse-marker {
+  0%   { box-shadow: 0 0 0 2px #dc2626, 0 0 0 5px rgba(220,38,38,0.35); }
+  50%  { box-shadow: 0 0 0 2px #dc2626, 0 0 0 10px rgba(220,38,38,0); }
+  100% { box-shadow: 0 0 0 2px #dc2626, 0 0 0 5px rgba(220,38,38,0.35); }
 }
 </style>

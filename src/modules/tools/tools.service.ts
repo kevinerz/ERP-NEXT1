@@ -6,10 +6,11 @@ import * as net from 'net';
 
 const execAsync = promisify(exec);
 
-// Whitelist karakter aman untuk host: huruf, angka, titik, strip, underscore
+// Whitelist karakter aman untuk host: huruf, angka, titik, strip, underscore.
+// Wajib diawali huruf/angka — host "-F.env" akan dibaca ping/mtr/dig sebagai opsi.
 function validateHost(host: string): string {
   const clean = host.trim();
-  if (!/^[a-zA-Z0-9._\-]{1,253}$/.test(clean)) {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._\-]{0,252}$/.test(clean)) {
     throw new BadRequestException('Format host tidak valid');
   }
   return clean;
@@ -36,6 +37,7 @@ export class ToolsService {
         Accept: 'application/json',
         'X-Places-Api-Version': '2025-06-17',
       },
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!res.ok) {

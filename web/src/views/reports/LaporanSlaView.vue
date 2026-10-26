@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
+import { exportCsv as exportCsvFile, type CsvSection } from '@/composables/useExport'
+import { fmtDateShort } from '@/composables/useFormat'
 
 const BULAN_LIST = [
   'Januari','Februari','Maret','April','Mei','Juni',
@@ -81,10 +83,7 @@ function fmtMenit(m: number | null) {
   return `${Math.floor(j / 24)}hr ${j % 24}j`
 }
 
-function fmtDate(d: string | Date | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
+const fmtDate = (d: string | null) => fmtDateShort(d)
 
 // ── SVG Chart ────────────────────────────────────────────────────
 const SVG_W = 800
@@ -118,45 +117,40 @@ const yTicks = [0, 25, 50, 75, 100]
 function exportCsv() {
   if (!data.value) return
   const d = data.value
-  const rows: string[] = []
-
-  rows.push(`LAPORAN SLA — ${d.periode}`)
-  rows.push('')
-  rows.push('RINGKASAN')
-  rows.push('Total Tiket,Total Resolved,Total Breach,Kepatuhan SLA,Kepatuhan FO,Avg MTTR')
   const s = d.summary
-  rows.push(`${s.total_tiket},${s.total_resolved},${s.total_breach},${fmtPct(s.compliance_pct)},${fmtPct(s.compliance_fo_pct)},${fmtMenit(s.avg_mttr_menit)}`)
-
-  rows.push('')
-  rows.push('PER LAYANAN')
-  rows.push('Kode Layanan,Nama Layanan,FO,Target,Kepatuhan,Total Tiket,Breach,Status')
-  for (const l of d.per_layanan) {
-    rows.push(`${l.kode_layanan},"${l.nama_layanan}",${l.is_fo ? 'Ya' : 'Tidak'},${l.target_pct}%,${fmtPct(l.compliance_pct)},${l.total_tiket},${l.breach},${l.status}`)
-  }
-
-  rows.push('')
-  rows.push('PER PELANGGAN')
-  rows.push('Kode,Nama Pelanggan,Total Tiket,Breach,Target,Kepatuhan,Status')
-  for (const p of d.per_pelanggan) {
-    rows.push(`${p.kode_pelanggan},"${p.nama_pelanggan}",${p.total_tiket},${p.breach},${p.target_pct}%,${fmtPct(p.compliance_pct)},${p.status}`)
-  }
-
-  rows.push('')
-  rows.push('DETAIL BREACH')
-  rows.push('No Tiket,Pelanggan,Site,Layanan,Prioritas,Tgl Open,SLA Due,Terlambat,Status')
-  for (const b of d.breach_detail) {
-    rows.push(`${b.nomor_tiket},"${b.nama_pelanggan}","${b.nama_site}",${b.kode_layanan},${b.prioritas},${fmtDate(b.tgl_open)},${fmtDate(b.sla_due)},${fmtMenit(b.terlambat_menit)},${b.status_tiket}`)
-  }
-
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `SLA-${d.periode.replace(/\s+/g, '-')}.csv`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  const sections: CsvSection[] = [
+    { title: `LAPORAN SLA — ${d.periode}`, headers: [], rows: [] },
+    {
+      title: 'RINGKASAN',
+      headers: ['Total Tiket', 'Total Resolved', 'Total Breach', 'Kepatuhan SLA', 'Kepatuhan FO', 'Avg MTTR'],
+      rows: [[s.total_tiket, s.total_resolved, s.total_breach, fmtPct(s.compliance_pct), fmtPct(s.compliance_fo_pct), fmtMenit(s.avg_mttr_menit)]],
+    },
+    {
+      title: 'PER LAYANAN',
+      headers: ['Kode Layanan', 'Nama Layanan', 'FO', 'Target', 'Kepatuhan', 'Total Tiket', 'Breach', 'Status'],
+      rows: d.per_layanan.map((l: any) => [
+        l.kode_layanan, l.nama_layanan, l.is_fo ? 'Ya' : 'Tidak', `${l.target_pct}%`,
+        fmtPct(l.compliance_pct), l.total_tiket, l.breach, l.status,
+      ]),
+    },
+    {
+      title: 'PER PELANGGAN',
+      headers: ['Kode', 'Nama Pelanggan', 'Total Tiket', 'Breach', 'Target', 'Kepatuhan', 'Status'],
+      rows: d.per_pelanggan.map((p: any) => [
+        p.kode_pelanggan, p.nama_pelanggan, p.total_tiket, p.breach, `${p.target_pct}%`,
+        fmtPct(p.compliance_pct), p.status,
+      ]),
+    },
+    {
+      title: 'DETAIL BREACH',
+      headers: ['No Tiket', 'Pelanggan', 'Site', 'Layanan', 'Prioritas', 'Tgl Open', 'SLA Due', 'Terlambat', 'Status'],
+      rows: d.breach_detail.map((b: any) => [
+        b.nomor_tiket, b.nama_pelanggan, b.nama_site, b.kode_layanan, b.prioritas,
+        fmtDate(b.tgl_open), fmtDate(b.sla_due), fmtMenit(b.terlambat_menit), b.status_tiket,
+      ]),
+    },
+  ]
+  exportCsvFile(`SLA-${d.periode.replace(/\s+/g, '-')}.csv`, sections)
 }
 </script>
 
@@ -176,10 +170,10 @@ function exportCsv() {
           <select v-model.number="filterTahun" class="filter-sm">
             <option v-for="y in TAHUN_LIST" :key="y" :value="y">{{ y }}</option>
           </select>
-          <button class="btn-toggle" :class="{ active: modeTahun }" @click="modeTahun = !modeTahun">
+          <button type="button" class="btn-toggle" :class="{ active: modeTahun }" @click="modeTahun = !modeTahun">
             {{ modeTahun ? 'Per Tahun' : 'Per Bulan' }}
           </button>
-          <button class="btn-load" @click="loadData" :disabled="loading">
+          <button type="button" class="btn-load" @click="loadData" :disabled="loading">
             {{ loading ? 'Memuat...' : 'Tampilkan' }}
           </button>
         </div>
@@ -193,7 +187,7 @@ function exportCsv() {
       <div class="modal-box" v-focus-trap>
         <div class="modal-header">
           <h3>Buat Laporan Bulanan</h3>
-          <button class="modal-close" @click="showLaporanModal = false">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="showLaporanModal = false">✕</button>
         </div>
         <div class="modal-body">
           <label class="form-label">Pelanggan</label>
@@ -255,7 +249,7 @@ function exportCsv() {
           <div class="kpi-sub">tiket melewati SLA</div>
         </div>
         <div class="kpi-card gray">
-          <div class="kpi-val">{{ fmtMenit(data.summary.avg_mttr_menit) }}</div>
+          <div class="kpi-val">{{ fmtMenit(data.summary?.avg_mttr_menit ?? null) }}</div>
           <div class="kpi-label">Avg MTTR</div>
           <div class="kpi-sub">rata-rata waktu resolve</div>
         </div>
@@ -335,7 +329,7 @@ function exportCsv() {
                     <span>{{ fmtPct(l.compliance_pct) }}</span>
                   </div>
                 </td>
-                <td><span class="status-badge" :class="l.status.toLowerCase()">{{ l.status }}</span></td>
+                <td><span class="status-badge" :class="(l.status || '').toLowerCase()">{{ l.status }}</span></td>
               </tr>
               <tr v-if="!data.per_layanan.length">
                 <td colspan="8" class="empty">Tidak ada data layanan pada periode ini</td>
@@ -377,7 +371,7 @@ function exportCsv() {
                     <span>{{ fmtPct(p.compliance_pct) }}</span>
                   </div>
                 </td>
-                <td><span class="status-badge" :class="p.status.toLowerCase()">{{ p.status }}</span></td>
+                <td><span class="status-badge" :class="(p.status || '').toLowerCase()">{{ p.status }}</span></td>
               </tr>
               <tr v-if="!data.per_pelanggan.length">
                 <td colspan="7" class="empty">Tidak ada data pelanggan pada periode ini</td>
@@ -413,11 +407,11 @@ function exportCsv() {
                 <td>{{ b.nama_pelanggan }}</td>
                 <td>{{ b.nama_site }}</td>
                 <td class="mono">{{ b.kode_layanan }}</td>
-                <td><span class="prio-badge" :class="b.prioritas.toLowerCase()">{{ b.prioritas }}</span></td>
+                <td><span class="prio-badge" :class="(b.prioritas || '').toLowerCase()">{{ b.prioritas }}</span></td>
                 <td class="date-cell">{{ fmtDate(b.tgl_open) }}</td>
                 <td class="date-cell">{{ fmtDate(b.sla_due) }}</td>
                 <td class="red-text">{{ fmtMenit(b.terlambat_menit) }}</td>
-                <td><span class="status-tiket">{{ b.status_tiket.replace('_', ' ') }}</span></td>
+                <td><span class="status-tiket">{{ (b.status_tiket || '').replace(/_/g, ' ') }}</span></td>
               </tr>
               <tr v-if="!data.breach_detail.length">
                 <td colspan="10" class="empty">Tidak ada breach pada periode ini</td>
@@ -457,7 +451,7 @@ function exportCsv() {
 .btn-laporan:hover { background: #ffedd5; }
 
 /* Modal */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .modal-box { background: #fff; border-radius: 14px; width: 420px; max-width: 95vw; box-shadow: 0 8px 32px rgba(0,0,0,0.18); overflow: hidden; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 14px; border-bottom: 1px solid #e2e8f0; }
 .modal-header h3 { font-size: 16px; font-weight: 700; color: #0f172a; }
@@ -543,7 +537,11 @@ function exportCsv() {
 @media (max-width: 768px) {
   .page { padding: 16px; }
   .page-header { flex-direction: column; }
-  .header-actions { flex-direction: column; align-items: flex-start; }
+  .header-actions { flex-direction: column; align-items: stretch; }
+  .filter-row { flex-wrap: wrap; }
+  .filter-sm { flex: 1; min-width: 0; }
+  .card { padding: 16px; }
+  .card-header { flex-wrap: wrap; gap: 8px; }
   .kpi-row { gap: 8px; }
   .kpi-card { min-width: 140px; }
 }

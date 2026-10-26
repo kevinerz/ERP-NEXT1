@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
-import { fmtRupiah, fmtDateShort as fmtDate, statusLabel } from '@/composables/useFormat'
+import { fmtRupiah, fmtDateShort as fmtDate, statusLabel, todayLocal, monthLocal } from '@/composables/useFormat'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 
 const router = useRouter()
@@ -25,8 +25,8 @@ const formError = ref('')
 const bulkResult = ref('')
 const showBulkResult = ref(false)
 const bulkForm = ref({
-  periode: new Date().toISOString().slice(0, 7),
-  tgl_invoice: new Date().toISOString().slice(0, 10),
+  periode: monthLocal(),
+  tgl_invoice: todayLocal(),
   tgl_jatuh_tempo: '',
   ppn_persen: 11,
 })
@@ -71,12 +71,13 @@ async function handleBulk() {
         <p class="sub">Ringkasan tagihan, pembayaran & piutang</p>
       </div>
       <div class="header-actions">
-        <button class="btn-secondary" @click="router.push('/finance/invoice')">Kelola Invoice</button>
-        <button class="btn-primary" @click="showBulkModal = true; formError = ''">Generate Invoice Bulanan</button>
+        <button type="button" class="btn btn-secondary" @click="router.push('/finance/invoice')">Kelola Invoice</button>
+        <button type="button" class="btn btn-primary" @click="showBulkModal = true; formError = ''">Generate Invoice Bulanan</button>
       </div>
     </div>
 
     <div v-if="loadError" class="alert-error">{{ loadError }}</div>
+    <div v-else-if="!finance.summary && !finance.aging" class="loading-state">Memuat data finance...</div>
 
     <ConfirmDialog
       v-model="showBulkResult"
@@ -236,14 +237,10 @@ async function handleBulk() {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 16px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
-.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-secondary { padding: 10px 20px; background: #f1f5f9; color: #374151; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
+.header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.alert-error { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
 
 .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
 .kpi-card { flex: 1; min-width: 190px; background: #fff; border-radius: 12px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); border-top: 4px solid #e2e8f0; }
@@ -252,7 +249,7 @@ async function handleBulk() {
 .kpi-card.yellow { border-top-color: #f59e0b; }
 .kpi-card.red { border-top-color: #ef4444; }
 .kpi-icon { font-size: 20px; margin-bottom: 8px; }
-.kpi-val { font-size: 24px; font-weight: 800; color: #0f172a; }
+.kpi-val { font-size: 24px; font-weight: 800; color: var(--text-1); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .kpi-val.mrc { font-size: 18px; }
 .kpi-label { font-size: 12px; color: #64748b; margin-top: 4px; }
 
@@ -273,7 +270,7 @@ async function handleBulk() {
 @media (max-width: 768px) { .aging-grid { grid-template-columns: repeat(2, 1fr); } }
 .aging-cell { background: #f8fafc; border-radius: 10px; padding: 12px 14px; }
 .ag-label { font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
-.ag-val { font-size: 15px; font-weight: 700; color: #0f172a; }
+.ag-val { font-size: 15px; font-weight: 700; color: var(--text-1); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .ag-val.warn { color: #c2410c; }
 .ag-val.danger { color: #dc2626; }
 
@@ -294,8 +291,7 @@ td { padding: 12px; font-size: 14px; color: #0f172a; border-top: 1px solid #f1f5
 .row-link { cursor: pointer; }
 .row-link:hover td { background: #f8fafc; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 480px; }
 .modal h3 { margin: 0 0 16px; font-size: 18px; color: #0f172a; }
 .hint-text { font-size: 13px; color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -309,4 +305,11 @@ td { padding: 12px; font-size: 14px; color: #0f172a; border-top: 1px solid #f1f5
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 1024px) and (min-width: 769px) {
+  .aging-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+  .card { padding: 16px; }
+}
 </style>

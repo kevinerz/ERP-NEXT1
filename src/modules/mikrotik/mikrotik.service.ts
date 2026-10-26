@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const CRED_KEYS = {
@@ -63,7 +63,25 @@ export class MikrotikService {
     return { message: 'Konfigurasi disimpan' };
   }
 
+  // Hanya IP perangkat yang terdaftar di ERP — mencegah kredensial router
+  // dikirim ke host sembarang lewat login RouterOS API.
+  private async assertKnownIps(ips: string[]) {
+    const unique = [...new Set(ips.map(ip => String(ip).trim()))];
+    if (unique.length > 500) throw new BadRequestException('Maksimal 500 perangkat per perintah');
+    const known = await this.prisma.perangkatSite.findMany({
+      where: { ip_address: { in: unique } },
+      select: { ip_address: true },
+    });
+    const knownSet = new Set(known.map(k => k.ip_address));
+    const unknown = unique.filter(ip => !knownSet.has(ip));
+    if (unknown.length) {
+      throw new BadRequestException(`IP tidak terdaftar sebagai perangkat site: ${unknown.slice(0, 5).join(', ')}`);
+    }
+    return unique;
+  }
+
   async pingDevices(ips: string[]) {
+    ips = await this.assertKnownIps(ips);
     const settings = await this.prisma.appSetting.findMany({
       where: { key: { in: Object.values(CRED_KEYS) } },
     });
@@ -94,6 +112,7 @@ export class MikrotikService {
   }
 
   async runCommand(ips: string[], command: string) {
+    ips = await this.assertKnownIps(ips);
     const settings = await this.prisma.appSetting.findMany({
       where: { key: { in: Object.values(CRED_KEYS) } },
     });

@@ -95,8 +95,12 @@ export class SmtpClientService {
       references: input.in_reply_to,
       attachments: input.attachments,
     });
+    // Salinan Draf/Terkirim milik pengirim sendiri — Bcc harus tetap ada supaya
+    // draf yang dibuka ulang tidak kehilangan penerima Bcc (default-nya dibuang)
+    const mail = composer.compile();
+    (mail as any).keepBcc = true;
     return new Promise((resolve, reject) => {
-      composer.compile().build((err: Error | null, message: Buffer) => {
+      mail.build((err: Error | null, message: Buffer) => {
         if (err) reject(err); else resolve(message);
       });
     });

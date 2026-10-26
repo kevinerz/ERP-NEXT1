@@ -66,6 +66,7 @@ export class MekariClient {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(20_000),
     });
 
     const text = await res.text();

@@ -114,7 +114,7 @@ async function handleLogin() {
                 required
                 autocomplete="current-password"
               />
-              <button type="button" class="pw-toggle" @click="showPw = !showPw" tabindex="-1">
+              <button type="button" class="pw-toggle" @click="showPw = !showPw" tabindex="-1" :aria-label="showPw ? 'Sembunyikan password' : 'Tampilkan password'">
                 <svg v-if="!showPw" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                 </svg>
@@ -152,7 +152,6 @@ async function handleLogin() {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 * { box-sizing: border-box; }
 

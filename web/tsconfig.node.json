@@ -5,9 +5,12 @@
     "vite.config.*",
     "vitest.config.*",
     "cypress.config.*",
-    "playwright.config.*",
-    "eslint.config.*"
+    "playwright.config.*"
   ],
+  // eslint.config.ts sengaja tidak di-type-check: config itu ditulis untuk toolchain lint
+  // yang belum terpasang (@vue/eslint-config-typescript v14, eslint-plugin-oxlint,
+  // eslint-config-prettier v10, oxlint, npm-run-all2). Masukkan kembali setelah
+  // devDependencies lint diperbarui.
   "compilerOptions": {
     // Most tools use transpilation instead of Node.js's native type-stripping.
     // Bundler mode provides a smoother developer experience.
@@ -18,6 +21,7 @@
     "types": ["node"],
 
     // Disable emitting output during `vue-tsc --build`, which is used for type-checking only.
+    "composite": true,
     "noEmit": true,
 
     // `vue-tsc --build` produces a .tsbuildinfo file for incremental type-checking.

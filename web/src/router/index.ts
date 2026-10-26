@@ -395,13 +395,14 @@ const router = createRouter({
 const ROUTE_MODUL: Record<string, string> = {
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris', 'hris-undangan': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master', 'master-gudang': 'master',
-  'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master',
+  'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master', 'master-jenis-gangguan': 'master',
   'presales-list': 'sales',
   'sales-dashboard': 'sales', 'sales-lead-list': 'sales', 'sales-lead-detail': 'sales',
   'sales-opp-list': 'sales', 'sales-opp-detail': 'sales',
   'sales-quotation-list': 'sales', 'sales-quotation-detail': 'sales',
   'proyek-list': 'projects', 'proyek-detail': 'projects',
-  'tiket-list': 'operations', 'tiket-detail': 'operations',
+  'tiket-list': 'operations', 'tiket-detail': 'operations', 'noc-board': 'operations',
+  'tools-network': 'operations', 'tools-mikrotik': 'operations',
   'instalasi-list': 'instalasi', 'instalasi-detail': 'instalasi',
   'aset-list': 'assets', 'aset-detail': 'assets', 'sim-topup': 'assets',
   'stok-opname-list': 'assets', 'stok-opname-detail': 'assets',
@@ -411,7 +412,8 @@ const ROUTE_MODUL: Record<string, string> = {
   'starsender-settings': 'starsender',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'crm-pic-list': 'crm', 'crm-pic-detail': 'crm',
-  'laporan': 'reports',
+  'laporan': 'reports', 'laporan-sla': 'reports',
+  'finance-dashboard': 'finance', 'invoice-list': 'finance', 'invoice-detail': 'finance',
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',
 }
 

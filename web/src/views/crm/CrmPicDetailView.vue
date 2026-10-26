@@ -2,6 +2,8 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { fmtDate, fmtDateTime } from '@/composables/useFormat'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 
 const route  = useRoute()
 const router = useRouter()
@@ -61,22 +63,19 @@ async function handleEdit() {
 }
 
 async function handleDelete() {
-  if (!confirm('Hapus PIC ini? Aksi tidak bisa dibatalkan.')) return
+  if (!(await confirmDialog({
+    title: 'Hapus PIC?',
+    message: 'Hapus PIC ini? Aksi tidak bisa dibatalkan.',
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete(`/crm/pic/${id}`)
     router.push('/crm/pic')
-  } catch (e: any) { alert(e.response?.data?.message || 'Gagal hapus') }
+  } catch (e: any) { await alertError(e, 'Gagal hapus') }
 }
 
-function fmtDate(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-
-function fmtDatetime(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
+const fmtDatetime = fmtDateTime
 
 function parseSnapshot(s: string) {
   try { return JSON.parse(s) } catch { return {} }
@@ -95,14 +94,14 @@ function parseSnapshot(s: string) {
     <div v-else-if="err" class="err-msg">{{ err }}</div>
 
     <div v-else-if="pic">
-      <div class="header-row">
+      <div class="page-header">
         <div>
           <h2>{{ pic.nama_pic }}</h2>
           <p class="sub">{{ pic.jabatan || '—' }} · {{ pic.site?.pelanggan?.nama_pelanggan }} / {{ pic.site?.nama_site }}</p>
         </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn-edit" @click="openEdit">Edit</button>
-          <button class="btn-del" @click="handleDelete">Hapus</button>
+        <div class="header-actions">
+          <button type="button" class="btn-edit" @click="openEdit">Edit</button>
+          <button type="button" class="btn-del" @click="handleDelete">Hapus</button>
         </div>
       </div>
 
@@ -218,7 +217,7 @@ function parseSnapshot(s: string) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1100px; }
+.page { max-width: 1100px; }
 .breadcrumb { display: flex; gap: 6px; align-items: center; font-size: 13px; color: #64748b; margin-bottom: 20px; }
 .crumb { cursor: pointer; color: #3b82f6; }
 .crumb:hover { text-decoration: underline; }
@@ -226,9 +225,9 @@ function parseSnapshot(s: string) {
 .crumb-active { color: #0f172a; font-weight: 600; }
 .loading { color: #94a3b8; padding: 40px; text-align: center; }
 .err-msg  { color: #dc2626; padding: 20px; background: #fef2f2; border-radius: 10px; }
-.header-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-.header-row h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
+.header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn-edit { padding: 9px 18px; background: #f0f9ff; color: #0369a1; border: 1.5px solid #bae6fd; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-del  { padding: 9px 18px; background: #fff1f2; color: #be123c; border: 1.5px solid #fecdd3; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 
@@ -238,8 +237,8 @@ function parseSnapshot(s: string) {
 .card-title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 14px; }
 .dl { display: flex; flex-direction: column; gap: 10px; margin: 0; }
 .dl-row { display: flex; gap: 12px; }
-dt { font-size: 12px; font-weight: 600; color: #64748b; width: 140px; flex-shrink: 0; }
-dd { font-size: 14px; color: #0f172a; margin: 0; }
+dt { font-size: 12px; font-weight: 600; color: var(--text-3); width: 140px; flex-shrink: 0; }
+dd { font-size: 14px; color: var(--text-1); margin: 0; min-width: 0; overflow-wrap: anywhere; }
 
 .empty-history { color: #94a3b8; font-size: 13px; padding: 20px 0; text-align: center; }
 .history-item { border-top: 1px solid #f1f5f9; padding: 14px 0; }
@@ -248,13 +247,12 @@ dd { font-size: 14px; color: #0f172a; margin: 0; }
 .badge-sumber { padding: 2px 10px; background: #eff6ff; color: #1d4ed8; border-radius: 10px; font-size: 11px; font-weight: 700; }
 .history-time { font-size: 12px; color: #94a3b8; }
 .history-catatan { font-size: 13px; color: #374151; margin-bottom: 10px; font-style: italic; }
-.snapshot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; }
+.snapshot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 6px; }
 .snap-row { display: flex; gap: 8px; font-size: 12px; }
-.snap-key { color: #64748b; font-weight: 600; min-width: 130px; }
-.snap-val { color: #0f172a; }
+.snap-key { color: var(--text-3); font-weight: 600; min-width: 130px; }
+.snap-val { color: var(--text-1); min-width: 0; overflow-wrap: anywhere; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 520px; }
 .modal h3 { margin: 0 0 18px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -268,4 +266,14 @@ dd { font-size: 14px; color: #0f172a; margin: 0; }
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 1024px) {
+  .card-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+  .card-grid { grid-template-columns: 1fr; }
+  dt { width: 120px; }
+}
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

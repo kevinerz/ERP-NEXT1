@@ -86,7 +86,8 @@ export class AssetsService {
     return { data };
   }
 
-  async create(dto: CreateAsetDto, userId?: number) {
+  /** Validasi serial & tentukan gudang (default: gudang aktif pertama). */
+  private async siapkanAsetBaru(dto: CreateAsetDto): Promise<number | undefined> {
     if (dto.serial_number) {
       const dup = await this.prisma.gudangAset.findUnique({ where: { serial_number: dto.serial_number } });
       if (dup) throw new ConflictException('Serial number sudah terdaftar');
@@ -101,49 +102,58 @@ export class AssetsService {
       const g = await this.prisma.masterGudang.findFirst({ where: { is_aktif: true }, orderBy: { id_gudang: 'asc' } });
       id_gudang = g?.id_gudang;
     }
+    return id_gudang;
+  }
 
-    // Auto kode AST-YYYYMM-XXXX — retry 5x saat tabrakan, transaksional dgn log Masuk
+  /** Insert aset + log Masuk di dalam transaksi pemanggil. Kode AST-YYYYMM-XXXX. */
+  private async insertAsetTx(tx: any, dto: CreateAsetDto, id_gudang: number | undefined, userId?: number) {
+    const now = new Date();
+    const prefix = `AST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const last = await tx.gudangAset.findFirst({
+      where: { kode_aset: { startsWith: prefix } },
+      orderBy: { kode_aset: 'desc' },
+    });
+    const seq = last ? (parseInt(last.kode_aset.split('-')[2], 10) || 0) + 1 : 1;
+    const kode_aset = `${prefix}-${String(seq).padStart(4, '0')}`;
+
+    const created = await tx.gudangAset.create({
+      data: {
+        ...dto,
+        id_gudang,
+        kode_aset,
+        stok_jumlah: dto.stok_jumlah ?? 1,
+        is_serialized: dto.is_serialized ?? true,
+        kondisi: dto.kondisi || 'Baru',
+        harga_perolehan: dto.harga_perolehan ?? 0,
+        tgl_perolehan: dto.tgl_perolehan ? new Date(dto.tgl_perolehan) : undefined,
+      },
+      include: ASET_INCLUDE,
+    });
+    await tx.gudangMutasiAset.create({
+      data: {
+        id_aset: created.id_aset,
+        jenis_mutasi: 'Masuk',
+        jumlah: created.stok_jumlah,
+        keterangan: 'Aset baru ditambahkan ke gudang',
+        id_user: userId || null,
+      },
+    });
+    return created;
+  }
+
+  async create(dto: CreateAsetDto, userId?: number) {
+    const id_gudang = await this.siapkanAsetBaru(dto);
+
+    // Auto kode — retry 5x saat tabrakan kode, transaksional dgn log Masuk
     for (let attempt = 0; attempt < 5; attempt++) {
-      const now = new Date();
-      const prefix = `AST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const last = await this.prisma.gudangAset.findFirst({
-        where: { kode_aset: { startsWith: prefix } },
-        orderBy: { kode_aset: 'desc' },
-      });
-      const seq = last ? (parseInt(last.kode_aset.split('-')[2], 10) || 0) + 1 : 1;
-      const kode_aset = `${prefix}-${String(seq).padStart(4, '0')}`;
-
       try {
-        const data = await this.prisma.$transaction(async (tx) => {
-          const created = await tx.gudangAset.create({
-            data: {
-              ...dto,
-              id_gudang,
-              kode_aset,
-              stok_jumlah: dto.stok_jumlah ?? 1,
-              is_serialized: dto.is_serialized ?? true,
-              kondisi: dto.kondisi || 'Baru',
-              harga_perolehan: dto.harga_perolehan ?? 0,
-              tgl_perolehan: dto.tgl_perolehan ? new Date(dto.tgl_perolehan) : undefined,
-            },
-            include: ASET_INCLUDE,
-          });
-          await tx.gudangMutasiAset.create({
-            data: {
-              id_aset: created.id_aset,
-              jenis_mutasi: 'Masuk',
-              jumlah: created.stok_jumlah,
-              keterangan: 'Aset baru ditambahkan ke gudang',
-              id_user: userId || null,
-            },
-          });
-          return created;
-        });
-        return { data, message: `Aset ${kode_aset} berhasil ditambahkan` };
+        const data = await this.prisma.$transaction((tx) => this.insertAsetTx(tx, dto, id_gudang, userId));
+        return { data, message: `Aset ${data.kode_aset} berhasil ditambahkan` };
       } catch (e: any) {
         if (e.code !== 'P2002' || attempt === 4) throw e;
       }
     }
+    throw new ConflictException('Gagal membuat kode aset unik, coba lagi');
   }
 
   async remove(id: number) {
@@ -156,7 +166,17 @@ export class AssetsService {
       throw new BadRequestException('Hanya aset berstatus Di_Gudang yang bisa dihapus');
     if ((row as any)._count.mutasi > 1)
       throw new BadRequestException('Aset sudah memiliki riwayat mutasi, tidak bisa dihapus');
-    await this.prisma.gudangAset.delete({ where: { id_aset: id } });
+    const pernahOpname = await this.prisma.stokOpnameItem.count({ where: { id_aset: id } });
+    if (pernahOpname > 0)
+      throw new BadRequestException('Aset pernah masuk stok opname — nonaktifkan (Disposed), jangan dihapus');
+    try {
+      await this.prisma.gudangAset.delete({ where: { id_aset: id } });
+    } catch (e: any) {
+      // FK Restrict dari tabel lain (stok opname, material BA, pengiriman, pengajuan, SIM)
+      if (e?.code === 'P2003')
+        throw new BadRequestException('Aset sudah dipakai di data lain (stok opname / BA / pengiriman / pengajuan) — nonaktifkan, jangan dihapus');
+      throw e;
+    }
     return { message: `Aset ${row.kode_aset} dihapus` };
   }
 
@@ -196,7 +216,9 @@ export class AssetsService {
       if (jumlah < 1) throw new BadRequestException('Jumlah minimal 1');
 
       let newStatus = aset.status_aset;
-      let newStok = aset.stok_jumlah;
+      // Perubahan stok relatif (non-serialized) — ditulis atomik via increment/decrement,
+      // bukan nilai absolut hasil baca (cegah lost update saat 2 mutasi bersamaan).
+      let stokDelta = 0;
       let newSite: number | null | undefined = undefined;   // undefined = tidak diubah
       let newGudang: number | undefined = undefined;        // undefined = tidak diubah
 
@@ -276,16 +298,17 @@ export class AssetsService {
           case 'Disposed':
             if (jumlah > aset.stok_jumlah)
               throw new BadRequestException(`Stok tidak cukup: tersisa ${aset.stok_jumlah}, diminta ${jumlah}`);
-            newStok = aset.stok_jumlah - jumlah;
+            stokDelta = -jumlah;
             break;
           case 'Masuk':
           case 'Return':
-            newStok = aset.stok_jumlah + jumlah;
+            stokDelta = jumlah;
             break;
           case 'Transfer': {
             if (jumlah > aset.stok_jumlah)
               throw new BadRequestException(`Stok tidak cukup: tersisa ${aset.stok_jumlah}, diminta ${jumlah}`);
-            newStok = aset.stok_jumlah - jumlah;
+            // Kurangi stok asal dulu secara atomik, baru tambah di gudang tujuan
+            await this.ubahStokAtomik(tx, dto.id_aset, -jumlah);
             // Cari record barang yang sama di gudang tujuan → tambah stoknya;
             // kalau belum ada, buatkan record baru di sana.
             const kembar = await tx.gudangAset.findFirst({
@@ -301,7 +324,7 @@ export class AssetsService {
             if (kembar) {
               await tx.gudangAset.update({
                 where: { id_aset: kembar.id_aset },
-                data: { stok_jumlah: kembar.stok_jumlah + jumlah, status_aset: 'Di_Gudang' },
+                data: { stok_jumlah: { increment: jumlah }, status_aset: 'Di_Gudang' },
               });
             } else {
               const now = new Date();
@@ -337,15 +360,22 @@ export class AssetsService {
         }
       }
 
-      await tx.gudangAset.update({
-        where: { id_aset: dto.id_aset },
-        data: {
-          status_aset: newStatus,
-          stok_jumlah: newStok,
-          ...(newSite !== undefined ? { id_site: newSite } : {}),
-          ...(newGudang !== undefined ? { id_gudang: newGudang } : {}),
-        },
-      });
+      if (aset.is_serialized) {
+        // Transisi kondisional: hanya berhasil bila status (dan gudang) masih sama dengan
+        // yang dibaca di atas — dua Deploy bersamaan tidak bisa sama-sama lolos.
+        const res = await tx.gudangAset.updateMany({
+          where: { id_aset: dto.id_aset, status_aset: aset.status_aset, id_gudang: aset.id_gudang },
+          data: {
+            status_aset: newStatus,
+            ...(newSite !== undefined ? { id_site: newSite } : {}),
+            ...(newGudang !== undefined ? { id_gudang: newGudang } : {}),
+          },
+        });
+        if (res.count === 0)
+          throw new ConflictException('Status aset baru saja diubah oleh proses lain — muat ulang lalu coba lagi');
+      } else if (stokDelta !== 0) {
+        await this.ubahStokAtomik(tx, dto.id_aset, stokDelta);
+      }
 
       // ── SINKRON PERANGKAT SITE (hanya aset ber-serial) ────────
       if (aset.is_serialized) {
@@ -385,6 +415,29 @@ export class AssetsService {
         },
         include: { user: { include: { karyawan: { select: { nama_lengkap: true } } } } },
       });
+  }
+
+  /**
+   * Ubah stok_jumlah secara atomik. Pengurangan bersyarat `stok_jumlah >= qty`
+   * di level DB, jadi dua "Keluar" bersamaan tidak bisa membuat stok minus.
+   */
+  private async ubahStokAtomik(tx: any, idAset: number, delta: number) {
+    if (delta > 0) {
+      await tx.gudangAset.update({
+        where: { id_aset: idAset },
+        data: { stok_jumlah: { increment: delta } },
+      });
+      return;
+    }
+    const qty = -delta;
+    const res = await tx.gudangAset.updateMany({
+      where: { id_aset: idAset, stok_jumlah: { gte: qty } },
+      data: { stok_jumlah: { decrement: qty } },
+    });
+    if (res.count === 0) {
+      const now = await tx.gudangAset.findUnique({ where: { id_aset: idAset }, select: { stok_jumlah: true } });
+      throw new BadRequestException(`Stok tidak cukup: tersisa ${now?.stok_jumlah ?? 0}, diminta ${qty}`);
+    }
   }
 
   // ─── HELPERS ──────────────────────────────────────────────────
@@ -860,28 +913,45 @@ export class AssetsService {
       throw new BadRequestException('Hanya pengajuan yang sudah Disetujui yang bisa diselesaikan');
 
     const idGudang = dto.id_gudang ?? p.id_gudang_tujuan ?? undefined;
-    const asetResult = await this.create(
-      {
-        nama_perangkat: p.nama_item,
-        kategori: p.kategori,
-        kondisi: 'Baru',
-        stok_jumlah: p.jumlah,
-        is_serialized: !!dto.serial_number,
-        serial_number: dto.serial_number,
-        harga_perolehan: dto.harga_aktual ?? Number(p.estimasi_harga),
-        id_gudang: idGudang,
-        tgl_perolehan: dto.tgl_terima ?? new Date().toISOString().slice(0, 10),
-        catatan: `Dari pengajuan #${p.id_pengajuan}: ${p.alasan}`,
-      },
-      userId,
-    );
+    const asetDto: CreateAsetDto = {
+      nama_perangkat: p.nama_item,
+      kategori: p.kategori,
+      kondisi: 'Baru',
+      stok_jumlah: p.jumlah,
+      is_serialized: !!dto.serial_number,
+      serial_number: dto.serial_number,
+      harga_perolehan: dto.harga_aktual ?? Number(p.estimasi_harga),
+      id_gudang: idGudang,
+      tgl_perolehan: dto.tgl_terima ?? new Date().toISOString().slice(0, 10),
+      catatan: `Dari pengajuan #${p.id_pengajuan}: ${p.alasan}`,
+    };
+    const id_gudang = await this.siapkanAsetBaru(asetDto);
 
-    const data = await this.prisma.pengajuanAset.update({
-      where: { id_pengajuan: id },
-      data: { status_pengajuan: 'Selesai', tgl_selesai: new Date(), id_aset_hasil: asetResult.data.id_aset },
-      include: this.PENGAJUAN_INCLUDE,
-    });
-    return { data, message: `Barang diterima — aset ${asetResult.data.kode_aset} tercatat` };
+    // Satu transaksi: flip status bersyarat (Disetujui → Selesai) DULU, baru buat aset & tautkan.
+    // Dua klik "Selesaikan" bersamaan → hanya satu yang lolos flip, yang lain ditolak.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const { data, aset } = await this.prisma.$transaction(async (tx) => {
+          const flip = await tx.pengajuanAset.updateMany({
+            where: { id_pengajuan: id, status_pengajuan: 'Disetujui' },
+            data: { status_pengajuan: 'Selesai', tgl_selesai: new Date() },
+          });
+          if (flip.count === 0)
+            throw new BadRequestException('Pengajuan sudah diselesaikan / tidak lagi berstatus Disetujui');
+          const aset = await this.insertAsetTx(tx, asetDto, id_gudang, userId);
+          const data = await tx.pengajuanAset.update({
+            where: { id_pengajuan: id },
+            data: { id_aset_hasil: aset.id_aset },
+            include: this.PENGAJUAN_INCLUDE,
+          });
+          return { data, aset };
+        });
+        return { data, message: `Barang diterima — aset ${aset.kode_aset} tercatat` };
+      } catch (e: any) {
+        if (e?.code !== 'P2002' || attempt === 4) throw e;
+      }
+    }
+    throw new ConflictException('Gagal membuat kode aset unik, coba lagi');
   }
 
   async removePengajuan(id: number) {

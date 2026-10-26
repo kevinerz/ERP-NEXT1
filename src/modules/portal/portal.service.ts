@@ -3,6 +3,8 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PrtgService } from '../integrations/prtg/prtg.service';
 import * as bcrypt from 'bcrypt';
+import { withNextTicketNumber } from '../../common/utils/ticket-number';
+import { wibYearMonth, wibMonthRange, wibYearRange, addMonths } from '../../common/utils/wib';
 
 @Injectable()
 export class PortalService {
@@ -245,34 +247,47 @@ export class PortalService {
   }
 
   async getSensorHistoryForPortal(id_pelanggan: number, id_site: number, objid: number, hours = 24) {
-    const site = await this.prisma.sitePelanggan.findFirst({ where: { id_site, id_pelanggan } });
-    if (!site) throw new NotFoundException('Site tidak ditemukan');
+    await this.assertSensorMilikSite(id_pelanggan, id_site, objid);
     return this.prtg.getSensorHistory(objid, hours);
   }
 
   async getSensorGraphForPortal(id_pelanggan: number, id_site: number, objid: number, graphid = 0) {
+    await this.assertSensorMilikSite(id_pelanggan, id_site, objid);
+    return this.prtg.getSensorGraph(objid, graphid);
+  }
+
+  // Site milik pelanggan saja tidak cukup — objid juga harus sensor dari device
+  // site itu, kalau tidak pelanggan bisa menebak objid sensor pelanggan lain.
+  private siteSensorCache = new Map<number, { objids: Set<number>; exp: number }>();
+
+  private async assertSensorMilikSite(id_pelanggan: number, id_site: number, objid: number) {
     const site = await this.prisma.sitePelanggan.findFirst({ where: { id_site, id_pelanggan } });
     if (!site) throw new NotFoundException('Site tidak ditemukan');
-    return this.prtg.getSensorGraph(objid, graphid);
+    let cached = this.siteSensorCache.get(id_site);
+    if (!cached || cached.exp < Date.now()) {
+      const { data } = await this.prtg.getSiteSensors(id_site);
+      const objids = new Set<number>(data.flatMap((d: any) => d.sensors.map((s: any) => Number(s.objid))));
+      cached = { objids, exp: Date.now() + 120_000 };
+      this.siteSensorCache.set(id_site, cached);
+    }
+    if (!cached.objids.has(Number(objid))) throw new NotFoundException('Sensor tidak ditemukan');
   }
 
   // ── SLA Portal ────────────────────────────────────────────
 
   async getSlaForPortal(id_pelanggan: number, query: { bulan?: number; tahun?: number; mode?: string }) {
-    const now   = new Date();
-    const tahun = Number(query.tahun) || now.getFullYear();
-    const bulan = Number(query.bulan) || (now.getMonth() + 1);
+    const kini  = wibYearMonth();
+    const tahun = Number(query.tahun) || kini.year;
+    const bulan = Number(query.bulan) || kini.month;
     const mode  = query.mode;
 
-    // Date range
+    // Rentang periode menurut kalender WIB (server berjalan di UTC); end eksklusif
     let start: Date, end: Date, periodeLabel: string;
     if (mode === 'year') {
-      start = new Date(tahun, 0, 1);
-      end   = new Date(tahun, 11, 31, 23, 59, 59, 999);
+      ({ start, end } = wibYearRange(tahun));
       periodeLabel = `Tahun ${tahun}`;
     } else {
-      start = new Date(tahun, bulan - 1, 1);
-      end   = new Date(tahun, bulan, 0, 23, 59, 59, 999);
+      ({ start, end } = wibMonthRange(tahun, bulan));
       const BULAN_IDN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
       periodeLabel = `${BULAN_IDN[bulan - 1]} ${tahun}`;
     }
@@ -303,7 +318,7 @@ export class PortalService {
     const tickets = await this.prisma.operationTicket.findMany({
       where: {
         id_site: { in: siteIds },
-        tgl_open: { gte: start, lte: end },
+        tgl_open: { gte: start, lt: end },
       },
       select: {
         id_site:      true,
@@ -360,13 +375,11 @@ export class PortalService {
     const BULAN_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
     const trend: any[] = [];
     for (let i = 5; i >= 0; i--) {
-      const d     = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const tYear = d.getFullYear();
-      const tMon  = d.getMonth(); // 0-based
-      const tStart = new Date(tYear, tMon, 1);
-      const tEnd   = new Date(tYear, tMon + 1, 0, 23, 59, 59, 999);
+      const { year: tYear, month } = addMonths(kini.year, kini.month, -i);
+      const tMon = month - 1; // 0-based
+      const { start: tStart, end: tEnd } = wibMonthRange(tYear, month);
       const monthTickets = await this.prisma.operationTicket.findMany({
-        where: { id_site: { in: siteIds }, tgl_open: { gte: tStart, lte: tEnd } },
+        where: { id_site: { in: siteIds }, tgl_open: { gte: tStart, lt: tEnd } },
         select: { sla_breached: true },
       });
       const mTotal  = monthTickets.length;
@@ -483,31 +496,27 @@ export class PortalService {
     });
     if (!site) throw new NotFoundException('Site tidak ditemukan');
 
-    // Generate nomor tiket
     const now = new Date();
-    const prefix = `TKT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.operationTicket.findFirst({
-      where: { nomor_tiket: { startsWith: prefix } },
-      orderBy: { nomor_tiket: 'desc' },
-    });
-    const seq = (last ? (parseInt(last.nomor_tiket.split('-')[2], 10) || 0) : 0) + 1;
-    const nomor_tiket = `${prefix}-${String(seq).padStart(4, '0')}`;
-
-    const ticket = await this.prisma.operationTicket.create({
-      data: {
-        nomor_tiket,
-        id_site: dto.id_site,
-        judul_tiket: dto.judul_tiket,
-        deskripsi_masalah: dto.deskripsi_masalah || null,
-        prioritas: 'Medium',
-        sumber_tiket: 'Portal',
-        sla_due: new Date(now.getTime() + 8 * 3600_000), // 8 jam SLA Medium
-      },
-    });
-
-    await this.prisma.operationTicketLog.create({
-      data: { id_ticket: ticket.id_ticket, status_ke: 'Open', catatan: 'Tiket dibuat melalui Portal Pelanggan' },
-    });
+    const ticket = await withNextTicketNumber(this.prisma, now, (nomor_tiket) =>
+      this.prisma.$transaction(async (tx) => {
+        const t = await tx.operationTicket.create({
+          data: {
+            nomor_tiket,
+            id_site: dto.id_site,
+            judul_tiket: dto.judul_tiket,
+            deskripsi_masalah: dto.deskripsi_masalah || null,
+            prioritas: 'Medium',
+            sumber_tiket: 'Portal',
+            sla_due: new Date(now.getTime() + 8 * 3600_000), // 8 jam SLA Medium
+          },
+        });
+        await tx.operationTicketLog.create({
+          data: { id_ticket: t.id_ticket, status_ke: 'Open', catatan: 'Tiket dibuat melalui Portal Pelanggan' },
+        });
+        return t;
+      }),
+    );
+    const nomor_tiket = ticket.nomor_tiket;
 
     // Notif in-app ke tim operasional
     await this.prisma.notification.createMany({

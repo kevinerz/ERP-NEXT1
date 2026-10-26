@@ -3,6 +3,8 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { todayLocal } from '@/composables/useFormat'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 
 const proyek = useProyekStore()
 const auth = useAuthStore()
@@ -19,13 +21,18 @@ const toggling = ref(false)
 async function toggleAktif() {
   if (!status.value || toggling.value) return
   const mauAktif = !status.value.is_aktif
-  if (!mauAktif && !confirm('Jeda polling PRTG? Tidak ada pengecekan otomatis (tiket auto) sampai diaktifkan lagi.')) return
+  if (!mauAktif && !(await confirmDialog({
+    title: 'Jeda polling PRTG?',
+    message: 'Tidak ada pengecekan otomatis (tiket auto) sampai diaktifkan lagi.',
+    variant: 'warning',
+    confirmLabel: 'Ya, Jeda',
+  }))) return
   toggling.value = true
   try {
     await api.patch('/prtg/toggle', { aktif: mauAktif })
     await fetchStatus()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal mengubah status polling')
+    alertError(e, 'Gagal mengubah status polling')
   } finally { toggling.value = false }
 }
 
@@ -62,13 +69,13 @@ async function fetchConfig() {
   } catch {}
 }
 async function saveConfig() {
-  savingConfig.value = true; configMsg.value = ''
+  savingConfig.value = true; configMsg.value = ''; configErr.value = false
   try {
     await api.patch('/prtg/config', configForm.value)
     configForm.value.passhash = ''
     configMsg.value = 'Konfigurasi disimpan.'
     await Promise.all([fetchConfig(), fetchStatus()])
-  } catch (e: any) { configMsg.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { configErr.value = true; configMsg.value = e.response?.data?.message || 'Gagal menyimpan' }
   finally { savingConfig.value = false }
 }
 
@@ -117,6 +124,12 @@ function makeSiteCombo(idRef: { value: number }) {
   return { query, open, filtered, display, select, blur, clear }
 }
 
+// setTimeout bukan global yang tersedia di template Vue — dulu dipanggil langsung
+// dari @blur sehingga error dan dropdown inline tidak pernah tertutup.
+function closeInlineSiteLater(deviceName: string) {
+  setTimeout(() => { inlineSiteOpen.value[deviceName] = false }, 200)
+}
+
 // ─── MAPPING ──────────────────────────────────────────────────
 const mappingList = ref<any[]>([])
 const unmatchedList = ref<any[]>([])
@@ -148,9 +161,10 @@ function pilihUnmatched(deviceName: string) {
 
 async function submitMapping() {
   if (!mapForm.value.device_name || !mapForm.value.id_site) {
+    mapErr.value = true
     mapMsg.value = 'Nama device dan site wajib diisi'; return
   }
-  mapSubmitting.value = true; mapMsg.value = ''
+  mapSubmitting.value = true; mapMsg.value = ''; mapErr.value = false
   try {
     const r = await api.post('/prtg/mapping', mapForm.value)
     mapMsg.value = r.data.message
@@ -158,17 +172,24 @@ async function submitMapping() {
     mapSite.query.value = ''
     mapSite.open.value = false
     await fetchMapping()
-  } catch (e: any) { mapMsg.value = e.response?.data?.message || 'Gagal menyimpan mapping' }
+  } catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menyimpan mapping' }
   finally { mapSubmitting.value = false }
 }
 
 async function hapusMapping(id: number, nama: string) {
-  if (!confirm(`Hapus mapping "${nama}"? Device ini akan balik ke matching otomatis (nama).`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Mapping',
+    message: `Hapus mapping "${nama}"? Device ini akan balik ke matching otomatis (nama).`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   hapusMappingId.value = id; mapMsg.value = ''
   try { await api.delete(`/prtg/mapping/${id}`); await fetchMapping() }
-  catch (e: any) { mapMsg.value = e.response?.data?.message || 'Gagal menghapus mapping' }
+  catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menghapus mapping' }
   finally { hapusMappingId.value = 0 }
 }
+const mapErr = ref(false)
+const configErr = ref(false)
 
 // ─── AUDIT SENSOR ─────────────────────────────────────────────
 const devices = ref<any[]>([])
@@ -292,14 +313,18 @@ const monitorLastAtDisplay = computed(() => {
   return fmtRelative(monitorLastAt.value)
 })
 
+let unmounted = false
+
 onMounted(async () => {
   await Promise.all([fetchStatus(), fetchConfig(), fetchMapping(), proyek.fetchSiteList(), fetchPending(), fetchMonitor()])
+  if (unmounted) return
   pendingInterval = setInterval(fetchPending, 15_000)
   monitorTimer = setInterval(fetchMonitor, 60_000)
   monitorTickInterval = setInterval(() => monitorTick.value++, 5_000)
 })
 
 onUnmounted(() => {
+  unmounted = true
   if (pendingInterval) clearInterval(pendingInterval)
   if (monitorTimer) clearInterval(monitorTimer)
   if (monitorTickInterval) clearInterval(monitorTickInterval)
@@ -320,6 +345,7 @@ const provSiteId          = ref<number>(0)
 const provForm            = ref({ jenis_perangkat: 'CPE', merk: '', tipe_model: '', serial_number: '', ip_address: '', importComment: false })
 const provSubmitting      = ref(false)
 const provMsg             = ref('')
+const provProvisioned     = ref(false)
 const provAsetFound       = ref<any>(null)
 
 // Import comment standalone (untuk device yang sudah mapped)
@@ -376,7 +402,7 @@ async function quickProvision(device: any) {
     provisionList.value = fresh
     clearInlineSite(device.device_name)
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal provision')
+    alertError(e, 'Gagal provision')
   } finally {
     delete quickProvLoading.value[device.device_name]
   }
@@ -457,6 +483,7 @@ function openProvModal(device: any) {
   provAsetFound.value = null
   linkAset.value = false
   provMsg.value = ''
+  provProvisioned.value = false
   modalSite.query.value = ''
   modalSite.open.value = false
   provModal.value = true
@@ -481,17 +508,20 @@ async function submitProvision() {
   }
   provSubmitting.value = true; provMsg.value = ''
   try {
-    const payload: any = {
-      device_name: provSelected.value.device_name,
-      id_site: provSiteId.value,
-      ip_address: provForm.value.ip_address,
-      jenis_perangkat: provForm.value.jenis_perangkat,
-      merk: provForm.value.merk || undefined,
-      tipe_model: provForm.value.tipe_model || undefined,
-      serial_number: provForm.value.serial_number || undefined,
+    if (!provProvisioned.value) {
+      const payload: any = {
+        device_name: provSelected.value.device_name,
+        id_site: provSiteId.value,
+        ip_address: provForm.value.ip_address,
+        jenis_perangkat: provForm.value.jenis_perangkat,
+        merk: provForm.value.merk || undefined,
+        tipe_model: provForm.value.tipe_model || undefined,
+        serial_number: provForm.value.serial_number || undefined,
+      }
+      if (linkAset.value && provAsetFound.value) payload.id_aset = provAsetFound.value.id_aset
+      await api.post('/prtg/provision', payload)
+      provProvisioned.value = true
     }
-    if (linkAset.value && provAsetFound.value) payload.id_aset = provAsetFound.value.id_aset
-    await api.post('/prtg/provision', payload)
     // Import data dari komentar jika dicentang
     if (provForm.value.importComment && provSelected.value.comments) {
       try {
@@ -502,7 +532,11 @@ async function submitProvision() {
           parsed_ip: provSelected.value.parsed_ip ?? null,
           comment_text: provSelected.value.comments ?? '',
         })
-      } catch {}
+      } catch (e: any) {
+        provMsg.value = `Perangkat sudah ditambahkan, tetapi import data komentar gagal: ${e.response?.data?.message || 'kesalahan tidak diketahui'}. Klik tombol lagi untuk mencoba import ulang, atau Batal.`
+        fetchProvision()
+        return
+      }
     }
     provModal.value = false
     clearInlineSite(provSelected.value.device_name)
@@ -558,7 +592,7 @@ function exportProvisionCSV() {
     else if (!d.ip_address) status = 'No IP'
     return [d.device_name, d.ip_address, status, d.nama_site, d.match_score, d.nama_pelanggan, d.sudah_ada ? 'Ya' : 'Tidak']
   })
-  downloadCSV([header, ...rows], `prtg-provision-${new Date().toISOString().slice(0, 10)}.csv`)
+  downloadCSV([header, ...rows], `prtg-provision-${todayLocal()}.csv`)
 }
 
 function exportKonfirmasiCSV() {
@@ -568,7 +602,7 @@ function exportKonfirmasiCSV() {
   const rows = list.map((d: any) => [
     d.device_name, d.ip_address, d.nama_site, d.match_score, d.nama_pelanggan, d.kode_site ?? '', 'Konfirmasi'
   ])
-  downloadCSV([header, ...rows], `prtg-konfirmasi-${new Date().toISOString().slice(0, 10)}.csv`)
+  downloadCSV([header, ...rows], `prtg-konfirmasi-${todayLocal()}.csv`)
 }
 </script>
 
@@ -697,7 +731,7 @@ function exportKonfirmasiCSV() {
             {{ mapSubmitting ? 'Menyimpan...' : 'Simpan Mapping' }}
           </button>
         </div>
-        <p v-if="mapMsg" class="msg">{{ mapMsg }}</p>
+        <p v-if="mapMsg" :class="['msg', { err: mapErr }]">{{ mapMsg }}</p>
       </div>
 
       <div class="card">
@@ -827,7 +861,7 @@ function exportKonfirmasiCSV() {
         </div>
 
         <button class="btn-submit" @click="saveConfig" :disabled="savingConfig">{{ savingConfig ? 'Menyimpan...' : 'Simpan Konfigurasi' }}</button>
-        <p v-if="configMsg" class="msg">{{ configMsg }}</p>
+        <p v-if="configMsg" :class="['msg', { err: configErr }]">{{ configMsg }}</p>
       </div>
     </div>
 
@@ -1021,7 +1055,7 @@ function exportKonfirmasiCSV() {
                         :value="inlineSiteId[d.device_name] ? '' : inlineSiteQuery[d.device_name]"
                         @input="(e: any) => { inlineSiteQuery[d.device_name] = e.target.value; inlineSiteOpen[d.device_name] = true }"
                         placeholder="Cari nama site / kode..."
-                        @blur="() => setTimeout(() => { inlineSiteOpen[d.device_name] = false }, 200)"
+                        @blur="closeInlineSiteLater(d.device_name)"
                         autofocus />
                       <div v-if="inlineSiteOpen[d.device_name]" class="combo-dropdown">
                         <div v-for="s in getInlineSiteFiltered(d.device_name)" :key="s.id_site"
@@ -1091,7 +1125,7 @@ function exportKonfirmasiCSV() {
       <div class="modal-box">
         <div class="modal-head">
           <h4>Import Data dari Komentar PRTG</h4>
-          <button class="modal-close" @click="importModal = false">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="importModal = false">✕</button>
         </div>
         <div class="modal-form" style="padding:16px 20px">
           <div class="modal-info" style="margin-bottom:12px">
@@ -1163,7 +1197,7 @@ function exportKonfirmasiCSV() {
       <div class="modal-box">
         <div class="modal-head">
           <h4>⚡ Provision Perangkat</h4>
-          <button class="modal-close" @click="provModal = false">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="provModal = false">✕</button>
         </div>
 
         <div class="modal-info">
@@ -1302,7 +1336,7 @@ function exportKonfirmasiCSV() {
           <div class="modal-actions">
             <button class="btn-secondary" @click="provModal = false">Batal</button>
             <button class="btn-submit" @click="submitProvision" :disabled="provSubmitting">
-              {{ provSubmitting ? 'Menyimpan...' : '⚡ Provision Sekarang' }}
+              {{ provSubmitting ? 'Menyimpan...' : provProvisioned ? 'Coba Import Ulang' : '⚡ Provision Sekarang' }}
             </button>
           </div>
         </div>
@@ -1313,6 +1347,8 @@ function exportKonfirmasiCSV() {
 
 <style scoped>
 .page { padding: 28px 32px; max-width: 1180px; }
+/* block: judul & subjudul ditumpuk (global .page-header = flex row) */
+.page-header { display: block; margin-bottom: 0; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0 0 16px; font-size: 13px; color: #64748b; }
 
@@ -1591,7 +1627,7 @@ td { padding: 10px 12px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .dp-step small { font-weight: 400; display: block; margin-top: 2px; }
 
 /* ── Modal ── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 999; padding: 16px; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 1100; padding: 16px; }
 .modal-box { background: #fff; border-radius: 14px; padding: 24px; width: 540px; max-width: 100%; box-shadow: 0 8px 40px rgba(0,0,0,0.15); max-height: 90vh; overflow-y: auto; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .modal-head h4 { margin: 0; font-size: 16px; color: #0f172a; }

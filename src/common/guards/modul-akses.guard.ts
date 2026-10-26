@@ -29,12 +29,20 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   'uptime-kuma': 'uptime-kuma',
   mekari: 'mekari',
   digiflazz: 'assets', // Beli pulsa/paket via Digiflazz — bagian dari fitur SIM Topup di modul Aset
+  presales: 'sales',
+  instalasi: 'instalasi',
+  mikrotik: 'operations',
+  tools: 'operations',
+  mobile: 'operations',
+  starsender: 'operations',
 };
 
-// admin sudah dijaga @Roles(Admin/Director) di controller-nya.
+// admin & mailer sudah dijaga @Roles(Admin/Director) di controller-nya.
 // email tidak digating modul — koneksi self-service, tiap user cuma akses
 // inbox miliknya sendiri (bukan data organisasi yang perlu dibatasi role).
-const UNGATED = new Set(['auth', 'notifications', 'settings', 'admin', 'webhook', 'email', 'portal']);
+const UNGATED = new Set([
+  'auth', 'notifications', 'settings', 'admin', 'mailer', 'webhook', 'email', 'portal', 'health', 'onboarding', 'onboarding-open',
+]);
 
 @Injectable()
 export class ModulAksesGuard implements CanActivate {
@@ -52,17 +60,21 @@ export class ModulAksesGuard implements CanActivate {
     if (!user) return true; // JwtAuthGuard yang menolak — bukan tugas guard ini
 
     // Ambil segment pertama setelah prefix /api
-    const path: string = req.path || req.url || '';
+    // Router Express mencocokkan path tanpa peduli huruf besar/kecil — lowercase
+    // supaya /api/Finance tidak lolos sebagai segment "tak dikenal".
+    const path: string = (req.path || req.url || '').toLowerCase();
     const segments = path.replace(/^\/api\/?/, '').split('/');
     const segment = segments[0] || '';
 
     if (UNGATED.has(segment)) return true;
 
-    const modul = SEGMENT_TO_MODUL[segment];
-    if (!modul) return true; // segment tak dikenal — biarkan (mis. static)
-
     const akses: string[] = user.modul_akses || [];
     if (!akses.length) return true; // kosong = semua modul
+
+    const modul = SEGMENT_TO_MODUL[segment];
+    // User terbatas (termasuk akun 'pending' hasil daftar mandiri) ditolak di
+    // endpoint yang belum terdaftar di peta — default tolak, bukan default izinkan.
+    if (!modul) throw new ForbiddenException('Anda tidak punya akses ke modul ini');
 
     if (akses.includes(modul)) return true;
     throw new ForbiddenException(`Anda tidak punya akses ke modul ${modul}`);

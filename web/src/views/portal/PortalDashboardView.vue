@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePortalAuthStore } from '@/stores/portalAuth'
 import portalApi from '@/services/portalApi'
+import { fmtDateShort } from '@/composables/useFormat'
 
 const auth   = usePortalAuthStore()
 const router = useRouter()
@@ -79,10 +80,7 @@ function monitorStatus(site: any): 'up' | 'down' | 'registered' | 'none' {
   return 'registered'
 }
 
-function fmtDate(d: string | null) {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
+const fmtDate = fmtDateShort
 
 const totalSite  = computed(() => sites.value.length)
 const totalUp    = computed(() => sites.value.filter(s => monitorStatus(s) === 'up').length)
@@ -199,6 +197,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
         <!-- Sensor toggle -->
         <div class="card-footer">
           <button
+            type="button"
             :class="['btn-sensor', expandedSite === site.id_site ? 'btn-sensor-active' : '']"
             @click="toggleSensors(site.id_site)"
           >
@@ -220,6 +219,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
               <span class="sensor-toolbar-label">RENTANG</span>
               <div class="time-tabs">
                 <button v-for="[gid, lbl] in [[0,'Live'],[1,'48 Jam'],[2,'30 Hari'],[3,'1 Tahun']]" :key="(gid as number)"
+                  type="button"
                   :class="['time-tab', { active: graphHours === (gid as number) }]"
                   @click="graphHours = (gid as number)">{{ lbl }}</button>
               </div>
@@ -262,16 +262,17 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
             <div class="modal-sensor-name">{{ modalSensor.name }}</div>
             <div class="modal-sensor-id">Sensor ID {{ modalSensor.objid }}</div>
           </div>
-          <button class="modal-close" @click="modalSensor = null">✕</button>
+          <button type="button" class="modal-close" aria-label="Tutup" @click="modalSensor = null">✕</button>
         </div>
         <div class="modal-time-bar">
           <button v-for="[gid, label] in [[0,'Live'],[1,'48 Jam'],[2,'30 Hari'],[3,'1 Tahun']]" :key="gid"
+            type="button"
             :class="['time-tab', { active: modalHours === gid }]"
             @click="modalChangeHours(gid as number)">{{ label }}</button>
         </div>
         <div class="modal-body">
           <div v-if="modalGraphLoading" class="modal-loading">Memuat grafik dari PRTG…</div>
-          <img v-else-if="modalGraphUrl" :src="modalGraphUrl" class="modal-graph-img" />
+          <img v-else-if="modalGraphUrl" :src="modalGraphUrl" :alt="`Grafik ${modalSensor.name}`" class="modal-graph-img" />
           <div v-else class="modal-loading">Grafik tidak tersedia untuk sensor ini.</div>
         </div>
       </div>
@@ -280,7 +281,6 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 /* ── Reset / base ─────────────────────────────────────────── */
 * { box-sizing: border-box; }
@@ -305,6 +305,8 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
 }
 .page-eyebrow {
   font-size: 10px;
@@ -374,7 +376,8 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   margin: 28px auto 0;
   padding: 0 32px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(520px, 1fr));
+  /* min(…,100%) supaya kartu tidak meluber di layar < 520px */
+  grid-template-columns: repeat(auto-fill, minmax(min(520px, 100%), 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -433,6 +436,10 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 2px;
+  /* default untuk status lain (Survey, Instalasi, …) yang tidak punya warna khusus */
+  background: #F1F5F9;
+  color: #475569;
+  white-space: nowrap;
 }
 .pill-aktif      { background: #ECFDF5; color: #065F46; }
 .pill-prospek    { background: #FFFBEB; color: #92400E; }
@@ -485,7 +492,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   display: flex;
   gap: 24px;
 }
-.info-row { display: flex; flex-direction: column; gap: 2px; }
+.info-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .info-key {
   font-size: 9px;
   font-weight: 700;
@@ -493,7 +500,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   text-transform: uppercase;
   color: #9EB3C9;
 }
-.info-val { font-size: 12px; font-weight: 500; color: #2D4A6A; }
+.info-val { font-size: 12px; font-weight: 500; color: #2D4A6A; overflow-wrap: anywhere; }
 
 /* ── Device table ─────────────────────────────────────────── */
 .device-section { padding: 0 18px 2px; }
@@ -666,11 +673,6 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
 
 /* ── State: loading / empty / error ──────────────────────── */
 .alert-error {
-  max-width: 1200px;
-  margin: 20px auto 0;
-  padding: 0 32px;
-}
-.alert-error > * {
   background: #FEF2F2;
   border: 1px solid #FECACA;
   border-left: 4px solid #C41E1E;
@@ -679,18 +681,9 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   font-size: 13px;
   color: #7F1D1D;
   font-weight: 500;
-}
-.alert-error {
-  background: #FEF2F2;
-  border: 1px solid #FECACA;
-  border-left: 4px solid #C41E1E;
-  border-radius: 3px;
-  padding: 12px 16px;
-  font-size: 13px;
-  color: #7F1D1D;
-  font-weight: 500;
-  max-width: 1200px;
-  margin: 20px auto 0;
+  /* sejajar dengan konten (max 1200px, gutter 32px) */
+  max-width: 1136px;
+  margin: 20px max(32px, calc((100% - 1136px) / 2)) 0;
 }
 .state-loading, .state-empty {
   max-width: 1200px;
@@ -719,7 +712,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   position: fixed;
   inset: 0;
   background: rgba(11,29,53,0.7);
-  z-index: 999;
+  z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -731,6 +724,8 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   border-radius: 4px;
   width: 100%;
   max-width: 920px;
+  max-height: 90vh;
+  overflow-y: auto;
   box-shadow: 0 24px 80px rgba(11,29,53,0.35);
   overflow: hidden;
   display: flex;
@@ -782,6 +777,23 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   color: #9EB3C9;
   text-align: center;
   padding: 40px;
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .page-title-inner, .kpi-strip, .site-grid { padding-left: 16px; padding-right: 16px; }
+  .site-grid { margin-top: 16px; }
+  .alert-error { margin: 16px 16px 0; }
+  .kpi-strip { flex-wrap: wrap; }
+  .kpi-card { flex: 1 1 50%; padding: 14px 16px; border-bottom: 1px solid #E3EAF3; }
+  .kpi-value { font-size: 22px; }
+  .sensor-toolbar, .modal-time-bar { flex-wrap: wrap; }
+  .sensor-summary { margin-left: 0; flex-basis: 100%; }
+  .sensor-cta { display: none; }
+  .mon-since { display: none; }
+  .modal-overlay { padding: 12px; }
+  .modal-head, .modal-time-bar { padding-left: 16px; padding-right: 16px; }
+  .modal-body { padding: 14px 16px 16px; }
 }
 
 </style>

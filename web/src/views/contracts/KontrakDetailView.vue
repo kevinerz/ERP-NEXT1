@@ -5,6 +5,7 @@ import { useContractsStore } from '@/stores/contracts'
 import { printKontrak, printInvoice } from '@/composables/usePrint'
 import { fmtRupiah, fmtDate, statusLabel } from '@/composables/useFormat'
 import api from '@/services/api'
+import { confirmDialog, alertDialog, alertError } from '@/composables/useDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -39,7 +40,7 @@ onMounted(() => contracts.fetchOne(id))
 function openEdit() {
   if (!k.value) return
   editForm.value = {
-    tgl_berakhir: k.value.tgl_berakhir ? k.value.tgl_berakhir.split('T')[0] : '',
+    tgl_berakhir: k.value.tgl_berakhir ? k.value.tgl_berakhir.split('T')[0]! : '',
     durasi_bulan: k.value.durasi_bulan,
     harga_mrc: k.value.harga_mrc,
     harga_otc: k.value.harga_otc,
@@ -94,7 +95,7 @@ async function handleBuatProject() {
     await api.post('/contracts/' + id + '/project', payload)
     await contracts.fetchOne(id)
     showProjectModal.value = false
-    alert('Project berhasil dibuat')
+    await alertDialog({ message: 'Project berhasil dibuat', variant: 'success' })
   } catch (e: any) {
     formError.value = e?.response?.data?.message ?? 'Gagal membuat project'
   } finally { submitting.value = false }
@@ -109,11 +110,16 @@ const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
 
 async function handleDelete() {
   if (!k.value) return
-  if (!confirm(`Hapus kontrak ${k.value.nomor_kontrak}?`)) return
+  if (!(await confirmDialog({
+    title: 'Hapus Kontrak?',
+    message: `Kontrak ${k.value.nomor_kontrak} akan dihapus.`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
   try {
     await api.delete('/contracts/' + id)
     router.push('/contracts')
-  } catch (e: any) { alert(e?.response?.data?.message ?? 'Gagal menghapus kontrak') }
+  } catch (e: any) { await alertError(e, 'Gagal menghapus kontrak') }
 }
 </script>
 
@@ -180,7 +186,7 @@ async function handleDelete() {
           <div class="info-value">{{ fmtDate(k.tgl_berakhir) }}</div>
           <div class="sisa" v-if="k.status_kontrak === 'Aktif'"
             :class="{ warn: (sisaHari(k.tgl_berakhir) ?? 999) <= 30 }">
-            {{ sisaHari(k.tgl_berakhir) }} hari lagi
+            {{ (sisaHari(k.tgl_berakhir) ?? 0) < 0 ? `lewat ${-(sisaHari(k.tgl_berakhir) ?? 0)} hari` : `${sisaHari(k.tgl_berakhir)} hari lagi` }}
           </div>
         </div>
         <div class="info-item" v-if="k.quotation">
@@ -326,7 +332,7 @@ async function handleDelete() {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 900px; }
+.page { max-width: 900px; }
 .breadcrumb { font-size: 13px; color: #64748b; margin-bottom: 16px; }
 .link { cursor: pointer; color: #3b82f6; }
 .link:hover { text-decoration: underline; }
@@ -334,13 +340,12 @@ async function handleDelete() {
 .loading-full { padding: 60px; text-align: center; color: #94a3b8; }
 .alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; }
 
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
 .header-left .nomor { font-size: 13px; font-weight: 700; color: #3b82f6; margin-bottom: 4px; }
-.header-left h2 { margin: 0 0 8px; font-size: 22px; color: #0f172a; }
-.sub-row { display: flex; align-items: center; gap: 8px; }
-.sub { font-size: 14px; color: #64748b; }
+.header-left h2 { margin: 0 0 8px; font-size: 22px; color: var(--text-1); }
+.sub-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sub { font-size: 14px; color: var(--text-3); }
 .status-badge { padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; }
-.header-actions { display: flex; gap: 10px; }
+.header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn-print { padding: 9px 18px; background: #f0fdf4; color: #15803d; border: 1.5px solid #bbf7d0; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-print:hover { background: #dcfce7; }
 .btn-edit { padding: 9px 18px; background: #f1f5f9; color: #374151; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -357,7 +362,7 @@ async function handleDelete() {
 .qt-link { color: #1d4ed8; cursor: pointer; font-weight: 700; }
 .qt-link:hover { text-decoration: underline; }
 
-.section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 .section-title { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
 .btn-add-proj { padding: 7px 14px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .proj-hint { font-size: 12px; color: #94a3b8; font-style: italic; }
@@ -379,8 +384,7 @@ async function handleDelete() {
 .t-label { font-weight: 600; color: #dc2626; font-size: 14px; }
 .t-alasan { color: #64748b; font-size: 13px; margin-top: 4px; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; max-width: 480px; }
 .modal h3 { margin: 0 0 16px; font-size: 18px; color: #0f172a; }
 .warn-text { color: #dc2626; font-size: 13px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -397,4 +401,11 @@ async function handleDelete() {
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-danger-submit { padding: 9px 22px; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-danger-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 768px) {
+  .info-bar { padding: 16px; }
+  .info-item { min-width: 0; flex: 1 1 140px; border-right: none; margin-right: 12px; padding-right: 0; }
+}
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

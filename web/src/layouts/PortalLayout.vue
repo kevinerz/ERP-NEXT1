@@ -24,7 +24,7 @@ function logout() {
           <span class="user-name">{{ auth.user.nama || auth.user.email }}</span>
           <span class="user-company">{{ auth.user.pelanggan?.nama_pelanggan }}</span>
         </div>
-        <button class="btn-logout" @click="logout">Keluar</button>
+        <button type="button" class="btn-logout" @click="logout">Keluar</button>
       </div>
     </header>
 
@@ -54,7 +54,7 @@ function logout() {
 </template>
 
 <style scoped>
-.portal-app   { display: flex; flex-direction: column; min-height: 100vh; background: #f0f4f8; font-family: 'Inter', sans-serif; }
+.portal-app   { display: flex; flex-direction: column; min-height: 100vh; background: #f0f4f8; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
 .topbar       { display: flex; align-items: center; justify-content: space-between; padding: 0 28px; height: 56px; background: #0f172a; color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.2); position: sticky; top: 0; z-index: 10; }
 .brand        { display: flex; align-items: center; gap: 10px; }
 .brand-icon   { font-size: 20px; }

@@ -4,6 +4,7 @@ import api from '@/services/api'
 import { exportCsv, type CsvSection } from '@/composables/useExport'
 import { printLaporan } from '@/composables/usePrint'
 import { fmtRupiah } from '@/composables/useFormat'
+import { alertDialog } from '@/composables/useDialog'
 
 // KPI
 const kpi = ref<any>(null)
@@ -103,7 +104,7 @@ async function loadAset() {
 
 const periodeLabel = () => `${BULAN_LIST[filterBulan.value - 1]} ${filterTahun.value}`
 
-function handleExportExcel() {
+async function handleExportExcel() {
   const sections: CsvSection[] = []
   const k = kpi.value
   if (k) {
@@ -161,7 +162,10 @@ function handleExportExcel() {
       rows: (asetReport.value.by_kategori || []).map((k: any) => [k.kategori, k.count]),
     })
   }
-  if (!sections.length) { alert('Data laporan belum siap.'); return }
+  if (!sections.length) {
+    await alertDialog({ title: 'Data Belum Siap', message: 'Data laporan belum siap.', variant: 'warning' })
+    return
+  }
   exportCsv(`Laporan-${filterTahun.value}-${String(filterBulan.value).padStart(2, '0')}.csv`, sections)
 }
 
@@ -205,8 +209,8 @@ const STATUS_ASET_COLOR: Record<string, string> = {
         <p class="sub">Ringkasan operasional & bisnis</p>
       </div>
       <div class="export-actions">
-        <button class="btn-export excel" @click="handleExportExcel">⬇ Export Excel</button>
-        <button class="btn-export pdf" @click="handleExportPdf">🖨 Cetak PDF</button>
+        <button type="button" class="btn-export excel" @click="handleExportExcel">⬇ Export Excel</button>
+        <button type="button" class="btn-export pdf" @click="handleExportPdf">🖨 Cetak PDF</button>
       </div>
     </div>
 
@@ -247,6 +251,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
       <div class="card">
         <h3>Tren MRC Bulanan (12 bulan)</h3>
         <div v-if="revenueLoading" class="loading-sm">Memuat...</div>
+        <div v-else-if="!revenue.length" class="loading-sm">Belum ada data MRC</div>
         <div v-else class="bar-chart">
           <div v-for="m in revenue" :key="m.label" class="bar-row">
             <div class="bar-label">{{ m.label }}</div>
@@ -439,7 +444,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
 .page-header { margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
-.export-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.export-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
 .btn-export { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: background 0.15s; }
 .btn-export.excel { background: #ecfdf5; color: #15803d; border-color: #a7f3d0; }
 .btn-export.excel:hover { background: #d1fae5; }
@@ -455,7 +460,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
 .kpi-card.purple { border-top-color: #8b5cf6; }
 .kpi-card.gray { border-top-color: #94a3b8; }
 .kpi-icon { font-size: 20px; margin-bottom: 8px; }
-.kpi-val { font-size: 24px; font-weight: 800; color: #0f172a; }
+.kpi-val { font-size: 24px; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .kpi-val.mrc { font-size: 16px; }
 .kpi-label { font-size: 12px; color: #64748b; margin-top: 4px; }
 .kpi-sub { font-size: 11px; color: #f97316; margin-top: 4px; }
@@ -465,9 +470,10 @@ const STATUS_ASET_COLOR: Record<string, string> = {
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 @media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } }
 
-.card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 20px 24px; }
+.card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); padding: 20px 24px; min-width: 0; }
+@media (max-width: 480px) { .card { padding: 16px; } .bar-val { width: 92px; } }
 .card h3 { margin: 0 0 16px; font-size: 15px; color: #0f172a; font-weight: 700; }
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.card-header { display: flex; justify-content: space-between; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .card-header h3 { margin: 0; }
 .filter-row { display: flex; gap: 6px; }
 .filter-sm { padding: 5px 8px; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 12px; outline: none; }

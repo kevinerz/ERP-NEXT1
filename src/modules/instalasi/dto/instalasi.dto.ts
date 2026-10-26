@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, IsDateString, IsDecimal, IsNumber } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsDateString, IsDecimal, IsNumber, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateInstalasiDto {
@@ -17,7 +17,7 @@ export class CreateInstalasiDto {
   @IsOptional() @IsInt()
   id_kontak_teknisi?: number;
 
-  @IsOptional() @Type(() => Number) @IsNumber()
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
   fee_vendor?: number;
 
   @IsOptional() @IsDateString()
@@ -40,7 +40,7 @@ export class UpdateInstalasiDto {
   @IsOptional() @IsInt()
   id_kontak_teknisi?: number;
 
-  @IsOptional() @Type(() => Number) @IsNumber()
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0)
   fee_vendor?: number;
 
   @IsOptional() @IsString()

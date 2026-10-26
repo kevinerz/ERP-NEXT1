@@ -1,8 +1,14 @@
 <template>
-  <div class="profile-page">
+  <div class="page profile-page">
     <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
       <span>Memuat profil...</span>
+    </div>
+
+    <div v-else-if="!profile" class="card empty-state">
+      <div class="empty-icon">⚠️</div>
+      <div class="empty-title">Gagal memuat profil</div>
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-top:12px" @click="fetchProfile">Coba Lagi</button>
     </div>
 
     <template v-else>
@@ -18,21 +24,21 @@
       </div>
       <div class="hero-info">
         <h1>{{ profile?.nama_lengkap }}</h1>
-        <p class="hero-sub">{{ profile?.jabatan }} · {{ profile?.departemen }}</p>
+        <p class="hero-sub">{{ [profile?.jabatan, profile?.departemen].filter(Boolean).join(' · ') || '—' }}</p>
         <div class="role-badges">
           <span v-for="r in profile?.roles" :key="r" class="badge">{{ r }}</span>
         </div>
-        <button v-if="profile?.foto_url" class="btn-remove-foto" :disabled="fotoUploading" @click="handleFotoRemove">Hapus Foto</button>
+        <button v-if="profile?.foto_url" type="button" class="btn-remove-foto" :disabled="fotoUploading" @click="handleFotoRemove">Hapus Foto</button>
       </div>
     </div>
-    <p v-if="fotoError" class="foto-error">{{ fotoError }}</p>
+    <p v-if="fotoError" class="foto-error" role="alert">{{ fotoError }}</p>
 
     <div class="profile-body">
       <!-- Kiri: Info + Edit -->
       <div class="card info-card">
         <div class="card-header">
           <span class="card-title">Informasi Akun</span>
-          <button class="btn-edit" @click="toggleEdit">
+          <button type="button" class="btn btn-secondary btn-sm" @click="toggleEdit">
             {{ editMode ? 'Batal' : 'Edit' }}
           </button>
         </div>
@@ -40,11 +46,11 @@
         <div class="info-grid">
           <div class="info-row">
             <span class="info-label">Username</span>
-            <span class="info-value mono">{{ profile?.username }}</span>
+            <span class="info-value mono">{{ profile?.username || '—' }}</span>
           </div>
           <div class="info-row">
             <span class="info-label">NIP</span>
-            <span class="info-value mono">{{ profile?.nip }}</span>
+            <span class="info-value mono">{{ profile?.nip || '—' }}</span>
           </div>
           <div class="info-row">
             <span class="info-label">Bergabung</span>
@@ -71,7 +77,7 @@
         </div>
 
         <div v-if="editMode" class="edit-actions">
-          <button class="btn-primary" :disabled="saving" @click="saveProfile">
+          <button type="button" class="btn btn-primary" :disabled="saving" @click="saveProfile">
             {{ saving ? 'Menyimpan…' : 'Simpan' }}
           </button>
         </div>
@@ -92,7 +98,7 @@
               :type="showPass.lama ? 'text' : 'password'"
               placeholder="••••••••"
             />
-            <button class="eye" @click="showPass.lama = !showPass.lama">
+            <button type="button" class="eye" tabindex="-1" :aria-label="showPass.lama ? 'Sembunyikan password' : 'Tampilkan password'" @click="showPass.lama = !showPass.lama">
               {{ showPass.lama ? '🙈' : '👁️' }}
             </button>
           </div>
@@ -104,7 +110,7 @@
               :type="showPass.baru ? 'text' : 'password'"
               placeholder="Min. 8 karakter"
             />
-            <button class="eye" @click="showPass.baru = !showPass.baru">
+            <button type="button" class="eye" tabindex="-1" :aria-label="showPass.baru ? 'Sembunyikan password' : 'Tampilkan password'" @click="showPass.baru = !showPass.baru">
               {{ showPass.baru ? '🙈' : '👁️' }}
             </button>
           </div>
@@ -123,7 +129,7 @@
               placeholder="Ulangi password baru"
               :class="{ mismatch: pass.konfirmasi && pass.baru !== pass.konfirmasi }"
             />
-            <button class="eye" @click="showPass.konfirmasi = !showPass.konfirmasi">
+            <button type="button" class="eye" tabindex="-1" :aria-label="showPass.konfirmasi ? 'Sembunyikan password' : 'Tampilkan password'" @click="showPass.konfirmasi = !showPass.konfirmasi">
               {{ showPass.konfirmasi ? '🙈' : '👁️' }}
             </button>
           </div>
@@ -132,7 +138,8 @@
           </p>
 
           <button
-            class="btn-primary btn-full"
+            type="button"
+            class="btn btn-primary btn-full"
             :disabled="changingPass || !canSubmitPass"
             @click="changePassword"
           >
@@ -169,6 +176,7 @@ import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useAuthStore, ALL_MODULS } from '@/stores/auth'
 import { fmtDate as formatDate, fmtDateTime as formatDateTime } from '@/composables/useFormat'
+import { confirmDialog } from '@/composables/useDialog'
 
 const auth = useAuthStore()
 
@@ -178,11 +186,11 @@ const MODUL_LABEL: Record<string, string> = {
   sales: 'Sales',
   crm: 'CRM',
   projects: 'Proyek',
-  operations: 'Operations',
+  operations: 'Operasional',
   assets: 'Aset',
   contracts: 'Kontrak',
   finance: 'Finance',
-  reports: 'Reports',
+  reports: 'Laporan',
   notifications: 'Notifikasi',
   'public-wo': 'Work Order',
   prtg: 'PRTG',
@@ -296,7 +304,7 @@ async function handleFotoUpload(e: Event) {
 }
 
 async function handleFotoRemove() {
-  if (!confirm('Hapus foto profil?')) return
+  if (!(await confirmDialog({ title: 'Hapus foto profil?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   fotoError.value = ''
   fotoUploading.value = true
   try {
@@ -423,22 +431,22 @@ onMounted(fetchProfile)
 
 /* Cards */
 .card {
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
   padding: 24px;
 }
 .card-header {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 20px;
 }
-.card-title { font-size: 15px; font-weight: 600; color: var(--color-text, #111); }
+.card-title { font-size: 15px; font-weight: 600; color: var(--text-1); }
 
 /* Info grid */
 .info-grid { display: flex; flex-direction: column; gap: 14px; }
 .info-row { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 8px; }
-.info-label { font-size: 13px; color: var(--color-text-muted, #6b7280); }
-.info-value { font-size: 14px; color: var(--color-text, #111); }
+.info-label { font-size: 13px; color: var(--text-3); }
+.info-value { font-size: 14px; color: var(--text-1); overflow-wrap: anywhere; }
 .info-value.mono { font-family: monospace; }
 .info-input {
   padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px;
@@ -447,15 +455,10 @@ onMounted(fetchProfile)
 .info-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
 
 .edit-actions { margin-top: 20px; display: flex; justify-content: flex-end; }
-.btn-edit {
-  background: none; border: 1px solid #d1d5db; border-radius: 6px;
-  padding: 4px 12px; font-size: 13px; cursor: pointer; color: #374151;
-}
-.btn-edit:hover { background: #f3f4f6; }
 
 /* Password form */
 .pass-form { display: flex; flex-direction: column; gap: 8px; }
-.pass-form label { font-size: 13px; font-weight: 500; color: var(--color-text-muted, #6b7280); margin-top: 4px; }
+.pass-form label { font-size: 13px; font-weight: 500; color: var(--text-3); margin-top: 4px; }
 .input-wrap { position: relative; }
 .input-wrap input {
   width: 100%; box-sizing: border-box;
@@ -475,15 +478,8 @@ onMounted(fetchProfile)
 .strength-bar { height: 100%; border-radius: 2px; transition: width .3s, background .3s; }
 .strength-label { font-size: 11px; display: block; margin-top: 2px; }
 
-/* Buttons */
-.btn-primary {
-  background: #2563eb; color: #fff; border: none; border-radius: 8px;
-  padding: 9px 20px; font-size: 14px; font-weight: 500; cursor: pointer;
-  transition: background .15s;
-}
-.btn-primary:hover:not(:disabled) { background: #1d4ed8; }
-.btn-primary:disabled { opacity: .5; cursor: not-allowed; }
-.btn-full { width: 100%; margin-top: 8px; }
+/* Buttons — pakai .btn/.btn-primary global */
+.btn-full { width: 100%; margin-top: 8px; padding: 10px 16px; }
 
 /* Modul card */
 .modul-card { }
@@ -503,4 +499,13 @@ onMounted(fetchProfile)
 .msg { font-size: 13px; margin-top: 10px; padding: 8px 12px; border-radius: 6px; }
 .msg.success { background: #f0fdf4; color: #166534; }
 .msg.error { background: #fef2f2; color: #991b1b; }
+
+@media (max-width: 768px) {
+  .profile-page { gap: 16px; }
+  .profile-hero { flex-direction: column; text-align: center; padding: 22px 18px; gap: 14px; }
+  .role-badges { justify-content: center; }
+  .hero-info h1 { font-size: 19px; overflow-wrap: anywhere; }
+  .card { padding: 18px; }
+  .profile-body { gap: 16px; }
+}
 </style>

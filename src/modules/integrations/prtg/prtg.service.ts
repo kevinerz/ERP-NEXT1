@@ -7,6 +7,8 @@ import { SLA_JAM } from '../../operations/operations.service';
 import { PrtgClient, PrtgSensor } from './prtg.client';
 import { BadRequestException } from '@nestjs/common';
 import { SecretCryptoService } from '../../../common/crypto/secret-crypto.service';
+import { withNextTicketNumber } from '../../../common/utils/ticket-number';
+import { cariSiteDariNama } from '../../../common/utils/site-match';
 
 const STATUS_TIKET_AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
 
@@ -158,18 +160,7 @@ export class PrtgService {
     });
     if (mapping) return mapping.site;
 
-    const site = await this.prisma.sitePelanggan.findFirst({
-      where: { nama_site: { contains: nama } },
-      select: { id_site: true, nama_site: true },
-    });
-    if (site) return site;
-    // Kebalikan: nama site terkandung di nama device
-    const semua = await this.prisma.sitePelanggan.findMany({
-      select: { id_site: true, nama_site: true },
-      take: 1000,
-    });
-    const lower = nama.toLowerCase();
-    return semua.find((s) => lower.includes(s.nama_site.toLowerCase())) ?? null;
+    return cariSiteDariNama(this.prisma, nama);
   }
 
   /** Ambil durasi konfirmasi dari DB config (default 10 menit jika belum ada). */
@@ -254,8 +245,22 @@ export class PrtgService {
     return { data, total: data.length, message: `${data.length} device Down saat ini di PRTG` };
   }
 
+  private pollRunning = false;
+
+  // Satu poll bisa >60 detik saat banyak sensor down; tanpa kunci ini cron
+  // berikutnya / tombol "Poll" berjalan bersamaan dan membuat tiket + WA ganda.
   @Cron('*/1 * * * *')
   async poll() {
+    if (this.pollRunning) return { data: null, message: 'Poll sebelumnya masih berjalan' };
+    this.pollRunning = true;
+    try {
+      return await this.pollOnce();
+    } finally {
+      this.pollRunning = false;
+    }
+  }
+
+  private async pollOnce() {
     // PAUSE TOTAL: polling PRTG MATI kecuali env PRTG_POLL_ENABLED=true.
     if (process.env.PRTG_POLL_ENABLED !== 'true') return { data: null, message: 'Polling PRTG dimatikan (PRTG_POLL_ENABLED != true)' };
     if (!(await this.isEnabled())) return { data: null, message: 'Polling PRTG sedang dijeda' };
@@ -481,16 +486,6 @@ export class PrtgService {
     return { data: hasil, message: `Poll selesai: ${hasil.pending_baru} pending, ${hasil.tiket_dibuat} tiket dibuat, ${hasil.flapping_reopened} flapping reopened, ${hasil.false_alarm} false alarm, ${hasil.auto_resolved} auto-resolved` };
   }
 
-  private async genNomorTiket(now: Date): Promise<string> {
-    const prefix = `TKT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const last = await this.prisma.operationTicket.findFirst({
-      where: { nomor_tiket: { startsWith: prefix } },
-      orderBy: { nomor_tiket: 'desc' },
-    });
-    const seq = (last ? (parseInt(last.nomor_tiket.split('-')[2], 10) || 0) : 0) + 1;
-    return `${prefix}-${String(seq).padStart(4, '0')}`;
-  }
-
   // Dipakai poll() (sensor down real-time) & createMapping() (retroaktif utk
   // webhook yang sudah tersimpan tanpa tiket sebelum device-nya di-mapping).
   // Mengembalikan { ticket, isReopen } — isReopen=true jika tiket lama dibuka kembali (flapping).
@@ -555,22 +550,29 @@ export class PrtgService {
     }
 
     // ── Tiket baru (tidak dalam cooldown) ─────────────────────────────
-    const nomor = await this.genNomorTiket(now);
-    const ticket = await this.prisma.operationTicket.create({
-      data: {
-        nomor_tiket: nomor,
-        id_site: site.id_site,
-        judul_tiket: `[PRTG] ${info.device} — ${info.sensor} DOWN`,
-        deskripsi_masalah: info.message || `Sensor ${info.sensor} pada ${info.device} down`,
-        prioritas,
-        sumber_tiket: 'PRTG',
-        tgl_sensor_down: info.sensorDownAt ?? now,
-        sla_due: new Date(now.getTime() + (SLA_JAM[prioritas] ?? 24) * 3600_000),
-      } as any,
-    });
-    await this.prisma.operationTicketLog.create({
-      data: { id_ticket: ticket.id_ticket, status_ke: 'Open', catatan: `Tiket dibuat otomatis dari PRTG (sensor #${info.sensorId})` },
-    });
+    const downAt = info.sensorDownAt ?? now;
+    const ticket = await withNextTicketNumber(this.prisma, now, (nomor_tiket) =>
+      this.prisma.$transaction(async (tx) => {
+        const t = await tx.operationTicket.create({
+          data: {
+            nomor_tiket,
+            id_site: site.id_site,
+            judul_tiket: `[PRTG] ${info.device} — ${info.sensor} DOWN`,
+            deskripsi_masalah: info.message || `Sensor ${info.sensor} pada ${info.device} down`,
+            prioritas,
+            sumber_tiket: 'PRTG',
+            tgl_sensor_down: downAt,
+            // SLA dihitung dari saat sensor down, bukan setelah masa grace period
+            sla_due: new Date(downAt.getTime() + (SLA_JAM[prioritas] ?? 24) * 3600_000),
+          } as any,
+        });
+        await tx.operationTicketLog.create({
+          data: { id_ticket: t.id_ticket, status_ke: 'Open', catatan: `Tiket dibuat otomatis dari PRTG (sensor #${info.sensorId})` },
+        });
+        return t;
+      }),
+    );
+    const nomor = ticket.nomor_tiket;
     this.notif.notifyForModul('operations', {
       tipe: 'tiket_baru',
       judul: `🔴 [PRTG] ${info.device} DOWN`,
@@ -591,9 +593,9 @@ export class PrtgService {
         },
       });
       if (!sp) return;
-      const waktuDown = now.toLocaleDateString('id-ID', {
+      const waktuDown = downAt.toLocaleDateString('id-ID', {
         timeZone: 'Asia/Jakarta', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
-      }) + ' ' + now.toLocaleTimeString('id-ID', {
+      }) + ' ' + downAt.toLocaleTimeString('id-ID', {
         timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit',
       }) + ' WIB';
       await this.wa.notifTiketBaru({
@@ -823,15 +825,17 @@ export class PrtgService {
     // Strip HTML & normalkan whitespace
     const teks = comment.replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
-    // Cari semua SN: pola "SN" diikuti opsional spasi/titik dua lalu nilai
-    // Nilai SN: huruf, angka, /, . tapi bukan - (dash sering jadi bullet item)
-    // Berhenti di: spasi diikuti bukan karakter SN, bullet -, *, newline
-    const snPattern = /(?:s\/n|sn)\s*[:\-=]?\s*([A-Za-z0-9][A-Za-z0-9\/\.]{2,39})(?=\s*[-\*\n]|\s+[A-Z-]|$)/gi;
+    // "SN" sering menempel ke kata sebelumnya ("IndihomeSN : ZTEG…"), jadi tidak
+    // bisa pakai \b — sebagai gantinya separator ":" / "=" WAJIB ada. Tanpa itu
+    // kata biasa ikut terbaca ("Disnaker kota" → "aker", "SNMPv2c" → "MPv2c").
+    // Nilai SN: huruf, angka, /, . — bukan "-" (dash dipakai sebagai bullet).
+    const snPattern = /(?:s\/n|sn)\s*[:=]\s*([A-Za-z0-9][A-Za-z0-9\/\.]{2,39})(?![A-Za-z0-9\/\.])/gi;
     const sns: Array<{ device: string; sn: string }> = [];
     let m: RegExpExecArray | null;
     while ((m = snPattern.exec(teks)) !== null) {
-      const rawSn = m[1].replace(/[\/\.]$/, '').trim(); // buang trailing / atau .
-      if (rawSn.length < 4) continue;
+      const rawSn = m[1].replace(/[\/\.]+$/, '').trim(); // buang trailing / atau .
+      if (rawSn.length < 4 || !/\d/.test(rawSn)) continue; // serial number selalu mengandung angka
+      if (sns.some((s) => s.sn.toLowerCase() === rawSn.toLowerCase())) continue;
 
       // Cari nama perangkat: teks sebelum "SN" pada posisi ini (mundur ~40 karakter)
       const before = teks.slice(Math.max(0, m.index - 60), m.index);
@@ -842,12 +846,28 @@ export class PrtgService {
       sns.push({ device, sn: rawSn });
     }
 
-    // Nomor PIC — pola "PIC : <nomor>" atau "PIC: <nomor>"
-    const picPattern = /PIC\s*[:\-]?\s*([\d\-\+\s]{8,20})/gi;
+    // Nomor PIC — "PIC : 0812 3456 7890" (spasi/dash di dalam nomor lazim).
+    // Satu "PIC" bisa diikuti beberapa nomor; nomor baru dimulai saat nomor
+    // berjalan sudah ≥10 digit dan grup berikutnya diawali 0 / 62.
+    const picPattern = /PIC\s*[:\-]?\s*(\+?\d[\d\-\s\/,]{6,60})/gi;
     const pic: string[] = [];
+    const maxLen = (n: string) => (n.startsWith('62') ? 14 : 13);
+    const pushPic = (n: string) => {
+      if (/^(?:62|0)\d{8,12}$/.test(n) && !pic.includes(n)) pic.push(n);
+    };
     while ((m = picPattern.exec(teks)) !== null) {
-      const nomor = m[1].replace(/\s/g, '').replace(/^[-\+]/, '');
-      if (nomor.length >= 8) pic.push(nomor);
+      for (const chunk of m[1].split(/[\/,]/)) { // "/" dan "," selalu memisah nomor
+        let cur = '';
+        for (const g of chunk.split(/[\s\-]+/)) {
+          const d = g.replace(/\D/g, '');
+          if (!d) continue;
+          if (cur.length >= 10 && (/^(?:62|0)/.test(d) || d.length < 3 || cur.length + d.length > maxLen(cur))) {
+            pushPic(cur);
+            cur = d;
+          } else cur += d;
+        }
+        if (cur) pushPic(cur);
+      }
     }
 
     const ipMatch = teks.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/);
@@ -1242,8 +1262,20 @@ export class PrtgService {
    * parse komentar dan simpan otomatis semua data ke ERP (perangkat, PIC, catatan).
    * Idempoten — data yang sudah ada di-skip, tidak ada duplikat.
    */
+  private syncCommentRunning = false;
+
   @Cron('0 * * * *')
   async syncCommentDataCron() {
+    if (this.syncCommentRunning) return; // cron & tombol manual bisa tumpang tindih → baris dobel
+    this.syncCommentRunning = true;
+    try {
+      await this.syncCommentDataOnce();
+    } finally {
+      this.syncCommentRunning = false;
+    }
+  }
+
+  private async syncCommentDataOnce() {
     if (!(await this.prtg.isConfigured())) return;
     let devices: any[];
     try {

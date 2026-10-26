@@ -142,8 +142,8 @@ export class HrisService {
       where: { id_karyawan: id },
       data: {
         ...dto,
-        tgl_bergabung: dto.tgl_bergabung ? new Date(dto.tgl_bergabung) : undefined,
-        tgl_lahir: dto.tgl_lahir ? new Date(dto.tgl_lahir) : undefined,
+        tgl_bergabung: dto.tgl_bergabung === null ? null : dto.tgl_bergabung ? new Date(dto.tgl_bergabung) : undefined,
+        tgl_lahir: dto.tgl_lahir === null ? null : dto.tgl_lahir ? new Date(dto.tgl_lahir) : undefined,
       },
     });
   }

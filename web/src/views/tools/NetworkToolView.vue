@@ -168,15 +168,15 @@ function quickSet(h: string, p?: string) {
             <input v-model="portNum" type="number" min="1" max="65535" placeholder="80" class="narrow-input" @keyup.enter="run" />
           </div>
 
-          <button class="run-btn" @click="run" :disabled="loading">
-            <span v-if="loading" class="spin">⟳</span>
+          <button type="button" class="btn btn-primary run-btn" @click="run" :disabled="loading">
+            <template v-if="loading"><span class="spin">⟳</span> Menjalankan…</template>
             <span v-else>▶ Jalankan</span>
           </button>
         </div>
 
         <!-- Quick Hosts -->
         <div class="quick-hosts">
-          <span class="quick-label">Quick:</span>
+          <span class="quick-label">Pintasan:</span>
           <button class="qbtn" @click="quickSet('8.8.8.8')">8.8.8.8 (Google DNS)</button>
           <button class="qbtn" @click="quickSet('1.1.1.1')">1.1.1.1 (Cloudflare)</button>
           <button class="qbtn" @click="quickSet('103.12.28.12')">103.12.28.12 (Server)</button>
@@ -206,7 +206,7 @@ function quickSet(h: string, p?: string) {
       </div>
 
       <!-- Error -->
-      <div v-if="error && !loading" class="alert-err">⚠ {{ error }}</div>
+      <div v-if="error && !loading" class="alert alert-danger alert-err">⚠ {{ error }}</div>
 
       <!-- Ping Result - Summary Cards -->
       <div v-if="activeTab === 'ping' && result?.stats" class="ping-summary">
@@ -267,42 +267,42 @@ function quickSet(h: string, p?: string) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 960px; }
+.page { max-width: 960px; }
 .page-header { margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; font-weight: 700; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); font-weight: 700; }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
 
 /* Tabs */
 .tab-nav { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
 .tab-btn {
   display: flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border: 1.5px solid #e2e8f0; border-radius: 8px;
-  background: #fff; font-size: 13px; font-weight: 600; color: #64748b;
+  padding: 8px 14px; border: 1.5px solid var(--border); border-radius: var(--r);
+  background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-3);
   cursor: pointer; transition: all 0.15s;
 }
-.tab-btn:hover { border-color: #3b82f6; color: #1d4ed8; background: #eff6ff; }
-.tab-btn.active { border-color: #3b82f6; background: #1d4ed8; color: #fff; }
+.tab-btn:hover { border-color: #3b82f6; color: var(--primary); background: var(--primary-light); }
+.tab-btn.active { border-color: #3b82f6; background: var(--primary); color: #fff; }
 .tab-emoji { font-size: 15px; }
 
 /* Tool card */
-.tool-card { background: #fff; border-radius: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; }
-.tab-desc { padding: 12px 20px; background: #f8fafc; border-bottom: 1px solid #f1f5f9; font-size: 13px; color: #64748b; }
+.tool-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+.tab-desc { padding: 12px 20px; background: #f8fafc; border-bottom: 1px solid var(--border-light); font-size: 13px; color: var(--text-3); }
 
 /* Input */
-.input-area { padding: 18px 20px 14px; border-bottom: 1px solid #f1f5f9; }
+.input-area { padding: 18px 20px 14px; border-bottom: 1px solid var(--border-light); }
 .input-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .field-wrap { display: flex; flex-direction: column; gap: 5px; }
-.field-wrap label { font-size: 12px; font-weight: 600; color: #374151; }
-.host-input { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; min-width: 260px; color: #0f172a; }
-.host-input:focus { border-color: #3b82f6; }
-.narrow-input { padding: 9px 10px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; width: 90px; color: #0f172a; }
-.narrow-input:focus { border-color: #3b82f6; }
-.run-btn {
-  padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6);
-  color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700;
-  cursor: pointer; white-space: nowrap; align-self: flex-end;
+.field-wrap label { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
+.host-input, .narrow-input {
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r);
+  font-size: 13.5px; outline: none; color: var(--text-1); background: var(--surface);
+  font-family: inherit; transition: border-color 0.15s, box-shadow 0.15s;
 }
-.run-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.host-input { min-width: 260px; }
+.narrow-input { width: 90px; }
+.host-input:focus, .narrow-input:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+.run-btn { align-self: flex-end; padding: 9px 22px; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 .spin { display: inline-block; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -323,7 +323,7 @@ function quickSet(h: string, p?: string) {
 @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
 
 /* Alerts */
-.alert-err { margin: 16px 20px; padding: 10px 14px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; }
+.alert-err { margin: 16px 20px; }
 
 /* Ping summary */
 .ping-summary { display: flex; gap: 10px; padding: 16px 20px; flex-wrap: wrap; border-bottom: 1px solid #f1f5f9; }
@@ -335,7 +335,9 @@ function quickSet(h: string, p?: string) {
 .stat-box.bad  .stat-val { color: #dc2626; }
 
 /* Port result */
-.port-result { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid #f1f5f9; }
+.port-result { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; }
+.port-badge { white-space: nowrap; }
+.port-detail { min-width: 0; word-break: break-word; }
 .port-badge { padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; }
 .port-open   { background: #dcfce7; color: #15803d; }
 .port-closed { background: #fef2f2; color: #dc2626; }
@@ -363,10 +365,12 @@ function quickSet(h: string, p?: string) {
 .empty-sub  { font-size: 13px; color: #94a3b8; margin-top: 6px; }
 
 @media (max-width: 768px) {
-  .page { padding: 16px !important; }
   .host-input { min-width: 0; width: 100%; }
-  .input-row { flex-direction: column; }
-  .run-btn { width: 100%; padding: 11px; }
+  .input-row { flex-direction: column; align-items: stretch; }
+  .narrow-input { width: 100%; }
+  .host-input, .narrow-input { font-size: 16px; height: 42px; }
+  .run-btn { width: 100%; padding: 11px; align-self: stretch; }
+  .ping-summary .stat-box { flex: 1 1 calc(33% - 10px); }
   .tab-btn .tab-label { display: none; }
   .tab-emoji { font-size: 18px; }
   .tab-btn { padding: 8px 12px; }

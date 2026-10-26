@@ -93,26 +93,30 @@ async function submit() {
 
   submitting.value = true
   try {
+    // Saat edit, field opsional yang dikosongkan dikirim null agar benar-benar
+    // terhapus di server; saat tambah cukup dihilangkan (undefined).
+    const kosong = isEdit.value ? null : undefined
+    const f = form.value
     const payload = {
-      ...form.value,
-      tgl_bergabung: form.value.tgl_bergabung || undefined,
-      no_hp: form.value.no_hp || undefined,
-      email: form.value.email || undefined,
-      tempat_lahir: form.value.tempat_lahir || undefined,
-      tgl_lahir: form.value.tgl_lahir || undefined,
-      jenis_kelamin: form.value.jenis_kelamin || undefined,
-      agama: form.value.agama || undefined,
-      status_pernikahan: form.value.status_pernikahan || undefined,
-      no_ktp: form.value.no_ktp || undefined,
-      alamat_ktp: form.value.alamat_ktp || undefined,
-      no_npwp: form.value.no_npwp || undefined,
-      pendidikan_terakhir: form.value.pendidikan_terakhir || undefined,
-      kontak_darurat_nama: form.value.kontak_darurat_nama || undefined,
-      kontak_darurat_hp: form.value.kontak_darurat_hp || undefined,
-      kontak_darurat_hubungan: form.value.kontak_darurat_hubungan || undefined,
-      bank_nama: form.value.bank_nama || undefined,
-      bank_no_rekening: form.value.bank_no_rekening || undefined,
-      bank_atas_nama: form.value.bank_atas_nama || undefined,
+      ...f,
+      tgl_bergabung: f.tgl_bergabung || kosong,
+      no_hp: f.no_hp || kosong,
+      email: f.email || kosong,
+      tempat_lahir: f.tempat_lahir || kosong,
+      tgl_lahir: f.tgl_lahir || kosong,
+      jenis_kelamin: f.jenis_kelamin || kosong,
+      agama: f.agama || kosong,
+      status_pernikahan: f.status_pernikahan || kosong,
+      no_ktp: f.no_ktp || kosong,
+      alamat_ktp: f.alamat_ktp || kosong,
+      no_npwp: f.no_npwp || kosong,
+      pendidikan_terakhir: f.pendidikan_terakhir || kosong,
+      kontak_darurat_nama: f.kontak_darurat_nama || kosong,
+      kontak_darurat_hp: f.kontak_darurat_hp || kosong,
+      kontak_darurat_hubungan: f.kontak_darurat_hubungan || kosong,
+      bank_nama: f.bank_nama || kosong,
+      bank_no_rekening: f.bank_no_rekening || kosong,
+      bank_atas_nama: f.bank_atas_nama || kosong,
     }
 
     if (isEdit.value && id.value) {
@@ -133,7 +137,7 @@ async function submit() {
 <template>
   <div class="page">
     <div class="page-header">
-      <button class="btn-back" @click="router.push('/hris/karyawan')">← Kembali</button>
+      <button type="button" class="btn-back" @click="router.push('/hris/karyawan')">← Kembali</button>
       <h2>{{ isEdit ? 'Edit Karyawan' : 'Tambah Karyawan' }}</h2>
     </div>
 
@@ -293,10 +297,11 @@ async function submit() {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 800px; }
+.page { max-width: 800px; }
 
-.page-header { margin-bottom: 24px; }
-.page-header h2 { margin: 8px 0 0; font-size: 22px; color: #0f172a; }
+/* Tombol kembali di atas judul (global .page-header = baris space-between) */
+.page-header { flex-direction: column; align-items: flex-start; gap: 0; }
+.page-header h2 { margin: 8px 0 0; font-size: 22px; color: var(--text-1); }
 
 .btn-back {
   background: none;
@@ -397,4 +402,8 @@ async function submit() {
   cursor: pointer;
 }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 768px) {
+  .form-card { padding: 20px 16px; }
+  .page-header .btn-back { width: auto !important; }
+}
 </style>

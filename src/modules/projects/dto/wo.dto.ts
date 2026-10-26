@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsNumber, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsNumber, IsDateString, Min } from 'class-validator';
 
 export class CreateWoDto {
   @IsString() jenis_wo: string;
@@ -8,7 +8,7 @@ export class CreateWoDto {
   @IsString() tipe_eksekutor: string;
   @IsOptional() @IsInt() id_teknisi_internal?: number;
   @IsOptional() @IsInt() id_vendor_ketiga?: number;
-  @IsOptional() @IsNumber() fee_vendor?: number;
+  @IsOptional() @IsNumber() @Min(0) fee_vendor?: number;
   @IsDateString() tgl_jadwal: string;
   @IsString() deskripsi_tugas: string;
 }
@@ -16,7 +16,7 @@ export class CreateWoDto {
 export class UpdateWoDto {
   @IsOptional() @IsInt() id_teknisi_internal?: number;
   @IsOptional() @IsInt() id_vendor_ketiga?: number;
-  @IsOptional() @IsNumber() fee_vendor?: number;
+  @IsOptional() @IsNumber() @Min(0) fee_vendor?: number;
   @IsOptional() @IsDateString() tgl_jadwal?: string;
   @IsOptional() @IsString() deskripsi_tugas?: string;
   @IsOptional() @IsString() status_wo?: string;

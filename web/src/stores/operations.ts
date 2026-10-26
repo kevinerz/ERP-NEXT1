@@ -12,10 +12,13 @@ export interface Ticket {
   tgl_open: string
   tgl_resolved?: string
   tgl_closed?: string
+  tgl_berangkat?: string
+  tgl_sampai?: string
   created_at: string
   site?: {
     id_site: number; kode_site: string; nama_site: string; kota?: string; alamat_lengkap?: string
-    pelanggan?: { nama_pelanggan: string; kode_pelanggan: string; no_telp?: string; nama_pic_utama?: string }
+    koordinat_gps?: string
+    pelanggan?: { nama_pelanggan: string; kode_pelanggan: string; no_telp?: string; nama_pic_utama?: string; no_hp_pic_utama?: string }
     layanan?: { kode_layanan: string; nama_layanan: string }
   }
   teknisi?: { id_karyawan: number; nama_lengkap: string; jabatan: string }
@@ -23,6 +26,7 @@ export interface Ticket {
   work_orders?: any[]
   logs?: { id_log: number; status_dari?: string; status_ke?: string; catatan?: string; created_at: string; user?: { karyawan?: { nama_lengkap: string } } }[]
   _count?: { work_orders: number; logs: number }
+  related_tickets?: { id_ticket: number; nomor_tiket: string; judul_tiket: string; prioritas: string; status_tiket: string }[]
 }
 
 export const useOperationsStore = defineStore('operations', {

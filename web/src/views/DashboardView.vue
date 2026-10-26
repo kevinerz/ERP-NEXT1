@@ -142,7 +142,7 @@ const activity = computed(() => {
 </script>
 
 <template>
-  <div class="dash">
+  <div class="page dash">
 
     <!-- ── Header ──────────────────────────────────────────────────── -->
     <div class="dash-header">
@@ -152,19 +152,19 @@ const activity = computed(() => {
         <div class="header-date">{{ today }}</div>
       </div>
       <div class="quick-actions">
-        <button class="qa-btn" @click="router.push('/operations')">
+        <button type="button" class="qa-btn" @click="router.push('/operations')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
           Buat Tiket
         </button>
-        <button class="qa-btn qa-outline" @click="router.push('/sales/lead')">
+        <button type="button" class="qa-btn qa-outline" @click="router.push('/sales/lead')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Tambah Lead
         </button>
-        <button class="qa-btn qa-outline" @click="router.push('/reports')">
+        <button type="button" class="qa-btn qa-outline" @click="router.push('/reports')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           Laporan
         </button>
-        <button class="qa-btn qa-outline" @click="router.push('/master/pelanggan')">
+        <button type="button" class="qa-btn qa-outline" @click="router.push('/master/pelanggan')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
           Pelanggan
         </button>
@@ -185,17 +185,17 @@ const activity = computed(() => {
         <div v-if="kpi.kontrak_akan_berakhir > 0" class="banner amber">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           <strong>{{ kpi.kontrak_akan_berakhir }} kontrak</strong> akan berakhir dalam 30 hari ke depan
-          <button class="banner-link" @click="router.push('/contracts')">Lihat detail →</button>
+          <button type="button" class="banner-link" @click="router.push('/contracts')">Lihat detail →</button>
         </div>
         <div v-if="kpi.invoice_overdue > 0" class="banner red">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           <strong>{{ kpi.invoice_overdue }} invoice</strong> sudah jatuh tempo dan belum dibayar
-          <button class="banner-link" @click="router.push('/finance')">Lihat invoice →</button>
+          <button type="button" class="banner-link" @click="router.push('/finance')">Lihat invoice →</button>
         </div>
         <div v-if="resolutionRate !== null && resolutionRate < 50" class="banner red">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           Resolusi tiket bulan ini hanya <strong>{{ resolutionRate }}%</strong> — perlu perhatian
-          <button class="banner-link" @click="router.push('/operations')">Lihat tiket →</button>
+          <button type="button" class="banner-link" @click="router.push('/operations')">Lihat tiket →</button>
         </div>
       </div>
 
@@ -287,7 +287,7 @@ const activity = computed(() => {
           </div>
           <div class="kpi-body">
             <div class="kpi-label">SLA Bulan Ini</div>
-            <div class="kpi-value" :style="{ color: slaColor }">{{ kpi.sla_compliance_pct ?? '—' }}%</div>
+            <div class="kpi-value" :style="{ color: slaColor }">{{ kpi.sla_compliance_pct != null ? kpi.sla_compliance_pct + '%' : '—' }}</div>
             <div class="kpi-sub">{{ kpi.sla_breach_bulan_ini ?? 0 }} breach · {{ kpi.tiket_bulan_ini ?? 0 }} tiket</div>
           </div>
           <div class="kpi-arrow">›</div>
@@ -373,7 +373,7 @@ const activity = computed(() => {
           <div class="chart-card sla-mini" @click="router.push('/reports/sla')" style="cursor:pointer">
             <div class="chart-header" style="margin-bottom:10px">
               <div class="chart-title">SLA Bulan Ini</div>
-              <div class="sla-pct-big" :style="{ color: slaColor }">{{ kpi.sla_compliance_pct ?? '—' }}%</div>
+              <div class="sla-pct-big" :style="{ color: slaColor }">{{ kpi.sla_compliance_pct != null ? kpi.sla_compliance_pct + '%' : '—' }}</div>
             </div>
             <div class="sla-bar-wrap">
               <div class="sla-bar" :style="{ width: Math.min(kpi.sla_compliance_pct ?? 0, 100) + '%', background: slaColor }"></div>
@@ -388,7 +388,7 @@ const activity = computed(() => {
                 <div class="sla-stat-lbl">SLA breach</div>
               </div>
               <div class="sla-stat">
-                <div class="sla-stat-val" style="color:#374151">{{ resolutionRate ?? '—' }}%</div>
+                <div class="sla-stat-val" style="color:#374151">{{ resolutionRate != null ? resolutionRate + '%' : '—' }}</div>
                 <div class="sla-stat-lbl">Resolusi</div>
               </div>
             </div>
@@ -432,7 +432,7 @@ const activity = computed(() => {
         <div class="chart-card pipeline-card">
           <div class="chart-header">
             <div class="chart-title">Sales Pipeline</div>
-            <button class="chart-link" @click="router.push('/sales')">Lihat semua →</button>
+            <button type="button" class="chart-link" @click="router.push('/sales')">Lihat semua →</button>
           </div>
           <div class="pipeline-funnel">
             <div class="pip-item" @click="router.push('/sales/lead')">
@@ -461,7 +461,7 @@ const activity = computed(() => {
         <div class="chart-card proj-card">
           <div class="chart-header">
             <div class="chart-title">Status Proyek</div>
-            <button class="chart-link" @click="router.push('/projects')">Lihat semua →</button>
+            <button type="button" class="chart-link" @click="router.push('/projects')">Lihat semua →</button>
           </div>
           <div v-if="projByStatus.length" class="proj-bars">
             <div v-for="p in projByStatus" :key="p.status" class="proj-row">
@@ -491,7 +491,7 @@ const activity = computed(() => {
           <div class="chart-card" style="flex:1">
             <div class="chart-header" style="margin-bottom:8px">
               <div class="chart-title">WO Aktif</div>
-              <button class="chart-link" @click="router.push('/operations/noc')">Lihat →</button>
+              <button type="button" class="chart-link" @click="router.push('/operations/noc')">Lihat →</button>
             </div>
             <div v-if="woTerbaru.length" class="wo-list">
               <div v-for="w in woTerbaru" :key="w.id_wo" class="wo-row">
@@ -547,14 +547,13 @@ const activity = computed(() => {
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
-.dash { font-family: 'Inter', system-ui, sans-serif; padding: 24px 28px; max-width: 1400px; background: #f8fafc; box-sizing: border-box; }
+/* Padding/max-width dari .page global (konsisten dgn halaman lain + responsif) */
+.dash { box-sizing: border-box; }
 
 /* Header */
 .dash-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .header-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .12em; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; }
-.header-title { font-size: 22px; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
+.header-title { font-size: 22px; font-weight: 700; color: #0f172a; margin: 0 0 4px; overflow-wrap: anywhere; }
 .header-name { color: #0B1D35; }
 .header-date { font-size: 12px; color: #94a3b8; }
 
@@ -577,7 +576,7 @@ const activity = computed(() => {
 
 /* Alert banners */
 .alert-banners { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
-.banner { display: flex; align-items: center; gap: 8px; border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+.banner { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; border-radius: var(--r-sm); padding: 10px 14px; font-size: 13px; }
 .banner.amber { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
 .banner.red   { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
 .banner-link { margin-left: auto; background: none; border: none; font-size: 12px; font-weight: 700; cursor: pointer; color: inherit; }
@@ -607,7 +606,7 @@ const activity = computed(() => {
 .right-col { display: flex; flex-direction: column; gap: 10px; }
 
 .chart-card { background: #fff; border-radius: 10px; padding: 16px 18px; border: 1px solid #e2e8f0; }
-.chart-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; }
+.chart-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .chart-title { font-size: 13px; font-weight: 700; color: #0f172a; }
 .chart-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
 .chart-link { background: none; border: none; font-size: 11px; font-weight: 600; color: #3b82f6; cursor: pointer; padding: 0; }
@@ -675,8 +674,8 @@ const activity = computed(() => {
 
 /* Activity feed */
 .activity-section { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
-.activity-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 10px; border-bottom: 1px solid #f1f5f9; }
-.activity-tabs { display: flex; gap: 6px; }
+.activity-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 12px 16px 10px; border-bottom: 1px solid #f1f5f9; }
+.activity-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .act-chip { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
 .chip-ticket    { background: #fffbeb; color: #b45309; }
 .chip-quotation { background: #eff6ff; color: #1d4ed8; }
@@ -703,7 +702,7 @@ const activity = computed(() => {
 /* Responsive */
 @media (max-width: 1300px) {
   .mid-row { grid-template-columns: 1fr 1fr; }
-  .right-mini-col { flex-direction: row; }
+  .right-mini-col { flex-direction: row; grid-column: 1 / -1; }
   .mini-stat-card { flex: none; }
 }
 @media (max-width: 1100px) {
@@ -715,5 +714,10 @@ const activity = computed(() => {
   .mid-row { grid-template-columns: 1fr; }
   .right-mini-col { flex-direction: row; }
   .quick-actions { display: none; }
+}
+@media (max-width: 600px) {
+  .right-mini-col { flex-direction: column; }
+  .header-title { font-size: 18px; }
+  .activity-item { padding: 10px 12px; }
 }
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { confirmDialog, alertError } from '@/composables/useDialog'
 import { useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
@@ -150,13 +151,13 @@ async function handleSubmit() {
 }
 
 async function hapusAset(id: number, nama: string) {
-  if (!confirm(`Hapus aset "${nama}" ini?`)) return
+  if (!(await confirmDialog({ title: 'Hapus Aset?', message: `Hapus aset "${nama}" ini?`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete(`/assets/${id}`)
     await aset.fetchSummary()
     fetchData()
   } catch (e: any) {
-    alert(e.response?.data?.message || 'Gagal menghapus aset')
+    await alertError(e, 'Gagal menghapus aset')
   }
 }
 
@@ -173,9 +174,9 @@ function fmtRupiah(n: number) {
         <p class="sub">Manajemen inventaris & perangkat</p>
       </div>
       <div class="header-actions">
-        <button class="btn-secondary" @click="router.push('/assets/pengajuan')">🧾 Pengajuan Aset</button>
-        <button class="btn-secondary" @click="router.push('/assets/stok-opname')">📋 Stok Opname</button>
-        <button class="btn-primary" @click="showModal = true; resetForm(); formError = ''">+ Tambah Aset</button>
+        <button type="button" class="btn btn-secondary" @click="router.push('/assets/pengajuan')">🧾 Pengajuan Aset</button>
+        <button type="button" class="btn btn-secondary" @click="router.push('/assets/stok-opname')">📋 Stok Opname</button>
+        <button type="button" class="btn btn-primary" @click="showModal = true; resetForm(); formError = ''">+ Tambah Aset</button>
       </div>
     </div>
 
@@ -199,7 +200,7 @@ function fmtRupiah(n: number) {
     </div>
 
     <!-- Filters -->
-    <div class="filters">
+    <div class="filter-bar">
       <input v-model="search" @keyup.enter="doFilter" placeholder="Cari kode / nama / serial / merk..." class="search-input" />
       <select v-model="filterStatus" @change="doFilter" class="filter-select">
         <option value="">Semua Status</option>
@@ -268,7 +269,7 @@ function fmtRupiah(n: number) {
               <div class="serial" v-if="a.serial_number">SN: {{ a.serial_number }}</div>
             </td>
             <td>{{ a.kategori }}</td>
-            <td>{{ a.kondisi?.replace('_', ' ') }}</td>
+            <td>{{ statusLabel(a.kondisi) }}</td>
             <td>
               <span class="status-badge"
                 :style="{ background: STATUS_COLOR[a.status_aset]?.bg, color: STATUS_COLOR[a.status_aset]?.color }">
@@ -390,13 +391,9 @@ function fmtRupiah(n: number) {
 </template>
 
 <style scoped>
-.page { padding: 28px 32px; max-width: 1200px; }
-.page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
-.sub { margin: 0; font-size: 13px; color: #64748b; }
-.btn-primary { padding: 10px 20px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.header-actions { display: flex; gap: 10px; }
-.btn-secondary { padding: 10px 18px; background: #fff; color: #1e40af; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
+.sub { margin: 0; font-size: 13px; color: var(--text-3); }
+.header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .summary-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 .summary-chip { background: #fff; border-radius: 8px; padding: 12px 16px; border-left: 4px solid #94a3b8; box-shadow: 0 1px 3px rgba(0,0,0,0.07); cursor: pointer; min-width: 110px; }
@@ -409,14 +406,12 @@ function fmtRupiah(n: number) {
 .gudang-chip:hover { background: #e0f2fe; }
 .gudang-chip.active { background: #0369a1; border-color: #0369a1; color: #fff; }
 
-.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-.search-input { flex: 1; min-width: 220px; padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.search-input:focus { border-color: #3b82f6; }
-.filter-select { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.btn-search { padding: 9px 16px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.alert-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
-.select-notif { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; color: #92400e; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
-.selection-bar { display: flex; align-items: center; gap: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #1e40af; font-weight: 600; }
+.search-input { flex: 1; min-width: 220px; }
+.btn-search { height: 36px; padding: 0 16px; background: var(--border-light); border: 1px solid var(--border); border-radius: var(--r); font-size: 13.5px; font-weight: 600; color: var(--text-2); cursor: pointer; }
+.btn-search:hover { background: var(--border); }
+.alert-error { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.select-notif { background: var(--warning-light); border: 1px solid #fde68a; border-radius: var(--r); color: #92400e; font-size: 13px; padding: 10px 14px; margin-bottom: 12px; }
+.selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; background: var(--primary-light); border: 1px solid var(--primary-border); border-radius: var(--r); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #1e40af; font-weight: 600; }
 .btn-label { padding: 6px 14px; background: #1e40af; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-label:hover { background: #1e3a8a; }
 .btn-select-all { padding: 6px 14px; background: #fff; color: #1e40af; border: 1px solid #93c5fd; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -442,8 +437,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.modal { background: #fff; border-radius: 14px; padding: 28px 32px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { padding: 28px 32px; }
 .modal h3 { margin: 0 0 20px; font-size: 18px; color: #0f172a; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -458,4 +452,7 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-submit { padding: 9px 22px; background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
 .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .modal { padding: 20px 18px; }
+}
 </style>

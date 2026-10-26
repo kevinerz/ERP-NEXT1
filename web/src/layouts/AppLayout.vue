@@ -159,9 +159,9 @@ const menuGroups = [
     items: [
       { label: 'Aset',          emoji: '🖥️', to: '/assets',          modul: 'assets' },
       { label: 'SIM Topup',     emoji: '📱', to: '/assets/sim-topup', modul: 'assets' },
-      { label: 'Network Tools', emoji: '🔧', to: '/tools/network',    modul: null },
-      { label: 'NOC Board',     emoji: '📺', to: '/operations/noc',    modul: null },
-      { label: 'Remote Mikrotik', emoji: '🔌', to: '/tools/mikrotik', modul: null },
+      { label: 'Network Tools', emoji: '🔧', to: '/tools/network',    modul: 'operations' },
+      { label: 'NOC Board',     emoji: '📺', to: '/operations/noc',    modul: 'operations' },
+      { label: 'Remote Mikrotik', emoji: '🔌', to: '/tools/mikrotik', modul: 'operations' },
     ],
   },
   {
@@ -281,6 +281,7 @@ const initials = computed(() => {
           <RouterLink
             v-for="item in group.items" :key="item.to" :to="item.to"
             class="nav-item" active-class="active"
+            :title="sidebarOpen || mobileNavOpen ? undefined : item.label"
             :style="{ '--group-accent': group.accent }"
           >
             <span class="nav-emoji">{{ item.emoji }}</span>
@@ -299,6 +300,7 @@ const initials = computed(() => {
           <RouterLink
             v-for="item in adminMenu" :key="item.to" :to="item.to"
             class="nav-item" active-class="active"
+            :title="sidebarOpen || mobileNavOpen ? undefined : item.label"
             style="--group-accent:#ef4444"
           >
             <span class="nav-emoji">{{ item.emoji }}</span>
@@ -316,7 +318,8 @@ const initials = computed(() => {
       </RouterLink>
 
       <!-- Collapse toggle -->
-      <button class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen">
+      <button type="button" class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen"
+        :title="sidebarOpen ? 'Tutup sidebar' : 'Buka sidebar'" :aria-label="sidebarOpen ? 'Tutup sidebar' : 'Buka sidebar'">
         <span class="toggle-icon">{{ sidebarOpen ? '«' : '»' }}</span>
         <Transition name="fade-text">
           <span v-if="sidebarOpen || mobileNavOpen" class="toggle-label">Tutup Sidebar</span>
@@ -330,13 +333,13 @@ const initials = computed(() => {
       <!-- Topbar -->
       <header class="topbar">
         <div class="topbar-left">
-          <button class="hamburger" @click="mobileNavOpen = !mobileNavOpen" aria-label="Menu">☰</button>
+          <button type="button" class="hamburger" @click="mobileNavOpen = !mobileNavOpen" aria-label="Menu">☰</button>
           <div class="page-title">{{ pageTitle }}</div>
         </div>
 
         <div class="topbar-right">
           <!-- Sound toggle -->
-          <button class="tb-btn sound-btn" @click="toggleSound"
+          <button type="button" class="tb-btn sound-btn" @click="toggleSound"
             :aria-label="soundEnabled ? 'Matikan suara notifikasi' : 'Aktifkan suara notifikasi'"
             :title="soundEnabled ? 'Suara: ON (klik untuk mute)' : 'Suara: OFF (klik untuk aktifkan)'">
             <span class="tb-icon">{{ soundEnabled ? '🔊' : '🔇' }}</span>
@@ -344,7 +347,7 @@ const initials = computed(() => {
 
           <!-- Notification bell -->
           <div class="notif-area">
-            <button class="tb-btn" @click.stop="toggleNotifPanel" :class="{ active: showNotifPanel }"
+            <button type="button" class="tb-btn" @click.stop="toggleNotifPanel" :class="{ active: showNotifPanel }"
               aria-label="Notifikasi" :aria-expanded="showNotifPanel">
               <span class="tb-icon">🔔</span>
               <span v-if="notif.count > 0" class="notif-badge">{{ notif.count > 99 ? '99+' : notif.count }}</span>
@@ -355,7 +358,7 @@ const initials = computed(() => {
               <div class="np-header">
                 <span class="np-title">Notifikasi</span>
                 <span class="np-unread-chip" v-if="notif.count > 0">{{ notif.count }} baru</span>
-                <button v-if="notif.count > 0" class="np-read-all" @click="notif.markAllRead()">Baca semua</button>
+                <button v-if="notif.count > 0" type="button" class="np-read-all" @click="notif.markAllRead()">Baca semua</button>
               </div>
               <div v-if="notif.loading" class="np-state">Memuat...</div>
               <div v-else-if="notif.error" class="np-state np-error">{{ notif.error }}</div>
@@ -388,7 +391,7 @@ const initials = computed(() => {
 
           <!-- User menu -->
           <div class="user-area">
-            <button class="user-btn" @click.stop="toggleUserMenu" :class="{ active: showUserMenu }"
+            <button type="button" class="user-btn" @click.stop="toggleUserMenu" :class="{ active: showUserMenu }"
               aria-label="Menu pengguna" :aria-expanded="showUserMenu">
               <img v-if="auth.user?.foto_url" :src="auth.user.foto_url" alt="" class="user-avatar-photo" />
               <div v-else class="user-avatar">{{ initials }}</div>
@@ -401,8 +404,9 @@ const initials = computed(() => {
 
             <div v-if="showUserMenu" class="user-menu" @click.stop>
               <div class="um-header">
-                <div class="um-avatar">{{ initials }}</div>
-                <div>
+                <img v-if="auth.user?.foto_url" :src="auth.user.foto_url" alt="" class="um-avatar um-avatar-photo" />
+                <div v-else class="um-avatar">{{ initials }}</div>
+                <div class="um-text">
                   <div class="um-name">{{ auth.user?.nama_lengkap }}</div>
                   <div class="um-email">{{ auth.user?.username }}</div>
                 </div>
@@ -412,7 +416,7 @@ const initials = computed(() => {
                 <span>👤</span> Profil Saya
               </router-link>
               <div class="um-divider"></div>
-              <button class="um-item danger" @click="logout">
+              <button type="button" class="um-item danger" @click="logout">
                 <span>🚪</span> Keluar
               </button>
             </div>
@@ -422,7 +426,7 @@ const initials = computed(() => {
 
       <!-- Page content -->
       <main class="main-content">
-        <RouterView />
+        <RouterView :key="route.path" />
       </main>
     </div>
 
@@ -439,7 +443,7 @@ const initials = computed(() => {
             <div class="toast-title">{{ toast.judul }}</div>
             <div class="toast-desc" v-if="toast.deskripsi">{{ toast.deskripsi }}</div>
           </div>
-          <button class="toast-x" @click.stop="notif.dismissToast(toast.id)">×</button>
+          <button type="button" class="toast-x" aria-label="Tutup notifikasi" @click.stop="notif.dismissToast(toast.id)">×</button>
         </div>
       </TransitionGroup>
     </div>
@@ -453,8 +457,7 @@ const initials = computed(() => {
 .app-shell {
   display: flex;
   min-height: 100vh;
-  background: #f1f5f9;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
 }
 
 /* ── Sidebar ── */
@@ -673,6 +676,8 @@ const initials = computed(() => {
   font-size: 15px;
   font-weight: 700;
   color: #0f172a;
+  margin: 0;          /* netralkan .page-title global */
+  line-height: 1.5;
 }
 
 .topbar-right {
@@ -770,7 +775,7 @@ const initials = computed(() => {
 .np-item.unread:hover { background: #e0f0ff; }
 .np-ico { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
 .np-body { flex: 1; min-width: 0; }
-.np-judul { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.4; }
+.np-judul { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.4; overflow-wrap: anywhere; }
 .np-desc { font-size: 12px; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .np-time { font-size: 11px; color: #94a3b8; margin-top: 4px; }
 .np-dot { width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; margin-top: 6px; }
@@ -803,8 +808,8 @@ const initials = computed(() => {
   object-fit: cover;
   flex-shrink: 0;
 }
-.user-info { text-align: left; }
-.user-name { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.3; white-space: nowrap; }
+.user-info { text-align: left; min-width: 0; }
+.user-name { font-size: 13px; font-weight: 600; color: #0f172a; line-height: 1.3; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .user-role { font-size: 11px; color: #94a3b8; }
 .user-chevron { font-size: 9px; color: #94a3b8; margin-left: 2px; }
 
@@ -832,8 +837,10 @@ const initials = computed(() => {
   color: #fff; font-weight: 800; font-size: 13px;
   flex-shrink: 0;
 }
-.um-name { font-size: 13px; font-weight: 700; color: #0f172a; }
-.um-email { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+.um-avatar-photo { object-fit: cover; }
+.um-text { min-width: 0; }
+.um-name { font-size: 13px; font-weight: 700; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.um-email { font-size: 11px; color: #94a3b8; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .um-divider { height: 1px; background: #f1f5f9; }
 .um-item {
   display: flex; align-items: center; gap: 8px;
@@ -875,8 +882,8 @@ const initials = computed(() => {
 .toast:hover { box-shadow: 0 8px 40px rgba(0,0,0,0.16); }
 .toast-ico { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
 .toast-body { flex: 1; min-width: 0; }
-.toast-title { font-size: 13px; font-weight: 700; color: #0f172a; }
-.toast-desc { font-size: 12px; color: #64748b; margin-top: 2px; }
+.toast-title { font-size: 13px; font-weight: 700; color: #0f172a; overflow-wrap: anywhere; }
+.toast-desc { font-size: 12px; color: #64748b; margin-top: 2px; overflow-wrap: anywhere; }
 .toast-x {
   background: none; border: none; color: #94a3b8;
   cursor: pointer; font-size: 20px; padding: 0;
@@ -917,7 +924,12 @@ const initials = computed(() => {
   .hamburger { display: inline-flex; align-items: center; justify-content: center; }
 
   .topbar { padding: 0 12px; }
+  .topbar-left { min-width: 0; flex: 1; }
   .page-title { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; }
+  /* Nama + role user tidak muat di topbar mobile, cukup avatar saja */
+  .user-info, .user-chevron { display: none; }
+  .user-btn { padding: 4px; }
+  .tb-divider { margin: 0 4px; }
   .main-content { padding: 12px; }
 
   .notif-panel {

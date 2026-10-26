@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { clampPagination } from '../../common/utils/pagination';
 import { UpsertPicDto, ImportPicRowDto } from './dto/crm.dto';
 
 const PIC_SELECT = {
@@ -20,9 +21,7 @@ export class CrmService {
   constructor(private prisma: PrismaService) {}
 
   async listPic(query: { search?: string; id_pelanggan?: string; page?: number; limit?: number }) {
-    const page  = Number(query.page)  || 1;
-    const limit = Number(query.limit) || 25;
-    const skip  = (page - 1) * limit;
+    const { page, limit, skip } = clampPagination(query.page, query.limit, 25);
     const where: any = {};
 
     if (query.search) {
@@ -104,20 +103,33 @@ export class CrmService {
 
     for (const row of rows) {
       try {
-        const pelanggan = await this.prisma.pelanggan.findFirst({
-          where: { nama_pelanggan: { contains: row.nama_perusahaan } },
-          include: { sites: { select: { id_site: true, nama_site: true }, take: 1 } },
-        });
+        const cari = await this.cariPelangganImport(row.nama_perusahaan);
+        if ('alasan' in cari) {
+          results.push({ nama_perusahaan: row.nama_perusahaan, nama_pic: row.nama_pic, status: 'skip', keterangan: cari.alasan });
+          continue;
+        }
+        const pelanggan = cari.pelanggan;
 
-        if (!pelanggan || !pelanggan.sites.length) {
+        if (!pelanggan.sites.length) {
           results.push({ nama_perusahaan: row.nama_perusahaan, nama_pic: row.nama_pic, status: 'skip', keterangan: 'Perusahaan/site tidak ditemukan di master data' });
           continue;
         }
 
         const id_site = pelanggan.sites[0].id_site;
-        const existing = await this.prisma.picSite.findFirst({
-          where: { id_site, email: row.email || undefined },
-        });
+        // Cocokkan PIC: email bila ada; kalau tidak, no. kontak; kalau tidak, nama. Tidak ada → buat baru.
+        // (Sebelumnya email kosong → filter hilang → menimpa PIC pertama site.)
+        const email = row.email?.trim();
+        const noKontak = row.no_kontak?.trim();
+        const namaPic = row.nama_pic?.trim();
+        let existing: { id_pic: number } | null = null;
+        if (email) {
+          existing = await this.prisma.picSite.findFirst({ where: { id_site, email }, select: { id_pic: true } });
+        } else if (noKontak) {
+          existing = await this.prisma.picSite.findFirst({ where: { id_site, no_kontak: noKontak }, select: { id_pic: true } });
+        }
+        if (!existing && !email && namaPic) {
+          existing = await this.prisma.picSite.findFirst({ where: { id_site, nama_pic: namaPic }, select: { id_pic: true } });
+        }
 
         const tgl_lahir = row.tgl_lahir ? this.parseDate(row.tgl_lahir) : undefined;
         const payload = {
@@ -157,6 +169,39 @@ export class CrmService {
     }
 
     return { data: results, message: `Import selesai: ${results.filter(r => r.status !== 'error' && r.status !== 'skip').length} berhasil dari ${rows.length} baris` };
+  }
+
+  /**
+   * Cari pelanggan untuk baris import: utamakan nama persis (collation MySQL case-insensitive),
+   * fallback ke `contains` hanya bila hasilnya tunggal. Lebih dari satu kandidat → ambigu, baris di-skip.
+   */
+  private async cariPelangganImport(namaRaw: string): Promise<
+    { pelanggan: { id_pelanggan: number; nama_pelanggan: string; sites: { id_site: number; nama_site: string }[] } }
+    | { alasan: string }
+  > {
+    const nama = (namaRaw || '').trim();
+    if (!nama) return { alasan: 'Nama perusahaan kosong' };
+    const include = { sites: { select: { id_site: true, nama_site: true }, orderBy: { id_site: 'asc' as const }, take: 1 } };
+
+    const exact = await this.prisma.pelanggan.findMany({
+      where: { nama_pelanggan: { equals: nama } },
+      select: { id_pelanggan: true, nama_pelanggan: true, ...include },
+      take: 2,
+    });
+    if (exact.length === 1) return { pelanggan: exact[0] };
+    if (exact.length > 1) return { alasan: `Ambigu: ada lebih dari satu pelanggan bernama "${nama}"` };
+
+    const fuzzy = await this.prisma.pelanggan.findMany({
+      where: { nama_pelanggan: { contains: nama } },
+      select: { id_pelanggan: true, nama_pelanggan: true, ...include },
+      take: 4,
+    });
+    if (fuzzy.length === 1) return { pelanggan: fuzzy[0] };
+    if (fuzzy.length > 1)
+      return {
+        alasan: `Ambigu: "${nama}" cocok dengan beberapa pelanggan (${fuzzy.slice(0, 3).map((p) => p.nama_pelanggan).join(', ')}${fuzzy.length > 3 ? ', …' : ''}) — tulis nama persis`,
+      };
+    return { alasan: 'Perusahaan/site tidak ditemukan di master data' };
   }
 
   private parseDate(s: string): Date | undefined {

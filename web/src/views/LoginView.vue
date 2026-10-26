@@ -95,8 +95,9 @@ async function handleLogin() {
 
         <form @submit.prevent="handleLogin" class="login-form">
           <div class="field">
-            <label>Username / Email</label>
+            <label for="login-username">Username / Email</label>
             <input
+              id="login-username"
               v-model="username"
               type="text"
               placeholder="Username atau alamat email"
@@ -107,22 +108,24 @@ async function handleLogin() {
           </div>
 
           <div class="field">
-            <label>Password</label>
+            <label for="login-password">Password</label>
             <div class="input-wrapper">
               <input
+                id="login-password"
                 v-model="password"
                 :type="showPassword ? 'text' : 'password'"
                 placeholder="Masukkan password"
                 autocomplete="current-password"
                 :disabled="auth.loading"
               />
-              <button type="button" class="toggle-pw" @click="showPassword = !showPassword" tabindex="-1">
+              <button type="button" class="toggle-pw" @click="showPassword = !showPassword" tabindex="-1"
+                :aria-label="showPassword ? 'Sembunyikan password' : 'Tampilkan password'">
                 {{ showPassword ? '🙈' : '👁️' }}
               </button>
             </div>
           </div>
 
-          <p v-if="auth.error" class="error-msg">{{ auth.error }}</p>
+          <p v-if="auth.error" class="error-msg" role="alert">{{ auth.error }}</p>
 
           <button type="submit" class="btn-login" :disabled="auth.loading || !username || !password">
             <span v-if="auth.loading">Memproses...</span>
@@ -130,13 +133,13 @@ async function handleLogin() {
           </button>
         </form>
 
-        <button class="forgot-link" @click="showForgot = true">Lupa password?</button>
+        <button type="button" class="forgot-link" @click="showForgot = true">Lupa password?</button>
 
         <router-link to="/daftar" class="daftar-link">Karyawan baru? Daftar Akun Baru →</router-link>
 
         <!-- Modal lupa password -->
         <div v-if="showForgot" class="forgot-overlay" @click.self="showForgot = false">
-          <div class="forgot-box">
+          <div class="forgot-box" role="dialog" aria-modal="true" @keydown.esc="showForgot = false">
             <h3>🔑 Lupa Password?</h3>
             <p>Hubungi administrator atau IT Support untuk mereset password akun Anda.</p>
             <p v-if="cfg.settings.company_name" class="forgot-company">{{ cfg.settings.company_name }}</p>
@@ -144,8 +147,8 @@ async function handleLogin() {
               <span v-if="cfg.settings.company_phone">📞 {{ cfg.settings.company_phone }}</span>
               <span v-if="cfg.settings.company_email">✉️ {{ cfg.settings.company_email }}</span>
             </p>
-            <p v-else class="forgot-hint">Info kontak dapat ditemukan di halaman Settings aplikasi.</p>
-            <button class="forgot-close" @click="showForgot = false">Tutup</button>
+            <p v-else class="forgot-hint">Info kontak dapat ditemukan di halaman Pengaturan aplikasi.</p>
+            <button type="button" class="forgot-close" @click="showForgot = false">Tutup</button>
           </div>
         </div>
 
@@ -302,7 +305,7 @@ async function handleLogin() {
 }
 .daftar-link:hover { text-decoration: underline; }
 .forgot-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  position: fixed; inset: 0; background: rgba(15,23,42,0.45);
   display: flex; align-items: center; justify-content: center; z-index: 999; padding: 20px;
 }
 .forgot-box {
@@ -311,7 +314,7 @@ async function handleLogin() {
   box-shadow: 0 12px 40px rgba(0,0,0,0.18);
 }
 .forgot-box h3 { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 10px; }
-.forgot-box p { font-size: 13.5px; color: #4b5563; line-height: 1.6; margin: 0 0 6px; }
+.forgot-box p { font-size: 13.5px; color: #4b5563; line-height: 1.6; margin: 0 0 6px; overflow-wrap: anywhere; }
 .forgot-company { font-weight: 700; color: #0f172a !important; }
 .forgot-contact { display: flex; flex-direction: column; gap: 4px; color: #1d4ed8 !important; font-size: 13px !important; }
 .forgot-hint { color: #94a3b8 !important; font-size: 12px !important; }

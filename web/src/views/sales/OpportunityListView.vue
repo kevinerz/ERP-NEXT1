@@ -26,6 +26,7 @@ const showForce = ref(false)
 const forceNamaInput = ref('')
 const forceError = ref('')
 const forceMsg = ref('')
+const forcing = ref(false)
 
 const TAHAPAN = ['Prospecting', 'Presentasi', 'Survey', 'Negosiasi', 'Penawaran', 'Won', 'Lost']
 const TAHAPAN_COLOR: Record<string, string> = {
@@ -81,6 +82,8 @@ async function doForceHapus() {
     forceError.value = 'Nama opportunity tidak cocok — coba lagi.'
     return
   }
+  if (forcing.value) return
+  forcing.value = true
   try {
     const r = await api.delete(`/sales/opportunity/${hapusTarget.value.id}?force=true`)
     showForce.value = false
@@ -88,7 +91,7 @@ async function doForceHapus() {
     forceMsg.value = r.data?.message || 'Opportunity + data terkait dihapus'
   } catch (e2: any) {
     forceError.value = e2.response?.data?.message || 'Force delete gagal'
-  }
+  } finally { forcing.value = false }
 }
 
 const fmt = fmtRupiahPenuh
@@ -197,7 +200,7 @@ const fmtDate = fmtDateShort
           <p v-if="forceError" class="force-error">{{ forceError }}</p>
           <div class="force-actions">
             <button class="btn-cancel" @click="showForce = false">Batal</button>
-            <button class="btn-force" @click="doForceHapus">Hapus Permanen</button>
+            <button class="btn-force" :disabled="forcing" @click="doForceHapus">{{ forcing ? 'Menghapus...' : 'Hapus Permanen' }}</button>
           </div>
         </template>
         <div v-else class="force-actions">
@@ -244,8 +247,8 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 
 .table-footer { padding: 10px 16px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #f1f5f9; }
 .btn-hapus { padding: 4px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
-.modal-force { background: #fff; border-radius: 14px; padding: 28px 32px; width: 480px; max-width: 95vw; box-shadow: 0 12px 40px rgba(0,0,0,0.18); }
+.modal-force { background: var(--surface); border-radius: var(--r-lg); padding: 28px 32px; width: 480px; max-width: 100%; box-shadow: var(--shadow-lg); }
+@media (max-width: 480px) { .modal-force { padding: 22px 20px; } }
 .modal-force h3 { margin: 0 0 12px; font-size: 16px; color: #dc2626; }
 .force-msg { font-size: 13.5px; color: #374151; margin: 0 0 12px; line-height: 1.6; }
 .force-hint { font-size: 13px; color: #64748b; margin: 0 0 8px; }
@@ -256,4 +259,5 @@ td { padding: 13px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 .btn-cancel { padding: 9px 18px; background: #f1f5f9; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
 .btn-force { padding: 9px 18px; background: #dc2626; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .btn-force:hover { background: #b91c1c; }
+.btn-force:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>
