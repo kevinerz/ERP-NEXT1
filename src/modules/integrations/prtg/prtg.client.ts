@@ -113,6 +113,13 @@ export class PrtgClient {
     return (json.devices ?? []) as PrtgDevice[];
   }
 
+  // Ganti nama object PRTG (device/sensor/group) — dipakai halaman rekonsiliasi nama
+  async renameObject(objid: number, nama: string): Promise<void> {
+    const url = await this.authedUrl(`/api/rename.htm?id=${objid}&value=${encodeURIComponent(nama)}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`PRTG rename error ${res.status}`);
+  }
+
   // Semua sensor tanpa filter status — buat halaman audit/daftar device
   async getAllSensors(): Promise<PrtgSensor[]> {
     const url = await this.authedUrl(`/api/table.json?content=sensors&columns=objid,sensor,device,status,message&count=${PrtgClient.MAX_COUNT}`);

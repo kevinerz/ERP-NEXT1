@@ -23,6 +23,13 @@ const router = createRouter({
       component: () => import('@/views/DaftarView.vue'),
       meta: { public: true },
     },
+    // Halaman SEMENTARA tanpa login: rekonsiliasi nama PRTG ↔ site ERP
+    {
+      path: '/rekon-prtg',
+      name: 'rekon-prtg',
+      component: () => import('@/views/RekonPrtgView.vue'),
+      meta: { public: true },
+    },
 
     // Portal Pelanggan — layout terpisah, auth terpisah
     {
