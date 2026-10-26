@@ -52,6 +52,7 @@ const rows = ref<Row[]>([])
 const forms = reactive<Record<number, Form>>({})
 const loading = ref(true)
 const loadErr = ref('')
+const cacheInfo = ref('')
 const q = ref('')
 const filter = ref<'semua' | 'belum' | 'selesai' | 'beda' | 'nomatch'>('belum')
 const batas = ref(40)
@@ -79,11 +80,12 @@ function initForm(r: Row): Form {
   }
 }
 
-async function load() {
+async function load(refresh = false) {
   loading.value = true
   loadErr.value = ''
   try {
-    const { data } = await http.get('')
+    const { data } = await http.get('', { params: refresh ? { refresh: 1 } : {} })
+    cacheInfo.value = data.dari_cache ? `Dari cache (${new Date(data.cached_at).toLocaleTimeString('id-ID')})` : ''
     rows.value = data.data as Row[]
     for (const r of rows.value) forms[r.objid] = initForm(r)
   } catch (e) {
@@ -262,7 +264,7 @@ const statusKelas = (s: string) => {
           <button :class="{ on: filter === 'nomatch' }" @click="filter = 'nomatch'; batas = 40">Belum ada site <span>{{ stats.nomatch }}</span></button>
           <button :class="{ on: filter === 'selesai' }" @click="filter = 'selesai'; batas = 40">Selesai <span>{{ stats.selesai }}</span></button>
           <button :class="{ on: filter === 'semua' }" @click="filter = 'semua'; batas = 40">Semua <span>{{ stats.total }}</span></button>
-          <button class="rk-reload" @click="load" title="Muat ulang dari PRTG">⟳</button>
+          <button class="rk-reload" @click="load(true)" :title="cacheInfo ? cacheInfo + ' — klik untuk ambil ulang dari PRTG' : 'Ambil ulang dari PRTG'">⟳</button>
         </div>
       </div>
     </header>
@@ -274,7 +276,7 @@ const statusKelas = (s: string) => {
       </div>
       <div v-else-if="loadErr" class="rk-state err">
         <p>{{ loadErr }}</p>
-        <button class="btn" @click="load">Coba lagi</button>
+        <button class="btn" @click="load(true)">Coba lagi</button>
       </div>
       <template v-else>
         <p v-if="!tersaring.length" class="rk-state">Tidak ada data untuk filter ini 🎉</p>

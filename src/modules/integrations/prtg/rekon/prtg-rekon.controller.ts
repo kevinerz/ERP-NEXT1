@@ -13,12 +13,12 @@ import { SimpanRekonDto, ToggleDoneDto } from './rekon.dto';
 export class PrtgRekonController {
   constructor(private readonly rekon: PrtgRekonService) {}
 
-  // GET /api/prtg-rekon
+  // GET /api/prtg-rekon[?refresh=1] — refresh=1 melewati cache (ambil ulang dari PRTG)
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 20 } })
   @Get()
-  list() {
-    return this.rekon.list();
+  list(@Query('refresh') refresh?: string) {
+    return this.rekon.list(refresh === '1');
   }
 
   // GET /api/prtg-rekon/sites?q=

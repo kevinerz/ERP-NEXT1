@@ -25,10 +25,32 @@ export class PrtgRekonService {
     pelanggan: { select: { nama_pelanggan: true } },
   } as const;
 
-  async list() {
+  // Cache hasil getProvisionPreview (ambil PRTG + match ERP, bisa ±30 detik) di memori proses.
+  // PM2 jalan 1 instance, jadi cukup in-memory; data rekon (DB) tetap selalu dibaca segar.
+  private static readonly CACHE_TTL_MS = 10 * 60 * 1000;
+  private previewCache: { at: number; data: any[] } | null = null;
+  private previewInflight: Promise<any[]> | null = null;
+
+  private async ambilPreview(paksa: boolean): Promise<{ data: any[]; at: number; dariCache: boolean }> {
+    const c = this.previewCache;
+    if (!paksa && c && Date.now() - c.at < PrtgRekonService.CACHE_TTL_MS) {
+      return { data: c.data, at: c.at, dariCache: true };
+    }
+    this.previewInflight ??= this.prtgService
+      .getProvisionPreview()
+      .then((r) => {
+        this.previewCache = { at: Date.now(), data: r.data };
+        return r.data;
+      })
+      .finally(() => { this.previewInflight = null; });
+    const data = await this.previewInflight;
+    return { data, at: this.previewCache!.at, dariCache: false };
+  }
+
+  async list(refresh = false) {
     this.assertEnabled();
-    const [{ data: preview }, rekon] = await Promise.all([
-      this.prtgService.getProvisionPreview(),
+    const [{ data: preview, at, dariCache }, rekon] = await Promise.all([
+      this.ambilPreview(refresh),
       this.prisma.prtgRekonsiliasi.findMany(),
     ]);
     const rekonByObjid = new Map(rekon.map((r) => [r.prtg_objid, r]));
@@ -62,7 +84,7 @@ export class PrtgRekonService {
         rekon: r,
       };
     });
-    return { data };
+    return { data, cached_at: new Date(at).toISOString(), dari_cache: dariCache };
   }
 
   async cariSite(q: string) {
@@ -151,6 +173,10 @@ export class PrtgRekonService {
         data: { site_awal: siteAwal, applied_at: new Date(), is_done: true, done_at: new Date() },
       }),
     ]);
+
+    // Jaga cache tetap benar tanpa ambil ulang dari PRTG
+    const cached = this.previewCache?.data.find((d) => d.objid === objid);
+    if (cached) Object.assign(cached, { device_name: nama, id_site: site.id_site, match_source: 'manual', match_score: 100 });
 
     this.logger.log(
       `APPLY objid=${objid} PRTG "${namaPrtgSekarang}" → "${nama}"; site#${site.id_site} "${site.nama_site}" → "${nama}" ${JSON.stringify(siteData)} awal=${JSON.stringify(siteAwal)}`,
