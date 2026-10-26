@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Halaman SEMENTARA tanpa login — rekonsiliasi nama device PRTG ↔ site ERP.
 // Backend: /api/prtg-rekon (aktif hanya bila PRTG_REKON_ENABLED=true).
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import { confirmDialog } from '@/composables/useDialog'
 
@@ -92,7 +92,21 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
+// Dropdown pilih site tertutup saat klik di luar atau tekan Esc
+function klikLuar(e: MouseEvent) {
+  const el = e.target as HTMLElement | null
+  if (!el?.closest('.rk-picker, .rk-pick-btn')) tutupSemuaPicker()
+}
+function tekanKey(e: KeyboardEvent) { if (e.key === 'Escape') tutupSemuaPicker() }
+onMounted(() => {
+  load()
+  document.addEventListener('click', klikLuar)
+  document.addEventListener('keydown', tekanKey)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', klikLuar)
+  document.removeEventListener('keydown', tekanKey)
+})
 
 // Form per baris selalu diisi di load() — helper ini hanya mempersempit tipe
 const fm = (r: Row): Form => forms[r.objid]!
@@ -199,7 +213,11 @@ function cariSite(f: Form) {
     } catch { f.siteHasil = [] }
   }, 300)
 }
+function tutupSemuaPicker(kecuali?: Form) {
+  for (const k of Object.values(forms)) if (k !== kecuali) k.sitePicker = false
+}
 function bukaPicker(f: Form) {
+  tutupSemuaPicker(f)
   f.sitePicker = !f.sitePicker
   if (f.sitePicker) { f.siteQ = ''; cariSite(f) }
 }
@@ -294,7 +312,7 @@ const statusKelas = (s: string) => {
               </div>
             </template>
             <div v-else class="rk-empty">Belum terhubung ke site</div>
-            <button class="btn-link" @click="bukaPicker(fm(r))">
+            <button class="btn-link rk-pick-btn" @click="bukaPicker(fm(r))">
               {{ fm(r).site ? 'Ganti site' : 'Pilih site' }} ▾
             </button>
             <div v-if="fm(r).sitePicker" class="rk-picker">
