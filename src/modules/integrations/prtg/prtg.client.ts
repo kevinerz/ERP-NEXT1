@@ -107,7 +107,7 @@ export class PrtgClient {
     const url = await this.authedUrl(
       `/api/table.json?content=devices&columns=objid,device,host,status,comments&count=${PrtgClient.MAX_COUNT}`,
     );
-    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
     if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
     const json: any = await res.json();
     return (json.devices ?? []) as PrtgDevice[];
