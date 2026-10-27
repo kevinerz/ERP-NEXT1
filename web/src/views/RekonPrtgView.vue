@@ -21,7 +21,23 @@ function ambilToken(): string {
     return ''
   }
 }
-const http = axios.create({ baseURL: '/api/prtg-rekon', headers: { 'X-Rekon-Token': ambilToken() } })
+// Password = token rekon: diketik di form (atau ?token=... di URL), disimpan di sessionStorage
+const token = ref(ambilToken())
+const butuhLogin = ref(!token.value)
+const passInput = ref('')
+const passErr = ref('')
+const http = axios.create({ baseURL: '/api/prtg-rekon' })
+http.interceptors.request.use((c) => { c.headers['X-Rekon-Token'] = token.value; return c })
+
+function masuk() {
+  const v = passInput.value.trim()
+  if (!v) return
+  token.value = v
+  try { sessionStorage.setItem('rekon_token', v) } catch { /* sessionStorage diblokir: cukup di memori */ }
+  passInput.value = ''
+  butuhLogin.value = false
+  load()
+}
 
 interface Site {
   id_site: number; kode_site: string; nama_site: string
@@ -60,7 +76,7 @@ const batas = ref(40)
 function errMsg(e: any): string {
   const m = e?.response?.data?.message
   if (e?.response?.status === 404) return 'Halaman rekonsiliasi sedang dimatikan.'
-  if (e?.response?.status === 401) return 'Token salah atau belum ada. Buka lewat link yang memuat ?token=...'
+  if (e?.response?.status === 401) return 'Password salah.'
   return Array.isArray(m) ? m.join(', ') : m || e?.message || 'Gagal'
 }
 
@@ -88,8 +104,15 @@ async function load(refresh = false) {
     cacheInfo.value = data.meta?.dari_cache ? `Dari cache (${new Date(data.meta.cached_at).toLocaleTimeString('id-ID')})` : ''
     rows.value = data.data as Row[]
     for (const r of rows.value) forms[r.objid] = initForm(r)
-  } catch (e) {
-    loadErr.value = errMsg(e)
+  } catch (e: any) {
+    if (e?.response?.status === 401) {
+      try { sessionStorage.removeItem('rekon_token') } catch { /* abaikan */ }
+      token.value = ''
+      butuhLogin.value = true
+      passErr.value = 'Password salah.'
+    } else {
+      loadErr.value = errMsg(e)
+    }
   } finally {
     loading.value = false
   }
@@ -101,7 +124,7 @@ function klikLuar(e: MouseEvent) {
 }
 function tekanKey(e: KeyboardEvent) { if (e.key === 'Escape') tutupSemuaPicker() }
 onMounted(() => {
-  load()
+  if (!butuhLogin.value) load(); else loading.value = false
   document.addEventListener('click', klikLuar)
   document.addEventListener('keydown', tekanKey)
 })
@@ -270,7 +293,13 @@ const statusKelas = (s: string) => {
     </header>
 
     <main class="rk-main">
-      <div v-if="loading" class="rk-state">
+      <form v-if="butuhLogin" class="rk-state rk-login" @submit.prevent="masuk">
+        <p><b>Rekonsiliasi PRTG</b><br />Masukkan password untuk melanjutkan.</p>
+        <input v-model="passInput" type="password" autocomplete="current-password" placeholder="Password" autofocus />
+        <p v-if="passErr" class="rk-login-err">{{ passErr }}</p>
+        <button class="btn btn-primary" type="submit">Masuk</button>
+      </form>
+      <div v-else-if="loading" class="rk-state">
         <div class="rk-spin"></div>
         <p>Mengambil data dari PRTG & ERP… (bisa ±30 detik)</p>
       </div>
@@ -397,6 +426,9 @@ const statusKelas = (s: string) => {
 .rk-chips button span { opacity: .8; margin-left: 2px; }
 .rk-chips button.on { background: #fff; color: var(--primary); font-weight: 600; }
 .rk-reload { font-size: 15px !important; }
+.rk-login { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.rk-login input { width: min(320px, 90%); padding: 10px 12px; font-size: 16px; border: 1px solid #cbd5e1; border-radius: 8px; }
+.rk-login-err { color: #dc2626; margin: 0; }
 
 /* Main */
 .rk-main { flex: 1; width: 100%; max-width: 1800px; margin: 0 auto; padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 10px; box-sizing: border-box; }
