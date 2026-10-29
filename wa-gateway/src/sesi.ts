@@ -112,8 +112,9 @@ export class Sesi {
       version,
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logBaileys) },
       logger: logBaileys,
-      // Identitas desktop → WhatsApp mengirim riwayat chat lengkap saat pertama ditautkan
-      browser: Browsers.macOS('Desktop'),
+      // Identitas Mac OS/Windows "Desktop" (aplikasi desktop asli) ditolak WhatsApp (428).
+      // Ubuntu Desktop diterima dan tetap meminta riwayat penuh (requireFullSync).
+      browser: Browsers.ubuntu('Desktop'),
       syncFullHistory: true,
       // Jangan tampil "online" terus — notifikasi di HP helpdesk tetap berbunyi
       markOnlineOnConnect: false,
