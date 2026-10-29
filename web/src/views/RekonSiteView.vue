@@ -3,14 +3,15 @@
 // Nama lurus: PRTG = "nama site" atau "nama site - keterangan"; ganti nama baku → site ERP & semua device site itu ikut berubah.
 // Backend: /api/prtg-rekon (aktif hanya bila PRTG_REKON_ENABLED=true).
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, promptDialog } from '@/composables/useDialog'
 import { useRekonApi, pesanError } from '@/composables/useRekonApi'
 
 const { http, butuhLogin, passInput, passErr, masuk, tanganiGagalLogin } = useRekonApi()
 
 interface Site {
   id_site: number; kode_site: string; nama_site: string
-  kota: string | null; provinsi: string | null; status_site: string
+  kota: string | null; provinsi: string | null; status_site: string; tgl_terminasi: string | null
+  _count?: { kontrak: number } // kontrak yang masih aktif
   pelanggan: { nama_pelanggan: string } | null
 }
 interface Rekon {
@@ -37,7 +38,7 @@ const cacheInfo = ref('')
 const mode = ref<'site' | 'sisa'>('site')
 const q = ref('')
 const holding = ref('')
-const status = ref<'semua' | 'aktif' | 'nonaktif'>('semua')
+const status = ref<'semua' | 'aktif' | 'dismantle' | 'nonaktif'>('semua')
 const tahap = ref<'semua' | 'kosong' | 'belum' | 'beres'>('semua')
 const batas = ref(30)
 
@@ -100,7 +101,9 @@ function target(d: Dev, s: Site): string {
 const kembarDiSite = (d: Dev, s: Site) => devSite(s).some((x) => x.objid !== d.objid && target(x, s) === target(d, s))
 const perluApply = (d: Dev, s: Site) => target(d, s) !== d.device_name || namaBaku(s).trim() !== s.nama_site
 const beres = (d: Dev, s: Site) => baku(d, s)
-function tahapSite(s: Site): 'kosong' | 'belum' | 'beres' {
+const isDismantle = (s: Site) => s.status_site === 'Dismantle'
+function tahapSite(s: Site): 'kosong' | 'belum' | 'beres' | 'dismantle' {
+  if (isDismantle(s)) return 'dismantle'
   const ds = devSite(s)
   if (!ds.length) return 'kosong'
   return ds.every((d) => beres(d, s)) ? 'beres' : 'belum'
@@ -122,17 +125,19 @@ const cakupan = computed(() =>
   sites.value.filter((s) => {
     if (holding.value && s.pelanggan?.nama_pelanggan !== holding.value) return false
     if (status.value === 'aktif' && !aktif(s)) return false
+    if (status.value === 'dismantle' && !isDismantle(s)) return false
     if (status.value === 'nonaktif' && aktif(s)) return false
     return true
   }),
 )
 const stats = computed(() => {
-  let kosong = 0, belum = 0, beresN = 0
+  // Site Dismantle tidak dihitung dalam progress kelurusan
+  let kosong = 0, belum = 0, beresN = 0, dismantle = 0
   for (const s of cakupan.value) {
     const t = tahapSite(s)
-    if (t === 'kosong') kosong++; else if (t === 'belum') belum++; else beresN++
+    if (t === 'kosong') kosong++; else if (t === 'belum') belum++; else if (t === 'beres') beresN++; else dismantle++
   }
-  return { total: cakupan.value.length, kosong, belum, beres: beresN }
+  return { total: cakupan.value.length - dismantle, kosong, belum, beres: beresN, dismantle }
 })
 const persen = computed(() => (stats.value.total ? Math.round((stats.value.beres / stats.value.total) * 100) : 0))
 
@@ -292,6 +297,86 @@ async function terapkan(s: Site, d: Dev) {
   }
 }
 
+// ── Dismantle site ───────────────────────────────────────────────────────────
+const siteUi = reactive<Record<number, Ui>>({})
+function flashSite(s: Site, msg: string, err = false) {
+  siteUi[s.id_site] = { busy: siteUi[s.id_site]?.busy ?? false, msg, err }
+}
+function terapkanHasilDevice(meta: any) {
+  for (const r of (meta?.ikut_rename ?? []) as { objid: number; ke: string }[]) {
+    const x = devs.value.find((v) => v.objid === r.objid)
+    if (x) { x.device_name = r.ke; delete ketEdit[x.objid] }
+  }
+}
+async function dismantle(s: Site) {
+  const hariIni = new Date().toISOString().slice(0, 10)
+  const tanggal = await promptDialog({
+    title: `Dismantle: ${s.nama_site}`,
+    label: 'Tanggal dismantle (YYYY-MM-DD)',
+    defaultValue: hariIni,
+    confirmLabel: 'Lanjut',
+  })
+  if (tanggal === null) return
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal.trim()) || isNaN(Date.parse(tanggal.trim()))) return flashSite(s, 'Format tanggal harus YYYY-MM-DD', true)
+  const catatan = await promptDialog({
+    title: `Dismantle: ${s.nama_site}`,
+    label: 'Catatan / alasan (opsional)',
+    placeholder: 'mis. tutup outlet, pindah lokasi…',
+    confirmLabel: 'Lanjut',
+  })
+  if (catatan === null) return
+  const nDev = devSite(s).length
+  const nKontrak = s._count?.kontrak ?? 0
+  const ok = await confirmDialog({
+    title: 'Dismantle site ini?',
+    message:
+      `${s.nama_site}\nTanggal: ${tanggal.trim()}\n\n` +
+      `• Status site di ERP → Dismantle\n` +
+      `• ${nDev} device PRTG di-pause & diberi awalan "[DISMANTLE] "` +
+      (nKontrak ? `\n\n⚠ Masih ada ${nKontrak} kontrak AKTIF untuk site ini — tagihan bisa tetap berjalan. Terminasi kontrak lewat menu Kontrak bila perlu.` : ''),
+    confirmLabel: 'Dismantle',
+    variant: 'danger',
+  })
+  if (!ok) return
+  siteUi[s.id_site] = { busy: true, msg: '', err: false }
+  try {
+    const { data } = await http.post(`/site/${s.id_site}/dismantle`, { tanggal: tanggal.trim(), catatan: catatan.trim() || undefined })
+    s.status_site = 'Dismantle'
+    s.tgl_terminasi = data.data?.tgl_terminasi ?? tanggal.trim()
+    for (const x of devs.value) if (x.site?.id_site === s.id_site) x.site.status_site = 'Dismantle'
+    terapkanHasilDevice(data.meta)
+    flashSite(s, data.message || 'Site di-dismantle', !!(data.meta?.gagal?.length))
+  } catch (e) {
+    if (!tanganiGagalLogin(e)) flashSite(s, pesanError(e), true)
+  } finally {
+    const u = siteUi[s.id_site]
+    if (u) u.busy = false
+  }
+}
+async function batalDismantle(s: Site) {
+  const ok = await confirmDialog({
+    title: 'Batalkan dismantle?',
+    message: `${s.nama_site}\n\n• Status site di ERP → Aktif\n• Device PRTG dilanjutkan & awalan "[DISMANTLE] " dibuang`,
+    confirmLabel: 'Batalkan dismantle',
+    variant: 'warning',
+  })
+  if (!ok) return
+  siteUi[s.id_site] = { busy: true, msg: '', err: false }
+  try {
+    const { data } = await http.post(`/site/${s.id_site}/batal-dismantle`)
+    s.status_site = 'Aktif'
+    s.tgl_terminasi = null
+    for (const x of devs.value) if (x.site?.id_site === s.id_site) x.site.status_site = 'Aktif'
+    terapkanHasilDevice(data.meta)
+    flashSite(s, data.message || 'Dismantle dibatalkan', !!(data.meta?.gagal?.length))
+  } catch (e) {
+    if (!tanganiGagalLogin(e)) flashSite(s, pesanError(e), true)
+  } finally {
+    const u = siteUi[s.id_site]
+    if (u) u.busy = false
+  }
+}
+
 const statusKelas = (s: string) => {
   const v = s.toLowerCase()
   if (v.includes('down')) return 'st-down'
@@ -335,7 +420,8 @@ onBeforeUnmount(() => {
         <select v-model="status" class="rs-select rs-select-s" title="Status site" @change="ubah">
           <option value="semua">Semua status</option>
           <option value="aktif">Aktif</option>
-          <option value="nonaktif">Nonaktif</option>
+          <option value="dismantle">Dismantle</option>
+          <option value="nonaktif">Selain Aktif</option>
         </select>
         <div class="rs-chips">
           <button :class="{ on: mode === 'site' && tahap === 'semua' }" @click="mode = 'site'; tahap = 'semua'; ubah()">Semua site <span>{{ stats.total }}</span></button>
@@ -399,16 +485,26 @@ onBeforeUnmount(() => {
                 <span class="mono">{{ s.kode_site }}</span>
                 <span v-if="s.pelanggan">{{ s.pelanggan.nama_pelanggan }}</span>
                 <span v-if="s.kota">{{ s.kota }}</span>
-                <span class="pill" :class="aktif(s) ? 'p-ok' : 'p-grey'">{{ s.status_site }}</span>
+                <span class="pill" :class="aktif(s) ? 'p-ok' : isDismantle(s) ? 'p-red' : 'p-grey'">{{ s.status_site }}<template v-if="isDismantle(s) && s.tgl_terminasi"> · {{ String(s.tgl_terminasi).slice(0, 10) }}</template></span>
+                <span v-if="s._count?.kontrak && isDismantle(s)" class="pill p-warn">{{ s._count.kontrak }} kontrak masih aktif</span>
                 <span v-if="devSite(s).length" class="pill p-blue">{{ devSite(s).length }} perangkat PRTG</span>
               </div>
             </div>
-            <span class="pill rs-tahap" :class="{ 'p-ok': tahapSite(s) === 'beres', 'p-warn': tahapSite(s) === 'belum', 'p-grey': tahapSite(s) === 'kosong' }">
-              {{ tahapSite(s) === 'beres' ? 'Lurus' : tahapSite(s) === 'belum' ? 'Belum lurus' : 'Belum ada device' }}
-            </span>
+            <div class="rs-head-act">
+              <span class="pill rs-tahap" :class="{ 'p-ok': tahapSite(s) === 'beres', 'p-warn': tahapSite(s) === 'belum', 'p-grey': tahapSite(s) === 'kosong', 'p-red': tahapSite(s) === 'dismantle' }">
+                {{ tahapSite(s) === 'beres' ? 'Lurus' : tahapSite(s) === 'belum' ? 'Belum lurus' : tahapSite(s) === 'dismantle' ? 'Dismantle' : 'Belum ada device' }}
+              </span>
+              <button v-if="!isDismantle(s)" class="btn btn-sm btn-danger-outline" :disabled="siteUi[s.id_site]?.busy" @click="dismantle(s)">
+                {{ siteUi[s.id_site]?.busy ? 'Memproses…' : 'Dismantle' }}
+              </button>
+              <button v-else class="btn btn-sm" :disabled="siteUi[s.id_site]?.busy" @click="batalDismantle(s)">
+                {{ siteUi[s.id_site]?.busy ? 'Memproses…' : 'Batalkan dismantle' }}
+              </button>
+            </div>
           </header>
+          <p v-if="siteUi[s.id_site]?.msg" class="rs-msg" :class="{ err: siteUi[s.id_site]?.err }">{{ siteUi[s.id_site]?.msg }}</p>
 
-          <div v-if="devSite(s).length" class="rs-baku">
+          <div v-if="devSite(s).length && !isDismantle(s)" class="rs-baku">
             <label class="rs-label" :for="'b' + s.id_site">Nama baku site (ERP &amp; PRTG)</label>
             <input
               :id="'b' + s.id_site" class="rs-input" :value="namaBaku(s)" maxlength="150"
@@ -424,6 +520,7 @@ onBeforeUnmount(() => {
               <div class="rs-label">
                 Device PRTG <span class="rs-obj">#{{ d.objid }}</span>
                 <span v-if="d.match_source === 'auto' && !d.rekon?.id_site" class="pill p-warn">usulan otomatis {{ d.match_score }}%</span>
+                <span v-else-if="isDismantle(s)" class="pill p-red">di-pause</span>
                 <span v-else-if="beres(d, s)" class="pill p-ok">lurus ✓</span>
               </div>
               <div class="rs-name">{{ d.device_name }}</div>
@@ -434,7 +531,7 @@ onBeforeUnmount(() => {
               </div>
               <p v-if="d.comments" class="rs-comment" :title="d.comments">{{ d.comments }}</p>
             </div>
-            <div class="rs-dev-act">
+            <div v-if="!isDismantle(s)" class="rs-dev-act">
               <label class="rs-label" :for="'k' + d.objid">Keterangan device <span class="rs-obj">(kosong = device utama)</span></label>
               <input
                 :id="'k' + d.objid" class="rs-input" :value="ketOf(d, s)" maxlength="60" placeholder="mis. Router, Modem, Switch, Mikrotik…"
@@ -459,7 +556,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="rs-add">
-            <button class="btn-link rs-pick-btn" @click="bukaPicker(s)">+ Pasang device PRTG ▾</button>
+            <button v-if="!isDismantle(s)" class="btn-link rs-pick-btn" @click="bukaPicker(s)">+ Pasang device PRTG ▾</button>
             <div v-if="pickerSite === s.id_site" class="rs-picker">
               <input v-model="pickQ" placeholder="Cari nama / IP device PRTG… (kosong = usulan termirip)" autofocus />
               <ul>
@@ -523,6 +620,11 @@ onBeforeUnmount(() => {
 .rs-card { background: var(--card); border: 1px solid var(--line); border-left: 5px solid #cbd5e1; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .rs-card.t-beres { background: #f0fdf4; border-color: #86efac; border-left-color: var(--ok); }
 .rs-card.t-belum { border-left-color: #f59e0b; }
+.rs-card.t-dismantle { background: #f8fafc; border-left-color: #94a3b8; opacity: .85; }
+.rs-head-act { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn-sm { padding: 5px 10px; font-size: 13px; }
+.btn-danger-outline { border-color: #fca5a5; color: #dc2626; }
+.p-red { background: #fee2e2; color: #dc2626; }
 .rs-card-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
 .rs-card-title { min-width: 0; }
 .rs-name { font-size: 15px; font-weight: 600; word-break: break-word; }

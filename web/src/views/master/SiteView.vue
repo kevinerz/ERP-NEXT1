@@ -40,11 +40,11 @@ const formError = ref('')
 const successMsg = ref('')
 const copiedKode = ref('')
 
-const STATUS_SITE = ['Prospek', 'Aktif', 'Terminasi', 'Suspend']
+const STATUS_SITE = ['Prospek', 'Aktif', 'Dismantle', 'Suspend']
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Aktif:     { bg: '#f0fdf4', color: '#15803d' },
   Prospek:   { bg: '#eff6ff', color: '#1d4ed8' },
-  Terminasi: { bg: '#fef2f2', color: '#dc2626' },
+  Dismantle: { bg: '#fef2f2', color: '#dc2626' },
   Suspend:   { bg: '#fef9c3', color: '#a16207' },
 }
 const grupColors = ['#1d4ed8', '#0891b2', '#7c3aed', '#0f766e', '#b45309', '#be185d', '#047857', '#c2410c']
@@ -220,13 +220,13 @@ async function copyKode(kode: string, e: Event) {
 // ─── Status summary ──────────────────────────────────────────
 const statusSummary = computed(() => {
   if (viewMode.value === 'grup') {
-    const c: Record<string, number> = { Prospek: 0, Aktif: 0, Terminasi: 0, Suspend: 0 }
+    const c: Record<string, number> = { Prospek: 0, Aktif: 0, Dismantle: 0, Suspend: 0 }
     master.siteAllList.forEach(s => { if (c[s.status_site] !== undefined) c[s.status_site]++ })
     return c
   }
   const sc = master.siteMeta.status_counts
   if (sc && Object.values(sc).some(v => v > 0)) return sc
-  const c: Record<string, number> = { Prospek: 0, Aktif: 0, Terminasi: 0, Suspend: 0 }
+  const c: Record<string, number> = { Prospek: 0, Aktif: 0, Dismantle: 0, Suspend: 0 }
   master.siteList.forEach((s: any) => { if (c[s.status_site] !== undefined) c[s.status_site]++ })
   return c
 })

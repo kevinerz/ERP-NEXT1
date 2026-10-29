@@ -165,7 +165,7 @@ export class ContractsService {
       if (kontrakAktifLain === 0) {
         await tx.sitePelanggan.update({
           where: { id_site: row.id_site },
-          data: { status_site: 'Terminasi', tgl_terminasi: new Date(dto.tanggal_terminasi) },
+          data: { status_site: 'Dismantle', tgl_terminasi: new Date(dto.tanggal_terminasi) },
         });
       }
       return updated;

@@ -120,6 +120,14 @@ export class PrtgClient {
     if (!res.ok) throw new Error(`PRTG rename error ${res.status}`);
   }
 
+  // Pause (jeda=true) / lanjutkan (jeda=false) monitoring object PRTG — dipakai saat site di-dismantle
+  async pauseObject(objid: number, jeda: boolean, pesan = ''): Promise<void> {
+    const q = `id=${objid}&action=${jeda ? 0 : 1}${jeda && pesan ? `&pausemsg=${encodeURIComponent(pesan)}` : ''}`;
+    const url = await this.authedUrl(`/api/pause.htm?${q}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`PRTG pause error ${res.status}`);
+  }
+
   // Semua sensor tanpa filter status — buat halaman audit/daftar device
   async getAllSensors(): Promise<PrtgSensor[]> {
     const url = await this.authedUrl(`/api/table.json?content=sensors&columns=objid,sensor,device,status,message&count=${PrtgClient.MAX_COUNT}`);

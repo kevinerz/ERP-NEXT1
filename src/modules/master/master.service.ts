@@ -363,7 +363,7 @@ export class MasterService {
         where: query.id_pelanggan ? { id_pelanggan: Number(query.id_pelanggan) } : {},
       }),
     ]);
-    const status_counts: Record<string, number> = { Prospek: 0, Aktif: 0, Terminasi: 0, Suspend: 0 };
+    const status_counts: Record<string, number> = { Prospek: 0, Aktif: 0, Dismantle: 0, Suspend: 0 };
     statusGroups.forEach((g: any) => { status_counts[g.status_site] = g._count.status_site; });
     return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit), status_counts } };
   }

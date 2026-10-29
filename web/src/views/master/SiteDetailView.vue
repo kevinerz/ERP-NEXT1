@@ -61,7 +61,7 @@ const LINK_COLOR: Record<string, { bg: string; color: string }> = {
 const SITE_STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Aktif:     { bg: '#f0fdf4', color: '#15803d' },
   Prospek:   { bg: '#eff6ff', color: '#1d4ed8' },
-  Terminasi: { bg: '#fef2f2', color: '#dc2626' },
+  Dismantle: { bg: '#fef2f2', color: '#dc2626' },
   Suspend:   { bg: '#fef9c3', color: '#a16207' },
 }
 

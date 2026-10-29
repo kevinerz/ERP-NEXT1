@@ -158,7 +158,7 @@ function mapsRouteLink(gps: string | null) {
                 <span class="sl-info-val">{{ fmtDate(site.tgl_aktif) }}</span>
               </div>
               <div class="sl-info-item" v-if="site.tgl_terminasi">
-                <span class="sl-info-key">Tgl Terminasi</span>
+                <span class="sl-info-key">Tgl Dismantle</span>
                 <span class="sl-info-val">{{ fmtDate(site.tgl_terminasi) }}</span>
               </div>
               <div class="sl-info-item" v-if="site.koordinat_gps">

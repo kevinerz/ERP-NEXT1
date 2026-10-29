@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 // Panjang mengikuti kolom DB site_pelanggan / prtg_rekonsiliasi
 export class SimpanRekonDto {
@@ -24,4 +24,9 @@ export class TerapkanNamaDto {
   // Nama baku site (ERP & PRTG). Berbeda dari nama_site sekarang → nama site ERP ikut diubah
   // dan device lain milik site ini ikut di-rename di PRTG. Kosong = nama site tetap.
   @IsOptional() @IsString() @MaxLength(150) nama_site?: string;
+}
+
+export class DismantleDto {
+  @IsDateString() tanggal: string;
+  @IsOptional() @IsString() @MaxLength(1000) catatan?: string;
 }

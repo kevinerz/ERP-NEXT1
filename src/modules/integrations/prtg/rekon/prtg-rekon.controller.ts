@@ -3,7 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../../../common/decorators/public.decorator';
 import { PrtgRekonService } from './prtg-rekon.service';
 import { RekonTokenGuard } from './rekon-token.guard';
-import { SimpanRekonDto, TerapkanNamaDto, ToggleDoneDto } from './rekon.dto';
+import { DismantleDto, SimpanRekonDto, TerapkanNamaDto, ToggleDoneDto } from './rekon.dto';
 
 // Halaman SEMENTARA tanpa login — rekonsiliasi nama PRTG ↔ site ERP.
 // Mati total kecuali env PRTG_REKON_ENABLED=true dan PRTG_REKON_TOKEN terisi (selain itu 404);
@@ -67,5 +67,21 @@ export class PrtgRekonController {
   @Post(':objid/terapkan')
   terapkan(@Param('objid', ParseIntPipe) objid: number, @Body() dto: TerapkanNamaDto) {
     return this.rekon.terapkanNama(objid, dto.id_site, dto.nama, dto.nama_site);
+  }
+
+  // POST /api/prtg-rekon/site/:id_site/dismantle — status site Dismantle + device PRTG di-pause & diberi awalan nama
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @Post('site/:id_site/dismantle')
+  dismantle(@Param('id_site', ParseIntPipe) id_site: number, @Body() dto: DismantleDto) {
+    return this.rekon.dismantle(id_site, dto.tanggal, dto.catatan);
+  }
+
+  // POST /api/prtg-rekon/site/:id_site/batal-dismantle — kembalikan site Aktif + device PRTG dilanjutkan & awalan dibuang
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @Post('site/:id_site/batal-dismantle')
+  batalDismantle(@Param('id_site', ParseIntPipe) id_site: number) {
+    return this.rekon.batalDismantle(id_site);
   }
 }

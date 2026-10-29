@@ -9,6 +9,10 @@ import { SimpanRekonDto } from './rekon.dto';
  * Diakses dari halaman publik /rekon-prtg — dinyalakan lewat env PRTG_REKON_ENABLED=true.
  * Apply = rename device di PRTG + update site ERP + mapping manual ikut nama baru.
  */
+// Awalan nama device PRTG untuk site yang sudah di-dismantle
+const AWALAN_DISMANTLE = '[DISMANTLE] ';
+const KONTRAK_AKTIF = ['Aktif', 'Akan_Berakhir'];
+
 @Injectable()
 export class PrtgRekonService implements OnApplicationBootstrap {
   private readonly logger = new Logger('PrtgRekon');
@@ -134,8 +138,9 @@ export class PrtgRekonService implements OnApplicationBootstrap {
     this.assertEnabled();
     const data = await this.prisma.sitePelanggan.findMany({
       select: {
-        id_site: true, kode_site: true, nama_site: true, kota: true, provinsi: true, status_site: true,
+        id_site: true, kode_site: true, nama_site: true, kota: true, provinsi: true, status_site: true, tgl_terminasi: true,
         pelanggan: { select: { nama_pelanggan: true } },
+        _count: { select: { kontrak: { where: { status_kontrak: { in: KONTRAK_AKTIF } } } } },
       },
       orderBy: { nama_site: 'asc' },
     });
@@ -357,5 +362,112 @@ export class PrtgRekonService implements OnApplicationBootstrap {
         dilewati,
       },
     };
+  }
+
+  // Device PRTG milik site: mapping manual + pilihan di halaman rekon, dicocokkan ke objid lewat cache preview
+  private async deviceMilikSite(id_site: number): Promise<{ objid: number; nama: string }[]> {
+    const cache = (await this.ambilPreview(false)).data;
+    const [mappings, rekon] = await Promise.all([
+      this.prisma.integrationPrtgMapping.findMany({ where: { id_site } }),
+      this.prisma.prtgRekonsiliasi.findMany({ where: { id_site } }),
+    ]);
+    const hasil = new Map<number, string>();
+    for (const m of mappings) {
+      const d = cache.find((x) => x.device_name === m.device_name);
+      if (d) hasil.set(d.objid, d.device_name);
+    }
+    for (const r of rekon) {
+      const d = cache.find((x) => x.objid === r.prtg_objid);
+      if (d) hasil.set(d.objid, d.device_name);
+    }
+    return [...hasil.entries()].map(([objid, nama]) => ({ objid, nama }));
+  }
+
+  // Ganti nama device PRTG + pause/lanjutkan; mapping ERP ikut nama baru. Gagal per device dicatat, tidak menghentikan yang lain.
+  private async ubahDeviceDismantle(id_site: number, devices: { objid: number; nama: string }[], dismantle: boolean, pesan: string) {
+    const sukses: { objid: number; dari: string; ke: string }[] = [];
+    const gagal: string[] = [];
+    for (const d of devices) {
+      const ke = dismantle
+        ? (d.nama.startsWith(AWALAN_DISMANTLE) ? d.nama : AWALAN_DISMANTLE + d.nama)
+        : (d.nama.startsWith(AWALAN_DISMANTLE) ? d.nama.slice(AWALAN_DISMANTLE.length) : d.nama);
+      if (ke.length > 150) { gagal.push(`${d.nama} (nama terlalu panjang)`); continue; }
+      try {
+        if (ke !== d.nama) await this.prtg.renameObject(d.objid, ke);
+        await this.prtg.pauseObject(d.objid, dismantle, pesan);
+        sukses.push({ objid: d.objid, dari: d.nama, ke });
+      } catch (e: any) {
+        gagal.push(`${d.nama} (${e?.message ?? e})`);
+      }
+    }
+    const ops: any[] = [];
+    for (const x of sukses.filter((x) => x.dari !== x.ke)) {
+      ops.push(
+        this.prisma.integrationPrtgMapping.deleteMany({ where: { device_name: x.dari } }),
+        this.prisma.integrationPrtgMapping.upsert({
+          where: { device_name: x.ke },
+          create: { device_name: x.ke, id_site },
+          update: { id_site },
+        }),
+      );
+      const c = this.previewCache?.data.find((d) => d.objid === x.objid);
+      if (c) c.device_name = x.ke;
+    }
+    return { sukses, gagal, ops };
+  }
+
+  /**
+   * Dismantle site: status_site → 'Dismantle' + tgl_terminasi, catatan dicatat; device PRTG milik site
+   * di-pause dan diberi awalan "[DISMANTLE] ". Kontrak yang masih aktif TIDAK diubah (hanya diperingatkan di halaman).
+   */
+  async dismantle(id_site: number, tanggal: string, catatan?: string) {
+    this.assertEnabled();
+    const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site } });
+    if (!site) throw new NotFoundException('Site ERP tidak ditemukan');
+    if (site.status_site === 'Dismantle') throw new BadRequestException('Site sudah berstatus Dismantle');
+    const tgl = new Date(tanggal);
+    if (isNaN(tgl.getTime())) throw new BadRequestException('Tanggal dismantle tidak valid');
+
+    const devices = await this.deviceMilikSite(id_site);
+    const { sukses, gagal, ops } = await this.ubahDeviceDismantle(id_site, devices, true, `Dismantle ${tanggal}`);
+
+    const tglStr = tgl.toISOString().slice(0, 10);
+    const baris = `[Dismantle ${tglStr}] status sebelumnya: ${site.status_site}${catatan?.trim() ? ` — ${catatan.trim()}` : ''}`;
+    ops.push(this.prisma.sitePelanggan.update({
+      where: { id_site },
+      data: { status_site: 'Dismantle', tgl_terminasi: tgl, catatan: site.catatan ? `${site.catatan}\n${baris}` : baris },
+    }));
+    await this.prisma.$transaction(ops);
+
+    const kontrakAktif = await this.prisma.kontrakLayanan.count({ where: { id_site, status_kontrak: { in: KONTRAK_AKTIF } } });
+    this.logger.log(`DISMANTLE site#${id_site} '${site.nama_site}' (${site.status_site} -> Dismantle); PRTG ok ${sukses.length}, gagal ${gagal.length}; kontrak aktif ${kontrakAktif}`);
+
+    let message = `Site di-dismantle; ${sukses.length} device PRTG di-pause`;
+    if (gagal.length) message += `; ${gagal.length} device gagal, cek manual`;
+    if (kontrakAktif) message += `; ${kontrakAktif} kontrak masih aktif`;
+    return { data: { id_site, status_site: 'Dismantle', tgl_terminasi: tglStr }, message, meta: { ikut_rename: sukses, gagal, kontrak_aktif: kontrakAktif } };
+  }
+
+  // Batalkan dismantle: site kembali Aktif, device PRTG dilanjutkan dan awalan nama dibuang
+  async batalDismantle(id_site: number) {
+    this.assertEnabled();
+    const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site } });
+    if (!site) throw new NotFoundException('Site ERP tidak ditemukan');
+    if (site.status_site !== 'Dismantle') throw new BadRequestException('Site tidak berstatus Dismantle');
+
+    const devices = await this.deviceMilikSite(id_site);
+    const { sukses, gagal, ops } = await this.ubahDeviceDismantle(id_site, devices, false, '');
+
+    const baris = `[Batal dismantle ${new Date().toISOString().slice(0, 10)}] status kembali Aktif`;
+    ops.push(this.prisma.sitePelanggan.update({
+      where: { id_site },
+      data: { status_site: 'Aktif', tgl_terminasi: null, catatan: site.catatan ? `${site.catatan}\n${baris}` : baris },
+    }));
+    await this.prisma.$transaction(ops);
+    this.logger.log(`BATAL DISMANTLE site#${id_site} '${site.nama_site}'; PRTG ok ${sukses.length}, gagal ${gagal.length}`);
+
+    let message = `Dismantle dibatalkan; site Aktif lagi, ${sukses.length} device PRTG dilanjutkan`;
+    if (gagal.length) message += `; ${gagal.length} device gagal, cek manual`;
+    return { data: { id_site, status_site: 'Aktif' }, message, meta: { ikut_rename: sukses, gagal } };
   }
 }
