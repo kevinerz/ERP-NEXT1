@@ -3,7 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../../../common/decorators/public.decorator';
 import { PrtgRekonService } from './prtg-rekon.service';
 import { RekonTokenGuard } from './rekon-token.guard';
-import { SimpanRekonDto, ToggleDoneDto } from './rekon.dto';
+import { SimpanRekonDto, TerapkanNamaDto, ToggleDoneDto } from './rekon.dto';
 
 // Halaman SEMENTARA tanpa login — rekonsiliasi nama PRTG ↔ site ERP.
 // Mati total kecuali env PRTG_REKON_ENABLED=true dan PRTG_REKON_TOKEN terisi (selain itu 404);
@@ -19,6 +19,14 @@ export class PrtgRekonController {
   @Get()
   list(@Query('refresh') refresh?: string) {
     return this.rekon.list(refresh === '1');
+  }
+
+  // GET /api/prtg-rekon/semua-site — seluruh site ERP (tampilan per-site)
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @Get('semua-site')
+  semuaSite() {
+    return this.rekon.semuaSite();
   }
 
   // GET /api/prtg-rekon/sites?q=
@@ -51,5 +59,13 @@ export class PrtgRekonController {
   @Post(':objid/apply')
   apply(@Param('objid', ParseIntPipe) objid: number, @Body() dto: SimpanRekonDto) {
     return this.rekon.apply(objid, dto);
+  }
+
+  // POST /api/prtg-rekon/:objid/terapkan — rename device PRTG ke nama target + pasangkan ke site (ERP tidak diubah)
+  @Public()
+  @Throttle({ default: { ttl: 60000, limit: 30 } })
+  @Post(':objid/terapkan')
+  terapkan(@Param('objid', ParseIntPipe) objid: number, @Body() dto: TerapkanNamaDto) {
+    return this.rekon.terapkanNama(objid, dto.id_site, dto.nama);
   }
 }

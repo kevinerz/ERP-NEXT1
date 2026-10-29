@@ -24,9 +24,16 @@ const router = createRouter({
       meta: { public: true },
     },
     // Halaman SEMENTARA tanpa login: rekonsiliasi nama PRTG ↔ site ERP
+    // Utama: per site (ERP sebagai acuan). Cadangan: per device PRTG.
     {
       path: '/rekon-prtg',
       name: 'rekon-prtg',
+      component: () => import('@/views/RekonSiteView.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/rekon-prtg/device',
+      name: 'rekon-prtg-device',
       component: () => import('@/views/RekonPrtgView.vue'),
       meta: { public: true },
     },

@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 // Panjang mengikuti kolom DB site_pelanggan / prtg_rekonsiliasi
 export class SimpanRekonDto {
@@ -16,4 +16,9 @@ export class SimpanRekonDto {
 export class ToggleDoneDto {
   @IsBoolean() done: boolean;
   @IsOptional() @IsString() @MaxLength(150) device_name?: string;
+}
+
+export class TerapkanNamaDto {
+  @IsInt() @Min(1) id_site: number;
+  @IsString() @MaxLength(150) nama: string;
 }
