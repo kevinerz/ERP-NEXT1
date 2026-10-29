@@ -71,6 +71,12 @@ export class PrtgRekonService implements OnApplicationBootstrap {
     return otomatis ?? null;
   }
 
+  // Tebakan otomatis (nama/IP mirip) TIDAK dipasang ke site — hanya mapping manual yang dianggap terhubung.
+  // Pencocokan dilakukan manual 1/1 lewat halaman rekon.
+  private siteManual(p: { match_source: string | null; id_site: number | null }): number | null {
+    return p.match_source === 'manual' ? p.id_site : null;
+  }
+
   async list(refresh = false) {
     this.assertEnabled();
     const [{ data: preview, at, dariCache }, rekon] = await Promise.all([
@@ -82,7 +88,7 @@ export class PrtgRekonService implements OnApplicationBootstrap {
     // id_site efektif: pilihan di halaman rekon > hasil match PRTG
     const siteIds = new Set<number>();
     for (const p of preview) {
-      const id = this.idSiteEfektif(rekonByObjid.get(p.objid), p.id_site);
+      const id = this.idSiteEfektif(rekonByObjid.get(p.objid), this.siteManual(p));
       if (id) siteIds.add(id);
     }
     const sites = await this.prisma.sitePelanggan.findMany({
@@ -93,7 +99,7 @@ export class PrtgRekonService implements OnApplicationBootstrap {
 
     const data = preview.map((p) => {
       const r = rekonByObjid.get(p.objid) ?? null;
-      const id_site = this.idSiteEfektif(r, p.id_site);
+      const id_site = this.idSiteEfektif(r, this.siteManual(p));
       return {
         objid: p.objid,
         device_name: p.device_name,
