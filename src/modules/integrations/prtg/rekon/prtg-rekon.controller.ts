@@ -61,11 +61,11 @@ export class PrtgRekonController {
     return this.rekon.apply(objid, dto);
   }
 
-  // POST /api/prtg-rekon/:objid/terapkan — rename device PRTG ke nama target + pasangkan ke site (ERP tidak diubah)
+  // POST /api/prtg-rekon/:objid/terapkan — rename device PRTG + pasangkan ke site; ubah_site=true → nama_site ERP ikut berubah
   @Public()
   @Throttle({ default: { ttl: 60000, limit: 30 } })
   @Post(':objid/terapkan')
   terapkan(@Param('objid', ParseIntPipe) objid: number, @Body() dto: TerapkanNamaDto) {
-    return this.rekon.terapkanNama(objid, dto.id_site, dto.nama);
+    return this.rekon.terapkanNama(objid, dto.id_site, dto.nama, dto.ubah_site === true);
   }
 }

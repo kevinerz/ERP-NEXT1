@@ -21,4 +21,6 @@ export class ToggleDoneDto {
 export class TerapkanNamaDto {
   @IsInt() @Min(1) id_site: number;
   @IsString() @MaxLength(150) nama: string;
+  // true = nama_site di ERP ikut diubah menjadi `nama` (data PRTG & ERP sama); snapshot lama disimpan di site_awal
+  @IsOptional() @IsBoolean() ubah_site?: boolean;
 }

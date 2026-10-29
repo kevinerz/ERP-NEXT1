@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Halaman SEMENTARA tanpa login — rekonsiliasi per SITE (ERP sebagai acuan).
-// Pilih device PRTG untuk tiap site; Apply hanya me-rename device PRTG (data site ERP tidak diubah).
+// Pilih device PRTG untuk tiap site; Apply me-rename device PRTG, dan bila nama target ≠ nama site, nama site ERP ikut diubah.
 // Backend: /api/prtg-rekon (aktif hanya bila PRTG_REKON_ENABLED=true).
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { confirmDialog } from '@/composables/useDialog'
@@ -234,9 +234,14 @@ async function terapkan(s: Site, d: Dev) {
   const nama = target(d, s).trim()
   if (!nama) return flash(d, 'Nama target wajib diisi', true)
   if (nama === s.nama_site + ' -' || nama === s.nama_site + ' - ') return flash(d, 'Lengkapi keterangan setelah " - "', true)
+  // Nama target selain nama site (atau "nama site - keterangan") → nama site di ERP ikut diubah supaya data sama
+  const ubahSite = nama !== s.nama_site && !nama.startsWith(s.nama_site + ' - ')
   const ok = await confirmDialog({
-    title: 'Rename device di PRTG?',
-    message: `Site ERP: ${s.nama_site}\n\nPRTG sekarang:\n${d.device_name}\n\nmenjadi:\n${nama}\n\n(Data site di ERP tidak diubah)`,
+    title: ubahSite ? 'Rename di PRTG dan ERP?' : 'Rename device di PRTG?',
+    message: `PRTG sekarang:\n${d.device_name}\n\nmenjadi:\n${nama}\n\n` +
+      (ubahSite
+        ? `Nama site di ERP juga diubah:\n${s.nama_site}\n→ ${nama}`
+        : `(Nama site di ERP tetap: ${s.nama_site})`),
     confirmLabel: 'Apply',
     variant: 'warning',
   })
@@ -245,13 +250,18 @@ async function terapkan(s: Site, d: Dev) {
   if (u) u.busy = true
   flash(d, '')
   try {
-    const { data } = await http.post(`/${d.objid}/terapkan`, { id_site: s.id_site, nama })
+    const { data } = await http.post(`/${d.objid}/terapkan`, { id_site: s.id_site, nama, ubah_site: ubahSite })
     d.device_name = nama
     d.rekon = data.data as Rekon
     d.match_source = 'manual'
     d.match_score = 100
     delete edit[d.objid]
-    flash(d, 'Nama PRTG sudah diperbarui')
+    if (ubahSite) {
+      // Samakan nama site di semua salinan lokal (daftar site & device yang menunjuk site ini)
+      for (const x of sites.value) if (x.id_site === s.id_site) x.nama_site = nama
+      for (const x of devs.value) if (x.site?.id_site === s.id_site) x.site.nama_site = nama
+    }
+    flash(d, ubahSite ? 'Nama PRTG dan nama site ERP sudah diperbarui' : 'Nama PRTG sudah diperbarui')
   } catch (e) {
     if (!tanganiGagalLogin(e)) flash(d, pesanError(e), true)
   } finally {
@@ -285,7 +295,7 @@ onBeforeUnmount(() => {
       <div class="rs-head-inner">
         <div class="rs-title">
           <h1>Rekonsiliasi PRTG per Site</h1>
-          <p>Acuan: nama <b>site</b> &amp; <b>PT holding</b> di ERP. Pilih device PRTG untuk tiap site, lalu <b>Apply</b> me-rename device di PRTG. Data site ERP tidak diubah.</p>
+          <p>Acuan: nama <b>site</b> &amp; <b>PT holding</b> di ERP. Pilih device PRTG untuk tiap site, lalu <b>Apply</b> me-rename device di PRTG. Bila nama target berbeda dari nama site, nama site di ERP <b>ikut diubah</b> (data sama).</p>
         </div>
         <div class="rs-progress" v-if="!loading && !loadErr && !butuhLogin">
           <div class="rs-progress-num"><b>{{ stats.beres }}</b> / {{ stats.total }} site beres · {{ persen }}%</div>

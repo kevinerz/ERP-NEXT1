@@ -228,10 +228,11 @@ export class PrtgRekonService implements OnApplicationBootstrap {
   }
 
   /**
-   * Mode "ERP sebagai acuan": device PRTG di-rename mengikuti nama target, lalu dipasangkan ke site.
-   * Tabel site ERP TIDAK diubah. Satu site boleh punya banyak device (nama device harus unik di PRTG).
+   * Mode per-site: device PRTG di-rename mengikuti nama target, lalu dipasangkan ke site.
+   * ubahSite=true → nama_site di ERP ikut diubah ke nama target (data sama); kondisi site sebelumnya disimpan di site_awal.
+   * Satu site boleh punya banyak device (nama device harus unik di PRTG).
    */
-  async terapkanNama(objid: number, id_site: number, namaTarget: string) {
+  async terapkanNama(objid: number, id_site: number, namaTarget: string, ubahSite = false) {
     this.assertEnabled();
     const nama = (namaTarget || '').trim();
     if (!nama) throw new BadRequestException('Nama di PRTG wajib diisi');
@@ -251,7 +252,13 @@ export class PrtgRekonService implements OnApplicationBootstrap {
 
     const ada = await this.prisma.prtgRekonsiliasi.findUnique({ where: { prtg_objid: objid } });
     const awal = ada?.device_name_awal ?? namaSekarang;
-    const [, , data] = await this.prisma.$transaction([
+    const ubahNamaSite = ubahSite && site.nama_site !== nama;
+    // Snapshot site sebelum ditimpa (hanya sekali, supaya data asli tidak hilang)
+    const siteAwal = ubahNamaSite && !ada?.site_awal
+      ? { id_site: site.id_site, nama_site: site.nama_site, kota: site.kota, provinsi: site.provinsi, alamat_lengkap: site.alamat_lengkap, koordinat_gps: site.koordinat_gps }
+      : undefined;
+    const rekonData = { id_site, nama_baru: nama, applied_at: new Date(), is_done: true, done_at: new Date(), ...(siteAwal ? { site_awal: siteAwal } : {}) };
+    const ops: any[] = [
       this.prisma.integrationPrtgMapping.deleteMany({
         where: { device_name: { in: [namaSekarang, awal] }, NOT: { device_name: nama } },
       }),
@@ -262,15 +269,19 @@ export class PrtgRekonService implements OnApplicationBootstrap {
       }),
       this.prisma.prtgRekonsiliasi.upsert({
         where: { prtg_objid: objid },
-        create: { prtg_objid: objid, device_name_awal: awal, id_site, nama_baru: nama, applied_at: new Date(), is_done: true, done_at: new Date() },
-        update: { id_site, nama_baru: nama, applied_at: new Date(), is_done: true, done_at: new Date() },
+        create: { prtg_objid: objid, device_name_awal: awal, ...rekonData },
+        update: rekonData,
       }),
-    ]);
+    ];
+    if (ubahNamaSite) ops.push(this.prisma.sitePelanggan.update({ where: { id_site }, data: { nama_site: nama } }));
+    const hasil = await this.prisma.$transaction(ops);
+    const data = hasil[2];
 
     const cached = this.previewCache?.data.find((d) => d.objid === objid);
     if (cached) Object.assign(cached, { device_name: nama, id_site, match_source: 'manual', match_score: 100 });
 
-    this.logger.log(`TERAPKAN objid=${objid} PRTG "${namaSekarang}" → "${nama}"; site#${site.id_site} "${site.nama_site}" (ERP tidak diubah)`);
+    const ketERP = ubahNamaSite ? `nama_site ERP '${site.nama_site}' -> '${nama}'` : 'ERP tidak diubah';
+    this.logger.log(`TERAPKAN objid=${objid} PRTG '${namaSekarang}' -> '${nama}'; site#${site.id_site}; ${ketERP}`);
     return { data, message: 'Nama device PRTG sudah diperbarui' };
   }
 }
