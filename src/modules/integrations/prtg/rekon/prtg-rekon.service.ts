@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicationBootstrap } from '@nestjs/common';
 import { PrismaService } from '../../../../prisma/prisma.service';
 import { PrtgService } from '../prtg.service';
 import { PrtgClient } from '../prtg.client';
@@ -10,7 +10,7 @@ import { SimpanRekonDto } from './rekon.dto';
  * Apply = rename device di PRTG + update site ERP + mapping manual ikut nama baru.
  */
 @Injectable()
-export class PrtgRekonService {
+export class PrtgRekonService implements OnApplicationBootstrap {
   private readonly logger = new Logger('PrtgRekon');
 
   constructor(private prisma: PrismaService, private prtgService: PrtgService, private prtg: PrtgClient) {}
@@ -31,11 +31,18 @@ export class PrtgRekonService {
   private previewCache: { at: number; data: any[] } | null = null;
   private previewInflight: Promise<any[]> | null = null;
 
-  private async ambilPreview(paksa: boolean): Promise<{ data: any[]; at: number; dariCache: boolean }> {
-    const c = this.previewCache;
-    if (!paksa && c && Date.now() - c.at < PrtgRekonService.CACHE_TTL_MS) {
-      return { data: c.data, at: c.at, dariCache: true };
-    }
+  // Pemanasan cache saat start (latar belakang, tidak menghambat startup) — hanya bila halaman rekon menyala
+  onApplicationBootstrap() {
+    if (process.env.PRTG_REKON_ENABLED !== 'true') return;
+    setTimeout(() => {
+      this.ambilPreview(true)
+        .then(() => this.logger.log('Cache preview rekon terisi (pemanasan saat start)'))
+        .catch((e) => this.logger.warn(`Pemanasan cache rekon gagal: ${e?.message ?? e}`));
+    }, 5000);
+  }
+
+  // Stale-while-revalidate: cache basi tetap dipakai langsung, sambil diperbarui di latar belakang
+  private segarkan(): Promise<any[]> {
     this.previewInflight ??= this.prtgService
       .getProvisionPreview()
       .then((r) => {
@@ -43,7 +50,18 @@ export class PrtgRekonService {
         return r.data;
       })
       .finally(() => { this.previewInflight = null; });
-    const data = await this.previewInflight;
+    return this.previewInflight;
+  }
+
+  private async ambilPreview(paksa: boolean): Promise<{ data: any[]; at: number; dariCache: boolean }> {
+    const c = this.previewCache;
+    if (!paksa && c) {
+      if (Date.now() - c.at >= PrtgRekonService.CACHE_TTL_MS) {
+        this.segarkan().catch((e) => this.logger.warn(`Penyegaran cache rekon gagal: ${e?.message ?? e}`));
+      }
+      return { data: c.data, at: c.at, dariCache: true };
+    }
+    const data = await this.segarkan();
     return { data, at: this.previewCache!.at, dariCache: false };
   }
 
