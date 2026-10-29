@@ -151,6 +151,17 @@ const stats = computed(() => {
 })
 const persen = computed(() => (stats.value.total ? Math.round((stats.value.selesai / stats.value.total) * 100) : 0))
 
+// Filter grup: PT holding = nama pelanggan dari site ERP yang terhubung (mis. Kopi Kenangan → PT Bumi Berkah Boga)
+const holding = ref('')
+const daftarHolding = computed(() => {
+  const hitung = new Map<string, number>()
+  for (const r of rows.value) {
+    const n = r.site?.pelanggan?.nama_pelanggan
+    if (n) hitung.set(n, (hitung.get(n) ?? 0) + 1)
+  }
+  return [...hitung.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+})
+
 const tersaring = computed(() => {
   const kata = q.value.trim().toLowerCase()
   return rows.value.filter((r) => {
@@ -158,6 +169,7 @@ const tersaring = computed(() => {
     if (filter.value === 'selesai' && !isDone(r)) return false
     if (filter.value === 'beda' && !(r.site && beda(r))) return false
     if (filter.value === 'nomatch' && r.site) return false
+    if (holding.value && r.site?.pelanggan?.nama_pelanggan !== holding.value) return false
     if (!kata) return true
     return [r.device_name, r.ip_address, r.site?.nama_site, r.site?.kode_site, r.site?.pelanggan?.nama_pelanggan, forms[r.objid]?.nama_baru]
       .some((v) => v && v.toLowerCase().includes(kata))
@@ -281,6 +293,10 @@ const statusKelas = (s: string) => {
 
       <div class="rk-tools" v-if="!loading && !loadErr">
         <input v-model="q" class="rk-search" type="search" placeholder="Cari device, IP, site, kode, pelanggan…" @input="batas = 40" />
+        <select v-model="holding" class="rk-holding" title="Filter grup berdasarkan PT holding" @change="batas = 40">
+          <option value="">Semua PT holding</option>
+          <option v-for="[nama, jml] in daftarHolding" :key="nama" :value="nama">{{ nama }} ({{ jml }})</option>
+        </select>
         <div class="rk-chips">
           <button :class="{ on: filter === 'belum' }" @click="filter = 'belum'; batas = 40">Belum <span>{{ stats.total - stats.selesai }}</span></button>
           <button :class="{ on: filter === 'beda' }" @click="filter = 'beda'; batas = 40">Nama beda <span>{{ stats.beda }}</span></button>
@@ -421,6 +437,7 @@ const statusKelas = (s: string) => {
 .rk-bar-fill { height: 100%; background: #4ade80; transition: width .3s; }
 .rk-tools { max-width: 1800px; margin: 10px auto 0; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .rk-search { flex: 1 1 260px; padding: 9px 12px; border-radius: 8px; border: 0; font-size: 14px; }
+.rk-holding { flex: 0 1 260px; padding: 9px 12px; border-radius: 8px; border: 0; font-size: 14px; max-width: 100%; }
 .rk-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .rk-chips button { border: 1px solid rgba(255,255,255,.5); background: transparent; color: #fff; padding: 6px 10px; border-radius: 99px; cursor: pointer; font-size: 13px; }
 .rk-chips button span { opacity: .8; margin-left: 2px; }
