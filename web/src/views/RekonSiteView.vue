@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Halaman SEMENTARA tanpa login — rekonsiliasi per SITE (ERP sebagai acuan).
-// Pilih device PRTG untuk tiap site; Apply me-rename device PRTG, dan bila nama target ≠ nama site, nama site ERP ikut diubah.
+// Nama lurus: PRTG = "nama site" atau "nama site - keterangan"; ganti nama baku → site ERP & semua device site itu ikut berubah.
 // Backend: /api/prtg-rekon (aktif hanya bila PRTG_REKON_ENABLED=true).
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { confirmDialog } from '@/composables/useDialog'
@@ -28,7 +28,8 @@ interface Ui { busy: boolean; msg: string; err: boolean }
 const sites = ref<Site[]>([])
 const devs = ref<Dev[]>([])
 const ui = reactive<Record<number, Ui>>({})
-const edit = reactive<Record<number, string>>({}) // nama target yang diketik per device
+const ketEdit = reactive<Record<number, string>>({}) // keterangan device yang diketik (Router, Modem, …)
+const baseEdit = reactive<Record<number, string>>({}) // nama baku site yang diketik (berlaku untuk ERP & PRTG)
 const loading = ref(true)
 const loadErr = ref('')
 const cacheInfo = ref('')
@@ -74,15 +75,30 @@ const devBySite = computed(() => {
 const devSite = (s: Site): Dev[] => devBySite.value.get(s.id_site) ?? []
 const devSisa = computed(() => devs.value.filter((d) => !d.site))
 
-// Nama baku: persis nama site, atau "nama site - keterangan" untuk device tambahan
-const baku = (d: Dev, s: Site) => d.device_name === s.nama_site || d.device_name.startsWith(s.nama_site + ' - ')
-function targetDefault(d: Dev, s: Site): string {
-  if (d.rekon?.nama_baru) return d.rekon.nama_baru
-  if (baku(d, s)) return d.device_name
-  const lain = devSite(s).some((x) => x.objid !== d.objid && x.device_name === s.nama_site)
-  return lain ? s.nama_site + ' - ' : s.nama_site
+// Nama lurus: persis "nama site", atau "nama site - keterangan" (Router, Modem, Switch, Mikrotik, … bebas)
+const PILIHAN_KET = ['Router', 'Modem', 'Switch', 'Mikrotik', 'AP']
+function ketDari(nama: string, base: string): string | null {
+  if (nama === base) return ''
+  if (!nama.startsWith(base + ' - ')) return null
+  const k = nama.slice(base.length + 3).trim()
+  return k ? k : null
 }
-const target = (d: Dev, s: Site): string => edit[d.objid] ?? targetDefault(d, s)
+const baku = (d: Dev, s: Site) => ketDari(d.device_name, s.nama_site) !== null
+const namaBaku = (s: Site): string => baseEdit[s.id_site] ?? s.nama_site
+function ketDefault(d: Dev, s: Site): string {
+  const k = ketDari(d.device_name, s.nama_site)
+  if (k !== null) return k
+  const r = d.rekon?.nama_baru ? ketDari(d.rekon.nama_baru, s.nama_site) : null
+  return r ?? ''
+}
+const ketOf = (d: Dev, s: Site): string => ketEdit[d.objid] ?? ketDefault(d, s)
+function target(d: Dev, s: Site): string {
+  const b = namaBaku(s).trim()
+  const k = ketOf(d, s).trim()
+  return k ? `${b} - ${k}` : b
+}
+const kembarDiSite = (d: Dev, s: Site) => devSite(s).some((x) => x.objid !== d.objid && target(x, s) === target(d, s))
+const perluApply = (d: Dev, s: Site) => target(d, s) !== d.device_name || namaBaku(s).trim() !== s.nama_site
 const beres = (d: Dev, s: Site) => baku(d, s)
 function tahapSite(s: Site): 'kosong' | 'belum' | 'beres' {
   const ds = devSite(s)
@@ -195,7 +211,7 @@ async function pasangkan(s: Site, d: Dev) {
     d.rekon = data.data as Rekon
     d.match_source = 'manual'
     d.match_score = 100
-    delete edit[d.objid]
+    delete ketEdit[d.objid]
     pickerSite.value = null
     flash(d, 'Dipasangkan — cek nama target lalu Apply')
   } catch (e) {
@@ -222,7 +238,7 @@ async function lepas(s: Site, d: Dev) {
     d.rekon = data.data as Rekon
     d.match_source = null
     d.match_score = null
-    delete edit[d.objid]
+    delete ketEdit[d.objid]
   } catch (e) {
     if (!tanganiGagalLogin(e)) flash(d, pesanError(e), true)
   } finally {
@@ -231,16 +247,18 @@ async function lepas(s: Site, d: Dev) {
 }
 
 async function terapkan(s: Site, d: Dev) {
-  const nama = target(d, s).trim()
-  if (!nama) return flash(d, 'Nama target wajib diisi', true)
-  if (nama === s.nama_site + ' -' || nama === s.nama_site + ' - ') return flash(d, 'Lengkapi keterangan setelah " - "', true)
-  // Nama target selain nama site (atau "nama site - keterangan") → nama site di ERP ikut diubah supaya data sama
-  const ubahSite = nama !== s.nama_site && !nama.startsWith(s.nama_site + ' - ')
+  const base = namaBaku(s).trim()
+  const nama = target(d, s)
+  if (!base) return flash(d, 'Nama baku site wajib diisi', true)
+  if (kembarDiSite(d, s)) return flash(d, 'Nama sama dengan device lain di site ini — isi keterangan (mis. Router/Modem)', true)
+  // Nama baku berbeda dari nama site → nama site ERP ikut diubah, device lain yang sudah lurus ikut di-rename
+  const ubahSite = base !== s.nama_site
+  const lainLurus = ubahSite ? devSite(s).filter((x) => x.objid !== d.objid && x.device_name.startsWith(s.nama_site + ' - ')).length : 0
   const ok = await confirmDialog({
     title: ubahSite ? 'Rename di PRTG dan ERP?' : 'Rename device di PRTG?',
     message: `PRTG sekarang:\n${d.device_name}\n\nmenjadi:\n${nama}\n\n` +
       (ubahSite
-        ? `Nama site di ERP juga diubah:\n${s.nama_site}\n→ ${nama}`
+        ? `Nama site di ERP diubah:\n${s.nama_site}\n→ ${base}` + (lainLurus ? `\n\n${lainLurus} device lain di site ini ikut di-rename di PRTG.` : '')
         : `(Nama site di ERP tetap: ${s.nama_site})`),
     confirmLabel: 'Apply',
     variant: 'warning',
@@ -250,18 +268,23 @@ async function terapkan(s: Site, d: Dev) {
   if (u) u.busy = true
   flash(d, '')
   try {
-    const { data } = await http.post(`/${d.objid}/terapkan`, { id_site: s.id_site, nama, ubah_site: ubahSite })
+    const { data } = await http.post(`/${d.objid}/terapkan`, { id_site: s.id_site, nama, nama_site: base })
     d.device_name = nama
     d.rekon = data.data as Rekon
     d.match_source = 'manual'
     d.match_score = 100
-    delete edit[d.objid]
+    delete ketEdit[d.objid]
     if (ubahSite) {
-      // Samakan nama site di semua salinan lokal (daftar site & device yang menunjuk site ini)
-      for (const x of sites.value) if (x.id_site === s.id_site) x.nama_site = nama
-      for (const x of devs.value) if (x.site?.id_site === s.id_site) x.site.nama_site = nama
+      // Samakan nama site di semua salinan lokal, dan nama device lain yang ikut di-rename
+      for (const x of sites.value) if (x.id_site === s.id_site) x.nama_site = base
+      for (const x of devs.value) if (x.site?.id_site === s.id_site) x.site.nama_site = base
+      delete baseEdit[s.id_site]
+      for (const r of (data.meta?.ikut_rename ?? []) as { objid: number; ke: string }[]) {
+        const x = devs.value.find((v) => v.objid === r.objid)
+        if (x) { x.device_name = r.ke; delete ketEdit[x.objid] }
+      }
     }
-    flash(d, ubahSite ? 'Nama PRTG dan nama site ERP sudah diperbarui' : 'Nama PRTG sudah diperbarui')
+    flash(d, data.message || 'Nama sudah diperbarui', !!(data.meta?.gagal?.length))
   } catch (e) {
     if (!tanganiGagalLogin(e)) flash(d, pesanError(e), true)
   } finally {
@@ -295,10 +318,10 @@ onBeforeUnmount(() => {
       <div class="rs-head-inner">
         <div class="rs-title">
           <h1>Rekonsiliasi PRTG per Site</h1>
-          <p>Acuan: nama <b>site</b> &amp; <b>PT holding</b> di ERP. Pilih device PRTG untuk tiap site, lalu <b>Apply</b> me-rename device di PRTG. Bila nama target berbeda dari nama site, nama site di ERP <b>ikut diubah</b> (data sama).</p>
+          <p>Acuan: nama <b>site</b> &amp; <b>PT holding</b> di ERP. Nama PRTG dibuat lurus: <b>nama site</b> atau <b>nama site - keterangan</b> (Router, Modem, …). Satu site boleh banyak device. Ubah nama baku → nama site ERP &amp; semua device site itu ikut berubah.</p>
         </div>
         <div class="rs-progress" v-if="!loading && !loadErr && !butuhLogin">
-          <div class="rs-progress-num"><b>{{ stats.beres }}</b> / {{ stats.total }} site beres · {{ persen }}%</div>
+          <div class="rs-progress-num"><b>{{ stats.beres }}</b> / {{ stats.total }} site lurus · {{ persen }}%</div>
           <div class="rs-bar"><div class="rs-bar-fill" :style="{ width: persen + '%' }"></div></div>
         </div>
       </div>
@@ -317,8 +340,8 @@ onBeforeUnmount(() => {
         <div class="rs-chips">
           <button :class="{ on: mode === 'site' && tahap === 'semua' }" @click="mode = 'site'; tahap = 'semua'; ubah()">Semua site <span>{{ stats.total }}</span></button>
           <button :class="{ on: mode === 'site' && tahap === 'kosong' }" @click="mode = 'site'; tahap = 'kosong'; ubah()">Belum ada device <span>{{ stats.kosong }}</span></button>
-          <button :class="{ on: mode === 'site' && tahap === 'belum' }" @click="mode = 'site'; tahap = 'belum'; ubah()">Perlu Apply <span>{{ stats.belum }}</span></button>
-          <button :class="{ on: mode === 'site' && tahap === 'beres' }" @click="mode = 'site'; tahap = 'beres'; ubah()">Beres <span>{{ stats.beres }}</span></button>
+          <button :class="{ on: mode === 'site' && tahap === 'belum' }" @click="mode = 'site'; tahap = 'belum'; ubah()">Belum lurus <span>{{ stats.belum }}</span></button>
+          <button :class="{ on: mode === 'site' && tahap === 'beres' }" @click="mode = 'site'; tahap = 'beres'; ubah()">Lurus <span>{{ stats.beres }}</span></button>
           <button :class="{ on: mode === 'sisa' }" @click="mode = 'sisa'; ubah()">Device PRTG belum terpakai <span>{{ devSisa.length }}</span></button>
           <button class="rs-reload" @click="load(true)" :title="cacheInfo ? cacheInfo + ' — klik untuk ambil ulang dari PRTG' : 'Ambil ulang dari PRTG'">⟳</button>
         </div>
@@ -377,19 +400,31 @@ onBeforeUnmount(() => {
                 <span v-if="s.pelanggan">{{ s.pelanggan.nama_pelanggan }}</span>
                 <span v-if="s.kota">{{ s.kota }}</span>
                 <span class="pill" :class="aktif(s) ? 'p-ok' : 'p-grey'">{{ s.status_site }}</span>
+                <span v-if="devSite(s).length" class="pill p-blue">{{ devSite(s).length }} perangkat PRTG</span>
               </div>
             </div>
             <span class="pill rs-tahap" :class="{ 'p-ok': tahapSite(s) === 'beres', 'p-warn': tahapSite(s) === 'belum', 'p-grey': tahapSite(s) === 'kosong' }">
-              {{ tahapSite(s) === 'beres' ? 'Beres' : tahapSite(s) === 'belum' ? 'Perlu Apply' : 'Belum ada device' }}
+              {{ tahapSite(s) === 'beres' ? 'Lurus' : tahapSite(s) === 'belum' ? 'Belum lurus' : 'Belum ada device' }}
             </span>
           </header>
+
+          <div v-if="devSite(s).length" class="rs-baku">
+            <label class="rs-label" :for="'b' + s.id_site">Nama baku site (ERP &amp; PRTG)</label>
+            <input
+              :id="'b' + s.id_site" class="rs-input" :value="namaBaku(s)" maxlength="150"
+              @input="baseEdit[s.id_site] = ($event.target as HTMLInputElement).value"
+            />
+            <p v-if="namaBaku(s).trim() !== s.nama_site" class="rs-hint">
+              Saat Apply, nama site ERP diubah: <b>{{ s.nama_site }}</b> → <b>{{ namaBaku(s).trim() }}</b>, dan device lain site ini ikut di-rename di PRTG.
+            </p>
+          </div>
 
           <div v-for="d in devSite(s)" :key="d.objid" class="rs-dev" :class="{ ok: beres(d, s) }">
             <div class="rs-dev-main">
               <div class="rs-label">
                 Device PRTG <span class="rs-obj">#{{ d.objid }}</span>
                 <span v-if="d.match_source === 'auto' && !d.rekon?.id_site" class="pill p-warn">usulan otomatis {{ d.match_score }}%</span>
-                <span v-else-if="beres(d, s)" class="pill p-ok">nama baku ✓</span>
+                <span v-else-if="beres(d, s)" class="pill p-ok">lurus ✓</span>
               </div>
               <div class="rs-name">{{ d.device_name }}</div>
               <div class="rs-meta">
@@ -400,14 +435,22 @@ onBeforeUnmount(() => {
               <p v-if="d.comments" class="rs-comment" :title="d.comments">{{ d.comments }}</p>
             </div>
             <div class="rs-dev-act">
-              <label class="rs-label" :for="'t' + d.objid">Nama di PRTG (target)</label>
+              <label class="rs-label" :for="'k' + d.objid">Keterangan device <span class="rs-obj">(kosong = device utama)</span></label>
               <input
-                :id="'t' + d.objid" class="rs-input" :value="target(d, s)" maxlength="150"
-                @input="edit[d.objid] = ($event.target as HTMLInputElement).value"
+                :id="'k' + d.objid" class="rs-input" :value="ketOf(d, s)" maxlength="60" placeholder="mis. Router, Modem, Switch, Mikrotik…"
+                @input="ketEdit[d.objid] = ($event.target as HTMLInputElement).value"
               />
+              <div class="rs-chipset">
+                <button
+                  v-for="k in PILIHAN_KET" :key="k" type="button" class="rs-chip" :class="{ on: ketOf(d, s) === k }"
+                  @click="ketEdit[d.objid] = ketOf(d, s) === k ? '' : k"
+                >{{ k }}</button>
+              </div>
+              <div class="rs-preview">Nama di PRTG: <b>{{ target(d, s) }}</b></div>
+              <p v-if="kembarDiSite(d, s)" class="rs-msg err">Nama sama dengan device lain di site ini — beri keterangan.</p>
               <div class="rs-btns">
-                <button class="btn btn-primary" :disabled="ui[d.objid]?.busy || target(d, s).trim() === d.device_name" @click="terapkan(s, d)">
-                  {{ ui[d.objid]?.busy ? 'Memproses…' : 'Apply ke PRTG' }}
+                <button class="btn btn-primary" :disabled="ui[d.objid]?.busy || !perluApply(d, s)" @click="terapkan(s, d)">
+                  {{ ui[d.objid]?.busy ? 'Memproses…' : 'Apply' }}
                 </button>
                 <button class="btn" :disabled="ui[d.objid]?.busy" @click="lepas(s, d)">Lepas</button>
               </div>
@@ -495,6 +538,13 @@ onBeforeUnmount(() => {
 .rs-input { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; }
 .rs-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
 .rs-msg { margin: 0; font-size: 13px; color: var(--ok); }
+.rs-baku { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px dashed #93c5fd; border-radius: 10px; background: #eff6ff; }
+.rs-hint { margin: 0; font-size: 12px; color: #1e3a8a; }
+.rs-chipset { display: flex; gap: 6px; flex-wrap: wrap; }
+.rs-chip { border: 1px solid #cbd5e1; background: #fff; color: var(--text); padding: 3px 10px; border-radius: 99px; cursor: pointer; font-size: 12px; }
+.rs-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.rs-preview { font-size: 13px; color: var(--muted); word-break: break-word; }
+.rs-preview b { color: var(--text); }
 .rs-msg.err { color: var(--down); }
 
 .rs-add { position: relative; }
@@ -513,6 +563,7 @@ onBeforeUnmount(() => {
 .p-warn, .st-warn { background: var(--warn-bg); color: var(--warn); }
 .st-down { background: #fee2e2; color: var(--down); }
 .p-grey, .st-other { background: #e2e8f0; color: #475569; }
+.p-blue { background: #dbeafe; color: #1e40af; }
 .btn-link { align-self: flex-start; background: none; border: 0; padding: 2px 0; color: var(--primary); cursor: pointer; font-size: 13px; }
 .btn { padding: 9px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; font-size: 14px; font-weight: 500; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }

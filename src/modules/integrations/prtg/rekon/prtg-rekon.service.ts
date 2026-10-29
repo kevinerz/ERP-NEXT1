@@ -228,11 +228,12 @@ export class PrtgRekonService implements OnApplicationBootstrap {
   }
 
   /**
-   * Mode per-site: device PRTG di-rename mengikuti nama target, lalu dipasangkan ke site.
-   * ubahSite=true → nama_site di ERP ikut diubah ke nama target (data sama); kondisi site sebelumnya disimpan di site_awal.
-   * Satu site boleh punya banyak device (nama device harus unik di PRTG).
+   * Mode per-site, nama "lurus": device PRTG bernama persis `nama site` atau `nama site - keterangan`
+   * (keterangan bebas: Router, Modem, Switch, Mikrotik, ...). Satu site boleh punya banyak device.
+   * namaSiteBaru berbeda dari nama_site → nama site ERP ikut diubah, dan device lain milik site ini
+   * yang sudah lurus ikut di-rename di PRTG supaya tetap sama. Kondisi site sebelumnya disimpan di site_awal.
    */
-  async terapkanNama(objid: number, id_site: number, namaTarget: string, ubahSite = false) {
+  async terapkanNama(objid: number, id_site: number, namaTarget: string, namaSiteBaru?: string) {
     this.assertEnabled();
     const nama = (namaTarget || '').trim();
     if (!nama) throw new BadRequestException('Nama di PRTG wajib diisi');
@@ -241,23 +242,65 @@ export class PrtgRekonService implements OnApplicationBootstrap {
     const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site } });
     if (!site) throw new NotFoundException('Site ERP tidak ditemukan');
 
+    const lama = site.nama_site;
+    const base = (namaSiteBaru ?? '').trim() || lama;
+    if (base.length > 150) throw new BadRequestException('Nama site maksimal 150 karakter');
+    const ubahNamaSite = base !== lama;
+
+    // Nama PRTG wajib lurus terhadap nama site
+    const ket = nama === base ? '' : nama.startsWith(base + ' - ') ? nama.slice(base.length + 3).trim() : null;
+    if (ket === null) throw new BadRequestException(`Nama PRTG harus "${base}" atau "${base} - keterangan"`);
+    if (nama !== base && !ket) throw new BadRequestException('Keterangan setelah " - " wajib diisi');
+
     const namaSekarang = await this.deviceAwal(objid);
-
-    // Nama harus unik di PRTG (mapping ERP juga berbasis nama device)
-    const kembar = this.previewCache?.data.find((d) => d.objid !== objid && d.device_name === nama);
-    if (kembar) throw new BadRequestException(`Nama sudah dipakai device PRTG lain (#${kembar.objid})`);
-
-    // 1) PRTG dulu — kalau gagal, ERP tidak disentuh
-    if (namaSekarang !== nama) await this.prtg.renameObject(objid, nama);
-
     const ada = await this.prisma.prtgRekonsiliasi.findUnique({ where: { prtg_objid: objid } });
     const awal = ada?.device_name_awal ?? namaSekarang;
-    const ubahNamaSite = ubahSite && site.nama_site !== nama;
-    // Snapshot site sebelum ditimpa (hanya sekali, supaya data asli tidak hilang)
+    const cache = this.previewCache?.data ?? [];
+
+    // Device lain milik site ini yang ikut di-rename bila nama site berubah
+    const ikut: { objid: number; dari: string; ke: string; awal: string }[] = [];
+    const dilewati: string[] = [];
+    if (ubahNamaSite) {
+      const mappings = await this.prisma.integrationPrtgMapping.findMany({ where: { id_site } });
+      for (const m of mappings) {
+        if (m.device_name === namaSekarang || m.device_name === awal) continue;
+        const dev = cache.find((d) => d.device_name === m.device_name);
+        if (!dev || dev.objid === objid) { if (!dev) dilewati.push(m.device_name); continue; }
+        if (m.device_name.startsWith(lama + ' - ')) {
+          ikut.push({ objid: dev.objid, dari: m.device_name, ke: base + m.device_name.slice(lama.length), awal: m.device_name });
+        } else {
+          dilewati.push(m.device_name); // belum lurus / sama persis dengan nama site lama → atur manual
+        }
+      }
+    }
+
+    // Semua nama baru harus unik di PRTG (mapping ERP berbasis nama device)
+    const sedangDiubah = new Set([objid, ...ikut.map((x) => x.objid)]);
+    for (const n of [nama, ...ikut.map((x) => x.ke)]) {
+      const kembar = cache.find((d) => !sedangDiubah.has(d.objid) && d.device_name === n);
+      if (kembar) throw new BadRequestException(`Nama "${n}" sudah dipakai device PRTG lain (#${kembar.objid})`);
+    }
+    if (ikut.some((x) => x.ke === nama)) throw new BadRequestException(`Nama "${nama}" bentrok dengan device lain di site ini`);
+
+    // 1) PRTG dulu — device utama gagal → tidak ada yang diubah sama sekali
+    if (namaSekarang !== nama) await this.prtg.renameObject(objid, nama);
+    const sukses: typeof ikut = [];
+    const gagal: string[] = [];
+    for (const x of ikut) {
+      try {
+        await this.prtg.renameObject(x.objid, x.ke);
+        sukses.push(x);
+      } catch (e: any) {
+        gagal.push(`${x.dari} (${e?.message ?? e})`);
+      }
+    }
+
+    // 2) ERP dalam satu transaksi: mapping + catatan rekon (+ nama site)
     const siteAwal = ubahNamaSite && !ada?.site_awal
-      ? { id_site: site.id_site, nama_site: site.nama_site, kota: site.kota, provinsi: site.provinsi, alamat_lengkap: site.alamat_lengkap, koordinat_gps: site.koordinat_gps }
+      ? { id_site: site.id_site, nama_site: lama, kota: site.kota, provinsi: site.provinsi, alamat_lengkap: site.alamat_lengkap, koordinat_gps: site.koordinat_gps }
       : undefined;
-    const rekonData = { id_site, nama_baru: nama, applied_at: new Date(), is_done: true, done_at: new Date(), ...(siteAwal ? { site_awal: siteAwal } : {}) };
+    const waktu = new Date();
+    const rekonData = { id_site, nama_baru: nama, applied_at: waktu, is_done: true, done_at: waktu, ...(siteAwal ? { site_awal: siteAwal } : {}) };
     const ops: any[] = [
       this.prisma.integrationPrtgMapping.deleteMany({
         where: { device_name: { in: [namaSekarang, awal] }, NOT: { device_name: nama } },
@@ -273,15 +316,46 @@ export class PrtgRekonService implements OnApplicationBootstrap {
         update: rekonData,
       }),
     ];
-    if (ubahNamaSite) ops.push(this.prisma.sitePelanggan.update({ where: { id_site }, data: { nama_site: nama } }));
+    for (const x of sukses) {
+      ops.push(
+        this.prisma.integrationPrtgMapping.deleteMany({ where: { device_name: x.dari } }),
+        this.prisma.integrationPrtgMapping.upsert({
+          where: { device_name: x.ke },
+          create: { device_name: x.ke, id_site },
+          update: { id_site },
+        }),
+        this.prisma.prtgRekonsiliasi.upsert({
+          where: { prtg_objid: x.objid },
+          create: { prtg_objid: x.objid, device_name_awal: x.awal, id_site, nama_baru: x.ke, applied_at: waktu, is_done: true, done_at: waktu },
+          update: { id_site, nama_baru: x.ke, applied_at: waktu, is_done: true, done_at: waktu },
+        }),
+      );
+    }
+    if (ubahNamaSite) ops.push(this.prisma.sitePelanggan.update({ where: { id_site }, data: { nama_site: base } }));
     const hasil = await this.prisma.$transaction(ops);
     const data = hasil[2];
 
-    const cached = this.previewCache?.data.find((d) => d.objid === objid);
-    if (cached) Object.assign(cached, { device_name: nama, id_site, match_source: 'manual', match_score: 100 });
+    for (const [oid, n] of [[objid, nama], ...sukses.map((x) => [x.objid, x.ke])] as [number, string][]) {
+      const c = cache.find((d) => d.objid === oid);
+      if (c) Object.assign(c, { device_name: n, id_site, match_source: 'manual', match_score: 100 });
+    }
 
-    const ketERP = ubahNamaSite ? `nama_site ERP '${site.nama_site}' -> '${nama}'` : 'ERP tidak diubah';
-    this.logger.log(`TERAPKAN objid=${objid} PRTG '${namaSekarang}' -> '${nama}'; site#${site.id_site}; ${ketERP}`);
-    return { data, message: 'Nama device PRTG sudah diperbarui' };
+    const ketERP = ubahNamaSite ? `nama_site ERP '${lama}' -> '${base}', ikut rename ${sukses.length}, gagal ${gagal.length}` : 'nama site ERP tetap';
+    this.logger.log(`TERAPKAN objid=${objid} PRTG '${namaSekarang}' -> '${nama}'; site#${id_site}; ${ketERP}`);
+
+    let message = ubahNamaSite ? 'Nama PRTG dan nama site ERP sudah diperbarui' : 'Nama device PRTG sudah diperbarui';
+    if (sukses.length) message += `; ${sukses.length} device lain ikut di-rename`;
+    if (gagal.length) message += `; ${gagal.length} device gagal di-rename, cek manual`;
+    if (dilewati.length) message += `; ${dilewati.length} device belum lurus, atur manual`;
+    return {
+      data,
+      message,
+      meta: {
+        nama_site: base,
+        ikut_rename: sukses.map((x) => ({ objid: x.objid, dari: x.dari, ke: x.ke })),
+        gagal,
+        dilewati,
+      },
+    };
   }
 }
