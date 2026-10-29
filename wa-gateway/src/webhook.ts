@@ -4,12 +4,25 @@ import { log } from './logger.js';
 
 export type EventWebhook = { akun: string; event: string; data: unknown };
 
-const antrean: EventWebhook[] = [];
+// Jalur cepat: pesan baru, status, koneksi, panggilan. Jalur massal: riwayat, kontak, chat, pemetaan LID.
+// Supaya chat pelanggan yang masuk saat sinkron riwayat tidak menunggu di belakang ribuan pesan lama.
+const MASSAL = new Set(['riwayat', 'kontak', 'chat', 'lid']);
+const cepat: EventWebhook[] = [];
+const massal: EventWebhook[] = [];
 let jalan = false;
+let terakhirPeringatan = 0;
+
+export function panjangAntrean() {
+  return { cepat: cepat.length, massal: massal.length };
+}
 
 export function kirimWebhook(ev: EventWebhook) {
-  antrean.push(ev);
-  if (antrean.length > 5000) log.warn({ panjang: antrean.length }, 'Antrean webhook menumpuk — ERP lambat/mati?');
+  const massalkah = MASSAL.has(ev.event) || (ev.event === 'pesan' && (ev.data as any)?.riwayat);
+  (massalkah ? massal : cepat).push(ev);
+  if (cepat.length + massal.length > 5000 && Date.now() - terakhirPeringatan > 60_000) {
+    terakhirPeringatan = Date.now();
+    log.warn(panjangAntrean(), 'Antrean webhook menumpuk — ERP lambat/mati?');
+  }
   void proses();
 }
 
@@ -18,7 +31,8 @@ async function proses() {
   jalan = true;
   let tunda = 1000;
   try {
-    while (antrean.length) {
+    while (cepat.length || massal.length) {
+      const antrean = cepat.length ? cepat : massal;
       const ev = antrean[0]!;
       try {
         const res = await fetch(config.webhookUrl, {

@@ -60,8 +60,19 @@ export function teksDari(m: proto.IMessage | null | undefined): string | null {
     c.pollCreationMessage?.name ||
     c.pollCreationMessageV3?.name ||
     c.locationMessage?.name ||
+    teksInteraktif(c) ||
     null
   );
+}
+
+// Pesan bisnis bertombol / daftar / template → ambil teks utamanya
+function teksInteraktif(c: proto.IMessage): string | null {
+  const t = c.templateMessage;
+  if (t) return t.hydratedTemplate?.hydratedContentText || t.hydratedFourRowTemplate?.hydratedContentText || t.interactiveMessageTemplate?.body?.text || null;
+  if (c.buttonsMessage) return c.buttonsMessage.contentText || c.buttonsMessage.text || null;
+  if (c.listMessage) return [c.listMessage.title, c.listMessage.description].filter(Boolean).join('\n') || null;
+  if (c.interactiveMessage) return c.interactiveMessage.body?.text || c.interactiveMessage.header?.title || null;
+  return null;
 }
 
 export function isMedia(p: PayloadPesan) {
@@ -170,6 +181,11 @@ export async function normalisasi(
   } else if (jenis.startsWith('pollCreationMessage')) {
     p.tipe = 'poll';
     p.teks = inner?.name ?? null;
+  } else if (jenis === 'albumMessage') {
+    return null; // penanda album — foto/videonya datang sebagai pesan terpisah
+  } else if (jenis === 'templateMessage' || jenis === 'buttonsMessage' || jenis === 'listMessage' || jenis === 'interactiveMessage') {
+    p.tipe = 'text';
+    p.teks = teksInteraktif(content) ?? `[${jenis}]`;
   } else if (jenis === 'pollUpdateMessage') {
     return null; // suara polling terenkripsi — lewati
   } else if (

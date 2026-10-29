@@ -73,6 +73,8 @@ export class Sesi {
   private pesanTerbaru = new Map<string, proto.IMessage>(); // untuk getMessage (kirim ulang/retry)
   private dikirimApi = new Set<string>(); // id pesan yang dikirim lewat API (media tidak perlu diunduh ulang)
   private panggilanDibalas = new Map<string, number>();
+  private lidTertunda: { lid: string; pn: string }[] = [];
+  private timerLid: NodeJS.Timeout | null = null;
 
   constructor(readonly akun: string) {}
 
@@ -134,7 +136,7 @@ export class Sesi {
       const data = g.filter((x) => x.id && x.subject).map((x) => ({ jid: x.id!, nama: x.subject! }));
       if (data.length) kirimWebhook({ akun: this.akun, event: 'grup', data });
     });
-    sock.ev.on('lid-mapping.update', (m) => kirimWebhook({ akun: this.akun, event: 'lid', data: [{ lid: m.lid, pn: m.pn }] }));
+    sock.ev.on('lid-mapping.update', (m) => this.antreLid(m));
     sock.ev.on('call', (calls) => void this.onPanggilan(calls));
   }
 
@@ -195,6 +197,18 @@ export class Sesi {
       this.tunda = Math.min(this.tunda * 2, 60_000);
       this.timerSambung = setTimeout(() => { this.timerSambung = null; void this.mulai().catch((e) => log.error({ err: e?.message }, 'Gagal menyambung ulang')); }, jeda);
     }
+  }
+
+  // Pemetaan LID↔nomor datang satu per satu (ribuan saat sinkron) — kirim ke ERP per batch
+  private antreLid(m: { lid: string; pn: string }) {
+    this.lidTertunda.push({ lid: m.lid, pn: m.pn });
+    if (this.lidTertunda.length >= 500) return this.kirimLid();
+    this.timerLid ??= setTimeout(() => this.kirimLid(), 1000);
+  }
+  private kirimLid() {
+    if (this.timerLid) { clearTimeout(this.timerLid); this.timerLid = null; }
+    if (!this.lidTertunda.length) return;
+    kirimWebhook({ akun: this.akun, event: 'lid', data: this.lidTertunda.splice(0) });
   }
 
   // LID → nomor HP bila pemetaannya diketahui

@@ -6,6 +6,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { config } from './config.js';
 import { log } from './logger.js';
 import { keJid, type Sesi } from './sesi.js';
+import { panjangAntrean } from './webhook.js';
 
 export function buatServer(sesi: Map<string, Sesi>) {
   const app = express();
@@ -28,7 +29,7 @@ export function buatServer(sesi: Map<string, Sesi>) {
   };
 
   app.get('/akun', (_req, res) => { res.json({ data: [...sesi.values()].map((s) => s.info()) }); });
-  app.get('/akun/:akun/status', (req, res) => { res.json({ data: ambil(req).info() }); });
+  app.get('/akun/:akun/status', (req, res) => { res.json({ data: { ...ambil(req).info(), antrean_webhook: panjangAntrean() } }); });
   app.post('/akun/:akun/mulai', async (req, res) => { const s = ambil(req); await s.mulai(); res.json({ data: s.info() }); });
   app.post('/akun/:akun/logout', async (req, res) => { const s = ambil(req); await s.logout(); res.json({ data: s.info() }); });
 
