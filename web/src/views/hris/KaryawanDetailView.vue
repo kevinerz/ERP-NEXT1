@@ -145,6 +145,7 @@ const ALL_MODULS = [
   { key: 'public-wo',     label: 'Public WO',    icon: '🌐' },
   { key: 'prtg',          label: 'PRTG',         icon: '📡' },
   { key: 'mekari',        label: 'Mekari',       icon: '💳' },
+  { key: 'whatsapp',      label: 'WhatsApp',     icon: '💬' },
 ]
 
 const PRESETS = [
@@ -153,7 +154,7 @@ const PRESETS = [
   { key: 'sales',     label: 'Sales',      icon: '💼', moduls: ['sales', 'crm', 'master', 'contracts', 'reports'] },
   { key: 'presales',  label: 'Pre-Sales',  icon: '🔍', moduls: ['sales', 'master'] },
   { key: 'finance',   label: 'Finance/AR', icon: '💰', moduls: ['finance', 'reports', 'contracts', 'master'] },
-  { key: 'helpdesk',  label: 'Helpdesk',   icon: '🤝', moduls: ['crm', 'operations', 'notifications', 'master'] },
+  { key: 'helpdesk',  label: 'Helpdesk',   icon: '🤝', moduls: ['crm', 'operations', 'notifications', 'master', 'whatsapp'] },
   { key: 'manager',   label: 'Manager',    icon: '📋', moduls: ['hris', 'master', 'sales', 'crm', 'projects', 'operations', 'instalasi', 'assets', 'contracts', 'finance', 'reports', 'notifications', 'public-wo'] },
 ]
 

@@ -360,6 +360,12 @@ const router = createRouter({
           name: 'aset-detail',
           component: () => import('@/views/aset/AsetDetailView.vue'),
         },
+        // WhatsApp helpdesk
+        {
+          path: 'whatsapp',
+          name: 'wa-inbox',
+          component: () => import('@/views/wa/WaInboxView.vue'),
+        },
         // Email
         {
           path: 'email',
@@ -407,6 +413,7 @@ const router = createRouter({
 
 // Map route name → modul key
 const ROUTE_MODUL: Record<string, string> = {
+  'wa-inbox': 'whatsapp',
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris', 'hris-undangan': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master', 'master-gudang': 'master',
   'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master', 'master-jenis-gangguan': 'master',
@@ -469,6 +476,7 @@ router.beforeEach((to) => {
 const ROUTE_TITLE: Record<string, string> = {
   'login':                 'Masuk — NextOne ERP',
   'dashboard':             'Dashboard — NextOne ERP',
+  'wa-inbox':              'WhatsApp — NextOne ERP',
   'hris-list':             'Karyawan — NextOne ERP',
   'hris-detail':           'Detail Karyawan — NextOne ERP',
   'hris-tambah':           'Tambah Karyawan — NextOne ERP',

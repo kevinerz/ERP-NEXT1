@@ -1453,3 +1453,117 @@ model InstalasiBASTSign {
 
   @@map("instalasi_bast_sign")
 }
+
+// ── WhatsApp (gateway Baileys di VM whatsapp-Gateway) ───────────────────────────
+// Satu baris per nomor WA yang ditautkan (sekarang: helpdesk)
+model WaAkun {
+  id_akun        Int       @id @default(autoincrement())
+  kode           String    @unique @db.VarChar(30)
+  nama           String    @db.VarChar(100)
+  nomor_jid      String?   @db.VarChar(80)
+  nama_wa        String?   @db.VarChar(150)
+  status         String    @default("mati") @db.VarChar(20)
+  terhubung_at   DateTime?
+  putus_terakhir String?   @db.Text
+  updated_at     DateTime  @updatedAt
+  created_at     DateTime  @default(now())
+
+  chats WaChat[]
+
+  @@map("wa_akun")
+}
+
+// Kontak WA, dicocokkan otomatis ke PIC site / pelanggan berdasarkan nomor HP
+model WaKontak {
+  id_kontak    Int      @id @default(autoincrement())
+  id_akun      Int
+  jid          String   @db.VarChar(80)
+  lid          String?  @db.VarChar(80)
+  nomor        String?  @db.VarChar(30)
+  nama_wa      String?  @db.VarChar(150)
+  nama_simpan  String?  @db.VarChar(150)
+  id_pelanggan Int?
+  id_site      Int?
+  id_pic       Int?
+  nama_erp     String?  @db.VarChar(200)
+  updated_at   DateTime @updatedAt
+
+  @@unique([id_akun, jid])
+  @@index([id_akun, lid])
+  @@index([nomor])
+  @@map("wa_kontak")
+}
+
+// Percakapan (pribadi / grup) + pembagian kerja staf helpdesk
+model WaChat {
+  id_chat         Int       @id @default(autoincrement())
+  id_akun         Int
+  jid             String    @db.VarChar(80)
+  lid             String?   @db.VarChar(80)
+  is_grup         Boolean   @default(false)
+  nama            String?   @db.VarChar(200)
+  belum_dibaca    Int       @default(0)
+  pesan_terakhir  String?   @db.VarChar(300)
+  waktu_terakhir  DateTime?
+  id_karyawan_pic Int?
+  status          String    @default("Terbuka") @db.VarChar(20)
+  label           String?   @db.VarChar(100)
+  created_at      DateTime  @default(now())
+
+  akun  WaAkun    @relation(fields: [id_akun], references: [id_akun])
+  pesan WaPesan[]
+
+  @@unique([id_akun, jid])
+  @@index([id_akun, lid])
+  @@index([id_akun, waktu_terakhir])
+  @@map("wa_chat")
+}
+
+model WaPesan {
+  id_pesan       Int      @id @default(autoincrement())
+  id_chat        Int
+  wa_id          String   @db.VarChar(100)
+  dari_saya      Boolean  @default(false)
+  pengirim_jid   String?  @db.VarChar(80)
+  nama_pengirim  String?  @db.VarChar(150)
+  tipe           String   @db.VarChar(20)
+  teks           String?  @db.Text
+  media_jenis    String?  @db.VarChar(20)
+  media_mime     String?  @db.VarChar(100)
+  media_nama     String?  @db.VarChar(255)
+  media_ukuran   Int?
+  media_durasi   Int?
+  media_path     String?  @db.VarChar(255)
+  ptt            Boolean  @default(false)
+  kutip_id       String?  @db.VarChar(100)
+  kutip_teks     String?  @db.Text
+  kutip_pengirim String?  @db.VarChar(80)
+  lokasi         Json?
+  kontak         Json?
+  reaksi         Json?
+  status         Int?
+  diedit         Boolean  @default(false)
+  dihapus        Boolean  @default(false)
+  riwayat        Boolean  @default(false)
+  id_karyawan    Int?
+  waktu          DateTime
+  created_at     DateTime @default(now())
+
+  chat WaChat @relation(fields: [id_chat], references: [id_chat], onDelete: Cascade)
+
+  @@unique([id_chat, wa_id])
+  @@index([id_chat, waktu])
+  @@index([wa_id])
+  @@map("wa_pesan")
+}
+
+// Balasan cepat helpdesk
+model WaTemplate {
+  id_template Int      @id @default(autoincrement())
+  judul       String   @db.VarChar(100)
+  isi         String   @db.Text
+  urutan      Int      @default(0)
+  created_at  DateTime @default(now())
+
+  @@map("wa_template")
+}

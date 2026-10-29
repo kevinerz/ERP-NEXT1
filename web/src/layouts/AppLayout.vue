@@ -127,6 +127,7 @@ const menuGroups = [
     items: [
       { label: 'Dashboard',   emoji: '📊', to: '/dashboard',      modul: null },
       { label: 'Email',       emoji: '📧', to: '/email',           modul: null },
+      { label: 'WhatsApp',    emoji: '💬', to: '/whatsapp',        modul: 'whatsapp' },
     ],
   },
   {
@@ -240,6 +241,7 @@ const PAGE_TITLES: Record<string, string> = {
   "uptime-kuma-settings": "Uptime Kuma — Monitoring",
   "starsender-settings":  "StarSender — WhatsApp",
   "email-inbox":          "Email",
+  "wa-inbox":             "WhatsApp",
   "changelog":            "Changelog",
   "tools-network":        "Network Tools",
   "tools-mikrotik":       "Remote Mikrotik",

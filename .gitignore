@@ -45,3 +45,6 @@ mobile/android/app/google-services.json
 *.tar.gz
 *.bak
 *.bak-*
+
+# Media chat WhatsApp (privat)
+storage/

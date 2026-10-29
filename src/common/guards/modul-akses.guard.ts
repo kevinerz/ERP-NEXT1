@@ -35,6 +35,7 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   tools: 'operations',
   mobile: 'operations',
   starsender: 'operations',
+  wa: 'whatsapp', // inbox WhatsApp helpdesk (webhook & stream @Public)
 };
 
 // admin & mailer sudah dijaga @Roles(Admin/Director) di controller-nya.
