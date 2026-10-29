@@ -9,7 +9,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { AlihkanDto, DaftarChatQuery, KirimPesanDto, ReaksiDto, TemplateDto } from './dto';
 import { WaGatewayClient } from './wa-gateway.client';
 import { WaRealtimeService } from './wa-realtime.service';
-import { WaService } from './wa.service';
+import { WaService, type FileUnggah } from './wa.service';
 
 // Inbox WhatsApp helpdesk — modul akses "whatsapp" (segment /api/wa)
 @Controller('wa')
@@ -53,7 +53,7 @@ export class WaController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser('id_karyawan') id_karyawan: number,
     @Body() dto: KirimPesanDto,
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFile() file?: FileUnggah,
   ) {
     return this.wa.kirim(id, id_karyawan, dto, file);
   }

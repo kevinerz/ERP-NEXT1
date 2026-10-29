@@ -7,6 +7,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { WaGatewayClient, type GwKirim, type GwPesan } from './wa-gateway.client';
 import { WaRealtimeService } from './wa-realtime.service';
 
+/** File dari FileInterceptor (memory storage) — tanpa bergantung @types/multer */
+export type FileUnggah = { buffer: Buffer; mimetype: string; originalname: string; size: number };
+
 type Kecocokan = { id_pelanggan: number | null; id_site: number | null; id_pic: number | null; nama: string };
 
 const PER_HALAMAN = 30;
@@ -512,7 +515,7 @@ export class WaService {
     return { data, meta: { ada_lagi: rows.length === Math.min(limit, 100) } };
   }
 
-  async kirim(id_chat: number, id_karyawan: number, dto: { teks?: string; kutip_id?: number; ptt?: string }, file?: Express.Multer.File) {
+  async kirim(id_chat: number, id_karyawan: number, dto: { teks?: string; kutip_id?: number; ptt?: string }, file?: FileUnggah) {
     const chat = await this.prisma.waChat.findUnique({ where: { id_chat }, include: { akun: true } });
     if (!chat) throw new NotFoundException('Chat tidak ditemukan');
     if (!file && !dto.teks?.trim()) throw new BadRequestException('Pesan kosong');
