@@ -209,14 +209,43 @@ const mengirim = ref(false)
 const errKirim = ref('')
 const MAKS_FILE = 16 * 1024 * 1024
 
-function pilihFile(ev: Event) {
-  const f = (ev.target as HTMLInputElement).files?.[0]
-  if (!f) return
+const pratinjau = ref<string | null>(null) // object URL untuk lampiran gambar
+function pasangFile(f: File) {
   if (f.size > MAKS_FILE) { errKirim.value = 'File maksimal 16 MB'; return }
+  if (pratinjau.value) URL.revokeObjectURL(pratinjau.value)
+  pratinjau.value = f.type.startsWith('image/') ? URL.createObjectURL(f) : null
   file.value = f
   errKirim.value = ''
 }
-function hapusFile() { file.value = null; if (inputFile.value) inputFile.value.value = '' }
+function pilihFile(ev: Event) {
+  const f = (ev.target as HTMLInputElement).files?.[0]
+  if (f) pasangFile(f)
+}
+function hapusFile() {
+  file.value = null
+  if (pratinjau.value) { URL.revokeObjectURL(pratinjau.value); pratinjau.value = null }
+  if (inputFile.value) inputFile.value.value = ''
+}
+// Ctrl+V gambar (screenshot / salin gambar) → jadi lampiran; teks tetap ditempel seperti biasa
+function onPaste(e: ClipboardEvent) {
+  for (const item of Array.from(e.clipboardData?.items ?? [])) {
+    if (item.kind !== 'file') continue
+    const f = item.getAsFile()
+    if (!f) continue
+    e.preventDefault()
+    const ext = (f.type.split('/')[1] || 'png').replace('jpeg', 'jpg').split('+')[0]
+    const nama = f.name && !/^image\.\w+$/i.test(f.name) ? f.name : `tempel-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.${ext}`
+    pasangFile(new File([f], nama, { type: f.type }))
+    return
+  }
+}
+// Seret-lepas file ke ruang chat
+const seret = ref(false)
+function onDrop(e: DragEvent) {
+  seret.value = false
+  const f = e.dataTransfer?.files?.[0]
+  if (f && terhubung.value) pasangFile(f)
+}
 
 async function kirim() {
   if (!aktif.value || mengirim.value) return
@@ -325,6 +354,59 @@ watch(pesan, (list) => {
   for (const p of list) if (p.media?.ada && (p.media.jenis === 'image' || p.media.jenis === 'sticker')) muatMedia(p)
 }, { deep: false })
 const lihatFoto = ref<string | null>(null)
+
+// ── Foto profil (diambil lewat API ber-login, maks 3 bersamaan, di-cache ERP 24 jam) ──
+const foto = reactive<Record<number, string>>({}) // id_chat → object URL
+const fotoDicek = new Set<number>()
+const antreFoto: number[] = []
+let fotoJalan = 0
+function mintaFoto(ids: number[]) {
+  for (const id of ids) if (!fotoDicek.has(id)) { fotoDicek.add(id); antreFoto.push(id) }
+  jalankanFoto()
+}
+function jalankanFoto() {
+  while (fotoJalan < 3 && antreFoto.length) {
+    const id = antreFoto.shift()!
+    fotoJalan++
+    api.get(`/wa/chat/${id}/foto`, { responseType: 'blob' })
+      .then(({ data }) => { foto[id] = URL.createObjectURL(data) })
+      .catch(() => undefined) // 404 = tidak ada foto → tetap inisial
+      .finally(() => { fotoJalan--; jalankanFoto() })
+  }
+}
+watch(chats, (list) => mintaFoto(list.map((c) => c.id_chat)))
+
+interface Profil {
+  id_chat: number; nama: string; nomor: string | null; is_grup: boolean; jumlah_pesan: number; dibuat: string
+  kontak: { nama_wa: string | null; nama_simpan: string | null; nama_erp: string | null } | null
+  site: { id_site: number; kode_site: string; nama_site: string; kota: string | null; status_site: string } | null
+  pelanggan: { id_pelanggan: number; kode_pelanggan: string; nama_pelanggan: string } | null
+  grup: { deskripsi: string | null; peserta: { jid: string; nomor: string | null; admin: string | null; nama: string; erp: string | null }[]; error?: string } | null
+}
+const profil = ref<Profil | null>(null)
+const bukaProfil = ref(false)
+const memuatProfil = ref(false)
+const fotoBesar = ref<string | null>(null)
+async function tampilkanProfil() {
+  if (!aktif.value) return
+  const id = aktif.value.id_chat
+  bukaProfil.value = true
+  profil.value = null
+  if (fotoBesar.value) { URL.revokeObjectURL(fotoBesar.value); fotoBesar.value = null }
+  memuatProfil.value = true
+  try {
+    const [p] = await Promise.all([
+      api.get(`/wa/chat/${id}/profil`),
+      api.get(`/wa/chat/${id}/foto`, { params: { besar: 1 }, responseType: 'blob' })
+        .then(({ data }) => { if (aktif.value?.id_chat === id) fotoBesar.value = URL.createObjectURL(data) })
+        .catch(() => undefined),
+    ])
+    if (aktif.value?.id_chat === id) profil.value = p.data.data
+  } finally {
+    memuatProfil.value = false
+  }
+}
+watch(() => aktif.value?.id_chat, () => { bukaProfil.value = false })
 
 // ── Real-time (SSE) ──────────────────────────────────────────────────────────
 let es: EventSource | null = null
@@ -443,6 +525,9 @@ onBeforeUnmount(() => {
   if (timerKoneksi) clearInterval(timerKoneksi)
   if (timerSambung) clearTimeout(timerSambung)
   for (const u of Object.values(urlMedia)) URL.revokeObjectURL(u)
+  for (const u of Object.values(foto)) URL.revokeObjectURL(u)
+  if (fotoBesar.value) URL.revokeObjectURL(fotoBesar.value)
+  if (pratinjau.value) URL.revokeObjectURL(pratinjau.value)
 })
 </script>
 
@@ -476,7 +561,10 @@ onBeforeUnmount(() => {
 
       <ul class="wa-list">
         <li v-for="c in chats" :key="c.id_chat" :class="{ on: aktif?.id_chat === c.id_chat }" @click="bukaChat(c)">
-          <div class="wa-avatar" :class="{ grup: c.is_grup }">{{ c.is_grup ? '👥' : inisial(c.nama) }}</div>
+          <div class="wa-avatar" :class="{ grup: c.is_grup }">
+            <img v-if="foto[c.id_chat]" :src="foto[c.id_chat]" alt="" />
+            <template v-else>{{ c.is_grup ? '👥' : inisial(c.nama) }}</template>
+          </div>
           <div class="wa-li-body">
             <div class="wa-li-top">
               <b class="wa-li-nama">{{ c.nama }}</b>
@@ -499,7 +587,11 @@ onBeforeUnmount(() => {
     </aside>
 
     <!-- ── Kolom kanan: ruang chat ── -->
-    <section class="wa-main">
+    <section
+      class="wa-main" :class="{ seret }"
+      @dragover.prevent="seret = !!aktif && terhubung" @dragleave.self="seret = false" @drop.prevent="onDrop"
+    >
+      <div v-if="seret" class="wa-seret">Lepaskan file untuk dilampirkan</div>
       <div v-if="!aktif" class="wa-kosong-main">
         <div class="wa-logo">💬</div>
         <p>Pilih chat di sebelah kiri untuk mulai membalas.</p>
@@ -509,8 +601,11 @@ onBeforeUnmount(() => {
       <template v-else>
         <header class="wa-head">
           <button class="wa-back" @click="aktif = null">←</button>
-          <div class="wa-avatar" :class="{ grup: aktif.is_grup }">{{ aktif.is_grup ? '👥' : inisial(aktif.nama) }}</div>
-          <div class="wa-head-info">
+          <div class="wa-avatar klik" :class="{ grup: aktif.is_grup }" title="Lihat profil" @click="tampilkanProfil">
+            <img v-if="foto[aktif.id_chat]" :src="foto[aktif.id_chat]" alt="" />
+            <template v-else>{{ aktif.is_grup ? '👥' : inisial(aktif.nama) }}</template>
+          </div>
+          <div class="wa-head-info klik" title="Lihat profil" @click="tampilkanProfil">
             <b>{{ aktif.nama }}</b>
             <small>
               <template v-if="aktif.nomor">+{{ aktif.nomor }}</template>
@@ -618,8 +713,9 @@ onBeforeUnmount(() => {
             <span>↩ {{ kutip.teks || (kutip.media ? '📎 ' + (kutip.media.nama || kutip.media.jenis) : 'Pesan') }}</span>
             <button @click="kutip = null">✕</button>
           </div>
-          <div v-if="file" class="wa-tulis-kutip">
-            <span>📎 {{ file.name }} ({{ ukuran(file.size) }})</span>
+          <div v-if="file" class="wa-tulis-kutip wa-lampiran">
+            <img v-if="pratinjau" :src="pratinjau" alt="" />
+            <span>📎 {{ file.name }} ({{ ukuran(file.size) }})<small v-if="pratinjau"> — teks yang diketik menjadi keterangan foto</small></span>
             <button @click="hapusFile">✕</button>
           </div>
           <p v-if="errKirim" class="wa-err">{{ errKirim }}</p>
@@ -639,7 +735,7 @@ onBeforeUnmount(() => {
             <input ref="inputFile" type="file" hidden @change="pilihFile" />
             <textarea
               v-model="teks" rows="1" :placeholder="terhubung ? 'Tulis pesan… (Enter kirim, Shift+Enter baris baru)' : 'WhatsApp belum terhubung'"
-              :disabled="!terhubung" @keydown="onKey"
+              :disabled="!terhubung" @keydown="onKey" @paste="onPaste"
             ></textarea>
             <button class="wa-kirim" :disabled="!terhubung || mengirim || (!teks.trim() && !file)" @click="kirim">{{ mengirim ? '…' : '➤' }}</button>
           </div>
@@ -662,6 +758,53 @@ onBeforeUnmount(() => {
         <p class="muted kecil">QR berganti otomatis tiap ±20 detik. Setelah terhubung, riwayat chat akan disinkronkan.</p>
         <button class="btn-sm btn-ghost" @click="bukaQr = false">Tutup</button>
       </div>
+    </div>
+
+    <!-- Panel profil -->
+    <div v-if="bukaProfil" class="wa-profil-latar" @click.self="bukaProfil = false">
+      <aside class="wa-profil">
+        <header><b>{{ aktif?.is_grup ? 'Info grup' : 'Info kontak' }}</b><button @click="bukaProfil = false">✕</button></header>
+        <div class="wa-profil-foto">
+          <img v-if="fotoBesar" :src="fotoBesar" alt="" @click="lihatFoto = fotoBesar" />
+          <div v-else class="wa-avatar besar" :class="{ grup: aktif?.is_grup }">{{ aktif?.is_grup ? '👥' : inisial(aktif?.nama || '') }}</div>
+          <h3>{{ profil?.nama || aktif?.nama }}</h3>
+          <p v-if="profil?.nomor" class="muted">+{{ profil.nomor }}</p>
+          <p v-if="profil?.kontak?.nama_wa" class="muted">~{{ profil.kontak.nama_wa }}</p>
+        </div>
+        <p v-if="memuatProfil" class="muted pusat">Memuat…</p>
+        <template v-else-if="profil">
+          <section v-if="!profil.is_grup" class="wa-profil-bag">
+            <h4>Data ERP</h4>
+            <template v-if="profil.site || profil.pelanggan">
+              <p v-if="profil.kontak?.nama_erp"><b>{{ profil.kontak.nama_erp }}</b></p>
+              <p v-if="profil.pelanggan">🏢 {{ profil.pelanggan.nama_pelanggan }} <small class="muted">{{ profil.pelanggan.kode_pelanggan }}</small></p>
+              <p v-if="profil.site">
+                📍 <RouterLink :to="`/master/site/${profil.site.id_site}`">{{ profil.site.nama_site }}</RouterLink>
+                <small class="muted">{{ profil.site.kode_site }}<template v-if="profil.site.kota"> · {{ profil.site.kota }}</template> · {{ profil.site.status_site }}</small>
+              </p>
+            </template>
+            <p v-else class="muted">Nomor ini belum terdaftar sebagai PIC site / pelanggan di ERP.</p>
+          </section>
+          <section v-else class="wa-profil-bag">
+            <h4>Deskripsi</h4>
+            <p class="wa-profil-desk">{{ profil.grup?.deskripsi || '—' }}</p>
+            <h4>{{ profil.grup?.peserta.length ?? 0 }} anggota</h4>
+            <p v-if="profil.grup?.error" class="wa-err">{{ profil.grup.error }}</p>
+            <ul class="wa-anggota-list">
+              <li v-for="a in profil.grup?.peserta ?? []" :key="a.jid">
+                <span>{{ a.nama }}<small v-if="a.erp" class="muted"> · {{ a.erp }}</small></span>
+                <small v-if="a.admin" class="tag tag-erp">{{ a.admin === 'superadmin' ? 'Pembuat' : 'Admin' }}</small>
+              </li>
+            </ul>
+          </section>
+          <section class="wa-profil-bag">
+            <h4>Percakapan</h4>
+            <p>{{ profil.jumlah_pesan.toLocaleString('id-ID') }} pesan tersimpan di ERP</p>
+            <p v-if="aktif?.pic">Ditangani: <b>{{ aktif.pic.nama }}</b></p>
+            <p>Status: <b>{{ aktif?.status }}</b></p>
+          </section>
+        </template>
+      </aside>
     </div>
 
     <!-- Foto layar penuh -->
@@ -705,6 +848,32 @@ onBeforeUnmount(() => {
 .wa-list li.on { background: #f0fdf4; }
 .wa-avatar { width: 42px; height: 42px; border-radius: 50%; background: #e2e8f0; color: #334155; display: grid; place-items: center; font-weight: 700; font-size: 14px; flex: none; }
 .wa-avatar.grup { background: #dbeafe; }
+.wa-avatar { overflow: hidden; }
+.wa-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.wa-avatar.besar { width: 160px; height: 160px; font-size: 48px; margin: 0 auto; }
+.klik { cursor: pointer; }
+.wa-main { position: relative; }
+.wa-main.seret { outline: 3px dashed var(--wa-hijau); outline-offset: -8px; }
+.wa-seret { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(240,253,244,.85); color: #166534; font-weight: 700; font-size: 18px; z-index: 6; pointer-events: none; }
+.wa-lampiran { align-items: center; }
+.wa-lampiran img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; flex: none; }
+.wa-lampiran span { white-space: normal; flex: 1; }
+.wa-lampiran small { color: var(--wa-muted); }
+.wa-profil-latar { position: fixed; inset: 0; background: rgba(15,23,42,.35); z-index: 40; display: flex; justify-content: flex-end; }
+.wa-profil { width: min(380px, 100%); height: 100%; background: #fff; overflow-y: auto; box-shadow: -8px 0 24px rgba(0,0,0,.15); }
+.wa-profil > header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--wa-garis); position: sticky; top: 0; background: #fff; }
+.wa-profil > header button { border: 0; background: none; font-size: 18px; cursor: pointer; }
+.wa-profil-foto { text-align: center; padding: 20px 16px 10px; }
+.wa-profil-foto > img { width: 200px; height: 200px; border-radius: 50%; object-fit: cover; cursor: zoom-in; }
+.wa-profil-foto h3 { margin: 12px 0 2px; }
+.wa-profil-foto p { margin: 2px 0; }
+.wa-profil-bag { padding: 12px 16px; border-top: 8px solid #f1f5f9; font-size: 14px; }
+.wa-profil-bag h4 { margin: 0 0 8px; font-size: 13px; color: #166534; }
+.wa-profil-bag p { margin: 4px 0; }
+.wa-profil-desk { white-space: pre-wrap; color: #334155; }
+.wa-anggota-list { list-style: none; margin: 0; padding: 0; }
+.wa-anggota-list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+.pusat { text-align: center; }
 .wa-li-body { min-width: 0; flex: 1; }
 .wa-li-top, .wa-li-bot { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
 .wa-li-nama { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

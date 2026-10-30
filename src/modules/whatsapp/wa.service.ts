@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import { promises as fsp } from 'fs';
+import { promises as fsp, existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WaGatewayClient, type GwKirim, type GwPesan } from './wa-gateway.client';
@@ -41,6 +41,9 @@ export class WaService {
   private cacheAkun = new Map<string, number>();
   private indeksNomor: { at: number; map: Map<string, Kecocokan> } | null = null;
   private namaStaf: { at: number; map: Map<number, string> } | null = null;
+  // Antrean foto profil: maks 3 permintaan bersamaan ke WhatsApp
+  private fotoJalan = 0;
+  private fotoAntre: (() => void)[] = [];
 
   constructor(
     private prisma: PrismaService,
@@ -637,6 +640,94 @@ export class WaService {
       })
       .map((u) => ({ id_karyawan: u.id_karyawan, nama: u.karyawan.nama_lengkap }))
       .sort((a, b) => a.nama.localeCompare(b.nama));
+  }
+
+  // ── Profil ───────────────────────────────────────────────────────────────────
+  private async gilirFoto<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.fotoJalan >= 3) await new Promise<void>((r) => this.fotoAntre.push(r));
+    this.fotoJalan++;
+    try { return await fn(); } finally {
+      this.fotoJalan--;
+      this.fotoAntre.shift()?.();
+    }
+  }
+
+  /**
+   * Foto profil WhatsApp chat (disimpan 24 jam di folder privat supaya tidak terus bertanya ke WhatsApp).
+   * Mengembalikan path file, atau null bila tidak ada foto / disembunyikan privasi.
+   */
+  async fotoProfil(id_chat: number, besar: boolean): Promise<string | null> {
+    const chat = await this.prisma.waChat.findUnique({ where: { id_chat }, include: { akun: true } });
+    if (!chat) throw new NotFoundException('Chat tidak ditemukan');
+    const dir = join(this.dirMedia, 'foto', chat.akun.kode);
+    const dasar = join(dir, `${id_chat}${besar ? '-besar' : ''}`);
+    const segar = (f: string) => existsSync(f) && Date.now() - statSync(f).mtimeMs < 24 * 3600_000;
+    if (segar(`${dasar}.jpg`)) return `${dasar}.jpg`;
+    if (segar(`${dasar}.none`)) return null;
+
+    return this.gilirFoto(async () => {
+      let url: string | null;
+      try {
+        url = await this.gw.foto(chat.akun.kode, chat.jid, besar ? 'image' : 'preview');
+      } catch {
+        // Gateway/WA bermasalah: pakai foto lama bila ada, jangan tandai "tidak ada foto"
+        return existsSync(`${dasar}.jpg`) ? `${dasar}.jpg` : null;
+      }
+      await fsp.mkdir(dir, { recursive: true });
+      if (!url) {
+        await fsp.writeFile(`${dasar}.none`, '');
+        await fsp.rm(`${dasar}.jpg`, { force: true });
+        return null;
+      }
+      const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+      if (!res.ok) return existsSync(`${dasar}.jpg`) ? `${dasar}.jpg` : null;
+      await fsp.writeFile(`${dasar}.jpg`, Buffer.from(await res.arrayBuffer()));
+      await fsp.rm(`${dasar}.none`, { force: true });
+      return `${dasar}.jpg`;
+    });
+  }
+
+  /** Info profil: kontak pribadi (tautan ERP) atau grup (deskripsi + anggota) */
+  async profil(id_chat: number) {
+    const chat = await this.prisma.waChat.findUnique({ where: { id_chat }, include: { akun: true } });
+    if (!chat) throw new NotFoundException('Chat tidak ditemukan');
+    const [c] = await this.formatChat([chat]);
+    const jumlah_pesan = await this.prisma.waPesan.count({ where: { id_chat } });
+
+    if (!chat.is_grup) {
+      const k = await this.prisma.waKontak.findUnique({ where: { id_akun_jid: { id_akun: chat.id_akun, jid: chat.jid } } });
+      const [site, pelanggan] = await Promise.all([
+        k?.id_site ? this.prisma.sitePelanggan.findUnique({ where: { id_site: k.id_site }, select: { id_site: true, kode_site: true, nama_site: true, kota: true, status_site: true } }) : null,
+        k?.id_pelanggan ? this.prisma.pelanggan.findUnique({ where: { id_pelanggan: k.id_pelanggan }, select: { id_pelanggan: true, kode_pelanggan: true, nama_pelanggan: true } }) : null,
+      ]);
+      return {
+        ...c, jumlah_pesan, dibuat: chat.created_at,
+        kontak: k ? { nama_wa: k.nama_wa, nama_simpan: k.nama_simpan, nama_erp: k.nama_erp, lid: k.lid } : null,
+        site, pelanggan, grup: null,
+      };
+    }
+
+    // Grup: anggota dari WhatsApp, nama dicocokkan ke kontak yang sudah dikenal
+    let grup: any = null;
+    try {
+      const g = await this.gw.grup(chat.akun.kode, chat.jid);
+      const kontak = await this.prisma.waKontak.findMany({
+        where: { id_akun: chat.id_akun, jid: { in: g.peserta.map((p: any) => p.jid) } },
+        select: { jid: true, nama_wa: true, nama_simpan: true, nama_erp: true },
+      });
+      const kByJid = new Map(kontak.map((x) => [x.jid, x]));
+      grup = {
+        deskripsi: g.deskripsi,
+        peserta: g.peserta.map((p: any) => {
+          const x = kByJid.get(p.jid);
+          const nomor = nomorDariJid(p.jid);
+          return { jid: p.jid, nomor, admin: p.admin, nama: x?.nama_simpan || x?.nama_erp || x?.nama_wa || (nomor ? `+${nomor}` : p.jid.split('@')[0]), erp: x?.nama_erp ?? null };
+        }).sort((a: any, b: any) => (b.admin ? 1 : 0) - (a.admin ? 1 : 0) || a.nama.localeCompare(b.nama)),
+      };
+    } catch (e: any) {
+      grup = { error: e?.message || 'Gagal mengambil data grup', deskripsi: null, peserta: [] };
+    }
+    return { ...c, jumlah_pesan, dibuat: chat.created_at, kontak: null, site: null, pelanggan: null, grup };
   }
 
   // ── Template balasan cepat ───────────────────────────────────────────────────

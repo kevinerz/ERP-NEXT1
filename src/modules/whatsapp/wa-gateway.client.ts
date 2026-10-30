@@ -72,6 +72,9 @@ export class WaGatewayClient {
     return this.panggil<boolean>('POST', `/akun/${akun}/reaksi`, { jid, target, emoji });
   }
   unduhUlang(akun: string, id: string) { return this.panggil<{ file: string }>('POST', `/akun/${akun}/media/ulang`, { id }, 180_000); }
+  foto(akun: string, jid: string, tipe: 'preview' | 'image') {
+    return this.panggil<string | null>('GET', `/akun/${akun}/foto/${encodeURIComponent(jid)}?tipe=${tipe}`, undefined, 20_000);
+  }
   grup(akun: string, jid: string) { return this.panggil<any>('GET', `/akun/${akun}/grup/${encodeURIComponent(jid)}`); }
 
   /** Unduh file media yang sudah disimpan gateway */

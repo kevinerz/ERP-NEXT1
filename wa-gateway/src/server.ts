@@ -55,7 +55,9 @@ export function buatServer(sesi: Map<string, Sesi>) {
     res.json({ data: await ambil(req).unduhUlang(id) });
   });
   app.get('/akun/:akun/grup/:jid', async (req, res) => { res.json({ data: await ambil(req).grup(String(req.params.jid)) }); });
-  app.get('/akun/:akun/foto/:jid', async (req, res) => { res.json({ data: await ambil(req).foto(String(req.params.jid)) }); });
+  app.get('/akun/:akun/foto/:jid', async (req, res) => {
+    res.json({ data: await ambil(req).foto(String(req.params.jid), req.query.tipe === 'preview' ? 'preview' : 'image') });
+  });
 
   // File media yang sudah diunduh gateway — ERP mengambil lalu menyimpannya sendiri
   app.get('/akun/:akun/media/:file', (req, res) => {

@@ -41,6 +41,19 @@ export class WaController {
   @Get('chat/:id')
   detailChat(@Param('id', ParseIntPipe) id: number) { return this.wa.detailChat(id); }
 
+  @Get('chat/:id/profil')
+  profil(@Param('id', ParseIntPipe) id: number) { return this.wa.profil(id); }
+
+  // Foto profil WhatsApp (?besar=1 untuk ukuran penuh). 404 = tidak ada foto
+  @Get('chat/:id/foto')
+  async foto(@Param('id', ParseIntPipe) id: number, @Query('besar') besar: string, @Res() res: Response) {
+    const f = await this.wa.fotoProfil(id, besar === '1');
+    if (!f) { res.status(404).json({ message: 'Tidak ada foto profil' }); return; }
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.sendFile(f);
+  }
+
   @Get('chat/:id/pesan')
   pesan(@Param('id', ParseIntPipe) id: number, @Query('sebelum') sebelum?: string) {
     return this.wa.daftarPesan(id, sebelum ? Number(sebelum) : undefined);

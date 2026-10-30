@@ -419,9 +419,10 @@ export class Sesi {
     return { jid: g.id, nama: g.subject, deskripsi: g.desc ?? null, peserta };
   }
 
-  async foto(jid: string) {
+  // URL foto profil (CDN WhatsApp, berlaku sementara). null = tidak ada / disembunyikan privasi
+  async foto(jid: string, tipe: 'preview' | 'image' = 'image') {
     const sock = this.pastikanTerhubung();
-    return (await sock.profilePictureUrl(jid, 'image').catch(() => null)) ?? null;
+    return (await sock.profilePictureUrl(jid, tipe).catch(() => null)) ?? null;
   }
 
   async logout() {
