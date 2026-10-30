@@ -364,22 +364,31 @@ export class WaService {
       ...(ekstra?.id_karyawan ? { id_karyawan: ekstra.id_karyawan } : {}),
       ...(ekstra?.media_path ? { media_path: ekstra.media_path } : {}),
     };
-    const lama = await this.prisma.waPesan.findUnique({ where: { id_chat_wa_id: { id_chat: chat.id_chat, wa_id: p.id } } });
+    const kunci = { id_chat_wa_id: { id_chat: chat.id_chat, wa_id: p.id } };
+    // Jangan timpa data yang sudah ada (staf pengirim, file media, status lebih tinggi) dengan nilai kosong
+    const gabung = (lama: { id_pesan: number; status: number | null; teks: string | null }) => this.prisma.waPesan.update({
+      where: { id_pesan: lama.id_pesan },
+      data: {
+        ...(ekstra?.id_karyawan ? { id_karyawan: ekstra.id_karyawan } : {}),
+        ...(ekstra?.media_path ? { media_path: ekstra.media_path } : {}),
+        ...(p.status != null && (lama.status ?? 0) < p.status ? { status: p.status } : {}),
+        ...(p.teks && !lama.teks ? { teks: p.teks } : {}),
+      },
+    });
+    const lama = await this.prisma.waPesan.findUnique({ where: kunci });
     let simpan;
-    if (lama) {
-      // Jangan timpa data yang sudah ada (staf pengirim, file media, status lebih tinggi) dengan nilai kosong
-      simpan = await this.prisma.waPesan.update({
-        where: { id_pesan: lama.id_pesan },
-        data: {
-          ...(ekstra?.id_karyawan ? { id_karyawan: ekstra.id_karyawan } : {}),
-          ...(ekstra?.media_path ? { media_path: ekstra.media_path } : {}),
-          ...(p.status != null && (lama.status ?? 0) < p.status ? { status: p.status } : {}),
-          ...(p.teks && !lama.teks ? { teks: p.teks } : {}),
-        },
-      });
-    } else {
-      simpan = await this.prisma.waPesan.create({ data: isi });
-      await this.perbaruiChat(chat.id_chat, { tipe: p.tipe, teks: p.teks, media_nama: m?.nama_file, waktu, masuk: !p.dari_saya, dari_saya: p.dari_saya, riwayat: !!p.riwayat });
+    if (lama) simpan = await gabung(lama);
+    else {
+      try {
+        simpan = await this.prisma.waPesan.create({ data: isi });
+        await this.perbaruiChat(chat.id_chat, { tipe: p.tipe, teks: p.teks, media_nama: m?.nama_file, waktu, masuk: !p.dari_saya, dari_saya: p.dari_saya, riwayat: !!p.riwayat });
+      } catch (e) {
+        // Salinan yang sama (mis. balasan kirim ERP & webhook gateway) tersimpan duluan → gabungkan saja
+        if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e;
+        const ada = await this.prisma.waPesan.findUnique({ where: kunci });
+        if (!ada) throw e;
+        simpan = await gabung(ada);
+      }
     }
 
     // Media diunduh di belakang supaya webhook cepat dibalas
