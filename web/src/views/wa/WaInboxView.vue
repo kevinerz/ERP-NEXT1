@@ -395,7 +395,7 @@ function jalankanFoto() {
 watch(chats, (list) => mintaFoto(list.map((c) => c.id_chat)))
 
 // ── Chat baru ────────────────────────────────────────────────────────────────
-interface TujuanChat { nomor: string; nama: string; keterangan: string | null; sumber: 'whatsapp' | 'pic' | 'pelanggan' | 'teknisi' | 'vendor'; id_chat: number | null }
+interface TujuanChat { nomor: string; nama: string; keterangan: string | null; sumber: 'whatsapp' | 'pic' | 'pelanggan' | 'karyawan' | 'teknisi'; id_chat: number | null }
 const bukaChatBaru = ref(false)
 const cariTujuan = ref('')
 const hasilTujuan = ref<TujuanChat[]>([])
@@ -403,7 +403,7 @@ const mencariTujuan = ref(false)
 const membuatChat = ref(false)
 const errChatBaru = ref('')
 let timerTujuan: ReturnType<typeof setTimeout> | null = null
-const IKON_SUMBER: Record<string, string> = { whatsapp: '💬', pic: '📍', pelanggan: '🏢', teknisi: '🔧', vendor: '🏭' }
+const IKON_SUMBER: Record<string, string> = { whatsapp: '💬', pic: '📍', pelanggan: '🏢', karyawan: '🔧', teknisi: '🤝' }
 
 function nomorDariKetikan(t: string): string | null {
   let n = t.replace(/\D/g, '')
@@ -517,51 +517,52 @@ async function simpanPic() {
   }
 }
 
-// ── Simpan kontak sebagai teknisi / PIC vendor ───────────────────────────────
-interface VendorCari { id_vendor: number; nama_vendor: string; tipe_vendor: string; kontak_pic: string | null; no_telp: string | null; is_aktif: boolean }
+// ── Simpan kontak sebagai teknisi NEXT1 (HRIS) / teknisi vendor pihak ketiga ─
+interface KaryawanCari { id_karyawan: number; nama_lengkap: string; jabatan: string; departemen: string; no_hp: string | null }
 const formTv = reactive({
-  buka: false, jenis: 'teknisi' as 'teknisi' | 'vendor', nama: '', asal: '', keahlian: '',
-  cari: '', hasil: [] as VendorCari[], vendor: null as VendorCari | null, mencari: false, simpan: false, err: '', ok: '',
+  buka: false, jenis: 'karyawan' as 'karyawan' | 'teknisi', nama: '', asal: '', keahlian: '',
+  cari: '', hasil: [] as KaryawanCari[], karyawan: null as KaryawanCari | null, mencari: false, simpan: false, err: '', ok: '',
 })
-let timerVendor: ReturnType<typeof setTimeout> | null = null
-function bukaFormTv(jenis: 'teknisi' | 'vendor') {
+let timerKaryawan: ReturnType<typeof setTimeout> | null = null
+function bukaFormTv(jenis: 'karyawan' | 'teknisi') {
   const t = profil.value?.teknisi?.[0]
   formPic.buka = false
   Object.assign(formTv, {
-    buka: true, jenis, cari: '', hasil: [], vendor: null, err: '', ok: '',
+    buka: true, jenis, cari: '', hasil: [], karyawan: null, err: '', ok: '',
     nama: t?.nama || profil.value?.kontak?.nama_kustom || profil.value?.kontak?.nama_simpan || profil.value?.kontak?.nama_wa || '',
     asal: t?.asal_vendor || '', keahlian: t?.keahlian || '',
   })
 }
 watch(() => formTv.cari, (q) => {
-  if (timerVendor) clearTimeout(timerVendor)
-  if (formTv.vendor && q === formTv.vendor.nama_vendor) return
-  formTv.vendor = null
+  if (timerKaryawan) clearTimeout(timerKaryawan)
+  if (formTv.karyawan && q === formTv.karyawan.nama_lengkap) return
+  formTv.karyawan = null
   if (q.trim().length < 2) { formTv.hasil = []; return }
-  timerVendor = setTimeout(async () => {
+  timerKaryawan = setTimeout(async () => {
     formTv.mencari = true
     try {
-      const { data } = await api.get('/wa/vendor/cari', { params: { q: q.trim() } })
+      const { data } = await api.get('/wa/karyawan/cari', { params: { q: q.trim() } })
       if (formTv.cari === q) formTv.hasil = data.data
     } finally {
       formTv.mencari = false
     }
   }, 300)
 })
-function pilihVendor(x: VendorCari) {
-  formTv.vendor = x
-  formTv.cari = x.nama_vendor
+function pilihKaryawan(x: KaryawanCari) {
+  formTv.karyawan = x
+  formTv.cari = x.nama_lengkap
   formTv.hasil = []
 }
-const tvSiap = computed(() => !!formTv.nama.trim() && (formTv.jenis === 'teknisi' || !!formTv.vendor))
+const samaNomor = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.replace(/\D/g, '').slice(-9) === b.replace(/\D/g, '').slice(-9)
+const tvSiap = computed(() => formTv.jenis === 'karyawan' ? !!formTv.karyawan : !!formTv.nama.trim())
 async function simpanTv() {
   if (!aktif.value || !tvSiap.value) return
   formTv.simpan = true
   formTv.err = ''
   try {
-    const { data } = formTv.jenis === 'teknisi'
-      ? await api.post(`/wa/chat/${aktif.value.id_chat}/teknisi`, { nama: formTv.nama.trim(), asal_vendor: formTv.asal.trim() || undefined, keahlian: formTv.keahlian.trim() || undefined })
-      : await api.post(`/wa/chat/${aktif.value.id_chat}/vendor`, { id_vendor: formTv.vendor!.id_vendor, nama_pic: formTv.nama.trim() })
+    const { data } = formTv.jenis === 'karyawan'
+      ? await api.post(`/wa/chat/${aktif.value.id_chat}/karyawan`, { id_karyawan: formTv.karyawan!.id_karyawan })
+      : await api.post(`/wa/chat/${aktif.value.id_chat}/teknisi`, { nama: formTv.nama.trim(), asal_vendor: formTv.asal.trim() || undefined, keahlian: formTv.keahlian.trim() || undefined })
     profil.value = data.data
     formTv.buka = false
     formTv.ok = data.data.pesan || 'Tersimpan'
@@ -577,8 +578,8 @@ interface Profil {
   kontak: { nama_wa: string | null; nama_simpan: string | null; nama_kustom: string | null; nama_erp: string | null } | null
   site: { id_site: number; kode_site: string; nama_site: string; kota: string | null; status_site: string } | null
   pelanggan: { id_pelanggan: number; kode_pelanggan: string; nama_pelanggan: string } | null
+  karyawan: { id_karyawan: number; nama_lengkap: string; jabatan: string; departemen: string; status_aktif: boolean }[]
   teknisi: { id_kontak: number; nama: string; asal_vendor: string | null; keahlian: string | null; is_aktif: boolean }[]
-  vendor: { id_vendor: number; nama_vendor: string; tipe_vendor: string; kontak_pic: string | null; is_aktif: boolean }[]
   grup: { deskripsi: string | null; peserta: { jid: string; nomor: string | null; admin: string | null; nama: string; erp: string | null }[]; error?: string } | null
 }
 const profil = ref<Profil | null>(null)
@@ -990,7 +991,7 @@ onBeforeUnmount(() => {
           <li v-if="mencariTujuan" class="muted">Mencari…</li>
           <li v-else-if="cariTujuan.trim().length >= 2 && !hasilTujuan.length && !nomorKetik" class="muted">Tidak ditemukan. Ketik nomor HP untuk chat langsung.</li>
         </ul>
-        <p class="muted kecil">💬 kontak WhatsApp · 📍 PIC site · 🏢 data pelanggan · 🔧 teknisi · 🏭 vendor. Maks 20 chat baru per jam (pengaman blokir).</p>
+        <p class="muted kecil">💬 kontak WhatsApp · 📍 PIC site · 🏢 data pelanggan · 🔧 teknisi NEXT1 · 🤝 vendor. Maks 20 chat baru per jam (pengaman blokir).</p>
         <p v-if="membuatChat" class="muted">Mengecek nomor di WhatsApp…</p>
         <button class="btn-sm btn-ghost" @click="bukaChatBaru = false">Tutup</button>
       </div>
@@ -1023,55 +1024,54 @@ onBeforeUnmount(() => {
                 <small class="muted">{{ profil.site.kode_site }}<template v-if="profil.site.kota"> · {{ profil.site.kota }}</template> · {{ profil.site.status_site }}</small>
               </p>
             </template>
+            <p v-for="k in profil.karyawan" :key="'k' + k.id_karyawan">
+              🔧 Teknisi NEXT1: <b>{{ k.nama_lengkap }}</b>
+              <small class="muted">{{ k.jabatan }} · {{ k.departemen }}<template v-if="!k.status_aktif"> · nonaktif</template></small>
+            </p>
             <p v-for="t in profil.teknisi" :key="'t' + t.id_kontak">
-              🔧 Teknisi: <b>{{ t.nama }}</b>
+              🤝 Vendor: <b>{{ t.nama }}</b>
               <small class="muted"><template v-if="t.asal_vendor">{{ t.asal_vendor }}</template><template v-if="t.keahlian"> · {{ t.keahlian }}</template><template v-if="!t.is_aktif"> · nonaktif</template></small>
             </p>
-            <p v-for="v in profil.vendor" :key="'v' + v.id_vendor">
-              🏭 PIC vendor: <b>{{ v.nama_vendor }}</b>
-              <small class="muted">{{ v.tipe_vendor }}<template v-if="v.kontak_pic"> · {{ v.kontak_pic }}</template><template v-if="!v.is_aktif"> · nonaktif</template></small>
-            </p>
-            <p v-if="!profil.site && !profil.pelanggan && !profil.teknisi?.length && !profil.vendor?.length" class="muted">Nomor ini belum terdaftar sebagai PIC site / pelanggan / teknisi / vendor di ERP.</p>
+            <p v-if="!profil.site && !profil.pelanggan && !profil.karyawan?.length && !profil.teknisi?.length" class="muted">Nomor ini belum terdaftar sebagai PIC site / pelanggan / teknisi / vendor di ERP.</p>
             <p v-if="formPic.ok" class="hijau">✓ {{ formPic.ok }}</p>
             <p v-if="formTv.ok" class="hijau">✓ {{ formTv.ok }}</p>
             <div v-if="!formPic.buka && !formTv.buka && profil.nomor" class="wa-profil-simpan">
               <button class="btn-sm btn-ghost" @click="bukaFormPic">📍 {{ profil.site ? 'PIC site lain' : 'PIC site' }}</button>
-              <button class="btn-sm btn-ghost" @click="bukaFormTv('teknisi')">🔧 Teknisi</button>
-              <button class="btn-sm btn-ghost" @click="bukaFormTv('vendor')">🏭 Vendor</button>
+              <button class="btn-sm btn-ghost" @click="bukaFormTv('karyawan')">🔧 Teknisi NEXT1</button>
+              <button class="btn-sm btn-ghost" @click="bukaFormTv('teknisi')">🤝 Vendor</button>
             </div>
 
             <div v-if="formTv.buka" class="wa-form-pic">
               <div class="wa-form-pic-aksi">
-                <button class="btn-sm" :class="formTv.jenis === 'teknisi' ? 'btn-hijau' : 'btn-ghost'" @click="formTv.jenis = 'teknisi'">🔧 Teknisi</button>
-                <button class="btn-sm" :class="formTv.jenis === 'vendor' ? 'btn-hijau' : 'btn-ghost'" @click="formTv.jenis = 'vendor'">🏭 PIC vendor</button>
+                <button class="btn-sm" :class="formTv.jenis === 'karyawan' ? 'btn-hijau' : 'btn-ghost'" @click="formTv.jenis = 'karyawan'">🔧 Teknisi NEXT1</button>
+                <button class="btn-sm" :class="formTv.jenis === 'teknisi' ? 'btn-hijau' : 'btn-ghost'" @click="formTv.jenis = 'teknisi'">🤝 Vendor (pihak ketiga)</button>
               </div>
-              <template v-if="formTv.jenis === 'teknisi'">
-                <label>Nama teknisi</label>
+              <template v-if="formTv.jenis === 'karyawan'">
+                <label>Karyawan NEXT1</label>
+                <div class="wa-dropdown">
+                  <input v-model="formTv.cari" placeholder="Cari nama / jabatan karyawan…" autofocus />
+                  <ul v-if="formTv.hasil.length || formTv.mencari" class="wa-dropdown-list">
+                    <li v-if="formTv.mencari" class="muted">Mencari…</li>
+                    <li v-for="x in formTv.hasil" :key="x.id_karyawan" @click="pilihKaryawan(x)">
+                      <b>{{ x.nama_lengkap }}</b>
+                      <small>{{ x.jabatan }} · {{ x.departemen }}<template v-if="x.no_hp"> · HP: {{ x.no_hp }}</template></small>
+                    </li>
+                  </ul>
+                </div>
+                <small v-if="formTv.karyawan?.no_hp && !samaNomor(formTv.karyawan.no_hp, profil.nomor)" class="wa-err">
+                  No. HP di HRIS sekarang {{ formTv.karyawan.no_hp }} — akan diganti dengan nomor ini.
+                </small>
+                <small v-else-if="formTv.karyawan?.no_hp" class="hijau">✓ Nomor ini sudah tercatat di HRIS</small>
+                <p class="muted kecil">No. HP karyawan di HRIS diisi: 0{{ profil.nomor.slice(2) }}</p>
+              </template>
+              <template v-else>
+                <label>Nama teknisi vendor</label>
                 <input v-model="formTv.nama" maxlength="150" placeholder="Nama teknisi" />
                 <label>Asal vendor / tim <small class="muted">(opsional)</small></label>
                 <input v-model="formTv.asal" maxlength="150" placeholder="mis. CV Maju Jaya, freelance" />
                 <label>Keahlian <small class="muted">(opsional)</small></label>
                 <input v-model="formTv.keahlian" maxlength="150" placeholder="mis. FO splicing, wireless" />
-                <p class="muted kecil">{{ profil.teknisi?.length ? 'Data teknisi dengan nomor ini akan diperbarui.' : 'Masuk ke Master Kontak Teknisi.' }} Nomor: 0{{ profil.nomor.slice(2) }}</p>
-              </template>
-              <template v-else>
-                <label>Vendor</label>
-                <div class="wa-dropdown">
-                  <input v-model="formTv.cari" placeholder="Cari nama / tipe vendor…" autofocus />
-                  <ul v-if="formTv.hasil.length || formTv.mencari" class="wa-dropdown-list">
-                    <li v-if="formTv.mencari" class="muted">Mencari…</li>
-                    <li v-for="x in formTv.hasil" :key="x.id_vendor" @click="pilihVendor(x)">
-                      <b>{{ x.nama_vendor }}</b>
-                      <small>{{ x.tipe_vendor }}<template v-if="x.kontak_pic"> · PIC: {{ x.kontak_pic }}</template><template v-if="x.no_telp"> {{ x.no_telp }}</template><template v-if="!x.is_aktif"> · nonaktif</template></small>
-                    </li>
-                  </ul>
-                </div>
-                <small v-if="formTv.vendor?.no_telp && formTv.vendor.no_telp.replace(/\D/g, '').slice(-9) !== profil.nomor.slice(-9)" class="wa-err">
-                  PIC sekarang ({{ formTv.vendor.kontak_pic || '-' }} {{ formTv.vendor.no_telp }}) akan diganti; kontak lama dicatat di catatan vendor.
-                </small>
-                <label>Nama PIC vendor</label>
-                <input v-model="formTv.nama" maxlength="100" placeholder="Nama PIC" />
-                <p class="muted kecil">Nomor: 0{{ profil.nomor.slice(2) }}</p>
+                <p class="muted kecil">{{ profil.teknisi?.length ? 'Data vendor dengan nomor ini akan diperbarui.' : 'Masuk ke Master Kontak Teknisi (pihak ketiga).' }} Nomor: 0{{ profil.nomor.slice(2) }}</p>
               </template>
               <p v-if="formTv.err" class="wa-err">{{ formTv.err }}</p>
               <div class="wa-form-pic-aksi">

@@ -6,7 +6,7 @@ import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { AlihkanDto, ChatBaruDto, DaftarChatQuery, KirimPesanDto, NamaKontakDto, ReaksiDto, SimpanPicDto, SimpanTeknisiDto, SimpanVendorDto, TemplateDto } from './dto';
+import { AlihkanDto, ChatBaruDto, DaftarChatQuery, KirimPesanDto, NamaKontakDto, ReaksiDto, SimpanPicDto, SimpanKaryawanDto, SimpanTeknisiDto, TemplateDto } from './dto';
 import { WaGatewayClient } from './wa-gateway.client';
 import { WaRealtimeService } from './wa-realtime.service';
 import { WaService, type FileUnggah } from './wa.service';
@@ -54,15 +54,16 @@ export class WaController {
   @Post('chat/:id/pic')
   simpanPic(@Param('id', ParseIntPipe) id: number, @Body() dto: SimpanPicDto) { return this.wa.simpanPic(id, dto); }
 
-  // Simpan kontak sebagai teknisi pihak ketiga / PIC vendor
-  @Get('vendor/cari')
-  cariVendor(@Query('q') q: string) { return this.wa.cariVendor(q); }
+  // Simpan kontak sebagai teknisi NEXT1 (No. HP di HRIS) / teknisi vendor pihak ketiga
+  @Get('karyawan/cari')
+  cariKaryawan(@Query('q') q: string) { return this.wa.cariKaryawan(q); }
+
+  @Post('chat/:id/karyawan')
+  simpanKaryawan(@Param('id', ParseIntPipe) id: number, @Body() dto: SimpanKaryawanDto) { return this.wa.simpanKaryawan(id, dto); }
 
   @Post('chat/:id/teknisi')
   simpanTeknisi(@Param('id', ParseIntPipe) id: number, @Body() dto: SimpanTeknisiDto) { return this.wa.simpanTeknisi(id, dto); }
 
-  @Post('chat/:id/vendor')
-  simpanVendor(@Param('id', ParseIntPipe) id: number, @Body() dto: SimpanVendorDto) { return this.wa.simpanVendor(id, dto); }
 
   @Patch('chat/:id/nama')
   ubahNama(@Param('id', ParseIntPipe) id: number, @Body() dto: NamaKontakDto) { return this.wa.ubahNamaKontak(id, dto.nama ?? null); }

@@ -88,15 +88,11 @@ export class WaService {
       pasang(p.no_ponsel_pemilik, p.nama_pemilik);
       pasang(p.no_telp, null);
     }
-    // Teknisi pihak ketiga & PIC vendor — hanya bila nomor belum dikenal sebagai pelanggan
-    const { teknisi, vendor } = await this.teknisiVendor();
+    // Teknisi vendor (pihak ketiga) — hanya bila nomor belum dikenal sebagai pelanggan
+    const { karyawan, teknisi } = await this.karyawanTeknisi();
     for (const t of teknisi) {
       const n = normalNomor(t.no_hp);
-      if (n && !map.has(n)) map.set(n, { id_pelanggan: null, id_site: null, id_pic: null, nama: `${t.nama} · Teknisi${t.asal_vendor ? ` ${t.asal_vendor}` : ''}` });
-    }
-    for (const v of vendor) {
-      const n = normalNomor(v.no_telp);
-      if (n && !map.has(n)) map.set(n, { id_pelanggan: null, id_site: null, id_pic: null, nama: v.kontak_pic ? `${v.kontak_pic} · ${v.nama_vendor}` : v.nama_vendor });
+      if (n && !map.has(n)) map.set(n, { id_pelanggan: null, id_site: null, id_pic: null, nama: `${t.nama} · Vendor${t.asal_vendor ? ` ${t.asal_vendor}` : ''}` });
     }
     // PIC site lebih spesifik → menimpa kecocokan level pelanggan
     const pic = await this.prisma.picSite.findMany({
@@ -107,24 +103,30 @@ export class WaService {
       const n = normalNomor(x.no_kontak);
       if (n) map.set(n, { id_pelanggan: x.site.id_pelanggan, id_site: x.site.id_site, id_pic: x.id_pic, nama: `${x.nama_pic} · ${x.site.nama_site}` });
     }
+    // Karyawan NEXT1 (teknisi internal dll) paling utama
+    for (const k of karyawan) {
+      const n = normalNomor(k.no_hp);
+      if (n && k.status_aktif) map.set(n, { id_pelanggan: null, id_site: null, id_pic: null, nama: `${k.nama_lengkap.trim()} · NEXT1 ${k.jabatan}` });
+    }
     this.indeksNomor = { at: Date.now(), map };
     return map;
   }
 
-  private teknisiVendor() {
+  /** Karyawan NEXT1 (HRIS) & teknisi vendor pihak ketiga (master_kontak_teknisi) yang punya nomor HP */
+  private karyawanTeknisi() {
     return Promise.all([
+      this.prisma.hrisKaryawan.findMany({ where: { no_hp: { not: null } }, select: { id_karyawan: true, nama_lengkap: true, jabatan: true, departemen: true, no_hp: true, status_aktif: true } }),
       this.prisma.masterKontakTeknisi.findMany({ select: { id_kontak: true, nama: true, no_hp: true, asal_vendor: true, keahlian: true, is_aktif: true } }),
-      this.prisma.masterVendorIsp.findMany({ where: { no_telp: { not: null } }, select: { id_vendor: true, nama_vendor: true, tipe_vendor: true, kontak_pic: true, no_telp: true, is_aktif: true } }),
-    ]).then(([teknisi, vendor]) => ({ teknisi, vendor }));
+    ]).then(([karyawan, teknisi]) => ({ karyawan, teknisi }));
   }
 
-  /** Teknisi & vendor yang nomornya sama dengan chat ini */
-  private async teknisiVendorNomor(nomor: string | null) {
-    if (!nomor) return { teknisi: [], vendor: [] };
-    const { teknisi, vendor } = await this.teknisiVendor();
+  /** Karyawan & teknisi vendor yang nomornya sama dengan chat ini */
+  private async karyawanTeknisiNomor(nomor: string | null) {
+    if (!nomor) return { karyawan: [], teknisi: [] };
+    const { karyawan, teknisi } = await this.karyawanTeknisi();
     return {
+      karyawan: karyawan.filter((k) => normalNomor(k.no_hp) === nomor).map(({ no_hp, ...k }) => ({ ...k, nama_lengkap: k.nama_lengkap.trim() })),
       teknisi: teknisi.filter((t) => normalNomor(t.no_hp) === nomor),
-      vendor: vendor.filter((v) => normalNomor(v.no_telp) === nomor),
     };
   }
 
@@ -747,12 +749,12 @@ export class WaService {
       const [site, pelanggan, tv] = await Promise.all([
         k?.id_site ? this.prisma.sitePelanggan.findUnique({ where: { id_site: k.id_site }, select: { id_site: true, kode_site: true, nama_site: true, kota: true, status_site: true } }) : null,
         k?.id_pelanggan ? this.prisma.pelanggan.findUnique({ where: { id_pelanggan: k.id_pelanggan }, select: { id_pelanggan: true, kode_pelanggan: true, nama_pelanggan: true } }) : null,
-        this.teknisiVendorNomor(nomorDariJid(chat.jid)),
+        this.karyawanTeknisiNomor(nomorDariJid(chat.jid)),
       ]);
       return {
         ...c, jumlah_pesan, dibuat: chat.created_at,
         kontak: k ? { nama_wa: k.nama_wa, nama_simpan: k.nama_simpan, nama_kustom: k.nama_kustom, nama_erp: k.nama_erp, lid: k.lid } : null,
-        site, pelanggan, teknisi: tv.teknisi, vendor: tv.vendor, grup: null,
+        site, pelanggan, karyawan: tv.karyawan, teknisi: tv.teknisi, grup: null,
       };
     }
 
@@ -776,7 +778,7 @@ export class WaService {
     } catch (e: any) {
       grup = { error: e?.message || 'Gagal mengambil data grup', deskripsi: null, peserta: [] };
     }
-    return { ...c, jumlah_pesan, dibuat: chat.created_at, kontak: null, site: null, pelanggan: null, teknisi: [], vendor: [], grup };
+    return { ...c, jumlah_pesan, dibuat: chat.created_at, kontak: null, site: null, pelanggan: null, karyawan: [], teknisi: [], grup };
   }
 
   // ── Chat baru & nama kontak ──────────────────────────────────────────────────
@@ -787,11 +789,11 @@ export class WaService {
     const id_akun = await this.idAkun(kode);
     const angka = kata.replace(/\D/g, '');
     const cariNomor = angka.length >= 4 ? (normalNomor(angka) ?? angka).replace(/^62/, '') : null;
-    type Hasil = { nomor: string; nama: string; keterangan: string | null; sumber: 'whatsapp' | 'pic' | 'pelanggan' | 'teknisi' | 'vendor'; id_chat?: number | null };
+    type Hasil = { nomor: string; nama: string; keterangan: string | null; sumber: 'whatsapp' | 'pic' | 'pelanggan' | 'karyawan' | 'teknisi'; id_chat?: number | null };
     const hasil = new Map<string, Hasil>();
     const tambah = (h: Hasil) => { if (!hasil.has(h.nomor)) hasil.set(h.nomor, h); };
 
-    const [kontak, pic, pelanggan, teknisi, vendor] = await Promise.all([
+    const [kontak, pic, pelanggan, teknisi, karyawan] = await Promise.all([
       this.prisma.waKontak.findMany({
         where: {
           id_akun, jid: { endsWith: '@s.whatsapp.net' },
@@ -837,15 +839,15 @@ export class WaService {
         select: { nama: true, no_hp: true, asal_vendor: true, keahlian: true },
         take: 8,
       }),
-      this.prisma.masterVendorIsp.findMany({
+      this.prisma.hrisKaryawan.findMany({
         where: {
-          is_aktif: true, no_telp: { not: null },
+          status_aktif: true, no_hp: { not: null },
           OR: [
-            { nama_vendor: { contains: kata } }, { kontak_pic: { contains: kata } },
-            ...(cariNomor ? [{ no_telp: { contains: cariNomor } }] : []),
+            { nama_lengkap: { contains: kata } }, { jabatan: { contains: kata } },
+            ...(cariNomor ? [{ no_hp: { contains: cariNomor } }] : []),
           ],
         },
-        select: { nama_vendor: true, kontak_pic: true, no_telp: true },
+        select: { nama_lengkap: true, jabatan: true, no_hp: true },
         take: 8,
       }),
     ]);
@@ -868,11 +870,11 @@ export class WaService {
     }
     for (const t of teknisi) {
       const n = normalNomor(t.no_hp);
-      if (n) tambah({ nomor: n, nama: t.nama, keterangan: ['Teknisi', t.asal_vendor, t.keahlian].filter(Boolean).join(' · '), sumber: 'teknisi' });
+      if (n) tambah({ nomor: n, nama: t.nama, keterangan: ['Vendor', t.asal_vendor, t.keahlian].filter(Boolean).join(' · '), sumber: 'teknisi' });
     }
-    for (const v of vendor) {
-      const n = normalNomor(v.no_telp);
-      if (n) tambah({ nomor: n, nama: v.kontak_pic || v.nama_vendor, keterangan: `Vendor · ${v.nama_vendor}`, sumber: 'vendor' });
+    for (const k of karyawan) {
+      const n = normalNomor(k.no_hp);
+      if (n) tambah({ nomor: n, nama: k.nama_lengkap.trim(), keterangan: `NEXT1 · ${k.jabatan}`, sumber: 'karyawan' });
     }
     // Tandai yang sudah punya chat
     const list = [...hasil.values()].slice(0, 30);
@@ -986,7 +988,7 @@ export class WaService {
     return { ...(await this.profil(id_chat)), pesan: `${nama_pic} ${ada ? 'diperbarui' : 'disimpan'} sebagai PIC ${site.nama_site}` };
   }
 
-  // ── Simpan kontak chat sebagai teknisi / PIC vendor ─────────────────────────
+  // ── Simpan kontak chat sebagai teknisi NEXT1 (HRIS) / teknisi vendor ─────────
   private async nomorChatPribadi(id_chat: number) {
     const chat = await this.prisma.waChat.findUnique({ where: { id_chat } });
     if (!chat) throw new NotFoundException('Chat tidak ditemukan');
@@ -1002,47 +1004,42 @@ export class WaService {
     await this.siarkanChat(chat.id_chat);
   }
 
-  cariVendor(q: string) {
+  cariKaryawan(q: string) {
     const kata = (q || '').trim();
-    return this.prisma.masterVendorIsp.findMany({
-      where: kata ? { OR: [{ nama_vendor: { contains: kata } }, { tipe_vendor: { contains: kata } }, { kontak_pic: { contains: kata } }] } : {},
-      select: { id_vendor: true, nama_vendor: true, tipe_vendor: true, kontak_pic: true, no_telp: true, is_aktif: true },
-      orderBy: [{ is_aktif: 'desc' }, { nama_vendor: 'asc' }],
+    if (kata.length < 2) return Promise.resolve([]);
+    return this.prisma.hrisKaryawan.findMany({
+      where: { status_aktif: true, OR: [{ nama_lengkap: { contains: kata } }, { jabatan: { contains: kata } }, { departemen: { contains: kata } }] },
+      select: { id_karyawan: true, nama_lengkap: true, jabatan: true, departemen: true, no_hp: true },
+      orderBy: { nama_lengkap: 'asc' },
       take: 20,
     });
   }
 
-  /** Simpan nomor chat ke master kontak teknisi (nomor yang sama → diperbarui) */
+  /** Isi No. HP karyawan NEXT1 di HRIS dengan nomor chat ini (nomor lama dicatat di log) */
+  async simpanKaryawan(id_chat: number, d: { id_karyawan: number }) {
+    const { chat, no_hp } = await this.nomorChatPribadi(id_chat);
+    const k = await this.prisma.hrisKaryawan.findUnique({ where: { id_karyawan: d.id_karyawan }, select: { id_karyawan: true, nama_lengkap: true, no_hp: true } });
+    if (!k) throw new NotFoundException('Karyawan tidak ditemukan');
+    await this.prisma.hrisKaryawan.update({ where: { id_karyawan: k.id_karyawan }, data: { no_hp } });
+    await this.tautkanUlang(chat);
+    const nama = k.nama_lengkap.trim();
+    this.logger.log(`No. HP karyawan#${k.id_karyawan} ${nama} diubah dari WhatsApp: ${k.no_hp || '-'} → ${no_hp}`);
+    return { ...(await this.profil(id_chat)), pesan: `No. HP ${nama} di HRIS diisi ${no_hp}` };
+  }
+
+  /** Simpan nomor chat ke master kontak teknisi pihak ketiga / vendor (nomor sama → diperbarui) */
   async simpanTeknisi(id_chat: number, d: { nama: string; asal_vendor?: string; keahlian?: string }) {
     const { chat, nomor, no_hp } = await this.nomorChatPribadi(id_chat);
     const nama = d.nama.trim();
     if (!nama) throw new BadRequestException('Nama teknisi wajib diisi');
-    const { teknisi } = await this.teknisiVendorNomor(nomor);
+    const { teknisi } = await this.karyawanTeknisiNomor(nomor);
     const ada = teknisi[0];
     const data = { nama, asal_vendor: d.asal_vendor?.trim() || null, keahlian: d.keahlian?.trim() || null };
     if (ada) await this.prisma.masterKontakTeknisi.update({ where: { id_kontak: ada.id_kontak }, data: { ...data, is_aktif: true } });
     else await this.prisma.masterKontakTeknisi.create({ data: { ...data, no_hp, catatan: 'Ditambahkan dari inbox WhatsApp' } });
     await this.tautkanUlang(chat);
-    this.logger.log(`Teknisi ${ada ? 'diperbarui' : 'ditambahkan'} dari WhatsApp: ${nama} (${no_hp})`);
-    return { ...(await this.profil(id_chat)), pesan: `${nama} ${ada ? 'diperbarui' : 'disimpan'} sebagai kontak teknisi` };
-  }
-
-  /** Jadikan nomor chat sebagai PIC vendor. Kontak lama vendor tidak hilang — dipindah ke catatan. */
-  async simpanVendor(id_chat: number, d: { id_vendor: number; nama_pic: string }) {
-    const { chat, nomor, no_hp } = await this.nomorChatPribadi(id_chat);
-    const nama_pic = d.nama_pic.trim();
-    if (!nama_pic) throw new BadRequestException('Nama PIC wajib diisi');
-    const v = await this.prisma.masterVendorIsp.findUnique({ where: { id_vendor: d.id_vendor } });
-    if (!v) throw new NotFoundException('Vendor tidak ditemukan');
-    let catatan = v.catatan;
-    if (v.no_telp && normalNomor(v.no_telp) !== nomor) {
-      const lama = `Kontak lama (diganti dari WhatsApp ${new Date().toISOString().slice(0, 10)}): ${v.kontak_pic || '-'} ${v.no_telp}`;
-      catatan = catatan ? `${catatan}\n${lama}` : lama;
-    }
-    await this.prisma.masterVendorIsp.update({ where: { id_vendor: v.id_vendor }, data: { kontak_pic: nama_pic.slice(0, 100), no_telp: no_hp, catatan } });
-    await this.tautkanUlang(chat);
-    this.logger.log(`PIC vendor dari WhatsApp: ${nama_pic} (${no_hp}) → vendor#${v.id_vendor} ${v.nama_vendor}`);
-    return { ...(await this.profil(id_chat)), pesan: `${nama_pic} disimpan sebagai PIC ${v.nama_vendor}` };
+    this.logger.log(`Teknisi vendor ${ada ? 'diperbarui' : 'ditambahkan'} dari WhatsApp: ${nama} (${no_hp})`);
+    return { ...(await this.profil(id_chat)), pesan: `${nama} ${ada ? 'diperbarui' : 'disimpan'} sebagai teknisi vendor` };
   }
 
   // ── Template balasan cepat ───────────────────────────────────────────────────

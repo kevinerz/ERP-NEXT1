@@ -50,9 +50,8 @@ export class SimpanTeknisiDto {
   @IsOptional() @IsString() @MaxLength(150) keahlian?: string;
 }
 
-export class SimpanVendorDto {
-  @Type(() => Number) @IsInt() @Min(1) id_vendor: number;
-  @IsString() @MaxLength(100) nama_pic: string;
+export class SimpanKaryawanDto {
+  @Type(() => Number) @IsInt() @Min(1) id_karyawan: number;
 }
 
 export class SimpanPicDto {
