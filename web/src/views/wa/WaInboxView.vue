@@ -295,6 +295,8 @@ function upsertPesan(p: Pesan) {
   const i = pesan.value.findIndex((x) => x.id_pesan === p.id_pesan)
   if (i >= 0) pesan.value[i] = p
   else pesan.value.push(p)
+  // watch(pesan) tidak terpicu oleh push/ganti elemen → foto baru dimuat di sini
+  if (p.media?.ada && (p.media.jenis === 'image' || p.media.jenis === 'sticker')) muatMedia(p)
 }
 
 async function reaksi(p: Pesan, emoji: string) {
