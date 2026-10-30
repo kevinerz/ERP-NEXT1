@@ -6,7 +6,7 @@ import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { AlihkanDto, ChatBaruDto, DaftarChatQuery, KirimPesanDto, NamaKontakDto, ReaksiDto, SimpanPicDto, TemplateDto } from './dto';
+import { AlihkanDto, ChatBaruDto, DaftarChatQuery, KirimPesanDto, NamaKontakDto, ReaksiDto, SimpanPicDto, SimpanTeknisiDto, SimpanVendorDto, TemplateDto } from './dto';
 import { WaGatewayClient } from './wa-gateway.client';
 import { WaRealtimeService } from './wa-realtime.service';
 import { WaService, type FileUnggah } from './wa.service';
@@ -53,6 +53,16 @@ export class WaController {
 
   @Post('chat/:id/pic')
   simpanPic(@Param('id', ParseIntPipe) id: number, @Body() dto: SimpanPicDto) { return this.wa.simpanPic(id, dto); }
+
+  // Simpan kontak sebagai teknisi pihak ketiga / PIC vendor
+  @Get('vendor/cari')
+  cariVendor(@Query('q') q: string) { return this.wa.cariVendor(q); }
+
+  @Post('chat/:id/teknisi')
+  simpanTeknisi(@Param('id', ParseIntPipe) id: number, @Body() dto: SimpanTeknisiDto) { return this.wa.simpanTeknisi(id, dto); }
+
+  @Post('chat/:id/vendor')
+  simpanVendor(@Param('id', ParseIntPipe) id: number, @Body() dto: SimpanVendorDto) { return this.wa.simpanVendor(id, dto); }
 
   @Patch('chat/:id/nama')
   ubahNama(@Param('id', ParseIntPipe) id: number, @Body() dto: NamaKontakDto) { return this.wa.ubahNamaKontak(id, dto.nama ?? null); }

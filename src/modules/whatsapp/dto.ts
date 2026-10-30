@@ -44,6 +44,17 @@ export class NamaKontakDto {
   @IsOptional() @IsString() @MaxLength(150) nama?: string;
 }
 
+export class SimpanTeknisiDto {
+  @IsString() @MaxLength(150) nama: string;
+  @IsOptional() @IsString() @MaxLength(150) asal_vendor?: string;
+  @IsOptional() @IsString() @MaxLength(150) keahlian?: string;
+}
+
+export class SimpanVendorDto {
+  @Type(() => Number) @IsInt() @Min(1) id_vendor: number;
+  @IsString() @MaxLength(100) nama_pic: string;
+}
+
 export class SimpanPicDto {
   @Type(() => Number) @IsInt() @Min(1) id_site: number;
   @IsString() @MaxLength(150) nama_pic: string;
