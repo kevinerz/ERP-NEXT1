@@ -1665,6 +1665,10 @@ model Rapat {
   id_pembuat  Int
   mulai_at    DateTime?
   selesai_at  DateTime?
+  // Link tamu (orang di luar HRIS) — langsung masuk tanpa login
+  tamu_kode   String?   @unique @db.VarChar(48)
+  tamu_aktif  Boolean   @default(false)
+  tamu_sampai DateTime?
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
 
@@ -1693,7 +1697,9 @@ model RapatPeserta {
 model RapatKehadiran {
   id_hadir    Int       @id @default(autoincrement())
   id_rapat    Int
-  id_karyawan Int
+  id_karyawan Int? // kosong = tamu
+  identity    String?   @db.VarChar(64) // identity LiveKit (k-<id> / tamu-<acak>)
+  nama_tamu   String?   @db.VarChar(200)
   masuk_at    DateTime
   keluar_at   DateTime?
 

@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { BuatRapatDto, KelolaDto, PesertaDto, UbahRapatDto } from './dto';
+import { BuatRapatDto, KelolaDto, LinkTamuDto, PesertaDto, UbahRapatDto } from './dto';
 import { MeetingService } from './meeting.service';
 
 // Rapat internal — semua staf (segment /api/meeting, lihat ModulAksesGuard)
@@ -41,6 +41,12 @@ export class MeetingController {
   @Post(':id/peserta/:idk/moderator')
   jadikanModerator(@CurrentUser('id_karyawan') id_karyawan: number, @Param('id', ParseIntPipe) id: number, @Param('idk', ParseIntPipe) idk: number) {
     return this.meeting.jadikanModerator(id, id_karyawan, idk);
+  }
+
+  // Link tamu (moderator): aktifkan / buat ulang / matikan
+  @Post(':id/tamu')
+  linkTamu(@CurrentUser('id_karyawan') id_karyawan: number, @Param('id', ParseIntPipe) id: number, @Body() dto: LinkTamuDto) {
+    return this.meeting.aturLinkTamu(id, id_karyawan, dto);
   }
 
   // Token masuk room LiveKit (berlaku 6 jam)

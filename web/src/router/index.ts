@@ -38,6 +38,14 @@ const router = createRouter({
       meta: { public: true },
     },
 
+    // Tamu rapat (orang di luar HRIS) — masuk lewat link, tanpa login
+    {
+      path: '/rapat/tamu/:kode',
+      name: 'rapat-tamu',
+      component: () => import('@/views/meeting/TamuRapatView.vue'),
+      meta: { public: true },
+    },
+
     // Portal Pelanggan — layout terpisah, auth terpisah
     {
       path: '/portal/login',

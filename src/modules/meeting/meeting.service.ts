@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { buatToken, verifikasiWebhook, type VideoGrant } from './livekit.util';
 
 const identitas = (id_karyawan: number) => `k-${id_karyawan}`;
+const kodeAcak = () => randomBytes(18).toString('base64url');
 const dariIdentitas = (identity: string | undefined) => {
   const m = /^k-(\d+)$/.exec(identity || '');
   return m ? Number(m[1]) : null;
@@ -126,17 +127,22 @@ export class MeetingService {
   async detail(id_rapat: number, id_karyawan: number) {
     const { r, moderator } = await this.rapatAnggota(id_rapat, id_karyawan);
     const hadir = await this.prisma.rapatKehadiran.findMany({ where: { id_rapat }, orderBy: { masuk_at: 'asc' } });
-    const nama = await this.namaKaryawan([...new Set([r.id_pembuat, ...r.peserta.map((p) => p.id_karyawan), ...hadir.map((h) => h.id_karyawan)])]);
-    // Ringkas kehadiran per orang: pertama masuk, terakhir keluar, total menit
-    const per = new Map<number, { masuk: Date; keluar: Date | null; detik: number; online: boolean }>();
+    const nama = await this.namaKaryawan([...new Set([r.id_pembuat, ...r.peserta.map((p) => p.id_karyawan)])]);
+    // Ringkas kehadiran per orang (karyawan per id, tamu per identity): pertama masuk, terakhir keluar, total menit
+    type Ringkas = { nama: string | null; masuk: Date; keluar: Date | null; detik: number; online: boolean };
+    const per = new Map<number, Ringkas>();
+    const tamu = new Map<string, Ringkas>();
     for (const h of hadir) {
       const akhir = h.keluar_at ?? new Date();
-      const x = per.get(h.id_karyawan) ?? { masuk: h.masuk_at, keluar: null, detik: 0, online: false };
+      const peta = (h.id_karyawan != null ? per : tamu) as Map<number | string, Ringkas>;
+      const kunci = h.id_karyawan ?? h.identity ?? `hadir-${h.id_hadir}`;
+      const x = peta.get(kunci) ?? { nama: h.nama_tamu, masuk: h.masuk_at, keluar: null, detik: 0, online: false };
       x.detik += Math.max(0, (+akhir - +h.masuk_at) / 1000);
       x.keluar = h.keluar_at ?? x.keluar;
       x.online = x.online || !h.keluar_at;
-      per.set(h.id_karyawan, x);
+      peta.set(kunci, x);
     }
+    const linkAktif = this.linkBerlaku(r);
     return {
       id_rapat: r.id_rapat, judul: r.judul, deskripsi: r.deskripsi, jadwal_at: r.jadwal_at, status: r.status,
       mulai_at: r.mulai_at, selesai_at: r.selesai_at, created_at: r.created_at, moderator,
@@ -149,7 +155,63 @@ export class MeetingService {
           menit: k ? Math.round(k.detik / 60) : 0,
         };
       }),
+      tamu: [...tamu.values()].map((t) => ({
+        nama: t.nama || 'Tamu', online: t.online, masuk_at: t.masuk, keluar_at: t.online ? null : t.keluar, menit: Math.round(t.detik / 60),
+      })),
+      // Link tamu hanya diperlihatkan ke moderator
+      link_tamu: moderator && r.tamu_kode ? { kode: r.tamu_kode, aktif: linkAktif, dimatikan: !r.tamu_aktif, sampai: r.tamu_sampai } : null,
     };
+  }
+
+  // ── Link tamu (orang di luar HRIS, tanpa login) ──────────────────────────────
+  private linkBerlaku(r: { tamu_aktif: boolean; tamu_kode: string | null; tamu_sampai: Date | null; status: string }) {
+    return !!r.tamu_kode && r.tamu_aktif && (!r.tamu_sampai || r.tamu_sampai > new Date()) && r.status !== 'Selesai' && r.status !== 'Dibatalkan';
+  }
+
+  async aturLinkTamu(id_rapat: number, id_karyawan: number, d: { aktif: boolean; baru?: boolean; jam?: number }) {
+    const r = await this.moderatorSaja(id_rapat, id_karyawan);
+    if (d.aktif && (r.status === 'Selesai' || r.status === 'Dibatalkan')) throw new BadRequestException('Rapat sudah selesai / dibatalkan');
+    if (!d.aktif) {
+      await this.prisma.rapat.update({ where: { id_rapat }, data: { tamu_aktif: false } });
+    } else {
+      // Berlaku sampai: N jam dari sekarang, atau default 24 jam setelah jadwal (minimal 24 jam dari sekarang)
+      const dasar = Math.max(Date.now(), +(r.jadwal_at ?? 0));
+      const sampai = new Date(d.jam ? Date.now() + d.jam * 3600_000 : dasar + 24 * 3600_000);
+      await this.prisma.rapat.update({
+        where: { id_rapat },
+        data: { tamu_aktif: true, tamu_kode: !r.tamu_kode || d.baru ? kodeAcak() : r.tamu_kode, tamu_sampai: sampai },
+      });
+      this.logger.log(`Link tamu rapat #${id_rapat} ${d.baru ? 'dibuat ulang' : 'diaktifkan'} oleh karyawan#${id_karyawan} s/d ${sampai.toISOString()}`);
+    }
+    return this.detail(id_rapat, id_karyawan);
+  }
+
+  private async rapatTamu(kode: string) {
+    const r = kode && kode.length >= 16 ? await this.prisma.rapat.findUnique({ where: { tamu_kode: kode } }) : null;
+    if (!r || !this.linkBerlaku(r)) throw new NotFoundException('Link rapat tidak berlaku atau sudah kedaluwarsa');
+    return r;
+  }
+
+  async infoTamu(kode: string) {
+    const r = await this.rapatTamu(kode);
+    const pembuat = (await this.namaKaryawan([r.id_pembuat])).get(r.id_pembuat)?.nama ?? 'NEXT1';
+    return { judul: r.judul, jadwal_at: r.jadwal_at, status: r.status, pembuat };
+  }
+
+  async tokenTamu(kode: string, d: { nama: string; instansi?: string }) {
+    const r = await this.rapatTamu(kode);
+    const nama = d.nama.trim().replace(/\s+/g, ' ');
+    if (nama.length < 2) throw new BadRequestException('Nama wajib diisi');
+    const instansi = d.instansi?.trim().replace(/\s+/g, ' ');
+    const tampil = `${nama}${instansi ? ` (${instansi})` : ''} · Tamu`;
+    const lk = this.lk;
+    const identity = `tamu-${randomBytes(5).toString('hex')}`;
+    const token = buatToken(lk.key, lk.secret, {
+      identity, name: tampil.slice(0, 200), metadata: JSON.stringify({ tamu: true }),
+      video: { room: r.room, roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true },
+    });
+    this.logger.log(`Tamu "${tampil}" masuk rapat #${r.id_rapat}`);
+    return { url: lk.url, token, identity, nama: tampil, moderator: false, judul: r.judul };
   }
 
   // ── Buat / ubah / batal ──────────────────────────────────────────────────────
@@ -276,17 +338,25 @@ export class MeetingService {
     const r = await this.prisma.rapat.findUnique({ where: { room: roomName } });
     if (!r) return true;
     const waktu = e.createdAt ? new Date(Number(e.createdAt) * 1000) : new Date();
-    const idk = dariIdentitas(e.participant?.identity);
+    const identity: string | undefined = e.participant?.identity;
+    const idk = dariIdentitas(identity);
 
     switch (e.event) {
       case 'room_started':
       case 'participant_joined':
         if (r.status !== 'Berlangsung') await this.prisma.rapat.update({ where: { id_rapat: r.id_rapat }, data: { status: 'Berlangsung', mulai_at: r.mulai_at ?? waktu, selesai_at: null } });
-        if (e.event === 'participant_joined' && idk) await this.prisma.rapatKehadiran.create({ data: { id_rapat: r.id_rapat, id_karyawan: idk, masuk_at: waktu } });
+        if (e.event === 'participant_joined' && identity) {
+          await this.prisma.rapatKehadiran.create({
+            data: { id_rapat: r.id_rapat, id_karyawan: idk, identity, nama_tamu: idk ? null : String(e.participant?.name || 'Tamu').slice(0, 200), masuk_at: waktu },
+          });
+        }
         break;
       case 'participant_left':
-        if (idk) {
-          const buka = await this.prisma.rapatKehadiran.findFirst({ where: { id_rapat: r.id_rapat, id_karyawan: idk, keluar_at: null }, orderBy: { masuk_at: 'desc' } });
+        if (identity) {
+          const buka = await this.prisma.rapatKehadiran.findFirst({
+            where: { id_rapat: r.id_rapat, keluar_at: null, ...(idk ? { id_karyawan: idk } : { identity }) },
+            orderBy: { masuk_at: 'desc' },
+          });
           if (buka) await this.prisma.rapatKehadiran.update({ where: { id_hadir: buka.id_hadir }, data: { keluar_at: waktu } });
         }
         break;

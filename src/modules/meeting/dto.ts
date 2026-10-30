@@ -1,4 +1,4 @@
-import { ArrayMaxSize, IsArray, IsDateString, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class BuatRapatDto {
@@ -23,4 +23,17 @@ export class KelolaDto {
   @IsIn(['keluarkan', 'bisukan', 'akhiri']) aksi: string;
   @IsOptional() @IsString() @MaxLength(100) identity?: string;
   @IsOptional() @IsString() @MaxLength(100) track_sid?: string;
+}
+
+export class LinkTamuDto {
+  @IsBoolean() aktif: boolean;
+  // true = buat kode baru (link lama tidak berlaku lagi)
+  @IsOptional() @IsBoolean() baru?: boolean;
+  // masa berlaku dalam jam dari sekarang (kosong = 24 jam setelah jadwal)
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(720) jam?: number;
+}
+
+export class MasukTamuDto {
+  @IsString() @MinLength(2) @MaxLength(100) nama: string;
+  @IsOptional() @IsString() @MaxLength(100) instansi?: string;
 }
