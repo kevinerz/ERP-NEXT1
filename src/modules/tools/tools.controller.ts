@@ -4,7 +4,8 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 
 @UseGuards(RolesGuard)
-@Roles('Admin', 'Director', 'NOC', 'Manager', 'Teknisi')
+// Role sesuai core_roles (sebelumnya 'NOC'/'Manager' — tidak ada, dan Helpdesk tertolak 403)
+@Roles('Admin', 'Director', 'Manager_Ops', 'Helpdesk', 'Teknisi')
 @Controller('tools')
 export class ToolsController {
   constructor(private readonly svc: ToolsService) {}
