@@ -224,7 +224,7 @@ const MAKS_FILE = 16 * 1024 * 1024
 const pakaiTtd = ref(true)
 try { pakaiTtd.value = localStorage.getItem('wa_ttd') !== '0' } catch { /* abaikan */ }
 watch(pakaiTtd, (v) => { try { localStorage.setItem('wa_ttd', v ? '1' : '0') } catch { /* abaikan */ } })
-const namaSaya = computed(() => (auth.user?.nama_lengkap || auth.user?.username || '').replace(/\s+/g, ' ').trim())
+const namaSaya = computed(() => (auth.user?.nama_lengkap || auth.user?.username || '').trim().split(/\s+/)[0] || '')
 
 const pratinjau = ref<string | null>(null) // object URL untuk lampiran gambar
 function pasangFile(f: File) {
