@@ -109,6 +109,13 @@ export class WaController {
   @Post('chat/:id/buka')
   buka(@Param('id', ParseIntPipe) id: number) { return this.wa.ubahStatus(id, 'Terbuka'); }
 
+  // Sematkan / lepas pin chat (berlaku untuk semua staf)
+  @Post('chat/:id/sematkan')
+  sematkan(@Param('id', ParseIntPipe) id: number) { return this.wa.sematkan(id, true); }
+
+  @Post('chat/:id/lepas-sematan')
+  lepasSematan(@Param('id', ParseIntPipe) id: number) { return this.wa.sematkan(id, false); }
+
   @Post('pesan/:id/reaksi')
   reaksi(@Param('id', ParseIntPipe) id: number, @Body() dto: ReaksiDto) { return this.wa.reaksi(id, dto.emoji); }
 

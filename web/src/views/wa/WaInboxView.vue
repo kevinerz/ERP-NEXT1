@@ -12,7 +12,7 @@ interface Chat {
   id_chat: number; jid: string; nomor: string | null; is_grup: boolean; nama: string; nama_wa: string | null
   erp: { nama: string; id_pelanggan: number | null; id_site: number | null } | null
   belum_dibaca: number; pesan_terakhir: string | null; waktu_terakhir: string | null
-  status: 'Terbuka' | 'Selesai'; label: string | null; pic: { id_karyawan: number; nama: string } | null
+  status: 'Terbuka' | 'Selesai'; label: string | null; pic: { id_karyawan: number; nama: string } | null; disematkan: boolean
 }
 interface Media { jenis: string; mime: string | null; nama: string | null; ukuran: number | null; durasi: number | null; ptt: boolean; ada: boolean }
 interface Pesan {
@@ -115,11 +115,23 @@ function terapkanChat(c: Chat) {
     else if (i >= 0) chats.value[i] = c
     return
   }
+  const sudahDisematkan = i >= 0 && chats.value[i]!.disematkan
   if (i >= 0) chats.value.splice(i, 1)
-  // Urutkan ulang berdasarkan waktu pesan terakhir
-  const t = c.waktu_terakhir ? new Date(c.waktu_terakhir).getTime() : 0
-  const pos = chats.value.findIndex((x) => (x.waktu_terakhir ? new Date(x.waktu_terakhir).getTime() : 0) < t)
+  let pos: number
+  if (c.disematkan) {
+    // Chat yang disematkan selalu di atas; yang baru disematkan masuk paling atas
+    pos = sudahDisematkan ? i : 0
+  } else {
+    // Selain itu urut berdasarkan waktu pesan terakhir, di bawah semua yang disematkan
+    const waktu = (x: Chat) => (x.waktu_terakhir ? new Date(x.waktu_terakhir).getTime() : 0)
+    const t = waktu(c)
+    pos = chats.value.findIndex((x) => !x.disematkan && waktu(x) < t)
+  }
   if (pos < 0) chats.value.push(c); else chats.value.splice(pos, 0, c)
+}
+async function ubahSematan(c: Chat) {
+  const { data } = await api.post(`/wa/chat/${c.id_chat}/${c.disematkan ? 'lepas-sematan' : 'sematkan'}`)
+  terapkanChat(data.data)
 }
 
 // ── Chat aktif & pesan ────────────────────────────────────────────────────────
@@ -696,7 +708,8 @@ onBeforeUnmount(() => {
           </div>
           <div class="wa-li-body">
             <div class="wa-li-top">
-              <b class="wa-li-nama">{{ c.nama }}</b>
+              <b class="wa-li-nama"><span v-if="c.disematkan" title="Disematkan">📌 </span>{{ c.nama }}</b>
+              <button class="wa-pin-btn" :class="{ on: c.disematkan }" :title="c.disematkan ? 'Lepas sematan' : 'Sematkan di atas'" @click.stop="ubahSematan(c)">📌</button>
               <small :class="{ hijau: c.belum_dibaca }">{{ jam(c.waktu_terakhir) }}</small>
             </div>
             <div class="wa-li-bot">
@@ -748,6 +761,9 @@ onBeforeUnmount(() => {
               <option v-for="s in staf" :key="s.id_karyawan" :value="s.id_karyawan">{{ s.nama }}</option>
               <option v-if="aktif.pic && !staf.some((s) => s.id_karyawan === aktif!.pic!.id_karyawan)" :value="aktif.pic.id_karyawan">{{ aktif.pic.nama }}</option>
             </select>
+            <button class="btn-sm btn-ghost" :title="aktif.disematkan ? 'Lepas sematan' : 'Sematkan di atas daftar (untuk semua staf)'" @click="ubahSematan(aktif)">
+              📌 {{ aktif.disematkan ? 'Lepas' : 'Sematkan' }}
+            </button>
             <button v-if="!milikSaya" class="btn-sm btn-ghost" @click="ambilChat">Ambil</button>
             <button v-if="aktif.status === 'Terbuka'" class="btn-sm btn-hijau" @click="ubahStatus(true)">✓ Selesai</button>
             <button v-else class="btn-sm btn-ghost" @click="ubahStatus(false)">Buka lagi</button>
@@ -1068,6 +1084,11 @@ onBeforeUnmount(() => {
 .wa-anggota-list { list-style: none; margin: 0; padding: 0; }
 .wa-anggota-list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
 .pusat { text-align: center; }
+.wa-pin-btn { border: 0; background: none; cursor: pointer; font-size: 12px; padding: 0 2px; opacity: 0; flex: none; filter: grayscale(1); }
+.wa-list li:hover .wa-pin-btn { opacity: .6; }
+.wa-pin-btn:hover { opacity: 1 !important; filter: none; }
+.wa-pin-btn.on { filter: none; }
+@media (max-width: 900px) { .wa-pin-btn { opacity: .5; } }
 .wa-ttd { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-bottom: 6px; cursor: pointer; }
 .wa-form-pic { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 10px; background: #f8fafc; border: 1px solid var(--wa-garis); border-radius: 10px; }
 .wa-form-pic label { font-size: 12px; font-weight: 600; color: #334155; margin-top: 4px; }

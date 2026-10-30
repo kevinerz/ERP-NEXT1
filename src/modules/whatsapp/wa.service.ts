@@ -439,6 +439,7 @@ export class WaService {
         waktu_terakhir: c.waktu_terakhir,
         status: c.status,
         label: c.label,
+        disematkan: !!c.disematkan_at,
         pic: c.id_karyawan_pic ? { id_karyawan: c.id_karyawan_pic, nama: staf.get(c.id_karyawan_pic) ?? '-' } : null,
       };
     });
@@ -504,7 +505,8 @@ export class WaService {
     }
     const halaman = q.halaman || 1;
     const [rows, total, belum] = await Promise.all([
-      this.prisma.waChat.findMany({ where, orderBy: { waktu_terakhir: 'desc' }, skip: (halaman - 1) * PER_HALAMAN, take: PER_HALAMAN }),
+      // Yang disematkan selalu di atas (NULL di MySQL terurut paling akhir saat DESC)
+      this.prisma.waChat.findMany({ where, orderBy: [{ disematkan_at: 'desc' }, { waktu_terakhir: 'desc' }], skip: (halaman - 1) * PER_HALAMAN, take: PER_HALAMAN }),
       this.prisma.waChat.count({ where }),
       this.hitungFilter(id_akun, id_karyawan),
     ]);
@@ -606,6 +608,11 @@ export class WaService {
 
   async alihkan(id_chat: number, id_karyawan: number | null) {
     await this.prisma.waChat.update({ where: { id_chat }, data: { id_karyawan_pic: id_karyawan || null } });
+    return this.siarkanChat(id_chat);
+  }
+
+  async sematkan(id_chat: number, ya: boolean) {
+    await this.prisma.waChat.update({ where: { id_chat }, data: { disematkan_at: ya ? new Date() : null } });
     return this.siarkanChat(id_chat);
   }
 

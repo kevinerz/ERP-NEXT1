@@ -1509,6 +1509,7 @@ model WaChat {
   id_karyawan_pic Int?
   status          String    @default("Terbuka") @db.VarChar(20)
   label           String?   @db.VarChar(100)
+  disematkan_at   DateTime? // pin di ERP (dibagi semua staf); null = tidak disematkan
   created_at      DateTime  @default(now())
 
   akun  WaAkun    @relation(fields: [id_akun], references: [id_akun])
