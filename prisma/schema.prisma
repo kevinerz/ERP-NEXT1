@@ -383,6 +383,7 @@ model SitePelanggan {
   topup           SimTopup[]
   jurnal_ar       IntegrationJurnalAr[]
   invoices        Invoice[]
+  ip_alokasi      IpAlokasi[]
   prtg_mapping       IntegrationPrtgMapping[]
   uptimekuma_mapping IntegrationUptimeKumaMapping[]
   instalasi_orders   InstalasiOrder[]
@@ -1568,4 +1569,84 @@ model WaTemplate {
   created_at  DateTime @default(now())
 
   @@map("wa_template")
+}
+
+// ============================================================
+// IPAM — IP publik milik NEXT1 (mis. 180.214.165.0/24, AS155058)
+// ============================================================
+
+// Blok IP yang dimiliki / diumumkan NEXT1
+model IpBlok {
+  id_blok    Int      @id @default(autoincrement())
+  prefix     String   @unique @db.VarChar(43) // 180.214.165.0/24
+  asn        String?  @db.VarChar(20)
+  nama       String   @db.VarChar(100)
+  catatan    String?  @db.Text
+  created_at DateTime @default(now())
+
+  zona    IpZona[]
+  alokasi IpAlokasi[]
+
+  @@map("ip_blok")
+}
+
+// Rencana pembagian blok (infrastruktur, server, pelanggan, cadangan)
+model IpZona {
+  id_zona    Int     @id @default(autoincrement())
+  id_blok    Int
+  awal       Int // offset IP pertama dari alamat network blok
+  akhir      Int // offset IP terakhir (inklusif)
+  prefix     String  @db.VarChar(43)
+  nama       String  @db.VarChar(100)
+  peruntukan String  @db.VarChar(30) // Infrastruktur | Server | Pelanggan | Cadangan
+  catatan    String? @db.Text
+
+  blok IpBlok @relation(fields: [id_blok], references: [id_blok], onDelete: Cascade)
+
+  @@index([id_blok])
+  @@map("ip_zona")
+}
+
+// Alokasi IP / sub-blok. Status Dilepas = riwayat (IP kembali tersedia)
+model IpAlokasi {
+  id_alokasi       Int       @id @default(autoincrement())
+  id_blok          Int
+  awal             Int
+  akhir            Int
+  prefix           String    @db.VarChar(43) // 180.214.165.72/29
+  status           String    @db.VarChar(20) // Dicadangkan | Dipakai | Karantina | Dilepas
+  peruntukan       String    @db.VarChar(30)
+  id_site          Int?
+  gateway          String?   @db.VarChar(45)
+  vlan             Int?
+  perangkat        String?   @db.VarChar(150) // router / interface
+  keterangan       String?   @db.Text
+  karantina_sampai DateTime?
+  dialokasikan_at  DateTime  @default(now())
+  dilepas_at       DateTime?
+  id_karyawan      Int?
+  updated_at       DateTime  @updatedAt
+
+  blok    IpBlok         @relation(fields: [id_blok], references: [id_blok], onDelete: Cascade)
+  site    SitePelanggan? @relation(fields: [id_site], references: [id_site], onDelete: SetNull)
+  riwayat IpRiwayat[]
+
+  @@index([id_blok, status])
+  @@index([id_site])
+  @@map("ip_alokasi")
+}
+
+model IpRiwayat {
+  id_riwayat    Int      @id @default(autoincrement())
+  id_alokasi    Int
+  aksi          String   @db.VarChar(30)
+  detail        String?  @db.Text
+  id_karyawan   Int?
+  nama_karyawan String?  @db.VarChar(150)
+  created_at    DateTime @default(now())
+
+  alokasi IpAlokasi @relation(fields: [id_alokasi], references: [id_alokasi], onDelete: Cascade)
+
+  @@index([id_alokasi])
+  @@map("ip_riwayat")
 }

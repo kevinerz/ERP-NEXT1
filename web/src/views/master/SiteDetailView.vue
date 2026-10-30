@@ -66,8 +66,17 @@ const SITE_STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 }
 
 onMounted(async () => {
-  await Promise.all([loadSite(), loadVendors(), loadAsetSim(), loadAset(), loadDokumen()])
+  await Promise.all([loadSite(), loadVendors(), loadAsetSim(), loadAset(), loadDokumen(), loadIpPublik()])
 })
+
+// IP publik dari modul IPAM — null = user tidak punya akses modul operations (bagian disembunyikan)
+const ipPublik = ref<{ id_alokasi: number; prefix: string; status: string; gateway: string | null; vlan: number | null }[] | null>(null)
+async function loadIpPublik() {
+  try {
+    const r = await api.get(`/ipam/site/${id}`)
+    ipPublik.value = r.data.data
+  } catch { ipPublik.value = null }
+}
 
 async function loadSite() {
   loading.value = true; error.value = ''
@@ -505,6 +514,26 @@ const isGsm = computed(() => {
             </tr>
           </tbody>
         </table>
+        </div>
+
+        <!-- IP publik NEXT1 (modul IP Publik / IPAM) -->
+        <div v-if="ipPublik" class="tab-header" style="margin-top:20px">
+          <h3>IP Publik</h3>
+          <RouterLink to="/ipam" class="btn-add">Kelola di IP Publik</RouterLink>
+        </div>
+        <div v-if="ipPublik && !ipPublik.length" class="empty-state">Belum ada IP publik untuk site ini</div>
+        <div v-else-if="ipPublik" class="table-card table-wrap">
+          <table class="perangkat-table">
+            <thead><tr><th>Prefix</th><th>Status</th><th>Gateway</th><th>VLAN</th></tr></thead>
+            <tbody>
+              <tr v-for="a in ipPublik" :key="a.id_alokasi">
+                <td style="font-family:ui-monospace,monospace"><b>{{ a.prefix }}</b></td>
+                <td>{{ a.status }}</td>
+                <td style="font-family:ui-monospace,monospace">{{ a.gateway || '-' }}</td>
+                <td>{{ a.vlan ?? '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

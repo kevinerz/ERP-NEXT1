@@ -163,6 +163,7 @@ const menuGroups = [
       { label: 'Network Tools', emoji: '🔧', to: '/tools/network',    modul: 'operations' },
       { label: 'NOC Board',     emoji: '📺', to: '/operations/noc',    modul: 'operations' },
       { label: 'Remote Mikrotik', emoji: '🔌', to: '/tools/mikrotik', modul: 'operations' },
+      { label: 'IP Publik',     emoji: '🌐', to: '/ipam',            modul: 'operations' },
     ],
   },
   {

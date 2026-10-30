@@ -360,6 +360,12 @@ const router = createRouter({
           name: 'aset-detail',
           component: () => import('@/views/aset/AsetDetailView.vue'),
         },
+        // IP publik (IPAM)
+        {
+          path: 'ipam',
+          name: 'ipam',
+          component: () => import('@/views/ipam/IpamView.vue'),
+        },
         // WhatsApp helpdesk
         {
           path: 'whatsapp',
@@ -414,6 +420,7 @@ const router = createRouter({
 // Map route name → modul key
 const ROUTE_MODUL: Record<string, string> = {
   'wa-inbox': 'whatsapp',
+  'ipam': 'operations',
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris', 'hris-undangan': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master', 'master-gudang': 'master',
   'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master', 'master-jenis-gangguan': 'master',

@@ -36,6 +36,7 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   mobile: 'operations',
   starsender: 'operations',
   wa: 'whatsapp', // inbox WhatsApp helpdesk (webhook & stream @Public)
+  ipam: 'operations', // IP publik NEXT1
 };
 
 // admin & mailer sudah dijaga @Roles(Admin/Director) di controller-nya.
