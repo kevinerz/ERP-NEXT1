@@ -115,6 +115,8 @@ const TIPE_ICON: Record<string, string> = {
   tiket_baru:         '🎫',
   tiket_update:       '🔄',
   quotation_approval: '📋',
+  rapat_undangan:     '📹',
+  rapat_batal:        '🚫',
 }
 
 function fmtTime(d: string) {
@@ -128,6 +130,7 @@ const menuGroups = [
       { label: 'Dashboard',   emoji: '📊', to: '/dashboard',      modul: null },
       { label: 'Email',       emoji: '📧', to: '/email',           modul: null },
       { label: 'WhatsApp',    emoji: '💬', to: '/whatsapp',        modul: 'whatsapp' },
+      { label: 'Meeting',     emoji: '📹', to: '/meeting',         modul: null },
     ],
   },
   {

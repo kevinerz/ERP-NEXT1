@@ -1650,3 +1650,56 @@ model IpRiwayat {
   @@index([id_alokasi])
   @@map("ip_riwayat")
 }
+
+// ============================================================
+// MEETING — rapat internal lewat LiveKit (meet.nextone.id)
+// ============================================================
+
+model Rapat {
+  id_rapat    Int       @id @default(autoincrement())
+  room        String    @unique @db.VarChar(64) // nama room LiveKit
+  judul       String    @db.VarChar(200)
+  deskripsi   String?   @db.Text
+  jadwal_at   DateTime? // kosong = rapat dadakan
+  status      String    @default("Terjadwal") @db.VarChar(20) // Terjadwal | Berlangsung | Selesai | Dibatalkan
+  id_pembuat  Int
+  mulai_at    DateTime?
+  selesai_at  DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  peserta   RapatPeserta[]
+  kehadiran RapatKehadiran[]
+
+  @@index([status, jadwal_at])
+  @@map("rapat")
+}
+
+model RapatPeserta {
+  id_peserta  Int      @id @default(autoincrement())
+  id_rapat    Int
+  id_karyawan Int
+  peran       String   @default("peserta") @db.VarChar(20) // moderator | peserta
+  created_at  DateTime @default(now())
+
+  rapat Rapat @relation(fields: [id_rapat], references: [id_rapat], onDelete: Cascade)
+
+  @@unique([id_rapat, id_karyawan])
+  @@index([id_karyawan])
+  @@map("rapat_peserta")
+}
+
+// Diisi dari webhook LiveKit (participant_joined / participant_left)
+model RapatKehadiran {
+  id_hadir    Int       @id @default(autoincrement())
+  id_rapat    Int
+  id_karyawan Int
+  masuk_at    DateTime
+  keluar_at   DateTime?
+
+  rapat Rapat @relation(fields: [id_rapat], references: [id_rapat], onDelete: Cascade)
+
+  @@index([id_rapat, id_karyawan])
+  @@map("rapat_kehadiran")
+}
+

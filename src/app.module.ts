@@ -29,6 +29,7 @@ import { AssetsModule } from './modules/assets/assets.module';
 import { ContractsModule } from './modules/contracts/contracts.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { IpamModule } from './modules/ipam/ipam.module';
+import { MeetingModule } from './modules/meeting/meeting.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PublicWoModule } from './modules/public-wo/public-wo.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -90,6 +91,7 @@ import { PresalesModule } from './modules/presales/presales.module';
     ContractsModule,
     WhatsappModule,
     IpamModule,
+    MeetingModule,
     NotificationsModule,
     EmailModule,
     OnboardingModule,

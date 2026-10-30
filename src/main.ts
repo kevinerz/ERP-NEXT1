@@ -1,7 +1,7 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { json } from 'express';
+import { json, raw } from 'express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
@@ -30,6 +30,9 @@ async function bootstrap() {
   // koneksi datang dari loopback — tanpa ini semua user terlihat 127.0.0.1 dan
   // berbagi satu kuota throttle login (5 gagal = semua orang terkunci).
   app.set('trust proxy', 'loopback');
+
+  // Webhook LiveKit: body mentah (tanda tangan memuat sha256 body, Content-Type application/webhook+json)
+  app.use('/api/meeting/webhook', raw({ type: '*/*', limit: '1mb' }));
 
   // Naikkan limit JSON body ke 10mb (untuk base64 logo dll)
   app.use(json({ limit: '10mb' }));

@@ -360,6 +360,17 @@ const router = createRouter({
           name: 'aset-detail',
           component: () => import('@/views/aset/AsetDetailView.vue'),
         },
+        // Meeting internal (LiveKit)
+        {
+          path: 'meeting',
+          name: 'meeting-list',
+          component: () => import('@/views/meeting/MeetingListView.vue'),
+        },
+        {
+          path: 'meeting/:id',
+          name: 'meeting-room',
+          component: () => import('@/views/meeting/MeetingRoomView.vue'),
+        },
         // IP publik (IPAM)
         {
           path: 'ipam',
