@@ -208,6 +208,11 @@ const kutip = ref<Pesan | null>(null)
 const mengirim = ref(false)
 const errKirim = ref('')
 const MAKS_FILE = 16 * 1024 * 1024
+// Tanda tangan *Nama Helpdesk* di awal pesan (nama dari login ERP); pilihan diingat per browser
+const pakaiTtd = ref(true)
+try { pakaiTtd.value = localStorage.getItem('wa_ttd') !== '0' } catch { /* abaikan */ }
+watch(pakaiTtd, (v) => { try { localStorage.setItem('wa_ttd', v ? '1' : '0') } catch { /* abaikan */ } })
+const namaSaya = computed(() => auth.user?.nama_lengkap || auth.user?.username || '')
 
 const pratinjau = ref<string | null>(null) // object URL untuk lampiran gambar
 function pasangFile(f: File) {
@@ -257,6 +262,7 @@ async function kirim() {
     if (teks.value.trim()) fd.append('teks', teks.value.trim())
     if (file.value) fd.append('file', file.value)
     if (kutip.value) fd.append('kutip_id', String(kutip.value.id_pesan))
+    fd.append('ttd', pakaiTtd.value ? 'true' : 'false')
     const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/kirim`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     if (data.data) upsertPesan(data.data)
     teks.value = ''
@@ -451,6 +457,52 @@ async function ubahNama() {
   }
 }
 
+// ── Simpan kontak sebagai PIC site ───────────────────────────────────────────
+interface SiteCari { id_site: number; kode_site: string; nama_site: string; kota: string | null; status_site: string; pelanggan: { nama_pelanggan: string } | null }
+const formPic = reactive({ buka: false, cari: '', hasil: [] as SiteCari[], site: null as SiteCari | null, nama: '', jabatan: '', mencari: false, simpan: false, err: '', ok: '' })
+let timerSite: ReturnType<typeof setTimeout> | null = null
+function bukaFormPic() {
+  Object.assign(formPic, {
+    buka: true, cari: '', hasil: [], site: null, err: '', ok: '', jabatan: '',
+    nama: profil.value?.kontak?.nama_kustom || profil.value?.kontak?.nama_simpan || profil.value?.kontak?.nama_wa || (aktif.value?.nomor ? '' : aktif.value?.nama) || '',
+  })
+}
+watch(() => formPic.cari, (q) => {
+  if (timerSite) clearTimeout(timerSite)
+  if (formPic.site && q === formPic.site.nama_site) return
+  formPic.site = null
+  if (q.trim().length < 2) { formPic.hasil = []; return }
+  timerSite = setTimeout(async () => {
+    formPic.mencari = true
+    try {
+      const { data } = await api.get('/wa/site/cari', { params: { q: q.trim() } })
+      if (formPic.cari === q) formPic.hasil = data.data
+    } finally {
+      formPic.mencari = false
+    }
+  }, 300)
+})
+function pilihSitePic(x: SiteCari) {
+  formPic.site = x
+  formPic.cari = x.nama_site
+  formPic.hasil = []
+}
+async function simpanPic() {
+  if (!aktif.value || !formPic.site || !formPic.nama.trim()) return
+  formPic.simpan = true
+  formPic.err = ''
+  try {
+    const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/pic`, { id_site: formPic.site.id_site, nama_pic: formPic.nama.trim(), jabatan: formPic.jabatan.trim() || undefined })
+    profil.value = data.data
+    formPic.buka = false
+    formPic.ok = data.data.pesan || 'PIC tersimpan'
+  } catch (e: any) {
+    const m = e?.response?.data?.message
+    formPic.err = Array.isArray(m) ? m.join(', ') : m || 'Gagal menyimpan PIC'
+  } finally {
+    formPic.simpan = false
+  }
+}
 interface Profil {
   id_chat: number; nama: string; nomor: string | null; is_grup: boolean; jumlah_pesan: number; dibuat: string
   kontak: { nama_wa: string | null; nama_simpan: string | null; nama_kustom: string | null; nama_erp: string | null } | null
@@ -482,6 +534,7 @@ async function tampilkanProfil() {
   }
 }
 watch(() => aktif.value?.id_chat, () => { bukaProfil.value = false })
+watch(bukaProfil, (v) => { if (!v) { formPic.buka = false; formPic.ok = '' } })
 
 // ── Real-time (SSE) ──────────────────────────────────────────────────────────
 let es: EventSource | null = null
@@ -795,6 +848,10 @@ onBeforeUnmount(() => {
             <button @click="hapusFile">✕</button>
           </div>
           <p v-if="errKirim" class="wa-err">{{ errKirim }}</p>
+          <label class="wa-ttd" :title="pakaiTtd ? 'Pesan diawali nama Anda (tebal di WhatsApp)' : 'Tanpa tanda tangan'">
+            <input v-model="pakaiTtd" type="checkbox" />
+            ✍️ Tanda tangan<template v-if="pakaiTtd && namaSaya">: <b>*{{ namaSaya }}*</b></template>
+          </label>
           <div class="wa-tulis-baris">
             <div class="wa-template-wrap">
               <button class="wa-ikon" title="Balasan cepat" @click="bukaTemplate = !bukaTemplate">⚡</button>
@@ -892,6 +949,33 @@ onBeforeUnmount(() => {
               </p>
             </template>
             <p v-else class="muted">Nomor ini belum terdaftar sebagai PIC site / pelanggan di ERP.</p>
+            <p v-if="formPic.ok" class="hijau">✓ {{ formPic.ok }}</p>
+            <button v-if="!formPic.buka && profil.nomor" class="btn-sm btn-ghost" @click="bukaFormPic">📍 {{ profil.site ? 'Simpan juga sebagai PIC site lain' : 'Simpan sebagai PIC site' }}</button>
+
+            <div v-if="formPic.buka" class="wa-form-pic">
+              <label>Site</label>
+              <div class="wa-dropdown">
+                <input v-model="formPic.cari" placeholder="Cari nama / kode site / pelanggan…" autofocus />
+                <ul v-if="formPic.hasil.length || formPic.mencari" class="wa-dropdown-list">
+                  <li v-if="formPic.mencari" class="muted">Mencari…</li>
+                  <li v-for="x in formPic.hasil" :key="x.id_site" @click="pilihSitePic(x)">
+                    <b>{{ x.nama_site }}</b>
+                    <small>{{ x.kode_site }}<template v-if="x.pelanggan"> · {{ x.pelanggan.nama_pelanggan }}</template><template v-if="x.kota"> · {{ x.kota }}</template> · {{ x.status_site }}</small>
+                  </li>
+                </ul>
+              </div>
+              <small v-if="formPic.site" class="hijau">✓ {{ formPic.site.kode_site }} · {{ formPic.site.pelanggan?.nama_pelanggan }}</small>
+              <label>Nama PIC</label>
+              <input v-model="formPic.nama" maxlength="150" placeholder="Nama PIC" />
+              <label>Jabatan <small class="muted">(opsional)</small></label>
+              <input v-model="formPic.jabatan" maxlength="100" placeholder="mis. Store Manager, IT" />
+              <p v-if="profil.nomor" class="muted kecil">Nomor: 0{{ profil.nomor.slice(2) }} · media komunikasi: WhatsApp</p>
+              <p v-if="formPic.err" class="wa-err">{{ formPic.err }}</p>
+              <div class="wa-form-pic-aksi">
+                <button class="btn-sm btn-hijau" :disabled="!formPic.site || !formPic.nama.trim() || formPic.simpan" @click="simpanPic">{{ formPic.simpan ? 'Menyimpan…' : 'Simpan PIC' }}</button>
+                <button class="btn-sm btn-ghost" @click="formPic.buka = false">Batal</button>
+              </div>
+            </div>
           </section>
           <section v-else class="wa-profil-bag">
             <h4>Deskripsi</h4>
@@ -984,6 +1068,16 @@ onBeforeUnmount(() => {
 .wa-anggota-list { list-style: none; margin: 0; padding: 0; }
 .wa-anggota-list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
 .pusat { text-align: center; }
+.wa-ttd { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; margin-bottom: 6px; cursor: pointer; }
+.wa-form-pic { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 10px; background: #f8fafc; border: 1px solid var(--wa-garis); border-radius: 10px; }
+.wa-form-pic label { font-size: 12px; font-weight: 600; color: #334155; margin-top: 4px; }
+.wa-form-pic input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+.wa-form-pic-aksi { display: flex; gap: 8px; margin-top: 6px; }
+.wa-dropdown { position: relative; }
+.wa-dropdown-list { position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 5; list-style: none; margin: 0; padding: 4px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 8px 20px rgba(0,0,0,.12); max-height: 240px; overflow-y: auto; }
+.wa-dropdown-list li { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.wa-dropdown-list li:hover { background: #f0fdf4; }
+.wa-dropdown-list li small { display: block; color: var(--wa-muted); font-size: 12px; }
 .wa-ubah-nama { border: 0; background: none; cursor: pointer; font-size: 14px; }
 .wa-chatbaru { text-align: left; width: min(520px, 100%); }
 .wa-chatbaru-input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }

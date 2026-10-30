@@ -538,16 +538,26 @@ export class WaService {
     return { data, meta: { ada_lagi: rows.length === Math.min(limit, 100) } };
   }
 
-  async kirim(id_chat: number, id_karyawan: number, dto: { teks?: string; kutip_id?: number; ptt?: string }, file?: FileUnggah) {
+  async kirim(id_chat: number, id_karyawan: number, dto: { teks?: string; kutip_id?: number; ptt?: string; ttd?: string }, file?: FileUnggah) {
     const chat = await this.prisma.waChat.findUnique({ where: { id_chat }, include: { akun: true } });
     if (!chat) throw new NotFoundException('Chat tidak ditemukan');
     if (!file && !dto.teks?.trim()) throw new BadRequestException('Pesan kosong');
 
-    const req: GwKirim = { ke: chat.jid, teks: dto.teks?.trim() || undefined };
+    let jenis: string | null = null;
     if (file) {
       const mime = file.mimetype || 'application/octet-stream';
-      const jenis = mime.startsWith('image/') && mime !== 'image/svg+xml' ? 'image' : mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : 'document';
-      req.media = { base64: file.buffer.toString('base64'), mimetype: mime, jenis, nama_file: file.originalname, ptt: dto.ptt === 'true' };
+      jenis = mime.startsWith('image/') && mime !== 'image/svg+xml' ? 'image' : mime.startsWith('video/') ? 'video' : mime.startsWith('audio/') ? 'audio' : 'document';
+    }
+    // Tanda tangan *Nama Helpdesk* (nama karyawan yang login) di awal teks / keterangan media.
+    // Audio & stiker tidak punya keterangan → tanpa tanda tangan.
+    let teks = dto.teks?.trim() || '';
+    if (dto.ttd !== 'false' && jenis !== 'audio') {
+      const nama = (await this.staf()).get(id_karyawan);
+      if (nama) teks = teks ? `*${nama}*\n${teks}` : `*${nama}*`;
+    }
+    const req: GwKirim = { ke: chat.jid, teks: teks || undefined };
+    if (file && jenis) {
+      req.media = { base64: file.buffer.toString('base64'), mimetype: file.mimetype || 'application/octet-stream', jenis, nama_file: file.originalname, ptt: dto.ptt === 'true' };
     }
     if (dto.kutip_id) {
       const k = await this.prisma.waPesan.findUnique({ where: { id_pesan: dto.kutip_id } });
@@ -863,6 +873,51 @@ export class WaService {
     if (chat.is_grup) throw new BadRequestException('Nama grup diatur dari WhatsApp');
     await this.simpanNamaKustom(chat.id_akun, chat.jid, nama);
     return this.siarkanChat(id_chat);
+  }
+
+  // ── Simpan kontak chat sebagai PIC site ──────────────────────────────────────
+  cariSite(q: string) {
+    const kata = (q || '').trim();
+    if (kata.length < 2) return Promise.resolve([]);
+    return this.prisma.sitePelanggan.findMany({
+      where: { OR: [{ nama_site: { contains: kata } }, { kode_site: { contains: kata } }, { pelanggan: { nama_pelanggan: { contains: kata } } }] },
+      select: { id_site: true, kode_site: true, nama_site: true, kota: true, status_site: true, pelanggan: { select: { nama_pelanggan: true } } },
+      orderBy: [{ status_site: 'asc' }, { nama_site: 'asc' }],
+      take: 20,
+    });
+  }
+
+  /** Simpan nomor chat sebagai PIC site (nomor format 08xx seperti data PIC lain); dicatat ke log CRM */
+  async simpanPic(id_chat: number, d: { id_site: number; nama_pic: string; jabatan?: string }) {
+    const chat = await this.prisma.waChat.findUnique({ where: { id_chat } });
+    if (!chat) throw new NotFoundException('Chat tidak ditemukan');
+    const nomor = nomorDariJid(chat.jid);
+    if (chat.is_grup || !nomor) throw new BadRequestException('Hanya chat pribadi dengan nomor HP yang bisa disimpan sebagai PIC');
+    const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site: d.id_site }, select: { id_site: true, nama_site: true } });
+    if (!site) throw new NotFoundException('Site tidak ditemukan');
+    const nama_pic = d.nama_pic.trim();
+    if (!nama_pic) throw new BadRequestException('Nama PIC wajib diisi');
+    const no_kontak = '0' + nomor.slice(2);
+
+    // Nomor yang sama di site yang sama → perbarui, bukan dobel
+    const semua = await this.prisma.picSite.findMany({ where: { id_site: d.id_site, no_kontak: { not: null } }, select: { id_pic: true, no_kontak: true } });
+    const ada = semua.find((p) => normalNomor(p.no_kontak) === nomor);
+    const payload = {
+      nama_pic, jabatan: d.jabatan?.trim() || null, no_kontak, media_komunikasi: 'WhatsApp', tgl_update_data: new Date(),
+    };
+    const pic = ada
+      ? await this.prisma.picSite.update({ where: { id_pic: ada.id_pic }, data: payload })
+      : await this.prisma.picSite.create({ data: { id_site: d.id_site, ...payload } });
+    await this.prisma.crmPicLog.create({
+      data: { id_pic: pic.id_pic, sumber: 'WhatsApp', data_snapshot: JSON.stringify({ id_site: d.id_site, ...payload }), catatan: `Dari inbox WhatsApp (${ada ? 'diperbarui' : 'ditambahkan'})` },
+    });
+
+    // Kontak langsung tertaut ke site ini
+    this.indeksNomor = null;
+    await this.simpanKontak(chat.id_akun, chat.jid, chat.lid, {});
+    await this.siarkanChat(id_chat);
+    this.logger.log(`PIC ${ada ? 'diperbarui' : 'ditambahkan'} dari WhatsApp: ${nama_pic} (${no_kontak}) → site#${site.id_site} ${site.nama_site}`);
+    return { ...(await this.profil(id_chat)), pesan: `${nama_pic} ${ada ? 'diperbarui' : 'disimpan'} sebagai PIC ${site.nama_site}` };
   }
 
   // ── Template balasan cepat ───────────────────────────────────────────────────

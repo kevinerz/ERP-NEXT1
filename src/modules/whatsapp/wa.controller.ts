@@ -6,7 +6,7 @@ import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { AlihkanDto, ChatBaruDto, DaftarChatQuery, KirimPesanDto, NamaKontakDto, ReaksiDto, TemplateDto } from './dto';
+import { AlihkanDto, ChatBaruDto, DaftarChatQuery, KirimPesanDto, NamaKontakDto, ReaksiDto, SimpanPicDto, TemplateDto } from './dto';
 import { WaGatewayClient } from './wa-gateway.client';
 import { WaRealtimeService } from './wa-realtime.service';
 import { WaService, type FileUnggah } from './wa.service';
@@ -46,6 +46,13 @@ export class WaController {
   chatBaru(@CurrentUser('id_karyawan') id_karyawan: number, @Body() dto: ChatBaruDto) {
     return this.wa.chatBaru(dto.akun || 'helpdesk', id_karyawan, dto.nomor, dto.nama);
   }
+
+  // Cari site untuk dropdown "Simpan sebagai PIC site"
+  @Get('site/cari')
+  cariSite(@Query('q') q: string) { return this.wa.cariSite(q); }
+
+  @Post('chat/:id/pic')
+  simpanPic(@Param('id', ParseIntPipe) id: number, @Body() dto: SimpanPicDto) { return this.wa.simpanPic(id, dto); }
 
   @Patch('chat/:id/nama')
   ubahNama(@Param('id', ParseIntPipe) id: number, @Body() dto: NamaKontakDto) { return this.wa.ubahNamaKontak(id, dto.nama ?? null); }

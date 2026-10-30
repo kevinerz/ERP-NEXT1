@@ -7,6 +7,8 @@ export class KirimPesanDto {
   @IsOptional() @Type(() => Number) @IsInt() kutip_id?: number;
   // 'true' = kirim audio sebagai voice note
   @IsOptional() @IsString() ptt?: string;
+  // 'false' = tanpa tanda tangan *nama helpdesk* di awal pesan (default: pakai)
+  @IsOptional() @IsIn(['true', 'false']) ttd?: string;
 }
 
 export class AlihkanDto {
@@ -40,4 +42,10 @@ export class ChatBaruDto {
 export class NamaKontakDto {
   // kosong = hapus nama kustom
   @IsOptional() @IsString() @MaxLength(150) nama?: string;
+}
+
+export class SimpanPicDto {
+  @Type(() => Number) @IsInt() @Min(1) id_site: number;
+  @IsString() @MaxLength(150) nama_pic: string;
+  @IsOptional() @IsString() @MaxLength(100) jabatan?: string;
 }
