@@ -554,7 +554,8 @@ export class WaService {
     // Audio & stiker tidak punya keterangan → tanpa tanda tangan.
     let teks = dto.teks?.trim() || '';
     if (dto.ttd !== 'false' && jenis !== 'audio') {
-      const nama = (await this.staf()).get(id_karyawan);
+      // Rapikan spasi: WhatsApp tidak menebalkan "*Nama *" (spasi sebelum bintang penutup)
+      const nama = (await this.staf()).get(id_karyawan)?.replace(/\s+/g, ' ').trim();
       if (nama) teks = teks ? `*${nama}*\n${teks}` : `*${nama}*`;
     }
     const req: GwKirim = { ke: chat.jid, teks: teks || undefined };
