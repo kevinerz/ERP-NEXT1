@@ -89,11 +89,13 @@ export async function normalisasi(
   if (!key?.id || !key.remoteJid) return null;
   if (key.remoteJid === 'status@broadcast' || key.remoteJid.endsWith('@newsletter') || key.remoteJid.endsWith('@broadcast')) return null;
 
-  const content = normalizeMessageContent(msg.message);
+  let content = normalizeMessageContent(msg.message);
+  // Stiker animasi dibungkus lottieStickerMessage → perlakukan sebagai stiker biasa
+  if (content?.lottieStickerMessage?.message) content = content.lottieStickerMessage.message;
   // Pesan sistem (anggota grup masuk/keluar, enkripsi, dll) tidak punya isi → lewati
   if (!content) return null;
   const jenis = getContentType(content);
-  if (!jenis || jenis === 'senderKeyDistributionMessage' || jenis === 'messageContextInfo') return null;
+  if (!jenis || jenis === 'senderKeyDistributionMessage' || jenis === 'messageContextInfo' || jenis === 'secretEncryptedMessage') return null;
 
   const isGrup = !!isJidGroup(key.remoteJid);
   const chat = isGrup ? { jid: key.remoteJid, lid: null } : await resolve(key.remoteJid, key.remoteJidAlt);
