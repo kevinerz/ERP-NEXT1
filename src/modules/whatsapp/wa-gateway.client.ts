@@ -72,6 +72,9 @@ export class WaGatewayClient {
     return this.panggil<boolean>('POST', `/akun/${akun}/reaksi`, { jid, target, emoji });
   }
   unduhUlang(akun: string, id: string) { return this.panggil<{ file: string }>('POST', `/akun/${akun}/media/ulang`, { id }, 180_000); }
+  cekNomor(akun: string, nomor: string) {
+    return this.panggil<{ jid: string | null; terdaftar: boolean; dibatasi: { sampai: string | null; jenis: string | null } | null }>('POST', `/akun/${akun}/cek-nomor`, { nomor }, 20_000);
+  }
   foto(akun: string, jid: string, tipe: 'preview' | 'image') {
     return this.panggil<string | null>('GET', `/akun/${akun}/foto/${encodeURIComponent(jid)}?tipe=${tipe}`, undefined, 20_000);
   }

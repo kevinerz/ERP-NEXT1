@@ -408,6 +408,20 @@ export class Sesi {
     });
   }
 
+  /** Cek nomor terdaftar di WhatsApp + status pembatasan chat baru dari WhatsApp (akun bisnis) */
+  async cekNomor(nomor: string) {
+    const sock = this.pastikanTerhubung();
+    const jid = keJid(nomor);
+    if (isJidGroup(jid) || isLidUser(jid)) throw Object.assign(new Error('Masukkan nomor HP, bukan grup/LID'), { status: 400 });
+    const [hasil] = (await sock.onWhatsApp(jid)) ?? [];
+    let dibatasi: { sampai: string | null; jenis: string | null } | null = null;
+    try {
+      const t = await sock.fetchAccountReachoutTimelock();
+      if (t?.isActive) dibatasi = { sampai: t.timeEnforcementEnds ? new Date(t.timeEnforcementEnds).toISOString() : null, jenis: t.enforcementType ?? null };
+    } catch { /* tidak semua akun mendukung — abaikan */ }
+    return { jid: hasil?.exists ? jidNormalizedUser(hasil.jid) : null, terdaftar: !!hasil?.exists, dibatasi };
+  }
+
   async grup(jid: string) {
     const sock = this.pastikanTerhubung();
     const g = await sock.groupMetadata(jid);

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { promises as fsp, existsSync, statSync } from 'fs';
@@ -13,6 +13,8 @@ export type FileUnggah = { buffer: Buffer; mimetype: string; originalname: strin
 type Kecocokan = { id_pelanggan: number | null; id_site: number | null; id_pic: number | null; nama: string };
 
 const PER_HALAMAN = 30;
+// Batas chat baru per akun (anti-blokir): memulai chat ke nomor baru paling berisiko
+const MAKS_CHAT_BARU_PER_JAM = 20;
 
 /** "0812-3456 789" / "+62 812…" → "62812…"; null bila tidak mirip nomor HP */
 export function normalNomor(s: string | null | undefined): string | null {
@@ -42,6 +44,7 @@ export class WaService {
   private indeksNomor: { at: number; map: Map<string, Kecocokan> } | null = null;
   private namaStaf: { at: number; map: Map<number, string> } | null = null;
   // Antrean foto profil: maks 3 permintaan bersamaan ke WhatsApp
+  private chatBaruTerakhir = new Map<number, number[]>(); // id_akun → waktu pembuatan chat baru (1 jam terakhir)
   private fotoJalan = 0;
   private fotoAntre: (() => void)[] = [];
 
@@ -428,7 +431,7 @@ export class WaService {
         jid: c.jid,
         nomor,
         is_grup: c.is_grup,
-        nama: c.is_grup ? c.nama || 'Grup' : k?.nama_simpan || k?.nama_erp || k?.nama_wa || c.nama || (nomor ? `+${nomor}` : c.jid.split('@')[0]),
+        nama: c.is_grup ? c.nama || 'Grup' : k?.nama_kustom || k?.nama_simpan || k?.nama_erp || k?.nama_wa || c.nama || (nomor ? `+${nomor}` : c.jid.split('@')[0]),
         nama_wa: k?.nama_wa ?? null,
         erp: k?.nama_erp ? { nama: k.nama_erp, id_pelanggan: k.id_pelanggan, id_site: k.id_site, id_pic: k.id_pic } : null,
         belum_dibaca: c.belum_dibaca,
@@ -493,7 +496,7 @@ export class WaService {
     const kata = q.q?.trim();
     if (kata) {
       const kontak = await this.prisma.waKontak.findMany({
-        where: { id_akun, OR: [{ nama_wa: { contains: kata } }, { nama_simpan: { contains: kata } }, { nama_erp: { contains: kata } }, { nomor: { contains: kata.replace(/\D/g, '') || kata } }] },
+        where: { id_akun, OR: [{ nama_wa: { contains: kata } }, { nama_simpan: { contains: kata } }, { nama_kustom: { contains: kata } }, { nama_erp: { contains: kata } }, { nomor: { contains: kata.replace(/\D/g, '') || kata } }] },
         select: { jid: true },
         take: 200,
       });
@@ -702,7 +705,7 @@ export class WaService {
       ]);
       return {
         ...c, jumlah_pesan, dibuat: chat.created_at,
-        kontak: k ? { nama_wa: k.nama_wa, nama_simpan: k.nama_simpan, nama_erp: k.nama_erp, lid: k.lid } : null,
+        kontak: k ? { nama_wa: k.nama_wa, nama_simpan: k.nama_simpan, nama_kustom: k.nama_kustom, nama_erp: k.nama_erp, lid: k.lid } : null,
         site, pelanggan, grup: null,
       };
     }
@@ -713,7 +716,7 @@ export class WaService {
       const g = await this.gw.grup(chat.akun.kode, chat.jid);
       const kontak = await this.prisma.waKontak.findMany({
         where: { id_akun: chat.id_akun, jid: { in: g.peserta.map((p: any) => p.jid) } },
-        select: { jid: true, nama_wa: true, nama_simpan: true, nama_erp: true },
+        select: { jid: true, nama_wa: true, nama_simpan: true, nama_kustom: true, nama_erp: true },
       });
       const kByJid = new Map(kontak.map((x) => [x.jid, x]));
       grup = {
@@ -721,13 +724,145 @@ export class WaService {
         peserta: g.peserta.map((p: any) => {
           const x = kByJid.get(p.jid);
           const nomor = nomorDariJid(p.jid);
-          return { jid: p.jid, nomor, admin: p.admin, nama: x?.nama_simpan || x?.nama_erp || x?.nama_wa || (nomor ? `+${nomor}` : p.jid.split('@')[0]), erp: x?.nama_erp ?? null };
+          return { jid: p.jid, nomor, admin: p.admin, nama: x?.nama_kustom || x?.nama_simpan || x?.nama_erp || x?.nama_wa || (nomor ? `+${nomor}` : p.jid.split('@')[0]), erp: x?.nama_erp ?? null };
         }).sort((a: any, b: any) => (b.admin ? 1 : 0) - (a.admin ? 1 : 0) || a.nama.localeCompare(b.nama)),
       };
     } catch (e: any) {
       grup = { error: e?.message || 'Gagal mengambil data grup', deskripsi: null, peserta: [] };
     }
     return { ...c, jumlah_pesan, dibuat: chat.created_at, kontak: null, site: null, pelanggan: null, grup };
+  }
+
+  // ── Chat baru & nama kontak ──────────────────────────────────────────────────
+  /** Cari tujuan chat baru: kontak WhatsApp, PIC site, dan PIC/pemilik pelanggan di ERP */
+  async cariKontak(kode: string, q: string) {
+    const kata = (q || '').trim();
+    if (kata.length < 2) return [];
+    const id_akun = await this.idAkun(kode);
+    const angka = kata.replace(/\D/g, '');
+    const cariNomor = angka.length >= 4 ? (normalNomor(angka) ?? angka).replace(/^62/, '') : null;
+    type Hasil = { nomor: string; nama: string; keterangan: string | null; sumber: 'whatsapp' | 'pic' | 'pelanggan'; id_chat?: number | null };
+    const hasil = new Map<string, Hasil>();
+    const tambah = (h: Hasil) => { if (!hasil.has(h.nomor)) hasil.set(h.nomor, h); };
+
+    const [kontak, pic, pelanggan] = await Promise.all([
+      this.prisma.waKontak.findMany({
+        where: {
+          id_akun, jid: { endsWith: '@s.whatsapp.net' },
+          OR: [
+            { nama_kustom: { contains: kata } }, { nama_simpan: { contains: kata } }, { nama_wa: { contains: kata } }, { nama_erp: { contains: kata } },
+            ...(cariNomor ? [{ nomor: { contains: cariNomor } }] : []),
+          ],
+        },
+        take: 15,
+      }),
+      this.prisma.picSite.findMany({
+        where: {
+          no_kontak: { not: null },
+          OR: [
+            { nama_pic: { contains: kata } }, { site: { nama_site: { contains: kata } } }, { site: { kode_site: { contains: kata } } },
+            ...(cariNomor ? [{ no_kontak: { contains: cariNomor } }] : []),
+          ],
+        },
+        select: { nama_pic: true, jabatan: true, no_kontak: true, site: { select: { nama_site: true, pelanggan: { select: { nama_pelanggan: true } } } } },
+        take: 15,
+      }),
+      this.prisma.pelanggan.findMany({
+        where: {
+          OR: [
+            { nama_pelanggan: { contains: kata } }, { nama_pic_utama: { contains: kata } }, { nama_pic_teknis: { contains: kata } },
+            { nama_pic_keuangan: { contains: kata } }, { nama_pemilik: { contains: kata } },
+          ],
+        },
+        select: {
+          nama_pelanggan: true, nama_pic_utama: true, no_hp_pic_utama: true, nama_pic_teknis: true, no_ponsel_pic_teknis: true,
+          nama_pic_keuangan: true, no_ponsel_pic_keuangan: true, nama_pemilik: true, no_ponsel_pemilik: true,
+        },
+        take: 8,
+      }),
+    ]);
+    for (const k of kontak) {
+      if (!k.nomor) continue;
+      tambah({ nomor: k.nomor, nama: k.nama_kustom || k.nama_simpan || k.nama_erp || k.nama_wa || `+${k.nomor}`, keterangan: k.nama_wa ? `~${k.nama_wa}` : null, sumber: 'whatsapp' });
+    }
+    for (const p of pic) {
+      const n = normalNomor(p.no_kontak);
+      if (n) tambah({ nomor: n, nama: p.nama_pic, keterangan: [p.jabatan, p.site.nama_site, p.site.pelanggan?.nama_pelanggan].filter(Boolean).join(' · '), sumber: 'pic' });
+    }
+    for (const p of pelanggan) {
+      for (const [nama, no, peran] of [
+        [p.nama_pic_utama, p.no_hp_pic_utama, 'PIC utama'], [p.nama_pic_teknis, p.no_ponsel_pic_teknis, 'PIC teknis'],
+        [p.nama_pic_keuangan, p.no_ponsel_pic_keuangan, 'PIC keuangan'], [p.nama_pemilik, p.no_ponsel_pemilik, 'Pemilik'],
+      ] as const) {
+        const n = normalNomor(no);
+        if (n) tambah({ nomor: n, nama: nama || p.nama_pelanggan, keterangan: `${peran} · ${p.nama_pelanggan}`, sumber: 'pelanggan' });
+      }
+    }
+    // Tandai yang sudah punya chat
+    const list = [...hasil.values()].slice(0, 30);
+    const chats = await this.prisma.waChat.findMany({ where: { id_akun, jid: { in: list.map((h) => `${h.nomor}@s.whatsapp.net`) } }, select: { id_chat: true, jid: true } });
+    const byJid = new Map(chats.map((c) => [c.jid, c.id_chat]));
+    return list.map((h) => ({ ...h, id_chat: byJid.get(`${h.nomor}@s.whatsapp.net`) ?? null }));
+  }
+
+  /** Mulai chat baru ke nomor HP (dicek terdaftar di WhatsApp; maks 20 chat baru per jam per akun) */
+  async chatBaru(kode: string, id_karyawan: number, nomorMasuk: string, nama?: string) {
+    const nomor = normalNomor(nomorMasuk);
+    if (!nomor || nomor.length > 15) throw new BadRequestException('Nomor HP tidak valid');
+    const id_akun = await this.idAkun(kode);
+
+    const ada = await this.prisma.waChat.findUnique({ where: { id_akun_jid: { id_akun, jid: `${nomor}@s.whatsapp.net` } } });
+    if (ada) {
+      if (nama?.trim()) await this.simpanNamaKustom(id_akun, ada.jid, nama);
+      if (!ada.id_karyawan_pic || ada.status === 'Selesai') {
+        await this.prisma.waChat.update({ where: { id_chat: ada.id_chat }, data: { id_karyawan_pic: ada.id_karyawan_pic ?? id_karyawan, status: 'Terbuka', waktu_terakhir: ada.waktu_terakhir ?? new Date() } });
+      }
+      return this.siarkanChat(ada.id_chat);
+    }
+
+    const baru = (this.chatBaruTerakhir.get(id_akun) ?? []).filter((t) => Date.now() - t < 3600_000);
+    if (baru.length >= MAKS_CHAT_BARU_PER_JAM) {
+      const tunggu = Math.ceil((3600_000 - (Date.now() - baru[0]!)) / 60_000);
+      throw new HttpException(`Batas ${MAKS_CHAT_BARU_PER_JAM} chat baru per jam tercapai (pengaman blokir). Coba lagi ±${tunggu} menit.`, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const cek = await this.gw.cekNomor(kode, nomor);
+    if (cek.dibatasi) {
+      const sampai = cek.dibatasi.sampai ? new Date(cek.dibatasi.sampai).toLocaleString('id-ID') : 'waktu yang belum diketahui';
+      throw new BadRequestException(`WhatsApp sedang membatasi akun ini memulai chat baru (sampai ${sampai}). Balas chat yang masuk saja dulu.`);
+    }
+    if (!cek.terdaftar || !cek.jid) throw new BadRequestException(`Nomor +${nomor} tidak terdaftar di WhatsApp`);
+
+    // Bisa saja chat sudah ada dengan JID hasil cek (mis. format nomor berbeda)
+    const jid = cek.jid;
+    let chat = await this.prisma.waChat.findUnique({ where: { id_akun_jid: { id_akun, jid } } });
+    if (!chat) {
+      chat = await this.prisma.waChat.create({ data: { id_akun, jid, is_grup: false, id_karyawan_pic: id_karyawan, status: 'Terbuka', waktu_terakhir: new Date() } });
+      baru.push(Date.now());
+      this.chatBaruTerakhir.set(id_akun, baru);
+      this.logger.log(`Chat baru ke ${jid} oleh karyawan#${id_karyawan}`);
+    }
+    await this.simpanKontak(id_akun, jid, null, {});
+    if (nama?.trim()) await this.simpanNamaKustom(id_akun, jid, nama);
+    return this.siarkanChat(chat.id_chat);
+  }
+
+  private async simpanNamaKustom(id_akun: number, jid: string, nama: string | null) {
+    const n = nama?.trim().slice(0, 150) || null;
+    await this.prisma.waKontak.upsert({
+      where: { id_akun_jid: { id_akun, jid } },
+      create: { id_akun, jid, nomor: nomorDariJid(jid), nama_kustom: n },
+      update: { nama_kustom: n },
+    });
+  }
+
+  /** Ubah nama kontak versi ERP (kosong = kembali ke nama dari HP / WhatsApp) */
+  async ubahNamaKontak(id_chat: number, nama: string | null) {
+    const chat = await this.prisma.waChat.findUnique({ where: { id_chat } });
+    if (!chat) throw new NotFoundException('Chat tidak ditemukan');
+    if (chat.is_grup) throw new BadRequestException('Nama grup diatur dari WhatsApp');
+    await this.simpanNamaKustom(chat.id_akun, chat.jid, nama);
+    return this.siarkanChat(id_chat);
   }
 
   // ── Template balasan cepat ───────────────────────────────────────────────────

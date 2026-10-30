@@ -376,9 +376,84 @@ function jalankanFoto() {
 }
 watch(chats, (list) => mintaFoto(list.map((c) => c.id_chat)))
 
+// ── Chat baru ────────────────────────────────────────────────────────────────
+interface TujuanChat { nomor: string; nama: string; keterangan: string | null; sumber: 'whatsapp' | 'pic' | 'pelanggan'; id_chat: number | null }
+const bukaChatBaru = ref(false)
+const cariTujuan = ref('')
+const hasilTujuan = ref<TujuanChat[]>([])
+const mencariTujuan = ref(false)
+const membuatChat = ref(false)
+const errChatBaru = ref('')
+let timerTujuan: ReturnType<typeof setTimeout> | null = null
+const IKON_SUMBER: Record<string, string> = { whatsapp: '💬', pic: '📍', pelanggan: '🏢' }
+
+function nomorDariKetikan(t: string): string | null {
+  let n = t.replace(/\D/g, '')
+  if (n.startsWith('0')) n = '62' + n.slice(1)
+  else if (n.startsWith('8')) n = '62' + n
+  return n.length >= 10 && n.length <= 15 && /^[\d\s+()-]+$/.test(t.trim()) ? n : null
+}
+const nomorKetik = computed(() => nomorDariKetikan(cariTujuan.value))
+
+function mulaiChatBaru() {
+  bukaChatBaru.value = true
+  cariTujuan.value = ''
+  hasilTujuan.value = []
+  errChatBaru.value = ''
+}
+watch(cariTujuan, (q) => {
+  if (timerTujuan) clearTimeout(timerTujuan)
+  errChatBaru.value = ''
+  if (q.trim().length < 2) { hasilTujuan.value = []; return }
+  timerTujuan = setTimeout(async () => {
+    mencariTujuan.value = true
+    try {
+      const { data } = await api.get('/wa/kontak/cari', { params: { q: q.trim() } })
+      if (cariTujuan.value === q) hasilTujuan.value = data.data
+    } finally {
+      mencariTujuan.value = false
+    }
+  }, 300)
+})
+async function pilihTujuan(nomor: string, nama?: string) {
+  if (membuatChat.value) return
+  membuatChat.value = true
+  errChatBaru.value = ''
+  try {
+    const { data } = await api.post('/wa/chat/baru', { nomor, nama: nama || undefined })
+    const c: Chat = data.data
+    bukaChatBaru.value = false
+    if (filter.value !== 'semua' && filter.value !== 'saya') filter.value = 'saya'
+    terapkanChat(c)
+    await bukaChat(c)
+  } catch (e: any) {
+    errChatBaru.value = e?.response?.data?.message || 'Gagal membuat chat'
+  } finally {
+    membuatChat.value = false
+  }
+}
+
+// ── Ubah nama kontak (versi ERP) ─────────────────────────────────────────────
+async function ubahNama() {
+  if (!aktif.value || aktif.value.is_grup) return
+  const nama = await promptDialog({
+    title: 'Nama kontak di ERP',
+    label: 'Kosongkan untuk kembali ke nama dari HP / WhatsApp',
+    defaultValue: profil.value?.kontak?.nama_kustom || aktif.value.nama,
+    confirmLabel: 'Simpan',
+  })
+  if (nama === null) return
+  const { data } = await api.patch(`/wa/chat/${aktif.value.id_chat}/nama`, { nama: nama.trim() || undefined })
+  terapkanChat(data.data)
+  if (profil.value) {
+    profil.value.nama = data.data.nama
+    if (profil.value.kontak) profil.value.kontak.nama_kustom = nama.trim() || null
+  }
+}
+
 interface Profil {
   id_chat: number; nama: string; nomor: string | null; is_grup: boolean; jumlah_pesan: number; dibuat: string
-  kontak: { nama_wa: string | null; nama_simpan: string | null; nama_erp: string | null } | null
+  kontak: { nama_wa: string | null; nama_simpan: string | null; nama_kustom: string | null; nama_erp: string | null } | null
   site: { id_site: number; kode_site: string; nama_site: string; kota: string | null; status_site: string } | null
   pelanggan: { id_pelanggan: number; kode_pelanggan: string; nama_pelanggan: string } | null
   grup: { deskripsi: string | null; peserta: { jid: string; nomor: string | null; admin: string | null; nama: string; erp: string | null }[]; error?: string } | null
@@ -550,6 +625,7 @@ onBeforeUnmount(() => {
 
       <div class="wa-cari">
         <input v-model="cari" type="search" placeholder="Cari nama, nomor, pelanggan…" />
+        <button class="btn-sm btn-hijau" :disabled="!terhubung" title="Mulai chat baru" @click="mulaiChatBaru">✏️ Chat baru</button>
       </div>
       <div class="wa-filter">
         <button :class="{ on: filter === 'semua' }" @click="gantiFilter('semua')">Semua</button>
@@ -760,6 +836,34 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- Chat baru -->
+    <div v-if="bukaChatBaru" class="wa-modal" @click.self="bukaChatBaru = false">
+      <div class="wa-modal-box wa-chatbaru">
+        <h3>Chat baru</h3>
+        <input v-model="cariTujuan" class="wa-chatbaru-input" placeholder="Nama PIC, site, pelanggan, atau nomor HP (08…)" autofocus />
+        <p v-if="errChatBaru" class="wa-err">{{ errChatBaru }}</p>
+        <ul class="wa-chatbaru-list">
+          <li v-if="nomorKetik" class="klik" @click="pilihTujuan(nomorKetik)">
+            <span class="wa-chatbaru-ikon">📞</span>
+            <span><b>Chat ke +{{ nomorKetik }}</b><small>Nomor diketik langsung — dicek dulu terdaftar di WhatsApp</small></span>
+          </li>
+          <li v-for="h in hasilTujuan" :key="h.nomor" class="klik" @click="pilihTujuan(h.nomor, h.sumber === 'whatsapp' ? undefined : h.nama)">
+            <span class="wa-chatbaru-ikon">{{ IKON_SUMBER[h.sumber] }}</span>
+            <span>
+              <b>{{ h.nama }}</b>
+              <small>+{{ h.nomor }}<template v-if="h.keterangan"> · {{ h.keterangan }}</template></small>
+            </span>
+            <small v-if="h.id_chat" class="tag tag-pic">sudah ada chat</small>
+          </li>
+          <li v-if="mencariTujuan" class="muted">Mencari…</li>
+          <li v-else-if="cariTujuan.trim().length >= 2 && !hasilTujuan.length && !nomorKetik" class="muted">Tidak ditemukan. Ketik nomor HP untuk chat langsung.</li>
+        </ul>
+        <p class="muted kecil">💬 kontak WhatsApp · 📍 PIC site · 🏢 data pelanggan. Maks 20 chat baru per jam (pengaman blokir).</p>
+        <p v-if="membuatChat" class="muted">Mengecek nomor di WhatsApp…</p>
+        <button class="btn-sm btn-ghost" @click="bukaChatBaru = false">Tutup</button>
+      </div>
+    </div>
+
     <!-- Panel profil -->
     <div v-if="bukaProfil" class="wa-profil-latar" @click.self="bukaProfil = false">
       <aside class="wa-profil">
@@ -767,7 +871,11 @@ onBeforeUnmount(() => {
         <div class="wa-profil-foto">
           <img v-if="fotoBesar" :src="fotoBesar" alt="" @click="lihatFoto = fotoBesar" />
           <div v-else class="wa-avatar besar" :class="{ grup: aktif?.is_grup }">{{ aktif?.is_grup ? '👥' : inisial(aktif?.nama || '') }}</div>
-          <h3>{{ profil?.nama || aktif?.nama }}</h3>
+          <h3>
+            {{ profil?.nama || aktif?.nama }}
+            <button v-if="aktif && !aktif.is_grup" class="wa-ubah-nama" title="Ubah nama kontak di ERP" @click="ubahNama">✏️</button>
+          </h3>
+          <p v-if="profil?.kontak?.nama_kustom" class="muted kecil">Nama diberi staf di ERP<template v-if="profil.kontak.nama_simpan"> · di HP: {{ profil.kontak.nama_simpan }}</template></p>
           <p v-if="profil?.nomor" class="muted">+{{ profil.nomor }}</p>
           <p v-if="profil?.kontak?.nama_wa" class="muted">~{{ profil.kontak.nama_wa }}</p>
         </div>
@@ -837,7 +945,9 @@ onBeforeUnmount(() => {
 .wa-dot.terputus, .wa-dot.gateway-mati { background: #dc2626; }
 .wa-sinkron { margin: 0; padding: 6px 14px; font-size: 12px; background: #fef9c3; color: #854d0e; }
 .wa-cari { padding: 10px 12px 6px; }
-.wa-cari input { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 20px; font-size: 13px; background: #f8fafc; }
+.wa-cari { display: flex; gap: 8px; align-items: center; }
+.wa-cari .btn-sm { flex: none; white-space: nowrap; }
+.wa-cari input { flex: 1; min-width: 0; width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 20px; font-size: 13px; background: #f8fafc; }
 .wa-filter { display: flex; gap: 6px; padding: 4px 12px 10px; flex-wrap: wrap; }
 .wa-filter button { border: 1px solid #e2e8f0; background: #fff; padding: 4px 10px; border-radius: 99px; font-size: 12px; cursor: pointer; color: #334155; }
 .wa-filter button.on { background: var(--wa-hijau-muda); border-color: #86efac; color: #166534; font-weight: 600; }
@@ -874,6 +984,15 @@ onBeforeUnmount(() => {
 .wa-anggota-list { list-style: none; margin: 0; padding: 0; }
 .wa-anggota-list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
 .pusat { text-align: center; }
+.wa-ubah-nama { border: 0; background: none; cursor: pointer; font-size: 14px; }
+.wa-chatbaru { text-align: left; width: min(520px, 100%); }
+.wa-chatbaru-input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+.wa-chatbaru-list { list-style: none; margin: 10px 0; padding: 0; max-height: 360px; overflow-y: auto; }
+.wa-chatbaru-list li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; }
+.wa-chatbaru-list li.klik:hover { background: #f0fdf4; }
+.wa-chatbaru-list li > span:nth-child(2) { flex: 1; min-width: 0; }
+.wa-chatbaru-list small { display: block; color: var(--wa-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.wa-chatbaru-ikon { font-size: 20px; flex: none; }
 .wa-li-body { min-width: 0; flex: 1; }
 .wa-li-top, .wa-li-bot { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
 .wa-li-nama { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

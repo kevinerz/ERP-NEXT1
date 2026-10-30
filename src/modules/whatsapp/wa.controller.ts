@@ -6,7 +6,7 @@ import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { AlihkanDto, DaftarChatQuery, KirimPesanDto, ReaksiDto, TemplateDto } from './dto';
+import { AlihkanDto, ChatBaruDto, DaftarChatQuery, KirimPesanDto, NamaKontakDto, ReaksiDto, TemplateDto } from './dto';
 import { WaGatewayClient } from './wa-gateway.client';
 import { WaRealtimeService } from './wa-realtime.service';
 import { WaService, type FileUnggah } from './wa.service';
@@ -37,6 +37,18 @@ export class WaController {
   daftarChat(@CurrentUser('id_karyawan') id_karyawan: number, @Query() q: DaftarChatQuery) {
     return this.wa.daftarChat(id_karyawan, q);
   }
+
+  // Cari tujuan chat baru (kontak WA, PIC site, pelanggan)
+  @Get('kontak/cari')
+  cariKontak(@Query('q') q: string, @Query('akun') akun?: string) { return this.wa.cariKontak(akun || 'helpdesk', q); }
+
+  @Post('chat/baru')
+  chatBaru(@CurrentUser('id_karyawan') id_karyawan: number, @Body() dto: ChatBaruDto) {
+    return this.wa.chatBaru(dto.akun || 'helpdesk', id_karyawan, dto.nomor, dto.nama);
+  }
+
+  @Patch('chat/:id/nama')
+  ubahNama(@Param('id', ParseIntPipe) id: number, @Body() dto: NamaKontakDto) { return this.wa.ubahNamaKontak(id, dto.nama ?? null); }
 
   @Get('chat/:id')
   detailChat(@Param('id', ParseIntPipe) id: number) { return this.wa.detailChat(id); }

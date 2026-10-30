@@ -1482,6 +1482,7 @@ model WaKontak {
   nomor        String?  @db.VarChar(30)
   nama_wa      String?  @db.VarChar(150)
   nama_simpan  String?  @db.VarChar(150)
+  nama_kustom  String?  @db.VarChar(150) // nama yang diberikan staf di ERP (tidak tertimpa sinkron HP)
   id_pelanggan Int?
   id_site      Int?
   id_pic       Int?

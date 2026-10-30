@@ -30,3 +30,14 @@ export class DaftarChatQuery {
   @IsOptional() @IsString() @MaxLength(100) q?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) halaman?: number;
 }
+
+export class ChatBaruDto {
+  @IsString() @MaxLength(30) nomor: string;
+  @IsOptional() @IsString() @MaxLength(150) nama?: string;
+  @IsOptional() @IsString() @MaxLength(30) akun?: string;
+}
+
+export class NamaKontakDto {
+  // kosong = hapus nama kustom
+  @IsOptional() @IsString() @MaxLength(150) nama?: string;
+}
