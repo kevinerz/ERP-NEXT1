@@ -293,6 +293,24 @@ async function muatMedia(p: Pesan) {
     memuatMedia[p.id_pesan] = false
   }
 }
+// Media yang gagal terunduh: minta gateway mengunduh ulang dari WhatsApp
+const unduhUlangErr = reactive<Record<number, string>>({})
+async function unduhUlang(p: Pesan) {
+  if (memuatMedia[p.id_pesan]) return
+  memuatMedia[p.id_pesan] = true
+  unduhUlangErr[p.id_pesan] = ''
+  try {
+    const { data } = await api.post(`/wa/pesan/${p.id_pesan}/unduh-ulang`)
+    upsertPesan(data.data)
+  } catch (e: any) {
+    unduhUlangErr[p.id_pesan] = e?.response?.data?.message || 'Gagal mengunduh ulang'
+  } finally {
+    memuatMedia[p.id_pesan] = false
+  }
+  const baru = pesan.value.find((x) => x.id_pesan === p.id_pesan)
+  if (baru?.media?.ada && (baru.media.jenis === 'image' || baru.media.jenis === 'sticker')) muatMedia(baru)
+}
+
 async function unduh(p: Pesan) {
   await muatMedia(p)
   const u = urlMedia[p.id_pesan]
@@ -535,7 +553,7 @@ onBeforeUnmount(() => {
                   <!-- Foto / stiker -->
                   <template v-if="p.media && (p.media.jenis === 'image' || p.media.jenis === 'sticker')">
                     <img v-if="urlMedia[p.id_pesan]" :src="urlMedia[p.id_pesan]" :class="p.media.jenis === 'sticker' ? 'wa-stiker' : 'wa-foto'" alt="" @click="p.media.jenis === 'image' && (lihatFoto = urlMedia[p.id_pesan] ?? null)" />
-                    <div v-else class="wa-media-box">{{ p.media.ada ? '⏳ Memuat foto…' : (p.riwayat ? '📷 Foto (riwayat, tidak diunduh)' : '⏳ Foto sedang diunduh…') }}</div>
+                    <div v-else class="wa-media-box">{{ p.media.ada ? '⏳ Memuat foto…' : (p.riwayat ? '📷 Foto (riwayat, tidak diunduh)' : '📷 Foto belum tersedia') }}</div>
                   </template>
                   <!-- Video -->
                   <template v-else-if="p.media && p.media.jenis === 'video'">
@@ -556,6 +574,12 @@ onBeforeUnmount(() => {
                     <span class="wa-dok-ikon">📄</span>
                     <span><b>{{ p.media.nama || 'Dokumen' }}</b><small>{{ ukuran(p.media.ukuran) }} {{ p.media.ada ? '· Unduh' : '· tidak tersedia' }}</small></span>
                   </button>
+                  <div v-if="p.media && !p.media.ada && !p.riwayat" class="wa-ulang">
+                    <button class="btn-sm btn-ghost" :disabled="memuatMedia[p.id_pesan]" @click="unduhUlang(p)">
+                      {{ memuatMedia[p.id_pesan] ? 'Mengunduh…' : '↻ Coba unduh lagi' }}
+                    </button>
+                    <small v-if="unduhUlangErr[p.id_pesan]" class="wa-err">{{ unduhUlangErr[p.id_pesan] }}</small>
+                  </div>
                   <!-- Lokasi -->
                   <a v-if="p.lokasi" class="wa-lokasi" :href="`https://maps.google.com/?q=${p.lokasi.lat},${p.lokasi.lng}`" target="_blank" rel="noopener">
                     📍 {{ p.lokasi.nama || 'Lokasi' }}<small v-if="p.lokasi.alamat">{{ p.lokasi.alamat }}</small>
@@ -732,6 +756,7 @@ onBeforeUnmount(() => {
 .wa-dok { display: flex; gap: 10px; align-items: center; background: rgba(0,0,0,.05); border: 0; border-radius: 8px; padding: 10px; cursor: pointer; text-align: left; width: 100%; margin-bottom: 4px; }
 .wa-dok-ikon { font-size: 26px; }
 .wa-dok small { display: block; color: var(--wa-muted); font-size: 12px; }
+.wa-ulang { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; }
 .wa-lokasi { display: block; color: #0369a1; text-decoration: none; margin-bottom: 4px; }
 .wa-lokasi small { display: block; color: var(--wa-muted); }
 .wa-kontak { margin-bottom: 4px; }

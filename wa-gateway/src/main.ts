@@ -20,16 +20,17 @@ const server = buatServer(sesi).listen(config.port, config.host, () => {
   log.info({ port: config.port, akun: config.akun }, 'wa-gateway berjalan');
 });
 
-// Media yang sudah lebih dari 7 hari dihapus (ERP sudah menyimpan salinannya)
-setInterval(() => {
-  const batas = Date.now() - 7 * 24 * 3600_000;
-  for (const s of sesi.values()) {
-    if (!fs.existsSync(s.dirMedia)) continue;
-    for (const f of fs.readdirSync(s.dirMedia)) {
-      const full = path.join(s.dirMedia, f);
-      try { if (fs.statSync(full).mtimeMs < batas) fs.unlinkSync(full); } catch { /* abaikan */ }
-    }
+// Bersihkan berkala: file media > 7 hari (ERP sudah menyimpan salinannya), kunci unduh media > 30 hari
+function bersihkan(dir: string, hari: number) {
+  if (!fs.existsSync(dir)) return;
+  const batas = Date.now() - hari * 24 * 3600_000;
+  for (const f of fs.readdirSync(dir)) {
+    const full = path.join(dir, f);
+    try { if (fs.statSync(full).mtimeMs < batas) fs.unlinkSync(full); } catch { /* abaikan */ }
   }
+}
+setInterval(() => {
+  for (const s of sesi.values()) { bersihkan(s.dirMedia, 7); bersihkan(s.dirKunciMedia, 30); }
 }, 6 * 3600_000).unref();
 
 function tutup() {

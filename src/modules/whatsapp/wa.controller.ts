@@ -80,6 +80,9 @@ export class WaController {
   @Post('pesan/:id/reaksi')
   reaksi(@Param('id', ParseIntPipe) id: number, @Body() dto: ReaksiDto) { return this.wa.reaksi(id, dto.emoji); }
 
+  @Post('pesan/:id/unduh-ulang')
+  unduhUlang(@Param('id', ParseIntPipe) id: number) { return this.wa.unduhUlangMedia(id); }
+
   // Media chat bersifat privat — hanya lewat API ber-login (bukan folder /uploads publik)
   @Get('media/:id')
   async media(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {

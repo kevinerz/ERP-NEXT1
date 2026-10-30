@@ -49,6 +49,11 @@ export function buatServer(sesi: Map<string, Sesi>) {
     await ambil(req).reaksi(keJid(jid), target, String(emoji ?? ''));
     res.json({ data: true });
   });
+  app.post('/akun/:akun/media/ulang', async (req, res) => {
+    const id = String(req.body?.id ?? '');
+    if (!id) throw Object.assign(new Error('id wajib'), { status: 400 });
+    res.json({ data: await ambil(req).unduhUlang(id) });
+  });
   app.get('/akun/:akun/grup/:jid', async (req, res) => { res.json({ data: await ambil(req).grup(String(req.params.jid)) }); });
   app.get('/akun/:akun/foto/:jid', async (req, res) => { res.json({ data: await ambil(req).foto(String(req.params.jid)) }); });
 

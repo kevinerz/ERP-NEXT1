@@ -369,7 +369,7 @@ export class WaService {
     });
   }
 
-  private async ambilMedia(kode: string, id_chat: number, id_pesan: number, file: string) {
+  private async ambilMedia(kode: string, id_chat: number, id_pesan: number, file: string): Promise<boolean> {
     try {
       const buf = await this.gw.media(kode, file);
       const rel = join(kode, file);
@@ -377,9 +377,26 @@ export class WaService {
       await fsp.writeFile(join(this.dirMedia, rel), buf);
       await this.prisma.waPesan.update({ where: { id_pesan }, data: { media_path: rel } });
       await this.siarkanPesan(id_chat, id_pesan);
+      return true;
     } catch (e: any) {
       this.logger.warn(`Gagal mengambil media ${file}: ${e?.message}`);
+      return false;
     }
+  }
+
+  /** Minta gateway mengunduh ulang media yang gagal/terlewat, lalu salin ke ERP */
+  async unduhUlangMedia(id_pesan: number) {
+    const p = await this.prisma.waPesan.findUnique({ where: { id_pesan }, include: { chat: { include: { akun: true } } } });
+    if (!p) throw new NotFoundException('Pesan tidak ditemukan');
+    if (!p.media_jenis) throw new BadRequestException('Pesan ini tidak berisi media');
+    if (!p.media_path) {
+      const { file } = await this.gw.unduhUlang(p.chat.akun.kode, p.wa_id);
+      if (!(await this.ambilMedia(p.chat.akun.kode, p.id_chat, id_pesan, file))) {
+        throw new BadRequestException('Media terunduh di gateway tetapi gagal disalin ke ERP');
+      }
+    }
+    const baru = await this.prisma.waPesan.findUnique({ where: { id_pesan } });
+    return this.formatPesan(baru);
   }
 
   private async siarkanPesan(id_chat: number, id_pesan: number) {

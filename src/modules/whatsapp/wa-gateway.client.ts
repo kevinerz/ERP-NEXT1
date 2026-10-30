@@ -71,6 +71,7 @@ export class WaGatewayClient {
   reaksi(akun: string, jid: string, target: { id: string; dari_saya: boolean; pengirim_jid?: string | null }, emoji: string) {
     return this.panggil<boolean>('POST', `/akun/${akun}/reaksi`, { jid, target, emoji });
   }
+  unduhUlang(akun: string, id: string) { return this.panggil<{ file: string }>('POST', `/akun/${akun}/media/ulang`, { id }, 180_000); }
   grup(akun: string, jid: string) { return this.panggil<any>('GET', `/akun/${akun}/grup/${encodeURIComponent(jid)}`); }
 
   /** Unduh file media yang sudah disimpan gateway */

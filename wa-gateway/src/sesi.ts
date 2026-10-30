@@ -5,6 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import QRCode from 'qrcode';
 import makeWASocket, {
   Browsers,
+  BufferJSON,
   DisconnectReason,
   downloadMediaMessage,
   fetchLatestWaWebVersion,
@@ -80,6 +81,8 @@ export class Sesi {
 
   get dirAuth() { return path.join(config.dataDir, 'auth', this.akun); }
   get dirMedia() { return path.join(config.dataDir, 'media', this.akun); }
+  // Kunci unduh pesan bermedia (URL + mediaKey) — supaya media bisa diunduh ulang dari ERP (disimpan 30 hari)
+  get dirKunciMedia() { return path.join(config.dataDir, 'kunci-media', this.akun); }
 
   info() {
     return { akun: this.akun, status: this.status, qr: this.qr, saya: this.saya, putus_terakhir: this.putusTerakhir };
@@ -103,6 +106,7 @@ export class Sesi {
     if (this.timerSambung) { clearTimeout(this.timerSambung); this.timerSambung = null; }
     fs.mkdirSync(this.dirAuth, { recursive: true });
     fs.mkdirSync(this.dirMedia, { recursive: true });
+    fs.mkdirSync(this.dirKunciMedia, { recursive: true });
     this.status = 'menghubungkan';
     this.kabarkan();
 
@@ -230,7 +234,9 @@ export class Sesi {
         this.ingat(msg.key.id, msg.message);
         const p = await normalisasi(msg, this.resolve);
         if (!p) continue;
+        if (p.media) await this.simpanKunciMedia(msg, p.id);
         if (p.media && unduhMedia && !this.dikirimApi.has(p.id)) await this.unduh(msg, p);
+        else if (p.media && !unduhMedia) log.info({ id: p.id }, 'Media tidak diunduh (bukan pesan baru)');
         kirimWebhook({ akun: this.akun, event: 'pesan', data: p });
       } catch (e: any) {
         log.error({ err: e?.message, id: msg.key?.id }, 'Gagal memproses pesan masuk');
@@ -249,6 +255,28 @@ export class Sesi {
     } catch (e: any) {
       log.warn({ err: e?.message, id: p.id }, 'Media gagal diunduh');
     }
+  }
+
+  private async simpanKunciMedia(msg: WAMessage, id: string) {
+    try {
+      await fs.promises.writeFile(path.join(this.dirKunciMedia, `${aman(id)}.json`), JSON.stringify({ key: msg.key, message: msg.message, messageTimestamp: msg.messageTimestamp }, BufferJSON.replacer));
+    } catch (e: any) {
+      log.warn({ err: e?.message, id }, 'Kunci media gagal disimpan');
+    }
+  }
+
+  /** Unduh ulang media dari kunci yang tersimpan (dipanggil ERP untuk media yang gagal terunduh) */
+  async unduhUlang(id: string): Promise<{ file: string }> {
+    this.pastikanTerhubung();
+    const f = path.join(this.dirKunciMedia, `${aman(id)}.json`);
+    if (!fs.existsSync(f)) throw Object.assign(new Error('Data media tidak tersimpan di gateway (pesan lama / riwayat)'), { status: 404 });
+    const msg = JSON.parse(await fs.promises.readFile(f, 'utf8'), BufferJSON.reviver) as WAMessage;
+    const p = await normalisasi(msg, this.resolve);
+    if (!p?.media) throw Object.assign(new Error('Pesan ini tidak berisi media'), { status: 400 });
+    p.media.ukuran = null; // abaikan batas ukuran — permintaan manual
+    await this.unduh(msg, p);
+    if (!p.media.file) throw Object.assign(new Error('Media gagal diunduh dari WhatsApp (mungkin sudah kedaluwarsa)'), { status: 502 });
+    return { file: p.media.file };
   }
 
   private async onRiwayat(h: { chats: any[]; contacts: Contact[]; messages: WAMessage[]; lidPnMappings?: { lid: string; pn: string }[]; isLatest?: boolean; progress?: number | null }) {
