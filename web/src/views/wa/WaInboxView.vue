@@ -217,7 +217,6 @@ const teks = ref('')
 const file = ref<File | null>(null)
 const inputFile = ref<HTMLInputElement | null>(null)
 const kutip = ref<Pesan | null>(null)
-const mengirim = ref(false)
 const errKirim = ref('')
 const MAKS_FILE = 16 * 1024 * 1024
 // Tanda tangan *Nama Helpdesk* di awal pesan (nama dari login ERP); pilihan diingat per browser
@@ -264,29 +263,64 @@ function onDrop(e: DragEvent) {
   if (f && terhubung.value) pasangFile(f)
 }
 
-async function kirim() {
-  if (!aktif.value || mengirim.value) return
+// Pesan yang sedang dikirim tampil langsung (🕓) tanpa menunggu WhatsApp; gateway sengaja memberi jeda
+interface Antre {
+  kunci: number; id_chat: number; teks: string; file: File | null; pratinjau: string | null
+  kutip: Pesan | null; ttd: boolean; gagal: string | null
+}
+const antrean = ref<Antre[]>([])
+let rantaiKirim: Promise<void> = Promise.resolve() // urutan kirim sama dengan urutan diketik
+let kunciAntre = 0
+const antreanAktif = computed(() => antrean.value.filter((a) => a.id_chat === aktif.value?.id_chat))
+
+function kirim() {
+  if (!aktif.value) return
   if (!teks.value.trim() && !file.value) return
-  mengirim.value = true
+  const a: Antre = {
+    kunci: ++kunciAntre, id_chat: aktif.value.id_chat, teks: teks.value.trim(), file: file.value,
+    pratinjau: pratinjau.value, kutip: kutip.value, ttd: pakaiTtd.value, gagal: null,
+  }
+  pratinjau.value = null // object URL dipakai bubble antrean, jangan dicabut hapusFile()
+  teks.value = ''
+  kutip.value = null
+  hapusFile()
   errKirim.value = ''
+  antrean.value.push(a)
+  nextTick(keBawah)
+  jadwalkan(a)
+}
+function jadwalkan(a: Antre) {
+  rantaiKirim = rantaiKirim.then(() => kirimSatu(a))
+}
+async function kirimSatu(a: Antre) {
   try {
     const fd = new FormData()
-    if (teks.value.trim()) fd.append('teks', teks.value.trim())
-    if (file.value) fd.append('file', file.value)
-    if (kutip.value) fd.append('kutip_id', String(kutip.value.id_pesan))
-    fd.append('ttd', pakaiTtd.value ? 'true' : 'false')
-    const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/kirim`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-    if (data.data) upsertPesan(data.data)
-    teks.value = ''
-    kutip.value = null
-    hapusFile()
-    await nextTick()
-    keBawah()
+    if (a.teks) fd.append('teks', a.teks)
+    if (a.file) fd.append('file', a.file)
+    if (a.kutip) fd.append('kutip_id', String(a.kutip.id_pesan))
+    fd.append('ttd', a.ttd ? 'true' : 'false')
+    const { data } = await api.post(`/wa/chat/${a.id_chat}/kirim`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    antrean.value = antrean.value.filter((x) => x.kunci !== a.kunci)
+    const p: Pesan | null = data.data
+    if (p && a.pratinjau && !urlMedia[p.id_pesan]) urlMedia[p.id_pesan] = a.pratinjau
+    else if (a.pratinjau) URL.revokeObjectURL(a.pratinjau)
+    if (p && aktif.value?.id_chat === a.id_chat) {
+      const bawah = dekatBawah()
+      upsertPesan(p)
+      if (bawah) nextTick(keBawah)
+    }
   } catch (e: any) {
-    errKirim.value = e?.response?.data?.message || 'Gagal mengirim'
-  } finally {
-    mengirim.value = false
+    const x = antrean.value.find((y) => y.kunci === a.kunci)
+    if (x) x.gagal = e?.response?.data?.message || 'Gagal mengirim'
   }
+}
+function kirimUlang(a: Antre) {
+  a.gagal = null
+  jadwalkan(a)
+}
+function buangAntre(a: Antre) {
+  if (a.pratinjau) URL.revokeObjectURL(a.pratinjau)
+  antrean.value = antrean.value.filter((x) => x.kunci !== a.kunci)
 }
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); kirim() }
@@ -730,6 +764,7 @@ onBeforeUnmount(() => {
   for (const u of Object.values(foto)) URL.revokeObjectURL(u)
   if (fotoBesar.value) URL.revokeObjectURL(fotoBesar.value)
   if (pratinjau.value) URL.revokeObjectURL(pratinjau.value)
+  for (const a of antrean.value) if (a.pratinjau) URL.revokeObjectURL(a.pratinjau)
 })
 </script>
 
@@ -912,6 +947,24 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </template>
+
+          <!-- Pesan yang sedang dikirim (belum dibalas WhatsApp) -->
+          <div v-for="a in antreanAktif" :key="'antre' + a.kunci" class="wa-baris saya">
+            <div class="wa-bubble saya" :class="{ 'wa-antre': !a.gagal, 'wa-antre-gagal': a.gagal }">
+              <div v-if="a.kutip" class="wa-kutip"><small>Balas</small><span>{{ a.kutip.teks || '📎 Media' }}</span></div>
+              <img v-if="a.pratinjau" :src="a.pratinjau" class="wa-foto" alt="" />
+              <div v-else-if="a.file" class="wa-media-box">📎 {{ a.file.name }} ({{ ukuran(a.file.size) }})</div>
+              <div v-if="a.teks" class="wa-teks">{{ a.teks }}</div>
+              <div class="wa-meta">
+                <template v-if="a.gagal">
+                  <span class="wa-err">⚠️ {{ a.gagal }}</span>
+                  <button class="btn-sm btn-ghost" @click="kirimUlang(a)">↻ Kirim ulang</button>
+                  <button class="btn-sm btn-ghost" @click="buangAntre(a)">✕</button>
+                </template>
+                <span v-else class="wa-centang">🕓</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- ── Penulisan pesan ── -->
@@ -948,7 +1001,7 @@ onBeforeUnmount(() => {
               v-model="teks" rows="1" :placeholder="terhubung ? 'Tulis pesan… (Enter kirim, Shift+Enter baris baru)' : 'WhatsApp belum terhubung'"
               :disabled="!terhubung" @keydown="onKey" @paste="onPaste"
             ></textarea>
-            <button class="wa-kirim" :disabled="!terhubung || mengirim || (!teks.trim() && !file)" @click="kirim">{{ mengirim ? '…' : '➤' }}</button>
+            <button class="wa-kirim" :disabled="!terhubung || (!teks.trim() && !file)" @click="kirim">➤</button>
           </div>
         </footer>
       </template>
@@ -1281,6 +1334,8 @@ onBeforeUnmount(() => {
 .wa-meta { display: flex; gap: 6px; justify-content: flex-end; align-items: center; font-size: 11px; color: var(--wa-muted); margin-top: 2px; }
 .wa-staf { background: rgba(0,0,0,.06); border-radius: 4px; padding: 0 4px; }
 .wa-centang.biru { color: #0284c7; }
+.wa-antre { opacity: .7; }
+.wa-antre-gagal { outline: 1px solid #dc2626; }
 .wa-reaksi { position: absolute; bottom: -12px; right: 8px; background: #fff; border-radius: 99px; padding: 0 6px; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
 .wa-aksi { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
 .wa-baris:hover .wa-aksi { opacity: 1; }
