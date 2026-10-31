@@ -154,6 +154,7 @@ model Pelanggan {
   grup           GrupPelanggan?  @relation(fields: [id_grup], references: [id_grup])
   sites          SitePelanggan[]
   customer_users CustomerUser[]
+  pb_sph         PbSph[]
 
   @@map("pelanggan")
 }
@@ -188,6 +189,7 @@ model MasterLayanan {
   kontrak          KontrakLayanan[]
   instalasi_orders InstalasiOrder[]
   surveys_presales PresalesSurvey[]   @relation("SurveyLayanan")
+  pb_order         PbOrder[]
 
   @@map("master_layanan")
 }
@@ -388,6 +390,7 @@ model SitePelanggan {
   uptimekuma_mapping IntegrationUptimeKumaMapping[]
   instalasi_orders   InstalasiOrder[]
   dokumen            SiteDokumen[]
+  pb_order           PbOrder[]
 
   @@map("site_pelanggan")
 }
@@ -400,10 +403,13 @@ model SiteDokumen {
   tipe_file    String   @db.VarChar(10)
   keterangan   String?  @db.VarChar(500)
   ukuran_byte  Int?
+  jenis        String?  @db.VarChar(30) // FAB | BA | TOPOLOGI | SPH | LAIN
+  id_pb        Int?     // diunggah dari order Pasang Baru
   created_at   DateTime @default(now())
 
   site SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
 
+  @@index([id_pb])
   @@map("site_dokumen")
 }
 
@@ -511,6 +517,12 @@ model SumberInternetSite {
   tgl_berakhir        DateTime? @db.Date
   status_link         String    @default("Aktif") @db.VarChar(20)
   catatan             String?   @db.Text
+  // Data OPS (Pasang Baru)
+  sn_modem            String?   @db.VarChar(100)
+  durasi_bulan        Int?
+  deposit_nominal     Decimal   @default(0) @db.Decimal(15, 2) // deposit NEXT1 ke vendor
+  deposit_tgl         DateTime? @db.Date
+  deposit_status      String?   @db.VarChar(20) // Ditahan | Dikembalikan
   created_at          DateTime  @default(now())
 
   site     SitePelanggan   @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
@@ -1709,3 +1721,79 @@ model RapatKehadiran {
   @@map("rapat_kehadiran")
 }
 
+// ── Pasang Baru: SPH multi-site → Order PB per site (Sales → OPS → Instalasi → NOC → Finance) ──
+model PbSph {
+  id_sph           Int       @id @default(autoincrement())
+  nomor_sph        String    @unique @db.VarChar(40)
+  id_pelanggan     Int
+  nama_pic         String    @db.VarChar(150)
+  telp_pic         String?   @db.VarChar(30)
+  email_pic        String?   @db.VarChar(150)
+  durasi_bulan     Int       @default(12)
+  catatan          String?   @db.Text
+  status           String    @default("Draft") @db.VarChar(30) // Draft | Menunggu Director | Disetujui | Ditolak
+  id_sales         Int?
+  id_approver      Int?
+  tgl_approval     DateTime?
+  catatan_approval String?   @db.Text
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  pelanggan Pelanggan @relation(fields: [id_pelanggan], references: [id_pelanggan])
+  order     PbOrder[]
+
+  @@index([status])
+  @@index([id_pelanggan])
+  @@map("pb_sph")
+}
+
+model PbOrder {
+  id_pb           Int       @id @default(autoincrement())
+  nomor_pb        String?   @unique @db.VarChar(30) // diberikan saat SPH disetujui
+  id_sph          Int
+  id_site         Int? // site dibuat (status Prospek) saat SPH disetujui
+  nama_site       String    @db.VarChar(150)
+  alamat          String    @db.Text
+  lantai_unit     String?   @db.VarChar(100)
+  kota            String?   @db.VarChar(100)
+  id_layanan      Int
+  biaya_bulanan   Decimal   @default(0) @db.Decimal(15, 2)
+  biaya_instalasi Decimal   @default(0) @db.Decimal(15, 2)
+  tgl_rfs         DateTime? @db.Date
+  pic_store_nama  String?   @db.VarChar(150)
+  pic_store_hp    String?   @db.VarChar(30)
+  urutan          Int       @default(0)
+  tahap           String    @default("Draft") @db.VarChar(20) // Draft | Sales | OPS | Instalasi | NOC | Finance | Aktif | Batal
+  tahap_at        DateTime  @default(now())
+  // IKG — instalasi ke dalam gedung, dibayar NEXT1 ke pengelola gedung (tidak ditagihkan)
+  ikg_nominal     Decimal   @default(0) @db.Decimal(15, 2)
+  ikg_pengelola   String?   @db.VarChar(150)
+  ikg_catatan     String?   @db.VarChar(500)
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  sph     PbSph          @relation(fields: [id_sph], references: [id_sph], onDelete: Cascade)
+  site    SitePelanggan? @relation(fields: [id_site], references: [id_site])
+  layanan MasterLayanan  @relation(fields: [id_layanan], references: [id_layanan])
+
+  @@index([tahap])
+  @@index([id_sph])
+  @@index([id_site])
+  @@map("pb_order")
+}
+
+model PbRiwayat {
+  id_riwayat  Int      @id @default(autoincrement())
+  id_sph      Int?
+  id_pb       Int?
+  id_karyawan Int?
+  aksi        String   @db.VarChar(30) // buat | ubah | ajukan | setujui | tolak | serahkan | kembalikan | batal | dokumen
+  dari_tahap  String?  @db.VarChar(20)
+  ke_tahap    String?  @db.VarChar(20)
+  catatan     String?  @db.Text
+  created_at  DateTime @default(now())
+
+  @@index([id_sph])
+  @@index([id_pb])
+  @@map("pb_riwayat")
+}

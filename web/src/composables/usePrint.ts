@@ -2,6 +2,7 @@ import DOMPurify from 'dompurify'
 import { useSettingsStore } from '@/stores/settings'
 import QRCode from 'qrcode'
 import { alertDialog } from '@/composables/useDialog'
+import { escapeHtml } from '@/composables/useFormat'
 
 function getCompany() {
   try {
@@ -367,6 +368,68 @@ export function printQuotation(qt: any) {
       <div class="sign-box"><div class="sign-label">Menyetujui,</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">${qt.opportunity?.lead?.nama_perusahaan || 'Pelanggan'}</div></div></div>
     </div>
     ${docFooter(qt.nomor_quotation)}
+  </div></body></html>`
+  printDocument(html)
+}
+
+// ─────────────────────────────────────────────
+// SPH PASANG BARU — banyak site dalam satu penawaran
+// ─────────────────────────────────────────────
+export function printSphPasangBaru(s: any) {
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' }) : '-'
+  const fmtRp = (n: any) => new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR', minimumFractionDigits:0 }).format(Number(n) || 0)
+  const e = escapeHtml
+  const baris = (s.order || []).map((o: any, i: number) => `<tr>
+    <td>${i + 1}</td>
+    <td><strong>${e(o.nama_site)}</strong><br><span style="color:#64748b">${e(o.alamat)}${o.lantai_unit ? ' — ' + e(o.lantai_unit) : ''}${o.kota ? ', ' + e(o.kota) : ''}</span></td>
+    <td>${e(o.layanan?.nama_layanan || '-')}</td>
+    <td style="text-align:right">${fmtRp(o.biaya_bulanan)}</td>
+    <td style="text-align:right">${fmtRp(o.biaya_instalasi)}</td>
+  </tr>`).join('')
+  const totalBulanan = (s.order || []).reduce((a: number, o: any) => a + Number(o.biaya_bulanan), 0)
+  const totalInstalasi = (s.order || []).reduce((a: number, o: any) => a + Number(o.biaya_instalasi), 0)
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Penawaran ${e(s.nomor_sph)}</title>${baseStyle()}</head>
+  <body><div class="doc">
+    <div class="header">
+      <div class="header-left">${companyHeader()}</div>
+      <div class="doc-title-block"><div class="doc-title">SURAT PENAWARAN HARGA</div><div class="doc-nomor">${e(s.nomor_sph)}</div><div class="doc-date">${fmtDate(s.created_at)}</div></div>
+    </div>
+    <p style="font-size:10pt;color:#475569;margin-bottom:20px;line-height:1.7">
+      Dengan hormat,<br>
+      Bersama ini kami sampaikan penawaran harga layanan internet untuk lokasi-lokasi berikut kepada:
+    </p>
+    <div class="section">
+      <div class="section-title">Kepada Yth.</div>
+      <table class="info">
+        <tr><td>Perusahaan</td><td>:</td><td><strong>${e(s.pelanggan?.nama_pelanggan || '-')}</strong></td></tr>
+        <tr><td>U.p.</td><td>:</td><td>${e(s.nama_pic)}${s.telp_pic ? ' · ' + e(s.telp_pic) : ''}${s.email_pic ? ' · ' + e(s.email_pic) : ''}</td></tr>
+        <tr><td>Masa berlangganan</td><td>:</td><td>${s.durasi_bulan} bulan</td></tr>
+      </table>
+    </div>
+    <div class="section">
+      <div class="section-title">Rincian Harga per Lokasi</div>
+      <table class="grid">
+        <thead><tr><th>No</th><th>Lokasi</th><th>Layanan</th><th style="text-align:right">Biaya Bulanan</th><th style="text-align:right">Biaya Instalasi</th></tr></thead>
+        <tbody>${baris}
+          <tr style="background:#f0fdf4"><td colspan="3" style="font-weight:700;color:#15803d">Total (${(s.order || []).length} lokasi)</td><td style="text-align:right;font-weight:700;color:#15803d">${fmtRp(totalBulanan)}</td><td style="text-align:right;font-weight:700;color:#15803d">${fmtRp(totalInstalasi)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    ${s.catatan ? `<div class="section"><div class="section-title">Catatan</div><div class="desc-box">${e(s.catatan)}</div></div>` : ''}
+    <div class="section">
+      <div class="section-title">Ketentuan</div>
+      <ol style="padding-left:18px;font-size:10pt;color:#475569;line-height:1.8">
+        <li>Harga belum termasuk PPN 11% kecuali disebutkan lain.</li>
+        <li>Masa berlangganan ${s.durasi_bulan} bulan terhitung sejak tanggal aktivasi pada Berita Acara.</li>
+        <li>Layanan diproses setelah Formulir Aktivasi Berlangganan (FAB) ditandatangani untuk tiap lokasi.</li>
+      </ol>
+    </div>
+    <div class="signature-row">
+      <div class="sign-box"><div class="sign-label">Hormat kami,<br>${getCompany().name}</div><div class="sign-line"><div class="sign-name">${s.sales ? '( ' + e(s.sales) + ' )' : '( _________________________ )'}</div><div class="sign-jabatan">Sales</div></div></div>
+      <div class="sign-box"><div class="sign-label">Menyetujui,</div><div class="sign-line"><div class="sign-name">( _________________________ )</div><div class="sign-jabatan">${e(s.pelanggan?.nama_pelanggan || 'Pelanggan')}</div></div></div>
+    </div>
+    ${docFooter(s.nomor_sph)}
   </div></body></html>`
   printDocument(html)
 }

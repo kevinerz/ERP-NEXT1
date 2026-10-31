@@ -39,6 +39,8 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   ipam: 'operations', // IP publik NEXT1
 };
 
+// Divisi yang terlibat alur Pasang Baru (Sales → OPS → Instalasi → NOC → Finance)
+const MODUL_PASANG_BARU = ['sales', 'operations', 'instalasi', 'finance'];
 // admin & mailer sudah dijaga @Roles(Admin/Director) di controller-nya.
 // email tidak digating modul — koneksi self-service, tiap user cuma akses
 // inbox miliknya sendiri (bukan data organisasi yang perlu dibatasi role).
@@ -77,6 +79,11 @@ export class ModulAksesGuard implements CanActivate {
       return true;
     }
     if (!akses.length) return true; // kosong = semua modul
+    // Pasang Baru dipakai lintas divisi — hak ubah per tahap dicek di service (berdasarkan role)
+    if (segment === 'pasang-baru') {
+      if (MODUL_PASANG_BARU.some((m) => akses.includes(m))) return true;
+      throw new ForbiddenException('Anda tidak punya akses ke modul pasang baru');
+    }
 
     const modul = SEGMENT_TO_MODUL[segment];
     // User terbatas (termasuk akun 'pending' hasil daftar mandiri) ditolak di

@@ -379,6 +379,32 @@ const router = createRouter({
           name: 'meeting-room',
           component: () => import('@/views/meeting/MeetingRoomView.vue'),
         },
+        // Pasang Baru: SPH multi-site → order per site (akses dicek backend per divisi)
+        {
+          path: 'pasang-baru',
+          name: 'pasang-baru',
+          component: () => import('@/views/pasang-baru/PasangBaruView.vue'),
+        },
+        {
+          path: 'pasang-baru/sph/baru',
+          name: 'pb-sph-baru',
+          component: () => import('@/views/pasang-baru/SphFormView.vue'),
+        },
+        {
+          path: 'pasang-baru/sph/:id/ubah',
+          name: 'pb-sph-ubah',
+          component: () => import('@/views/pasang-baru/SphFormView.vue'),
+        },
+        {
+          path: 'pasang-baru/sph/:id',
+          name: 'pb-sph',
+          component: () => import('@/views/pasang-baru/SphDetailView.vue'),
+        },
+        {
+          path: 'pasang-baru/order/:id',
+          name: 'pb-order',
+          component: () => import('@/views/pasang-baru/OrderPbView.vue'),
+        },
         // IP publik (IPAM)
         {
           path: 'ipam',

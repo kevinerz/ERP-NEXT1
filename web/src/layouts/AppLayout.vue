@@ -117,6 +117,11 @@ const TIPE_ICON: Record<string, string> = {
   quotation_approval: '📋',
   rapat_undangan:     '📹',
   rapat_batal:        '🚫',
+  pb_sph_approval:    '📋',
+  pb_sph_disetujui:   '✅',
+  pb_sph_ditolak:     '❌',
+  pb_masuk:           '🆕',
+  pb_kembali:         '↩️',
 }
 
 function fmtTime(d: string) {
@@ -143,6 +148,7 @@ const menuGroups = [
   {
     label: 'KOMERSIAL', accent: '#10b981',
     items: [
+      { label: 'Pasang Baru', emoji: '🆕', to: '/pasang-baru',     modul: ['sales', 'operations', 'instalasi', 'finance'] },
       { label: 'Pre-Sales',   emoji: '🔍', to: '/presales',        modul: 'sales' },
       { label: 'Sales',       emoji: '💼', to: '/sales',           modul: 'sales' },
       { label: 'CRM',         emoji: '🤝', to: '/crm/pic',         modul: 'crm' },
@@ -192,7 +198,7 @@ const adminMenu = [
 const visibleGroups = computed(() =>
   menuGroups.map(g => ({
     ...g,
-    items: g.items.filter(m => !m.modul || auth.canAccess(m.modul)),
+    items: g.items.filter(m => !m.modul || (Array.isArray(m.modul) ? m.modul.some(x => auth.canAccess(x)) : auth.canAccess(m.modul))),
   })).filter(g => g.items.length > 0)
 )
 
@@ -210,6 +216,11 @@ const PAGE_TITLES: Record<string, string> = {
   "master-pelanggan":     "Master — Pelanggan",
   "master-site":          "Master — Site",
   "master-site-detail":   "Master — Detail Site",
+  "pasang-baru":          "Pasang Baru",
+  "pb-sph-baru":          "Pasang Baru — SPH Baru",
+  "pb-sph-ubah":          "Pasang Baru — Ubah SPH",
+  "pb-sph":               "Pasang Baru — SPH",
+  "pb-order":             "Pasang Baru — Order",
   "sales-dashboard":      "Sales",
   "sales-lead-list":      "Sales — Lead",
   "sales-lead-detail":    "Sales — Detail Lead",
