@@ -10,11 +10,16 @@ import { AlihkanDto, ChatBaruDto, DaftarChatQuery, KirimPesanDto, NamaKontakDto,
 import { WaGatewayClient } from './wa-gateway.client';
 import { WaRealtimeService } from './wa-realtime.service';
 import { WaService, type FileUnggah } from './wa.service';
+import { WaStatistikService, type StatistikQuery } from './wa-statistik.service';
 
 // Inbox WhatsApp helpdesk — modul akses "whatsapp" (segment /api/wa)
 @Controller('wa')
 export class WaController {
-  constructor(private wa: WaService, private gw: WaGatewayClient, private rt: WaRealtimeService) {}
+  constructor(private wa: WaService, private gw: WaGatewayClient, private rt: WaRealtimeService, private stat: WaStatistikService) {}
+
+  // ── Statistik kinerja helpdesk ──
+  @Get('statistik')
+  statistik(@Query() q: StatistikQuery) { return this.stat.ringkasan(q); }
 
   // ── Koneksi nomor ──
   @Get('akun')

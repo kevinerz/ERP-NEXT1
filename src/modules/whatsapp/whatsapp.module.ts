@@ -4,12 +4,13 @@ import { WaWebhookController } from './wa-webhook.controller';
 import { WaGatewayClient } from './wa-gateway.client';
 import { WaRealtimeService } from './wa-realtime.service';
 import { WaService } from './wa.service';
+import { WaStatistikService } from './wa-statistik.service';
 
 // Inbox WhatsApp helpdesk lewat gateway Baileys (VM whatsapp-Gateway)
 @Module({
   // Webhook didaftarkan lebih dulu supaya rute statis wa/webhook tidak tertangkap rute lain
   controllers: [WaWebhookController, WaController],
-  providers: [WaService, WaGatewayClient, WaRealtimeService],
+  providers: [WaService, WaGatewayClient, WaRealtimeService, WaStatistikService],
   exports: [WaService],
 })
 export class WhatsappModule {}

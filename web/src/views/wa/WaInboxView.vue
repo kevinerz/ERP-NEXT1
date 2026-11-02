@@ -1,11 +1,14 @@
 <script setup lang="ts">
 // Inbox WhatsApp helpdesk — chat pelanggan lewat gateway Baileys (scan QR dari HP helpdesk)
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { confirmDialog, promptDialog } from '@/composables/useDialog'
 
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 const AKUN = 'helpdesk'
 
 interface Chat {
@@ -831,6 +834,12 @@ onMounted(async () => {
   await Promise.all([muatKoneksi(), muatChat(), muatTemplate(), api.get('/wa/staf').then(({ data }) => { staf.value = data.data }).catch(() => undefined)])
   pantauKoneksi(koneksi.status === 'qr' || koneksi.status === 'menghubungkan')
   sambungStream()
+  // /whatsapp?chat=ID (dari halaman statistik) → langsung buka chat tersebut
+  const idDariUrl = Number(route.query.chat)
+  if (idDariUrl) {
+    api.get(`/wa/chat/${idDariUrl}`).then(({ data }) => bukaChat(data.data)).catch(() => undefined)
+    router.replace({ query: {} })
+  }
   timerJaga = setInterval(() => {
     jagaStream()
     // Jaring pengaman: sinkron ringan tiap menit selama tab terlihat
@@ -869,6 +878,7 @@ onBeforeUnmount(() => {
             <small>{{ labelStatus[koneksi.status] || koneksi.status }}<template v-if="terhubung && koneksi.saya?.jid"> · +{{ koneksi.saya.jid.split('@')[0] }}</template></small>
           </div>
         </div>
+        <button class="btn-sm btn-ghost" title="Statistik helpdesk" @click="router.push('/whatsapp/statistik')">📈</button>
         <button v-if="!terhubung" class="btn-sm btn-hijau" @click="hubungkan">Hubungkan</button>
         <button v-else-if="auth.hasRole('Admin') || auth.hasRole('Director') || auth.hasRole('Manager_Ops')" class="btn-sm btn-ghost" title="Lepas perangkat" @click="putuskan">⏏</button>
       </div>
