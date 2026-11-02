@@ -155,6 +155,8 @@ async function bukaChat(c: Chat) {
     adaLagi.value = !!data.meta?.ada_lagi
     await nextTick()
     keBawah()
+    nempelBawah.value = true
+    baruDiBawah.value = 0
     if (c.belum_dibaca) tandaiDibaca(c)
   } finally {
     memuatPesan.value = false
@@ -175,9 +177,15 @@ async function muatSebelumnya() {
     memuatPesan.value = false
   }
 }
+// nempelBawah: pengguna sedang di dasar chat → pesan baru & foto yang selesai dimuat tetap menjaga posisi di bawah
+const nempelBawah = ref(true)
+const baruDiBawah = ref(0)
 function onScroll() {
   const el = kotakPesan.value
-  if (el && el.scrollTop < 60 && adaLagi.value) muatSebelumnya()
+  if (!el) return
+  nempelBawah.value = dekatBawah()
+  if (nempelBawah.value) baruDiBawah.value = 0
+  if (el.scrollTop < 60 && adaLagi.value) muatSebelumnya()
 }
 function dekatBawah() {
   const el = kotakPesan.value
@@ -186,6 +194,15 @@ function dekatBawah() {
 function keBawah() {
   const el = kotakPesan.value
   if (el) el.scrollTop = el.scrollHeight
+}
+function lompatBawah() {
+  keBawah()
+  nempelBawah.value = true
+  baruDiBawah.value = 0
+}
+// Foto/video/stiker selesai dimuat → tinggi chat bertambah; tetap di bawah bila tadinya di bawah
+function onMediaMuat() {
+  if (nempelBawah.value) keBawah()
 }
 let timerBaca: ReturnType<typeof setTimeout> | null = null
 function tandaiDibaca(c: Chat) {
@@ -328,7 +345,13 @@ function onKey(e: KeyboardEvent) {
 function upsertPesan(p: Pesan) {
   const i = pesan.value.findIndex((x) => x.id_pesan === p.id_pesan)
   if (i >= 0) pesan.value[i] = p
-  else pesan.value.push(p)
+  else {
+    // Pesan susulan (hasil sinkron ulang) bisa lebih lama dari pesan terakhir → sisipkan sesuai waktu
+    const t = new Date(p.waktu).getTime()
+    let pos = pesan.value.length
+    while (pos > 0 && new Date(pesan.value[pos - 1]!.waktu).getTime() > t) pos--
+    pesan.value.splice(pos, 0, p)
+  }
   // watch(pesan) tidak terpicu oleh push/ganti elemen → foto baru dimuat di sini
   if (p.media?.ada && (p.media.jenis === 'image' || p.media.jenis === 'sticker')) muatMedia(p)
 }
@@ -650,28 +673,81 @@ let timerSambung: ReturnType<typeof setTimeout> | null = null
 let timerRiwayat: ReturnType<typeof setTimeout> | null = null
 const sinkron = ref('')
 
+// Server mengirim ping tiap 15 detik; bila 40 detik sunyi, koneksi dianggap mati diam-diam (tab tidur,
+// jaringan berganti) lalu disambung ulang. Event yang terlewat selama putus disusulkan lewat sinkronkan().
+let timerJaga: ReturnType<typeof setInterval> | null = null
+let terakhirEvent = Date.now()
+let pernahTersambung = false
+let dilepas = false // halaman sudah ditinggalkan
 async function sambungStream() {
+  if (timerSambung) { clearTimeout(timerSambung); timerSambung = null }
+  es?.close()
+  es = null
   try {
     const { data } = await api.post('/wa/stream-tiket')
-    es = new EventSource(`/api/wa/stream?tiket=${encodeURIComponent(data.data.tiket)}`)
-    es.onmessage = (m) => { try { terimaEvent(JSON.parse(m.data)) } catch { /* abaikan */ } }
-    es.onerror = () => { es?.close(); es = null; jadwalSambung() }
+    if (dilepas) return
+    const s = new EventSource(`/api/wa/stream?tiket=${encodeURIComponent(data.data.tiket)}`)
+    es = s
+    terakhirEvent = Date.now()
+    s.onopen = () => {
+      terakhirEvent = Date.now()
+      if (pernahTersambung) sinkronkan()
+      pernahTersambung = true
+    }
+    s.onmessage = (m) => { terakhirEvent = Date.now(); try { terimaEvent(JSON.parse(m.data)) } catch { /* abaikan */ } }
+    s.onerror = () => { if (es === s) { s.close(); es = null; jadwalSambung() } }
   } catch {
     jadwalSambung()
   }
 }
-function jadwalSambung() {
+function jadwalSambung(ms = 3000) {
   if (timerSambung) return
-  timerSambung = setTimeout(() => { timerSambung = null; sambungStream() }, 5000)
+  timerSambung = setTimeout(() => { timerSambung = null; sambungStream() }, ms)
+}
+function jagaStream() {
+  if (es && Date.now() - terakhirEvent > 40_000) sambungStream()
+}
+
+// Susulkan perubahan yang mungkin terlewat: daftar chat + 50 pesan terakhir chat yang terbuka
+let sedangSinkron = false
+async function sinkronkan() {
+  if (sedangSinkron) return
+  sedangSinkron = true
+  try {
+    const c = aktif.value
+    const [, res] = await Promise.all([
+      halaman.value === 1 ? muatChat() : Promise.resolve(),
+      c ? api.get(`/wa/chat/${c.id_chat}/pesan`).catch(() => null) : Promise.resolve(null),
+    ])
+    if (c && res && aktif.value?.id_chat === c.id_chat) {
+      const bawah = nempelBawah.value
+      const lama = new Set(pesan.value.map((p) => p.id_pesan))
+      let baru = 0
+      for (const p of res.data.data as Pesan[]) { if (!lama.has(p.id_pesan)) baru++; upsertPesan(p) }
+      if (bawah) nextTick(keBawah)
+      else baruDiBawah.value += baru
+    }
+  } finally {
+    sedangSinkron = false
+  }
+}
+function onTampil() {
+  if (document.visibilityState !== 'visible') return
+  if (!es) sambungStream()
+  else jagaStream()
+  sinkronkan()
 }
 
 function terimaEvent(ev: any) {
+  if (ev.tipe === 'ping') return
   if (ev.tipe === 'pesan') {
     if (ev.chat) terapkanChat(ev.chat)
     if (aktif.value?.id_chat === ev.id_chat && ev.pesan) {
-      const bawah = dekatBawah()
+      const bawah = nempelBawah.value || ev.pesan.dari_saya
+      const sudahAda = pesan.value.some((x) => x.id_pesan === ev.pesan.id_pesan)
       upsertPesan(ev.pesan)
       if (bawah) nextTick(keBawah)
+      else if (!sudahAda) baruDiBawah.value++
       if (!ev.pesan.dari_saya && document.visibilityState === 'visible' && aktif.value) tandaiDibaca(aktif.value)
     } else if (ev.pesan && !ev.pesan.dari_saya && !ev.pesan.riwayat) {
       bunyi()
@@ -755,9 +831,22 @@ onMounted(async () => {
   await Promise.all([muatKoneksi(), muatChat(), muatTemplate(), api.get('/wa/staf').then(({ data }) => { staf.value = data.data }).catch(() => undefined)])
   pantauKoneksi(koneksi.status === 'qr' || koneksi.status === 'menghubungkan')
   sambungStream()
+  timerJaga = setInterval(() => {
+    jagaStream()
+    // Jaring pengaman: sinkron ringan tiap menit selama tab terlihat
+    if (document.visibilityState === 'visible' && Date.now() - terakhirSinkron > 60_000) { terakhirSinkron = Date.now(); sinkronkan() }
+  }, 10_000)
+  document.addEventListener('visibilitychange', onTampil)
+  window.addEventListener('online', onTampil)
 })
+let terakhirSinkron = Date.now()
 onBeforeUnmount(() => {
+  dilepas = true
   es?.close()
+  es = null
+  document.removeEventListener('visibilitychange', onTampil)
+  window.removeEventListener('online', onTampil)
+  if (timerJaga) clearInterval(timerJaga)
   if (timerKoneksi) clearInterval(timerKoneksi)
   if (timerSambung) clearTimeout(timerSambung)
   for (const u of Object.values(urlMedia)) URL.revokeObjectURL(u)
@@ -867,7 +956,7 @@ onBeforeUnmount(() => {
           </div>
         </header>
 
-        <div ref="kotakPesan" class="wa-pesan" @scroll.passive="onScroll">
+        <div ref="kotakPesan" class="wa-pesan" @scroll.passive="onScroll" @load.capture="onMediaMuat" @loadedmetadata.capture="onMediaMuat">
           <div v-if="adaLagi" class="wa-muat-lama"><button class="btn-sm btn-ghost" :disabled="memuatPesan" @click="muatSebelumnya">Muat pesan sebelumnya</button></div>
           <div v-if="memuatPesan && !pesan.length" class="wa-kosong">Memuat…</div>
 
@@ -964,6 +1053,10 @@ onBeforeUnmount(() => {
                 <span v-else class="wa-centang">🕓</span>
               </div>
             </div>
+          </div>
+
+          <div v-if="!nempelBawah" class="wa-ke-bawah">
+            <button title="Ke pesan terakhir" @click="lompatBawah">↓<span v-if="baruDiBawah" class="wa-badge">{{ baruDiBawah }}</span></button>
           </div>
         </div>
 
@@ -1303,6 +1396,14 @@ onBeforeUnmount(() => {
 .wa-select { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; max-width: 200px; }
 
 .wa-pesan { flex: 1; overflow-y: auto; padding: 14px 6%; display: flex; flex-direction: column; gap: 4px; }
+/* Setinggi 0 supaya tidak mengubah tinggi isi chat; tombolnya melayang di atas pesan */
+.wa-ke-bawah { position: sticky; bottom: 0; height: 0; flex: none; z-index: 3; }
+.wa-ke-bawah button {
+  position: absolute; right: 0; bottom: 8px; width: 42px; height: 42px; border-radius: 50%; border: 0;
+  background: #fff; color: #475569; font-size: 20px; box-shadow: 0 2px 6px rgba(0,0,0,.2); cursor: pointer;
+  display: grid; place-items: center;
+}
+.wa-ke-bawah .wa-badge { position: absolute; top: -6px; right: -4px; }
 .wa-muat-lama { text-align: center; margin-bottom: 8px; }
 .wa-hari { text-align: center; margin: 10px 0 6px; }
 .wa-hari span { background: #fff; color: #475569; font-size: 12px; padding: 3px 10px; border-radius: 8px; box-shadow: 0 1px 1px rgba(0,0,0,.06); }

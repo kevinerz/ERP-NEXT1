@@ -34,8 +34,8 @@ export class WaRealtimeService {
     res.flushHeaders();
     res.write('retry: 5000\n\n');
     this.klien.add(res);
-    // Ping berkala supaya proxy (proxy_read_timeout) tidak memutus koneksi
-    const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+    // Ping berkala: menjaga proxy tidak memutus koneksi, dan dipakai browser untuk mendeteksi koneksi mati diam-diam
+    const ping = setInterval(() => res.write('data: {"tipe":"ping"}\n\n'), 15_000);
     res.on('close', () => { clearInterval(ping); this.klien.delete(res); });
   }
 
