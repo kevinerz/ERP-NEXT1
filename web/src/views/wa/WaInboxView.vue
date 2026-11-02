@@ -343,6 +343,13 @@ function buangAntre(a: Antre) {
   antrean.value = antrean.value.filter((x) => x.kunci !== a.kunci)
 }
 function onKey(e: KeyboardEvent) {
+  if (garing.value && garingDaftar.value.length) {
+    const n = garingDaftar.value.length
+    if (e.key === 'ArrowDown') { e.preventDefault(); garingPilih.value = (garingPilih.value + 1) % n; return }
+    if (e.key === 'ArrowUp') { e.preventDefault(); garingPilih.value = (garingPilih.value - 1 + n) % n; return }
+    if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && !e.isComposing) { e.preventDefault(); pakaiGaring(garingDaftar.value[garingPilih.value]!); return }
+  }
+  if (garing.value && e.key === 'Escape') { e.preventDefault(); garing.value = null; return }
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); kirim() }
 }
 function upsertPesan(p: Pesan) {
@@ -375,6 +382,37 @@ function pakaiTemplate(t: Template) {
   teks.value = teks.value ? `${teks.value}\n${t.isi}` : t.isi
   bukaTemplate.value = false
 }
+// Ketik "/" (di awal pesan atau setelah spasi) → daftar balasan cepat muncul, tersaring sesuai kata yang diketik
+const kotakTeks = ref<HTMLTextAreaElement | null>(null)
+const garing = ref<{ awal: number; akhir: number; cari: string } | null>(null)
+const garingPilih = ref(0)
+const garingDaftar = computed(() => {
+  if (!garing.value) return []
+  const q = garing.value.cari.toLowerCase()
+  if (!q) return template.value
+  const judul = template.value.filter((t) => t.judul.toLowerCase().includes(q))
+  return [...judul, ...template.value.filter((t) => !judul.includes(t) && t.isi.toLowerCase().includes(q))]
+})
+function cekGaring() {
+  const el = kotakTeks.value
+  if (!el || el.selectionStart !== el.selectionEnd) { garing.value = null; return }
+  const sebelum = teks.value.slice(0, el.selectionStart)
+  const m = /(^|\s)\/([^\s/]*)$/.exec(sebelum)
+  if (!m) { garing.value = null; return }
+  const cari = m[2]!
+  if (garing.value?.cari !== cari) garingPilih.value = 0
+  garing.value = { awal: sebelum.length - cari.length - 1, akhir: el.selectionStart, cari }
+}
+function pakaiGaring(t: Template) {
+  const g = garing.value
+  if (!g) return
+  teks.value = teks.value.slice(0, g.awal) + t.isi + teks.value.slice(g.akhir)
+  garing.value = null
+  const pos = g.awal + t.isi.length
+  nextTick(() => { const el = kotakTeks.value; if (el) { el.focus(); el.setSelectionRange(pos, pos) } })
+}
+watch(teks, (v) => { if (!v) garing.value = null })
+watch(garingPilih, () => nextTick(() => document.querySelector('.wa-garing .on')?.scrollIntoView({ block: 'nearest' })))
 async function tambahTemplate() {
   const judul = await promptDialog({ title: 'Balasan cepat baru', label: 'Judul', placeholder: 'mis. Salam pembuka' })
   if (!judul) return
@@ -1100,9 +1138,17 @@ onBeforeUnmount(() => {
             </div>
             <button class="wa-ikon" title="Lampirkan file (maks 16 MB)" @click="inputFile?.click()">📎</button>
             <input ref="inputFile" type="file" hidden @change="pilihFile" />
+            <div v-if="garing" class="wa-garing" @mousedown.prevent>
+              <div class="wa-garing-kepala">⚡ Balasan cepat<template v-if="garing.cari">: “{{ garing.cari }}”</template><small>↑↓ pilih · Enter pakai · Esc tutup</small></div>
+              <button
+                v-for="(t, i) in garingDaftar" :key="t.id_template" :class="{ on: i === garingPilih }"
+                @mouseenter="garingPilih = i" @click="pakaiGaring(t)"
+              ><b>/{{ t.judul }}</b><small>{{ t.isi }}</small></button>
+              <p v-if="!garingDaftar.length" class="muted">{{ template.length ? 'Tidak ada yang cocok.' : 'Belum ada balasan cepat — tambah lewat tombol ⚡.' }}</p>
+            </div>
             <textarea
-              v-model="teks" rows="1" :placeholder="terhubung ? 'Tulis pesan… (Enter kirim, Shift+Enter baris baru)' : 'WhatsApp belum terhubung'"
-              :disabled="!terhubung" @keydown="onKey" @paste="onPaste"
+              ref="kotakTeks" v-model="teks" rows="1" :placeholder="terhubung ? 'Tulis pesan… (/ balasan cepat, Enter kirim, Shift+Enter baris baru)' : 'WhatsApp belum terhubung'"
+              :disabled="!terhubung" @keydown="onKey" @paste="onPaste" @input="cekGaring" @click="cekGaring" @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && cekGaring()" @blur="garing = null"
             ></textarea>
             <button class="wa-kirim" :disabled="!terhubung || (!teks.trim() && !file)" @click="kirim">➤</button>
           </div>
@@ -1457,7 +1503,15 @@ onBeforeUnmount(() => {
 .wa-tulis-kutip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wa-tulis-kutip button { border: 0; background: none; cursor: pointer; }
 .wa-err { color: #dc2626; font-size: 13px; margin: 0 0 6px; }
-.wa-tulis-baris { display: flex; align-items: flex-end; gap: 6px; }
+.wa-tulis-baris { position: relative; display: flex; align-items: flex-end; gap: 6px; }
+.wa-garing { position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; max-height: 300px; overflow-y: auto; background: #fff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 6px; z-index: 6; }
+.wa-garing-kepala { display: flex; gap: 8px; align-items: baseline; font-size: 12px; font-weight: 600; color: var(--wa-muted); padding: 4px 8px 6px; }
+.wa-garing-kepala small { margin-left: auto; font-weight: 400; }
+.wa-garing button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 8px; cursor: pointer; font: inherit; }
+.wa-garing button.on { background: #e7f3ef; }
+.wa-garing button b { font-size: 13px; }
+.wa-garing button small { display: block; color: var(--wa-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wa-garing .muted { padding: 6px 10px; margin: 0; font-size: 13px; }
 .wa-tulis-baris textarea { flex: 1; resize: none; border: 0; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: inherit; max-height: 140px; min-height: 40px; field-sizing: content; }
 .wa-ikon { border: 0; background: none; font-size: 20px; cursor: pointer; padding: 6px; }
 .wa-kirim { border: 0; background: var(--wa-hijau); color: #fff; width: 42px; height: 42px; border-radius: 50%; font-size: 18px; cursor: pointer; flex: none; }
