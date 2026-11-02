@@ -133,6 +133,10 @@ export class Sesi {
     sock.ev.on('messages.upsert', ({ messages, type }) => void this.onPesan(messages, type === 'notify' || type === 'append'));
     sock.ev.on('messaging-history.set', (h) => void this.onRiwayat(h));
     sock.ev.on('messages.update', (list) => void this.onUpdatePesan(list));
+    // Di grup, terkirim/dibaca datang per anggota lewat message-receipt.update (bukan messages.update)
+    sock.ev.on('message-receipt.update', (list) => this.onReceipt(list));
+    // Ack server (centang satu); Baileys sendiri hanya memproses ack yang gagal
+    sock.ws.on('CB:ack,class:message', (node: any) => this.onAckServer(node?.attrs));
     sock.ev.on('contacts.upsert', (c) => void this.onKontak(c));
     sock.ev.on('contacts.update', (c) => void this.onKontak(c as Contact[]));
     sock.ev.on('groups.upsert', (g) => kirimWebhook({ akun: this.akun, event: 'grup', data: g.map((x) => ({ jid: x.id, nama: x.subject })) }));
@@ -326,6 +330,21 @@ export class Sesi {
       data.push({ id: key.id, chat_jid: r.jid ?? key.remoteJid, status: update.status });
     }
     if (data.length) kirimWebhook({ akun: this.akun, event: 'status', data });
+  }
+
+  private onReceipt(list: { key: proto.IMessageKey; receipt: proto.IUserReceipt }[]) {
+    const data = [];
+    for (const { key, receipt } of list) {
+      if (!key.id || !key.fromMe || !key.remoteJid || !isJidGroup(key.remoteJid)) continue;
+      const status = receipt.readTimestamp || receipt.playedTimestamp ? 4 : receipt.receiptTimestamp ? 3 : null;
+      if (status) data.push({ id: key.id, chat_jid: key.remoteJid, status });
+    }
+    if (data.length) kirimWebhook({ akun: this.akun, event: 'status', data });
+  }
+
+  private onAckServer(attrs: Record<string, string> | undefined) {
+    if (!attrs?.id || attrs.error) return;
+    kirimWebhook({ akun: this.akun, event: 'status', data: [{ id: attrs.id, chat_jid: attrs.from ?? '', status: 2 }] });
   }
 
   private async onPanggilan(calls: import('baileys').WACallEvent[]) {
