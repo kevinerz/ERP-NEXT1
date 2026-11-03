@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength, MinLength, IsArray, ArrayMaxSize } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, IsArray, ArrayMaxSize } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export const JENIS_VISIT = ['Perbaikan', 'Instalasi', 'Maintenance', 'Survey', 'Relokasi', 'Upgrade', 'Tarik Perangkat', 'Troubleshoot', 'Lainnya'];
@@ -43,4 +43,27 @@ export class KirimWaDto {
 export class WaHarianDto {
   @IsDateString() tgl: string;
   @IsOptional() @IsArray() @ArrayMaxSize(100) @Type(() => Number) @IsInt({ each: true }) id_teknisi?: number[];
+}
+
+// ── Link lapangan teknisi (tanpa login) ─────────────────────────────────────
+export class CheckinDto {
+  @Type(() => Number) @IsNumber() @Min(-90) @Max(90) lat: number;
+  @Type(() => Number) @IsNumber() @Min(-180) @Max(180) lng: number;
+  @IsOptional() @Type(() => Number) @IsNumber() akurasi?: number;
+}
+
+export class FotoLapanganDto {
+  @IsString() @IsIn(['Sebelum', 'Sesudah', 'Lainnya']) jenis: string;
+}
+
+export class SelesaiLapanganDto {
+  @IsString() @MinLength(3) @MaxLength(3000) catatan: string;
+  @IsOptional() @IsString() @MaxLength(700_000) ttd?: string; // data:image/png;base64,...
+  @IsOptional() @IsString() @MaxLength(150) ttd_nama?: string;
+  @IsOptional() @IsString() @MaxLength(500) tanpa_ttd_alasan?: string;
+}
+
+export class GagalLapanganDto {
+  @IsString() @MinLength(3) @MaxLength(100) alasan: string;
+  @IsOptional() @IsString() @MaxLength(2000) catatan?: string;
 }

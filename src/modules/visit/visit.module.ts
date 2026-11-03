@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { LapanganController } from './lapangan.controller';
 import { VisitController } from './visit.controller';
 import { VisitService } from './visit.service';
 
@@ -7,7 +8,7 @@ import { VisitService } from './visit.service';
 // Data memakai tabel work_orders (WO tanpa tgl_jadwal = antrean).
 @Module({
   imports: [WhatsappModule],
-  controllers: [VisitController],
+  controllers: [VisitController, LapanganController],
   providers: [VisitService],
 })
 export class VisitModule {}

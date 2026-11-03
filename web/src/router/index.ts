@@ -38,6 +38,14 @@ const router = createRouter({
       meta: { public: true },
     },
 
+    // Teknisi di lokasi — link dari WA Jadwal Visit, tanpa login
+    {
+      path: '/v/:token',
+      name: 'visit-lapangan',
+      component: () => import('@/views/visit/LapanganView.vue'),
+      meta: { public: true, title: 'Lapor Visit' },
+    },
+
     // Tamu rapat (orang di luar HRIS) — masuk lewat link, tanpa login
     {
       path: '/rapat/tamu/:kode',

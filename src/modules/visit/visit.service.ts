@@ -1,8 +1,12 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { randomBytes } from 'crypto';
+import { promises as fsp } from 'fs';
+import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UPLOAD_ROOT } from '../../common/upload/upload-root';
 import { WaService } from '../whatsapp/wa.service';
-import { BuatVisitDto, JadwalDto, KirimWaDto, StatusVisitDto, UbahVisitDto, WaHarianDto } from './dto';
+import { BuatVisitDto, CheckinDto, GagalLapanganDto, JadwalDto, KirimWaDto, SelesaiLapanganDto, StatusVisitDto, UbahVisitDto, WaHarianDto } from './dto';
 
 interface Pengguna { id_karyawan: number; roles: string[] }
 
@@ -11,6 +15,9 @@ const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 const URUT_PRIORITAS: Record<string, number> = { Darurat: 0, Tinggi: 1, Normal: 2, Rendah: 3 };
 const AKTIF = ['Open', 'In_Progress'];
+const BASE_URL = process.env.APP_URL || 'https://1erp.nextone.id';
+const EXT_FOTO: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+export const JENIS_FOTO = ['Sebelum', 'Sesudah', 'Lainnya'];
 
 /** "2026-11-04" (tanggal WIB) → Date tengah malam WIB */
 export function tglWib(s: string): Date {
@@ -78,6 +85,9 @@ export class VisitService {
       deskripsi: w.deskripsi_tugas, catatan_teknisi: w.catatan_teknisi, id_pb: w.id_pb,
       tipe_eksekutor: w.tipe_eksekutor,
       wa_teknisi_at: w.wa_teknisi_at, wa_pic_at: w.wa_pic_at, created_at: w.created_at, completed_at: w.completed_at,
+      checkin_at: w.checkin_at, koordinat_checkin: w.koordinat_checkin, ttd_path: w.ttd_path, ttd_nama: w.ttd_nama, gagal_count: w.gagal_count,
+      link: w.token_lapangan ? `${BASE_URL}/v/${w.token_lapangan}` : null,
+      gagal_terakhir: w.gagal_count ? (w.catatan_teknisi || '').split('\n').reverse().find((l) => l.startsWith('[Gagal')) ?? null : null,
       site: { id_site: w.site.id_site, kode: w.site.kode_site, nama: w.site.nama_site, kota: w.site.kota, alamat: w.site.alamat_lengkap, pelanggan: w.site.pelanggan.nama_pelanggan },
       pic_nama: pic.nama, pic_hp: pic.hp,
       tiket: w.ticket ? { id: w.ticket.id_ticket, nomor: w.ticket.nomor_tiket, judul: w.ticket.judul_tiket } : null,
@@ -163,7 +173,11 @@ export class VisitService {
   }
 
   async detail(id_wo: number) {
-    return { data: this.bentuk(await this.ambil(id_wo)) };
+    const [w, foto] = await Promise.all([
+      this.ambil(id_wo),
+      this.prisma.woFoto.findMany({ where: { id_wo }, orderBy: { created_at: 'asc' }, select: { id_foto: true, jenis_foto: true, file_path: true, created_at: true } }),
+    ]);
+    return { data: { ...this.bentuk(w), foto } };
   }
 
   async buat(u: Pengguna, dto: BuatVisitDto) {
@@ -254,8 +268,17 @@ export class VisitService {
     return b.join('\n');
   }
 
-  private teksTeknisi(w: Wo) {
-    return `*Tugas Visit — ${labelTgl(w.tgl_jadwal!)}*\n\n${this.blokTugas(w, this.pic(w))}\n\nMohon kabari helpdesk saat tiba & setelah selesai. Terima kasih 🙏`;
+  /** Token link lapangan dibuat sekali per visit, saat pertama kali dikirim ke teknisi */
+  private async pastikanToken(w: Wo) {
+    if (!w.token_lapangan) {
+      w.token_lapangan = randomBytes(18).toString('base64url');
+      await this.prisma.workOrder.update({ where: { id_wo: w.id_wo }, data: { token_lapangan: w.token_lapangan } });
+    }
+    return `${BASE_URL}/v/${w.token_lapangan}`;
+  }
+
+  private teksTeknisi(w: Wo, link: string) {
+    return `*Tugas Visit — ${labelTgl(w.tgl_jadwal!)}*\n\n${this.blokTugas(w, this.pic(w))}\n\n📲 *Lapor di lokasi* (check-in, foto, TTD PIC):\n${link}\n\nTerima kasih 🙏`;
   }
 
   private teksPic(w: Wo) {
@@ -272,7 +295,7 @@ export class VisitService {
       const pic = this.pic(w);
       return { data: { nama: pic.nama, nomor: pic.hp, teks: this.teksPic(w) } };
     }
-    return { data: { nama: w.teknisi.nama_lengkap.trim(), nomor: w.teknisi.no_hp, teks: this.teksTeknisi(w) } };
+    return { data: { nama: w.teknisi.nama_lengkap.trim(), nomor: w.teknisi.no_hp, teks: this.teksTeknisi(w, await this.pastikanToken(w)) } };
   }
 
   async kirimWa(u: Pengguna, id_wo: number, dto: KirimWaDto) {
@@ -292,13 +315,14 @@ export class VisitService {
     });
     const per = new Map<number, Wo[]>();
     for (const w of list) per.set(w.id_teknisi_internal!, [...(per.get(w.id_teknisi_internal!) ?? []), w]);
+    for (const w of list) await this.pastikanToken(w);
     return [...per.values()].map((ws) => {
       const t = ws[0].teknisi!;
-      const isi = ws.map((w, i) => `*${i + 1}.* ${this.blokTugas(w, this.pic(w))}`).join('\n\n');
+      const isi = ws.map((w, i) => `*${i + 1}.* ${this.blokTugas(w, this.pic(w))}\n📲 Lapor: ${BASE_URL}/v/${w.token_lapangan}`).join('\n\n');
       return {
         id_teknisi: t.id_karyawan, nama: t.nama_lengkap.trim(), nomor: t.no_hp, jumlah: ws.length,
         belum_terkirim: ws.filter((w) => !w.wa_teknisi_at).length, id_wo: ws.map((w) => w.id_wo),
-        teks: `*Jadwal Visit — ${labelTgl(d)}*\n${ws.length} lokasi\n\n${isi}\n\nMohon kabari helpdesk saat tiba & setelah selesai di tiap lokasi. Terima kasih 🙏`,
+        teks: `*Jadwal Visit — ${labelTgl(d)}*\n${ws.length} lokasi\n\n${isi}\n\nDi tiap lokasi buka link *Lapor*: check-in saat tiba, foto sebelum & sesudah, lalu TTD PIC saat selesai. Terima kasih 🙏`,
       };
     });
   }
@@ -323,5 +347,147 @@ export class VisitService {
     }
     const ok = hasil.filter((h) => h.ok).length;
     return { data: hasil, message: `Jadwal terkirim ke ${ok} dari ${hasil.length} teknisi` };
+  }
+
+  // ── Link lapangan teknisi (/v/:token, tanpa login) ───────────────────────────
+  private async dariToken(token: string) {
+    const w = token && token.length >= 16
+      ? await this.prisma.workOrder.findUnique({ where: { token_lapangan: token }, include: INCLUDE })
+      : null;
+    if (!w || w.status_wo === 'Cancelled') throw new NotFoundException('Link tidak berlaku');
+    if (w.status_wo === 'Completed' && w.completed_at && Date.now() - w.completed_at.getTime() > 3 * 86400_000) {
+      throw new ForbiddenException('Visit ini sudah lama selesai');
+    }
+    return w;
+  }
+  /** Bisa dilaporkan: aktif & masih terjadwal ke teknisi (bukan sedang dijadwal ulang) */
+  private wajibAktif(w: Wo) {
+    if (!AKTIF.includes(w.status_wo)) throw new BadRequestException('Visit sudah selesai');
+    if (!w.tgl_jadwal || !w.id_teknisi_internal) throw new BadRequestException('Visit ini sedang dijadwal ulang — tunggu jadwal baru dari helpdesk');
+  }
+
+  async lapanganInfo(token: string) {
+    const w = await this.dariToken(token);
+    const foto = await this.prisma.woFoto.findMany({ where: { id_wo: w.id_wo }, orderBy: { created_at: 'asc' }, select: { id_foto: true, jenis_foto: true, file_path: true, created_at: true } });
+    const v = this.bentuk(w);
+    return {
+      data: {
+        nomor_wo: v.nomor_wo, jenis_wo: v.jenis_wo, prioritas: v.prioritas, status_wo: v.status_wo, tgl: v.tgl, jam: v.jam,
+        label_tgl: w.tgl_jadwal ? labelTgl(w.tgl_jadwal) : null, teknisi: v.teknisi, deskripsi: v.deskripsi, site: v.site,
+        pic_nama: v.pic_nama, pic_hp: v.pic_hp, tiket: v.tiket ? { nomor: v.tiket.nomor, judul: v.tiket.judul } : null,
+        maps: this.maps(w), checkin_at: v.checkin_at, koordinat_checkin: v.koordinat_checkin, completed_at: v.completed_at,
+        ttd_path: v.ttd_path, ttd_nama: v.ttd_nama, catatan_teknisi: v.catatan_teknisi, foto,
+        bisa_lapor: AKTIF.includes(w.status_wo) && !!w.tgl_jadwal && !!w.id_teknisi_internal,
+      },
+    };
+  }
+
+  private async beriTahu(w: Wo, judul: string, deskripsi: string) {
+    try {
+      const users = await this.prisma.coreUser.findMany({
+        where: {
+          is_aktif: true,
+          OR: [
+            ...(w.dibuat_oleh ? [{ id_karyawan: w.dibuat_oleh }] : []),
+            { user_roles: { some: { role: { nama_role: { in: ['Manager_Ops', 'Helpdesk'] } } } } },
+          ],
+        },
+        select: { id_user: true },
+      });
+      if (users.length) {
+        await this.prisma.notification.createMany({
+          data: users.map((u) => ({ id_user: u.id_user, tipe: 'visit_lapangan', judul, deskripsi, url: `/jadwal-visit?wo=${w.id_wo}` })),
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`notifikasi gagal: ${e?.message}`);
+    }
+  }
+  private namaTek(w: Wo) { return w.teknisi?.nama_lengkap.trim() || 'Teknisi'; }
+
+  async checkin(token: string, dto: CheckinDto) {
+    const w = await this.dariToken(token);
+    this.wajibAktif(w);
+    const koordinat = `${dto.lat.toFixed(6)},${dto.lng.toFixed(6)}`;
+    await this.prisma.workOrder.update({
+      where: { id_wo: w.id_wo },
+      data: { koordinat_checkin: koordinat, checkin_at: new Date(), status_wo: 'In_Progress' },
+    });
+    if (!w.checkin_at) await this.beriTahu(w, `📍 ${this.namaTek(w)} tiba di lokasi`, `${w.site.nama_site} · ${w.nomor_wo}${dto.akurasi ? ` · akurasi GPS ±${Math.round(dto.akurasi)} m` : ''}`);
+    return this.lapanganInfo(token);
+  }
+
+  async fotoLapangan(token: string, jenis: string, file?: { buffer: Buffer; mimetype: string; size: number }) {
+    const w = await this.dariToken(token);
+    this.wajibAktif(w);
+    if (!w.checkin_at) throw new BadRequestException('Check-in di lokasi dulu');
+    const ext = file && EXT_FOTO[file.mimetype];
+    if (!file || !ext) throw new BadRequestException('File harus foto (JPG/PNG/WebP)');
+    const jumlah = await this.prisma.woFoto.count({ where: { id_wo: w.id_wo } });
+    if (jumlah >= 30) throw new BadRequestException('Maksimal 30 foto per visit');
+    const rel = `visit/${w.id_wo}/${Date.now()}-${randomBytes(6).toString('hex')}.${ext}`;
+    await fsp.mkdir(join(UPLOAD_ROOT, 'visit', String(w.id_wo)), { recursive: true });
+    await fsp.writeFile(join(UPLOAD_ROOT, rel), file.buffer);
+    await this.prisma.woFoto.create({ data: { id_wo: w.id_wo, jenis_foto: jenis, file_path: `/uploads/${rel}` } });
+    return this.lapanganInfo(token);
+  }
+
+  async hapusFotoLapangan(token: string, id_foto: number) {
+    const w = await this.dariToken(token);
+    this.wajibAktif(w);
+    const f = await this.prisma.woFoto.findUnique({ where: { id_foto } });
+    if (!f || f.id_wo !== w.id_wo) throw new NotFoundException('Foto tidak ditemukan');
+    await this.prisma.woFoto.delete({ where: { id_foto } });
+    if (f.file_path.startsWith('/uploads/visit/')) await fsp.rm(join(UPLOAD_ROOT, f.file_path.slice('/uploads/'.length)), { force: true }).catch(() => undefined);
+    return this.lapanganInfo(token);
+  }
+
+  async selesaiLapangan(token: string, dto: SelesaiLapanganDto) {
+    const w = await this.dariToken(token);
+    this.wajibAktif(w);
+    if (!w.checkin_at) throw new BadRequestException('Check-in di lokasi dulu');
+    const sesudah = await this.prisma.woFoto.count({ where: { id_wo: w.id_wo, jenis_foto: 'Sesudah' } });
+    if (!sesudah) throw new BadRequestException('Unggah minimal 1 foto sesudah pekerjaan');
+    let ttd_path: string | null = null;
+    if (dto.ttd) {
+      const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dto.ttd);
+      if (!m) throw new BadRequestException('Tanda tangan tidak valid');
+      if (!dto.ttd_nama?.trim()) throw new BadRequestException('Isi nama PIC yang tanda tangan');
+      const rel = `visit/${w.id_wo}/ttd-${randomBytes(6).toString('hex')}.png`;
+      await fsp.mkdir(join(UPLOAD_ROOT, 'visit', String(w.id_wo)), { recursive: true });
+      await fsp.writeFile(join(UPLOAD_ROOT, rel), Buffer.from(m[1], 'base64'));
+      ttd_path = `/uploads/${rel}`;
+    } else if (!dto.tanpa_ttd_alasan?.trim()) {
+      throw new BadRequestException('Minta tanda tangan PIC, atau isi alasan bila PIC tidak bisa tanda tangan');
+    }
+    const baris = [`[Selesai] ${dto.catatan.trim()}`];
+    if (!ttd_path) baris.push(`[Tanpa TTD] ${dto.tanpa_ttd_alasan!.trim()}`);
+    await this.prisma.workOrder.update({
+      where: { id_wo: w.id_wo },
+      data: {
+        status_wo: 'Completed', completed_at: new Date(), ttd_path, ttd_nama: ttd_path ? dto.ttd_nama!.trim() : null,
+        catatan_teknisi: [w.catatan_teknisi, ...baris].filter(Boolean).join('\n'),
+      },
+    });
+    await this.beriTahu(w, `✅ Visit selesai — ${w.site.nama_site}`, `${this.namaTek(w)}: ${dto.catatan.trim().slice(0, 150)}`);
+    return this.lapanganInfo(token);
+  }
+
+  /** Tidak bisa dikerjakan → kembali ke antrean untuk dijadwal ulang (teknisi tetap tercatat) */
+  async gagalLapangan(token: string, dto: GagalLapanganDto) {
+    const w = await this.dariToken(token);
+    this.wajibAktif(w);
+    const tgl = new Date(Date.now() + WIB).toISOString().slice(5, 10).split('-').reverse().join('/');
+    const baris = `[Gagal ${tgl}] ${dto.alasan.trim()}${dto.catatan?.trim() ? ` — ${dto.catatan.trim()}` : ''} (${this.namaTek(w)})`;
+    await this.prisma.workOrder.update({
+      where: { id_wo: w.id_wo },
+      data: {
+        status_wo: 'Open', tgl_jadwal: null, jam_jadwal: null, checkin_at: null, koordinat_checkin: null,
+        wa_teknisi_at: null, wa_pic_at: null, gagal_count: { increment: 1 },
+        catatan_teknisi: [w.catatan_teknisi, baris].filter(Boolean).join('\n'),
+      },
+    });
+    await this.beriTahu(w, `⚠️ Visit gagal — ${w.site.nama_site}`, `${dto.alasan.trim()} · kembali ke antrean untuk dijadwal ulang`);
+    return this.lapanganInfo(token);
   }
 }

@@ -15,6 +15,9 @@ interface Visit {
   site: { id_site: number; kode: string; nama: string; kota: string | null; alamat: string | null; pelanggan: string }
   pic_nama: string | null; pic_hp: string | null
   tiket: { id: number; nomor: string; judul: string } | null
+  checkin_at: string | null; koordinat_checkin: string | null; ttd_path: string | null; ttd_nama: string | null
+  gagal_count: number; gagal_terakhir: string | null; link: string | null
+  foto?: { id_foto: number; jenis_foto: string; file_path: string; created_at: string }[]
   terlewat?: boolean
 }
 interface Teknisi { id_karyawan: number; nama_lengkap: string; jabatan: string | null; departemen: string | null; no_hp: string | null }
@@ -99,12 +102,22 @@ const fJadwal = ref({ tgl: '', jam: '', id_teknisi: 0 })
 const fInfo = ref({ jenis_wo: '', prioritas: '', deskripsi_tugas: '' })
 const proses = ref(false)
 function buka(v: Visit) {
+  if (!v.foto) { bukaId(v.id_wo); }
   sel.value = v
   fJadwal.value = { tgl: v.tgl || '', jam: v.jam || '', id_teknisi: v.id_teknisi || 0 }
   fInfo.value = { jenis_wo: v.jenis_wo, prioritas: v.prioritas, deskripsi_tugas: v.deskripsi }
 }
 async function bukaId(id: number) {
-  try { const { data } = await api.get(`/visit/${id}`); buka(data.data) } catch (e) { alertError(e) }
+  try {
+    const { data } = await api.get(`/visit/${id}`)
+    if (!sel.value || sel.value.id_wo === id) buka(data.data)
+  } catch (e) { alertError(e) }
+}
+const lihatFoto = ref<string | null>(null)
+const tersalin = ref(false)
+async function salinLink() {
+  if (!sel.value?.link) return
+  try { await navigator.clipboard.writeText(sel.value.link); tersalin.value = true; setTimeout(() => (tersalin.value = false), 1500) } catch { window.prompt('Salin link:', sel.value.link) }
 }
 const aktif = computed(() => !!sel.value && ['Open', 'In_Progress'].includes(sel.value.status_wo))
 const jadwalBerubah = computed(() => !!sel.value && (fJadwal.value.tgl !== (sel.value.tgl || '') || fJadwal.value.jam !== (sel.value.jam || '') || fJadwal.value.id_teknisi !== (sel.value.id_teknisi || 0)))
@@ -264,6 +277,7 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
             <small>{{ v.site.pelanggan }}<template v-if="v.site.kota"> · {{ v.site.kota }}</template></small>
             <small class="jv-jenis">{{ v.jenis_wo }}<template v-if="v.tiket"> · {{ v.tiket.nomor }}</template></small>
             <small v-if="v.terlewat" class="jv-telat">⚠ Terlewat: {{ v.tgl }} · {{ v.teknisi }}</small>
+            <small v-if="v.gagal_terakhir && !v.tgl" class="jv-telat" :title="v.gagal_terakhir">↻ {{ v.gagal_terakhir.replace(/^\[Gagal ([^\]]+)\]/, 'Gagal $1:') }}</small>
           </div>
         </div>
       </aside>
@@ -308,6 +322,7 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
                 <small>{{ v.jenis_wo }}<template v-if="v.site.kota"> · {{ v.site.kota }}</template></small>
                 <div class="jv-tanda">
                   <span v-if="v.status_wo === 'Completed'" title="Selesai">✅</span>
+                  <span v-else-if="v.checkin_at" :title="`Teknisi check-in ${waktuLalu(v.checkin_at)}`">📍</span>
                   <span v-else-if="v.status_wo === 'In_Progress'" title="Sedang dikerjakan">🔧</span>
                   <span :class="{ redup: !v.wa_teknisi_at }" :title="v.wa_teknisi_at ? 'Teknisi sudah dikirimi WA' : 'Belum dikirim ke teknisi'">📲</span>
                   <span :class="{ redup: !v.wa_pic_at }" :title="v.wa_pic_at ? 'PIC store sudah diberi tahu' : 'PIC store belum diberi tahu'">🏪</span>
@@ -339,6 +354,25 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
             <div v-if="sel.catatan_teknisi"><span>Catatan</span><b class="pre">{{ sel.catatan_teknisi }}</b></div>
           </div>
 
+          <div v-if="sel.checkin_at || sel.foto?.length || sel.ttd_path" class="jv-blok jv-laporan">
+            <b class="jv-legend">Laporan lapangan</b>
+            <div v-if="sel.checkin_at" class="jv-ok">📍 Check-in {{ waktuLalu(sel.checkin_at) }}
+              <a v-if="sel.koordinat_checkin" :href="`https://www.google.com/maps?q=${sel.koordinat_checkin}`" target="_blank" rel="noopener">lihat titik</a>
+            </div>
+            <template v-for="j in ['Sebelum', 'Sesudah', 'Lainnya']" :key="j">
+              <div v-if="sel.foto?.some((f) => f.jenis_foto === j)">
+                <small class="muted">Foto {{ j.toLowerCase() }}</small>
+                <div class="jv-foto-grid">
+                  <img v-for="f in sel.foto!.filter((f) => f.jenis_foto === j)" :key="f.id_foto" :src="f.file_path" alt="" @click="lihatFoto = f.file_path" />
+                </div>
+              </div>
+            </template>
+            <div v-if="sel.ttd_path">
+              <small class="muted">Tanda tangan PIC — {{ sel.ttd_nama }}</small>
+              <img :src="sel.ttd_path" alt="TTD PIC" class="jv-ttd" />
+            </div>
+          </div>
+
           <fieldset class="jv-blok" :disabled="!aktif || proses">
             <legend>Jadwal & teknisi</legend>
             <div class="form-row jv-row3">
@@ -363,6 +397,10 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
             <div class="jv-baris-tombol">
               <button class="btn btn-ghost btn-sm" @click="siapkanWa('teknisi')">📲 Ke teknisi</button>
               <small :class="sel.wa_teknisi_at ? 'jv-ok' : 'muted'">{{ sel.wa_teknisi_at ? `✓ terkirim ${waktuLalu(sel.wa_teknisi_at)}` : 'belum dikirim' }}</small>
+            </div>
+            <div v-if="sel.link" class="jv-baris-tombol">
+              <button class="btn btn-ghost btn-sm" @click="salinLink">🔗 {{ tersalin ? 'Tersalin!' : 'Salin link lapor teknisi' }}</button>
+              <a :href="sel.link" target="_blank" rel="noopener" class="muted" style="font-size: 12px">buka</a>
             </div>
             <div class="jv-baris-tombol">
               <button class="btn btn-ghost btn-sm" @click="siapkanWa('pic')">🏪 Ke PIC store</button>
@@ -508,6 +546,7 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
         </div>
       </div>
     </div>
+    <div v-if="lihatFoto" class="jv-lihat" @click="lihatFoto = null"><img :src="lihatFoto" alt="" /></div>
   </div>
 </template>
 
@@ -582,6 +621,14 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
 .jv-hasil button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--border); background: #fff; padding: 7px 10px; cursor: pointer; font: inherit; font-size: 13px; }
 .jv-hasil button:hover { background: #f1f5f9; }
 .jv-hasil small { color: var(--text-muted); }
+
+.jv-laporan { gap: 8px; font-size: 13px; }
+.jv-legend { font-size: 12px; color: var(--text-3); }
+.jv-foto-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.jv-foto-grid img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; cursor: zoom-in; border: 1px solid var(--border); }
+.jv-ttd { display: block; max-height: 110px; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; background: #fff; }
+.jv-lihat { position: fixed; inset: 0; z-index: 3000; background: rgba(0, 0, 0, .85); display: grid; place-items: center; cursor: zoom-out; }
+.jv-lihat img { max-width: 95vw; max-height: 95vh; }
 
 @media (max-width: 900px) {
   .jv-isi { grid-template-columns: 1fr; }

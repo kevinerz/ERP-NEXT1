@@ -762,6 +762,11 @@ model WorkOrder {
   dibuat_oleh           Int?
   wa_teknisi_at         DateTime? // jadwal terakhir sudah dikirim ke teknisi via WA
   wa_pic_at             DateTime? // PIC store sudah diberi tahu via WA
+  token_lapangan        String?   @unique @db.VarChar(48) // link /v/<token> untuk teknisi (tanpa login)
+  checkin_at            DateTime?
+  ttd_path              String?   @db.VarChar(255) // tanda tangan PIC store saat selesai
+  ttd_nama              String?   @db.VarChar(150)
+  gagal_count           Int       @default(0)
   deskripsi_tugas       String    @db.Text
   status_wo             String    @default("Open") @db.VarChar(30)
   koordinat_checkin     String?   @db.VarChar(100)
