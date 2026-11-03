@@ -23,6 +23,9 @@ export class PasangBaruController {
     return this.svc.ubahSph(u, id, dto);
   }
   @Delete('sph/:id') hapusSph(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.hapusSph(u, id); }
+  @Delete('sph/:id/permanen') hapusPermanen(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) {
+    return this.svc.hapusPermanenSph(u, id);
+  }
   @Post('sph/:id/ajukan') ajukan(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.ajukanSph(u, id); }
   @Post('sph/:id/putuskan') putuskan(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: PutusanDto) {
     return this.svc.putuskanSph(u, id, dto);

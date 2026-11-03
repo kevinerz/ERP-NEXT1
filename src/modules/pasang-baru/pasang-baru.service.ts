@@ -192,6 +192,79 @@ export class PasangBaruService {
     return { message: `SPH ${s.nomor_sph} dihapus` };
   }
 
+  /**
+   * Hapus permanen (khusus Admin), status apa pun: SPH + order + site hasil SPH (beserta PIC, link, dokumen & file)
+   * + riwayat + notifikasi. Pelanggan ikut dihapus bila dibuat bersama SPH ini dan tidak punya data lain.
+   * Ditolak bila site sudah dipakai modul lain (tiket, kontrak, invoice, WO, aset, IP, …).
+   */
+  async hapusPermanenSph(u: Pengguna, id_sph: number) {
+    if (!u.roles.includes('Admin')) throw new ForbiddenException('Hapus permanen hanya untuk Administrator');
+    const s = await this.prisma.pbSph.findUnique({ where: { id_sph }, include: { order: { select: { id_pb: true, id_site: true } } } });
+    if (!s) throw new NotFoundException('SPH tidak ditemukan');
+
+    const idSite = s.order.map((o) => o.id_site).filter((x): x is number => !!x);
+    const site = await this.prisma.sitePelanggan.findMany({
+      where: { id_site: { in: idSite } },
+      select: {
+        id_site: true, kode_site: true, catatan: true,
+        _count: { select: {
+          aset: true, perangkat: true, projects: true, tickets: true, work_orders: true, kontrak: true, topup: true, jurnal_ar: true,
+          invoices: true, ip_alokasi: true, prtg_mapping: true, uptimekuma_mapping: true, instalasi_orders: true,
+        } },
+      },
+    });
+    const dipakai = site.flatMap((x) => {
+      const isi = Object.entries(x._count).filter(([, n]) => n > 0).map(([k, n]) => `${k.replace(/_/g, ' ')} ${n}`);
+      return isi.length ? [`${x.kode_site}: ${isi.join(', ')}`] : [];
+    });
+    if (dipakai.length) throw new BadRequestException(`Site sudah dipakai data lain, hapus/pindahkan dulu — ${dipakai.join('; ')}`);
+    // Hanya site yang memang dibuat oleh SPH ini yang ikut dihapus; site lain cukup dilepas dari order
+    const siteHapus = site.filter((x) => x.catatan?.includes(s.nomor_sph)).map((x) => x.id_site);
+    const idPb = s.order.map((o) => o.id_pb);
+    const dokumen = await this.prisma.siteDokumen.findMany({
+      where: { OR: [{ id_pb: { in: idPb } }, { id_site: { in: siteHapus } }] }, select: { url_file: true },
+    });
+
+    await this.prisma.$transaction([
+      this.prisma.notification.deleteMany({
+        where: { url: { in: [`/pasang-baru/sph/${id_sph}`, ...idPb.map((x) => `/pasang-baru/order/${x}`)] } },
+      }),
+      this.prisma.pbRiwayat.deleteMany({ where: { OR: [{ id_sph }, { id_pb: { in: idPb } }] } }),
+      this.prisma.siteDokumen.deleteMany({ where: { OR: [{ id_pb: { in: idPb } }, { id_site: { in: siteHapus } }] } }),
+      this.prisma.pbOrder.deleteMany({ where: { id_sph } }),
+      this.prisma.pbSph.delete({ where: { id_sph } }),
+      this.prisma.picSite.deleteMany({ where: { id_site: { in: siteHapus } } }),
+      this.prisma.sumberInternetSite.deleteMany({ where: { id_site: { in: siteHapus } } }),
+      this.prisma.sitePelanggan.deleteMany({ where: { id_site: { in: siteHapus } } }),
+    ]);
+    for (const d of dokumen) {
+      if (d.url_file.startsWith('/uploads/pasang-baru/')) {
+        await fsp.rm(join(UPLOAD_ROOT, d.url_file.slice('/uploads/'.length)), { force: true }).catch(() => undefined);
+      }
+    }
+    for (const id_pb of idPb) await fsp.rmdir(join(UPLOAD_ROOT, 'pasang-baru', String(id_pb))).catch(() => undefined);
+
+    // Pelanggan baru yang dibuat bersama SPH (selisih waktu < 1 menit) dan kini tanpa site/SPH lain → ikut dihapus
+    let pelangganDihapus = false;
+    const p = await this.prisma.pelanggan.findUnique({ where: { id_pelanggan: s.id_pelanggan }, select: { created_at: true, nama_pelanggan: true } });
+    if (p?.created_at && Math.abs(p.created_at.getTime() - s.created_at.getTime()) < 60_000) {
+      const [nSite, nSph] = await Promise.all([
+        this.prisma.sitePelanggan.count({ where: { id_pelanggan: s.id_pelanggan } }),
+        this.prisma.pbSph.count({ where: { id_pelanggan: s.id_pelanggan } }),
+      ]);
+      if (!nSite && !nSph) {
+        try {
+          await this.prisma.pelanggan.delete({ where: { id_pelanggan: s.id_pelanggan } });
+          pelangganDihapus = true;
+        } catch { /* masih dipakai tabel lain → biarkan */ }
+      }
+    }
+    this.logger.warn(`SPH ${s.nomor_sph} dihapus permanen oleh karyawan #${u.id_karyawan} (${idPb.length} order, ${siteHapus.length} site, ${dokumen.length} dokumen${pelangganDihapus ? `, pelanggan ${p!.nama_pelanggan}` : ''})`);
+    const rincian = [`${idPb.length} order`, `${siteHapus.length} site`, `${dokumen.length} dokumen`];
+    if (pelangganDihapus) rincian.push(`pelanggan ${p!.nama_pelanggan}`);
+    return { message: `${s.nomor_sph} dihapus permanen (${rincian.join(', ')})` };
+  }
+
   async ajukanSph(u: Pengguna, id_sph: number) {
     this.wajib(u, 'Draft');
     const s = await this.prisma.pbSph.findUnique({ where: { id_sph }, include: { pelanggan: true, _count: { select: { order: true } } } });

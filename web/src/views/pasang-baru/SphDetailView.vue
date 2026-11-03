@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { fmtDate, fmtDateTime, fmtRupiah } from '@/composables/useFormat'
-import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
+import { alertDialog, alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
 import { printSphPasangBaru } from '@/composables/usePrint'
 import { KELAS_SPH, KELAS_TAHAP } from './pb'
 
@@ -31,6 +31,7 @@ onMounted(muat)
 
 const sales = computed(() => ['Sales', 'Director', 'Admin'].some((r) => auth.hasRole(r)))
 const director = computed(() => ['Director', 'Admin'].some((r) => auth.hasRole(r)))
+const admin = computed(() => auth.hasRole('Admin'))
 const bisaUbah = computed(() => sales.value && ['Draft', 'Ditolak'].includes(s.value?.status))
 const totalBulanan = computed(() => (s.value?.order || []).reduce((a: number, o: any) => a + Number(o.biaya_bulanan), 0))
 const totalInstalasi = computed(() => (s.value?.order || []).reduce((a: number, o: any) => a + Number(o.biaya_instalasi), 0))
@@ -65,6 +66,22 @@ async function hapus() {
   } catch (e) { alertError(e) } finally { proses.value = false }
 }
 
+async function hapusPermanen() {
+  const nomor = s.value.nomor_sph
+  const isi = await promptDialog({
+    title: 'Hapus permanen SPH', variant: 'danger', confirmLabel: 'Hapus permanen', label: `Ketik ${nomor} untuk konfirmasi`,
+    message: `Semua order, site hasil SPH ini (beserta PIC, link, dokumen/PDF), riwayat, dan notifikasinya ikut terhapus. Pelanggan yang dibuat bersama SPH ini juga ikut dihapus bila tidak punya data lain. Tidak bisa dibatalkan.`,
+    validate: (v) => (v.trim() === nomor ? null : 'Nomor SPH tidak sesuai'),
+  })
+  if (isi?.trim() !== nomor) return
+  proses.value = true
+  try {
+    const { data } = await api.delete(`/pasang-baru/sph/${id.value}/permanen`)
+    await alertDialog({ title: 'Terhapus', message: data.message })
+    router.push('/pasang-baru')
+  } catch (e) { alertError(e) } finally { proses.value = false }
+}
+
 const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: 'Diajukan ke Director', setujui: 'Disetujui', tolak: 'Ditolak' }
 </script>
 
@@ -80,6 +97,7 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
         <div class="sd-tombol">
           <button class="btn btn-ghost" @click="router.push('/pasang-baru')">← Daftar</button>
           <button class="btn btn-ghost" @click="printSphPasangBaru(s)">🖨 Cetak SPH</button>
+          <button v-if="admin" class="btn btn-danger" :disabled="proses" title="Khusus Administrator" @click="hapusPermanen">🗑 Hapus permanen</button>
           <template v-if="bisaUbah">
             <button class="btn btn-ghost" :disabled="proses" @click="hapus">Hapus</button>
             <button class="btn btn-ghost" :disabled="proses" @click="router.push(`/pasang-baru/sph/${s.id_sph}/ubah`)">✏️ Ubah</button>
