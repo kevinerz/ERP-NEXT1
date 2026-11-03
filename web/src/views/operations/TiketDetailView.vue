@@ -411,6 +411,23 @@ async function handleAddWo() {
   finally { woSubmitting.value = false }
 }
 
+const antreVisitProses = ref(false)
+async function antreVisit() {
+  const t = ops.current
+  if (!t?.site?.id_site) { flash('Tiket belum terhubung ke site', 'error'); return }
+  antreVisitProses.value = true
+  try {
+    const { data } = await api.post('/visit', {
+      id_site: t.site.id_site, id_ticket: id, jenis_wo: 'Perbaikan',
+      prioritas: ['Critical', 'High'].includes(t.prioritas as string) ? 'Tinggi' : 'Normal',
+      deskripsi_tugas: t.judul_tiket,
+    })
+    await ops.fetchOne(id)
+    flash(`${data.message} — masuk antrean Jadwal Visit`)
+  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal', 'error') }
+  finally { antreVisitProses.value = false }
+}
+
 function flash(msg: string, type: 'success' | 'error' = 'success') {
   successMsg.value = msg; flashType.value = type
   setTimeout(() => successMsg.value = '', type === 'error' ? 5000 : 3000)
@@ -731,14 +748,17 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
           <div class="section-card">
             <div class="section-header">
               <span class="card-title">Surat Tugas ({{ ops.current.work_orders?.length ?? 0 }})</span>
-              <button class="btn-add-small" @click="showWoModal = true; woError = ''">+ Surat Tugas</button>
+              <span>
+                <button class="btn-add-small" :disabled="antreVisitProses" title="Masukkan ke antrean Jadwal Visit (teknisi & tanggal diatur di papan)" @click="antreVisit">🗓️ Perlu visit</button>
+                <button class="btn-add-small" @click="showWoModal = true; woError = ''">+ Surat Tugas</button>
+              </span>
             </div>
             <div v-if="!ops.current.work_orders?.length" class="empty-section">Belum ada surat tugas</div>
-            <div v-for="wo in ops.current.work_orders" :key="wo.id_wo" class="wo-item">
+            <div v-for="wo in ops.current.work_orders" :key="wo.id_wo" class="wo-item" style="cursor: pointer" title="Buka di Jadwal Visit" @click="router.push({ path: '/jadwal-visit', query: { wo: wo.id_wo } })">
               <div class="wo-left">
                 <div class="wo-nomor">{{ wo.nomor_wo }}</div>
                 <div class="wo-jenis">{{ wo.jenis_wo }}</div>
-                <div class="wo-date">{{ fmtDt(wo.tgl_jadwal) }}</div>
+                <div class="wo-date">{{ wo.tgl_jadwal ? fmtDt(wo.tgl_jadwal) : 'Antrean visit' }}</div>
               </div>
               <div class="wo-mid">
                 <div class="wo-desc">{{ wo.deskripsi_tugas }}</div>

@@ -37,6 +37,7 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   starsender: 'operations',
   wa: 'whatsapp', // inbox WhatsApp helpdesk (webhook & stream @Public)
   ipam: 'operations', // IP publik NEXT1
+  visit: 'operations', // Jadwal Visit teknis
 };
 
 // Divisi yang terlibat alur Pasang Baru (Sales → OPS → Instalasi → NOC → Finance)

@@ -5,6 +5,7 @@ import { promises as fsp } from 'fs';
 import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UPLOAD_ROOT } from '../../common/upload/upload-root';
+import { buatWo } from '../visit/visit.service';
 import { CatatanDto, DokumenDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto } from './dto';
 
 export interface Pengguna { id_karyawan: number; roles: string[] }
@@ -208,7 +209,7 @@ export class PasangBaruService {
       select: {
         id_site: true, kode_site: true, catatan: true,
         _count: { select: {
-          aset: true, perangkat: true, projects: true, tickets: true, work_orders: true, kontrak: true, topup: true, jurnal_ar: true,
+          aset: true, perangkat: true, projects: true, tickets: true, kontrak: true, topup: true, jurnal_ar: true,
           invoices: true, ip_alokasi: true, prtg_mapping: true, uptimekuma_mapping: true, instalasi_orders: true,
         } },
       },
@@ -217,10 +218,18 @@ export class PasangBaruService {
       const isi = Object.entries(x._count).filter(([, n]) => n > 0).map(([k, n]) => `${k.replace(/_/g, ' ')} ${n}`);
       return isi.length ? [`${x.kode_site}: ${isi.join(', ')}`] : [];
     });
+    // Visit instalasi hasil order PB ini ikut terhapus; visit lain (mis. dari tiket) dianggap data terpakai
+    const idPb = s.order.map((o) => o.id_pb);
+    const woLain = await this.prisma.workOrder.groupBy({
+      by: ['id_site'], where: { id_site: { in: idSite }, NOT: { id_pb: { in: idPb } } }, _count: { _all: true },
+    });
+    for (const g of woLain) {
+      const x = site.find((v) => v.id_site === g.id_site);
+      if (x) dipakai.push(`${x.kode_site}: work orders ${g._count._all}`);
+    }
     if (dipakai.length) throw new BadRequestException(`Site sudah dipakai data lain, hapus/pindahkan dulu — ${dipakai.join('; ')}`);
     // Hanya site yang memang dibuat oleh SPH ini yang ikut dihapus; site lain cukup dilepas dari order
     const siteHapus = site.filter((x) => x.catatan?.includes(s.nomor_sph)).map((x) => x.id_site);
-    const idPb = s.order.map((o) => o.id_pb);
     const dokumen = await this.prisma.siteDokumen.findMany({
       where: { OR: [{ id_pb: { in: idPb } }, { id_site: { in: siteHapus } }] }, select: { url_file: true },
     });
@@ -231,6 +240,7 @@ export class PasangBaruService {
       }),
       this.prisma.pbRiwayat.deleteMany({ where: { OR: [{ id_sph }, { id_pb: { in: idPb } }] } }),
       this.prisma.siteDokumen.deleteMany({ where: { OR: [{ id_pb: { in: idPb } }, { id_site: { in: siteHapus } }] } }),
+      this.prisma.workOrder.deleteMany({ where: { id_pb: { in: idPb } } }),
       this.prisma.pbOrder.deleteMany({ where: { id_sph } }),
       this.prisma.pbSph.delete({ where: { id_sph } }),
       this.prisma.picSite.deleteMany({ where: { id_site: { in: siteHapus } } }),
@@ -480,11 +490,28 @@ export class PasangBaruService {
     if (kurang.length) throw new BadRequestException(`Belum lengkap: ${kurang.map((s) => s.label).join(', ')}`);
     const ke = TAHAP[i + 1];
     await this.pindah(o, ke, u, 'serahkan', dto.catatan);
+    if (ke === 'Instalasi') await this.antreVisit(o, u);
     await this.beriTahuRole(PEMEGANG[ke] ?? [], {
       tipe: 'pb_masuk', judul: `Pasang baru masuk ${ke}`,
       deskripsi: `${o.nomor_pb} · ${o.nama_site} · ${o.sph.pelanggan.nama_pelanggan}`, url: `/pasang-baru/order/${id_pb}`,
     });
     return { message: `Diserahkan ke ${ke}` };
+  }
+
+  /** Order masuk tahap Instalasi → otomatis masuk antrean Jadwal Visit (sekali per order) */
+  private async antreVisit(o: { id_pb: number; id_site: number | null; nomor_pb: string | null; nama_site: string; tgl_rfs: Date | null }, u: Pengguna) {
+    if (!o.id_site) return;
+    try {
+      const ada = await this.prisma.workOrder.findFirst({ where: { id_pb: o.id_pb, status_wo: { not: 'Cancelled' } }, select: { id_wo: true } });
+      if (ada) return;
+      const rfs = o.tgl_rfs ? ` · target RFS ${o.tgl_rfs.toISOString().slice(0, 10)}` : '';
+      await buatWo(this.prisma, {
+        jenis_wo: 'Instalasi', id_site: o.id_site, id_pb: o.id_pb, tipe_eksekutor: 'Internal_NEXT1', dibuat_oleh: u.id_karyawan ?? null,
+        deskripsi_tugas: `Instalasi pasang baru ${o.nomor_pb ?? ''} — ${o.nama_site}${rfs}`.trim(), tgl_jadwal: null,
+      });
+    } catch (e: any) {
+      this.logger.warn(`antrean visit ${o.nomor_pb} gagal: ${e?.message}`);
+    }
   }
 
   async kembalikan(u: Pengguna, id_pb: number, dto: CatatanDto) {

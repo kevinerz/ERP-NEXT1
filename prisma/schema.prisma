@@ -754,7 +754,14 @@ model WorkOrder {
   id_vendor_ketiga      Int?
   fee_vendor            Decimal   @default(0) @db.Decimal(15, 2)
   status_pembayaran_fee String    @default("Belum_Dibayar") @db.VarChar(20)
-  tgl_jadwal            DateTime
+  tgl_jadwal            DateTime? // null = masih di antrean Jadwal Visit
+  jam_jadwal            String?   @db.VarChar(5) // "09:00" (opsional)
+  prioritas             String    @default("Normal") @db.VarChar(10) // Rendah | Normal | Tinggi | Darurat
+  urutan                Int       @default(0)
+  id_pb                 Int? // order Pasang Baru asal visit instalasi
+  dibuat_oleh           Int?
+  wa_teknisi_at         DateTime? // jadwal terakhir sudah dikirim ke teknisi via WA
+  wa_pic_at             DateTime? // PIC store sudah diberi tahu via WA
   deskripsi_tugas       String    @db.Text
   status_wo             String    @default("Open") @db.VarChar(30)
   koordinat_checkin     String?   @db.VarChar(100)
@@ -773,6 +780,7 @@ model WorkOrder {
   mutasi       GudangMutasiAset[]
 
   @@index([status_wo, tgl_jadwal])
+  @@index([id_pb])
   @@map("work_orders")
 }
 

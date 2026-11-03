@@ -578,7 +578,15 @@ export class WaService {
     return { data, meta: { ada_lagi: rows.length === Math.min(limit, 100) } };
   }
 
-  async kirim(id_chat: number, id_karyawan: number, dto: { teks?: string; kutip_id?: number; ptt?: string; ttd?: string }, file?: FileUnggah) {
+  /** Kirim teks ke nomor HP lewat akun helpdesk (dipakai modul lain, mis. Jadwal Visit). Chat tidak otomatis jadi milik pengirim. */
+  async kirimKeNomor(nomor: string, teks: string, id_karyawan: number, kode = 'helpdesk') {
+    const n = normalNomor(nomor);
+    if (!n) throw new BadRequestException(`Nomor WhatsApp tidak valid: ${nomor}`);
+    const chat = await this.ambilChat(await this.idAkun(kode), `${n}@s.whatsapp.net`, null, false);
+    return this.kirim(chat.id_chat, id_karyawan, { teks }, undefined, false);
+  }
+
+  async kirim(id_chat: number, id_karyawan: number, dto: { teks?: string; kutip_id?: number; ptt?: string; ttd?: string }, file?: FileUnggah, ambilPic = true) {
     const chat = await this.prisma.waChat.findUnique({ where: { id_chat }, include: { akun: true } });
     if (!chat) throw new NotFoundException('Chat tidak ditemukan');
     if (!file && !dto.teks?.trim()) throw new BadRequestException('Pesan kosong');
@@ -618,7 +626,7 @@ export class WaService {
     }
     const p = await this.simpanPesan(chat.id_akun, chat.akun.kode, hasil, true, { id_karyawan, media_path });
     // Chat yang belum ditangani otomatis menjadi milik staf yang membalas
-    if (!chat.id_karyawan_pic && !chat.is_grup) {
+    if (ambilPic && !chat.id_karyawan_pic && !chat.is_grup) {
       await this.prisma.waChat.update({ where: { id_chat }, data: { id_karyawan_pic: id_karyawan } });
       await this.siarkanChat(id_chat);
     }

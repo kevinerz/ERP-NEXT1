@@ -162,6 +162,7 @@ const menuGroups = [
     items: [
       { label: 'Gangguan',    emoji: '⚡', to: '/operations',      modul: 'operations' },
       { label: 'Pemasangan',  emoji: '🛠️', to: '/instalasi',       modul: 'instalasi' },
+      { label: 'Jadwal Visit', emoji: '🗓️', to: '/jadwal-visit',   modul: 'operations' },
       { label: 'Work Order',  emoji: '🗂️', to: '/public-wo',       modul: 'public-wo' },
     ],
   },
@@ -235,6 +236,7 @@ const PAGE_TITLES: Record<string, string> = {
   "tiket-detail":         "Gangguan — Detail Tiket",
   "instalasi-list":       "Pemasangan",
   "instalasi-detail":     "Pemasangan — Detail",
+  "jadwal-visit":         "Jadwal Visit",
   "wo-list":              "Work Order",
   "wo-detail":            "Work Order — Detail",
   "aset-list":            "Aset",
