@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { DisconnectReason, Room, RoomEvent, Track, type Participant, type RemoteTrack } from 'livekit-client'
+import { ConnectionQuality, DisconnectReason, getBrowser, Room, RoomEvent, Track, VideoPresets, type Participant, type RemoteTrack } from 'livekit-client'
 import { confirmDialog, alertError } from '@/composables/useDialog'
 import TrackVideo from './TrackVideo.vue'
 
@@ -21,14 +21,44 @@ const perluKlikAudio = ref(false)
 const status = ref('Menyambungkan…')
 const bisaShare = typeof navigator !== 'undefined' && !!navigator.mediaDevices && 'getDisplayMedia' in navigator.mediaDevices
 
+// Safari (macOS & semua browser di iOS) memakai encoder H.264 hardware → lebih stabil & hemat baterai daripada VP8 software
+const browser = getBrowser()
+const safari = browser?.name === 'Safari' || browser?.os === 'iOS'
+
+const SAMBUNG = { maxRetries: 3, peerConnectionTimeout: 20_000, websocketTimeout: 20_000 }
+const MAKS_ULANG = 6 // percobaan masuk ulang otomatis setelah benar-benar terputus
+
+// Status perangkat yang diinginkan pengguna — dipulihkan setelah sambung ulang / kembali dari latar belakang
+let ingin = { mic: props.mic, kamera: props.kamera }
+let selesaiDipanggil = false
+let ulangKe = 0
+let ulangTimer: ReturnType<typeof setTimeout> | undefined
+let wakeLock: { release: () => Promise<void> } | null = null
+let rBasis: Room | null = null // instance Room dipakai ulang saat masuk lagi (event tetap terpasang)
+
 onMounted(async () => {
-  const r = markRaw(new Room({ adaptiveStream: true, dynacast: true }))
+  const r = markRaw(new Room({
+    adaptiveStream: true,
+    dynacast: true,
+    disconnectOnPageLeave: true,
+    videoCaptureDefaults: { resolution: VideoPresets.h540.resolution },
+    audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    publishDefaults: {
+      simulcast: true,
+      videoCodec: safari ? 'h264' : 'vp8',
+      red: true, // audio redundan → tahan paket hilang
+      dtx: true,
+      stopMicTrackOnMute: false,
+    },
+  }))
+  rBasis = r
   pasangEvent(r)
+  r.prepareConnection(props.url, props.token).catch(() => {})
   try {
-    await r.connect(props.url, props.token)
+    await r.connect(props.url, props.token, SAMBUNG)
   } catch (e) {
     alertError(e, 'Gagal masuk rapat')
-    emit('selesai', '')
+    akhiri('')
     return
   }
   room.value = r
@@ -36,17 +66,139 @@ onMounted(async () => {
   emit('tersambung')
   await nextTick()
   // Track audio peserta yang sudah ada sebelum kita masuk
-  r.remoteParticipants.forEach((p) => p.trackPublications.forEach((pub) => { if (pub.track && pub.kind === Track.Kind.Audio) pasangAudio(pub.track as RemoteTrack) }))
-  try { await r.localParticipant.setMicrophoneEnabled(props.mic) } catch (e: any) { status.value = `Mikrofon tidak bisa dipakai: ${e?.message || e}` }
-  try { await r.localParticipant.setCameraEnabled(props.kamera) } catch (e: any) { status.value = `Kamera tidak bisa dipakai: ${e?.message || e}` }
+  pasangAudioAda(r)
+  await terapkanPerangkat(r)
   perluKlikAudio.value = !r.canPlaybackAudio
   segarkan()
+  document.addEventListener('visibilitychange', saatTerlihat)
+  window.addEventListener('online', saatOnline)
+  document.addEventListener('pointerdown', gestur, true)
+  document.addEventListener('touchend', gestur, true)
+  kunciLayar()
 })
-onBeforeUnmount(() => { room.value?.disconnect() })
+onBeforeUnmount(() => {
+  selesaiDipanggil = true
+  clearTimeout(ulangTimer)
+  document.removeEventListener('visibilitychange', saatTerlihat)
+  window.removeEventListener('online', saatOnline)
+  document.removeEventListener('pointerdown', gestur, true)
+  document.removeEventListener('touchend', gestur, true)
+  wakeLock?.release().catch(() => {})
+  room.value?.disconnect()
+})
+
+function akhiri(pesan: string) {
+  if (selesaiDipanggil) return
+  selesaiDipanggil = true
+  emit('selesai', pesan)
+}
+
+function pasangAudioAda(r: Room) {
+  r.remoteParticipants.forEach((p) => p.trackPublications.forEach((pub) => { if (pub.track && pub.kind === Track.Kind.Audio) pasangAudio(pub.track as RemoteTrack) }))
+}
+
+async function terapkanPerangkat(r: Room) {
+  // Gagal (izin ditolak dll) → anggap dimatikan supaya Safari tidak terus meminta izin saat pemulihan
+  try { await r.localParticipant.setMicrophoneEnabled(ingin.mic) } catch (e: any) { ingin.mic = false; status.value = `Mikrofon tidak bisa dipakai: ${e?.message || e}` }
+  try { await r.localParticipant.setCameraEnabled(ingin.kamera) } catch (e: any) { ingin.kamera = false; status.value = `Kamera tidak bisa dipakai: ${e?.message || e}` }
+}
+
+// ── Ketahanan: Safari/iOS ────────────────────────────────────────────────────
+// Safari hanya mengizinkan audio diputar setelah ada sentuhan/klik → coba aktifkan pada interaksi apa pun
+function gestur() {
+  const r = room.value
+  if (r && !r.canPlaybackAudio) r.startAudio().then(() => { perluKlikAudio.value = !r.canPlaybackAudio }).catch(() => {})
+  putarUlangMedia()
+}
+
+function putarUlangMedia() {
+  document.querySelectorAll<HTMLMediaElement>('.rr video, .rr audio').forEach((el) => { if (el.paused) el.play().catch(() => {}) })
+}
+
+// Layar HP tidak mati selama rapat (Safari 16.4+, Chrome)
+async function kunciLayar() {
+  try {
+    const wl = (navigator as any).wakeLock
+    if (wl && document.visibilityState === 'visible' && !wakeLock) {
+      wakeLock = await wl.request('screen')
+      ;(wakeLock as any)?.addEventListener?.('release', () => { wakeLock = null })
+    }
+  } catch { /* tidak didukung / ditolak */ }
+}
+
+// Kembali dari latar belakang (pindah aplikasi, kunci layar, telepon masuk di iPhone):
+// iOS bisa menghentikan kamera/mikrofon & menjeda video → pulihkan
+async function saatTerlihat() {
+  if (document.visibilityState !== 'visible') return
+  kunciLayar()
+  const r = room.value
+  if (!r) return
+  putarUlangMedia()
+  if (!r.canPlaybackAudio) r.startAudio().catch(() => { perluKlikAudio.value = true })
+  await pulihkanTrackLokal(r)
+  segarkan()
+}
+
+async function pulihkanTrackLokal(r: Room) {
+  const lp = r.localParticipant
+  for (const [sumber, mau] of [[Track.Source.Microphone, ingin.mic], [Track.Source.Camera, ingin.kamera]] as const) {
+    if (!mau) continue
+    const pub = lp.getTrackPublication(sumber)
+    const mst = pub?.track?.mediaStreamTrack
+    if (!pub?.track) {
+      // Track hilang (mis. dicabut sistem) → nyalakan lagi
+      await (sumber === Track.Source.Camera ? lp.setCameraEnabled(true) : lp.setMicrophoneEnabled(true)).catch(() => {})
+    } else if (!mst || mst.readyState === 'ended') {
+      try { await (pub.track as any).restartTrack() } catch {
+        await (sumber === Track.Source.Camera ? lp.setCameraEnabled(false) : lp.setMicrophoneEnabled(false)).catch(() => {})
+        await (sumber === Track.Source.Camera ? lp.setCameraEnabled(true) : lp.setMicrophoneEnabled(true)).catch(() => {})
+      }
+    }
+  }
+}
+
+function saatOnline() {
+  // Jaringan kembali saat sedang menunggu masuk ulang → langsung coba, jangan tunggu jeda
+  if (ulangTimer && !room.value) { clearTimeout(ulangTimer); masukUlang() }
+}
+
+// Terputus total (LiveKit sudah menyerah menyambung ulang) → masuk lagi otomatis dengan token yang sama
+function jadwalkanMasukUlang() {
+  if (selesaiDipanggil) return
+  if (ulangKe >= MAKS_ULANG) { akhiri('Terputus dari rapat. Periksa koneksi internet lalu masuk lagi.'); return }
+  ulangKe++
+  const jeda = Math.min(2000 * 2 ** (ulangKe - 1), 15_000)
+  status.value = `Koneksi terputus — mencoba masuk lagi (${ulangKe}/${MAKS_ULANG})…`
+  clearTimeout(ulangTimer)
+  ulangTimer = setTimeout(masukUlang, navigator.onLine === false ? 30_000 : jeda)
+}
+
+async function masukUlang() {
+  ulangTimer = undefined
+  if (selesaiDipanggil || !rBasis) return
+  try {
+    await rBasis.connect(props.url, props.token, SAMBUNG)
+  } catch {
+    jadwalkanMasukUlang()
+    return
+  }
+  ulangKe = 0
+  room.value = rBasis
+  status.value = ''
+  await nextTick()
+  pasangAudioAda(rBasis)
+  await terapkanPerangkat(rBasis)
+  perluKlikAudio.value = !rBasis.canPlaybackAudio
+  segarkan()
+}
 
 function pasangAudio(track: RemoteTrack) {
   if (!audioBox.value) return
-  audioBox.value.appendChild(track.attach())
+  // Jangan pasang dua kali (TrackSubscribed + pemindaian awal) → suara dobel/menggema
+  if (track.attachedElements.some((el) => el.isConnected)) return
+  const el = track.attach()
+  el.setAttribute('playsinline', '')
+  audioBox.value.appendChild(el)
 }
 
 function pasangEvent(r: Room) {
@@ -61,8 +213,12 @@ function pasangEvent(r: Room) {
     .on(RoomEvent.ActiveSpeakersChanged, segarkan)
     .on(RoomEvent.ConnectionQualityChanged, segarkan)
     .on(RoomEvent.AudioPlaybackStatusChanged, () => { perluKlikAudio.value = !r.canPlaybackAudio })
+    .on(RoomEvent.SignalReconnecting, () => { status.value = 'Koneksi tidak stabil, menyambung ulang…' })
     .on(RoomEvent.Reconnecting, () => { status.value = 'Koneksi terputus, menyambung ulang…' })
-    .on(RoomEvent.Reconnected, () => { status.value = '' })
+    .on(RoomEvent.Reconnected, async () => { status.value = ''; putarUlangMedia(); await pulihkanTrackLokal(r); segarkan() })
+    .on(RoomEvent.MediaDevicesError, (e: any) => { status.value = `Perangkat bermasalah: ${e?.message || e}` })
+    // AirPods/headset dicabut → kembali ke perangkat bawaan
+    .on(RoomEvent.MediaDevicesChanged, () => { pulihkanTrackLokal(r).then(segarkan) })
     .on(RoomEvent.DataReceived, (payload, p) => {
       try {
         const m = JSON.parse(new TextDecoder().decode(payload))
@@ -72,14 +228,20 @@ function pasangEvent(r: Room) {
     .on(RoomEvent.Disconnected, (alasan?: DisconnectReason) => {
       room.value = null
       if (audioBox.value) audioBox.value.innerHTML = ''
-      const pesan = alasan === DisconnectReason.PARTICIPANT_REMOVED ? 'Anda dikeluarkan dari rapat oleh moderator.'
-        : alasan === DisconnectReason.ROOM_DELETED ? 'Rapat telah diakhiri moderator.'
-          : alasan === DisconnectReason.CLIENT_INITIATED ? '' : 'Terputus dari rapat.'
-      emit('selesai', pesan)
+      if (alasan === DisconnectReason.PARTICIPANT_REMOVED) return akhiri('Anda dikeluarkan dari rapat oleh moderator.')
+      if (alasan === DisconnectReason.ROOM_DELETED || alasan === DisconnectReason.ROOM_CLOSED) return akhiri('Rapat telah diakhiri moderator.')
+      if (alasan === DisconnectReason.DUPLICATE_IDENTITY) return akhiri('Anda masuk rapat ini dari perangkat/tab lain.')
+      if (alasan === DisconnectReason.CLIENT_INITIATED) return akhiri('')
+      // Jaringan putus, server restart, sinyal hilang, dll → masuk lagi otomatis
+      jadwalkanMasukUlang()
     })
 }
 
-async function keluar() { await room.value?.disconnect() }
+async function keluar() {
+  if (!room.value) { clearTimeout(ulangTimer); akhiri(''); return } // sedang menunggu masuk ulang
+  await room.value.disconnect()
+}
+const sinyalLemah = computed(() => { void versi.value; return room.value?.localParticipant.connectionQuality === ConnectionQuality.Poor })
 
 // ── Kontrol ──────────────────────────────────────────────────────────────────
 const mic = computed(() => { void versi.value; return room.value?.localParticipant.isMicrophoneEnabled ?? false })
@@ -89,8 +251,8 @@ async function toggle(jenis: 'mic' | 'kamera' | 'share') {
   const lp = room.value?.localParticipant
   if (!lp) return
   try {
-    if (jenis === 'mic') await lp.setMicrophoneEnabled(!lp.isMicrophoneEnabled)
-    else if (jenis === 'kamera') await lp.setCameraEnabled(!lp.isCameraEnabled)
+    if (jenis === 'mic') { ingin.mic = !lp.isMicrophoneEnabled; await lp.setMicrophoneEnabled(ingin.mic) }
+    else if (jenis === 'kamera') { ingin.kamera = !lp.isCameraEnabled; await lp.setCameraEnabled(ingin.kamera) }
     else await lp.setScreenShareEnabled(!lp.isScreenShareEnabled, { audio: false })
   } catch (e: any) {
     if (e?.name !== 'NotAllowedError' || jenis !== 'share') alertError(e, 'Perangkat tidak bisa dipakai')
@@ -174,6 +336,7 @@ async function aksi(jenis: 'keluarkan' | 'bisukan' | 'akhiri', p?: Participant) 
       <b class="rr-judul">{{ judul }}</b>
       <span class="rr-jumlah">👥 {{ semuaPeserta.length }}</span>
       <span v-if="status" class="rr-status">{{ status }}</span>
+      <span v-else-if="sinyalLemah" class="rr-status">📶 Sinyal Anda lemah — video diturunkan otomatis</span>
       <button v-if="perluKlikAudio" type="button" class="rr-btn kecil" @click="nyalakanAudio">🔊 Aktifkan suara</button>
     </div>
 
@@ -237,8 +400,8 @@ async function aksi(jenis: 'keluarkan' | 'bisukan' | 'akhiri', p?: Participant) 
 
 <style scoped>
 /* Ruang rapat: layar penuh di atas layout */
-.rr { position: fixed; inset: 0; z-index: 900; display: flex; flex-direction: column; background: #0b1220; color: #e2e8f0; }
-.rr-atas { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #1e293b; flex-wrap: wrap; }
+.rr { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 900; display: flex; flex-direction: column; background: #0b1220; color: #e2e8f0; }
+.rr-atas { display: flex; align-items: center; gap: 12px; padding: 10px 16px; padding-top: max(10px, env(safe-area-inset-top)); border-bottom: 1px solid #1e293b; flex-wrap: wrap; }
 .rr-judul { font-size: 15px; }
 .rr-jumlah { font-size: 13px; color: #94a3b8; }
 .rr-status { font-size: 13px; color: #fbbf24; }
@@ -266,7 +429,7 @@ async function aksi(jenis: 'keluarkan' | 'bisukan' | 'akhiri', p?: Participant) 
 .rr-tamu { margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: #78350f; color: #fde68a; font-size: 10.5px; }
 .rr-aksi button { background: #1e293b; border: none; border-radius: 6px; padding: 4px 8px; cursor: pointer; margin-left: 4px; }
 .rr-aksi button:disabled { opacity: .35; cursor: default; }
-.rr-kontrol { display: flex; justify-content: center; gap: 10px; padding: 12px; border-top: 1px solid #1e293b; flex-wrap: wrap; }
+.rr-kontrol { display: flex; justify-content: center; gap: 10px; padding: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #1e293b; flex-wrap: wrap; }
 .rr-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 74px; padding: 8px 10px; border-radius: 10px; border: none; background: #1e293b; color: #e2e8f0; font-size: 20px; cursor: pointer; }
 .rr-btn small { font-size: 11px; }
 .rr-btn:hover { background: #334155; }
