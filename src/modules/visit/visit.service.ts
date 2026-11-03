@@ -242,6 +242,8 @@ export class VisitService {
       },
     });
     this.logger.log(`${w.nomor_wo} → ${dto.status} oleh karyawan #${u.id_karyawan}`);
+    if (dto.status === 'Completed' && w.status_wo !== 'Completed') await this.catatLog(w, 'selesai', catatan || 'ditandai selesai dari ERP');
+    if (dto.status === 'Cancelled' && w.status_wo !== 'Cancelled') await this.catatLog(w, 'batal', catatan);
     const label: Record<string, string> = { Open: 'Dibuka kembali', In_Progress: 'Sedang dikerjakan', Completed: 'Selesai', Cancelled: 'Dibatalkan' };
     return { data: (await this.detail(id_wo)).data, message: label[dto.status] };
   }
@@ -404,6 +406,9 @@ export class VisitService {
     }
   }
   private namaTek(w: Wo) { return w.teknisi?.nama_lengkap.trim() || 'Teknisi'; }
+  private async catatLog(w: { id_wo: number; id_teknisi_internal: number | null }, aksi: string, catatan?: string | null) {
+    await this.prisma.visitLog.create({ data: { id_wo: w.id_wo, id_karyawan: w.id_teknisi_internal, aksi, catatan: catatan?.slice(0, 500) ?? null } }).catch(() => undefined);
+  }
 
   async checkin(token: string, dto: CheckinDto) {
     const w = await this.dariToken(token);
@@ -413,6 +418,12 @@ export class VisitService {
       where: { id_wo: w.id_wo },
       data: { koordinat_checkin: koordinat, checkin_at: new Date(), status_wo: 'In_Progress' },
     });
+    if (!w.checkin_at) await this.catatLog(w, 'checkin', koordinat);
+    // Site belum punya titik GPS → pakai titik check-in pertama (dasar peta store)
+    const site = await this.prisma.sitePelanggan.findUnique({ where: { id_site: w.id_site }, select: { koordinat_gps: true } });
+    if (!site?.koordinat_gps?.trim() && (dto.akurasi == null || dto.akurasi <= 100)) {
+      await this.prisma.sitePelanggan.update({ where: { id_site: w.id_site }, data: { koordinat_gps: koordinat } }).catch(() => undefined);
+    }
     if (!w.checkin_at) await this.beriTahu(w, `📍 ${this.namaTek(w)} tiba di lokasi`, `${w.site.nama_site} · ${w.nomor_wo}${dto.akurasi ? ` · akurasi GPS ±${Math.round(dto.akurasi)} m` : ''}`);
     return this.lapanganInfo(token);
   }
@@ -469,6 +480,7 @@ export class VisitService {
         catatan_teknisi: [w.catatan_teknisi, ...baris].filter(Boolean).join('\n'),
       },
     });
+    await this.catatLog(w, 'selesai', dto.catatan.trim());
     await this.beriTahu(w, `✅ Visit selesai — ${w.site.nama_site}`, `${this.namaTek(w)}: ${dto.catatan.trim().slice(0, 150)}`);
     return this.lapanganInfo(token);
   }
@@ -487,6 +499,7 @@ export class VisitService {
         catatan_teknisi: [w.catatan_teknisi, baris].filter(Boolean).join('\n'),
       },
     });
+    await this.catatLog(w, 'gagal', dto.alasan.trim());
     await this.beriTahu(w, `⚠️ Visit gagal — ${w.site.nama_site}`, `${dto.alasan.trim()} · kembali ke antrean untuk dijadwal ulang`);
     return this.lapanganInfo(token);
   }

@@ -248,6 +248,8 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
         <button class="btn btn-ghost" :disabled="memuat" @click="muat('')">Minggu ini</button>
         <span class="jv-minggu">{{ judulMinggu }}</span>
         <button class="btn btn-ghost" :disabled="memuat" @click="geser(7)">›</button>
+        <button class="btn btn-ghost" title="Statistik & peta" @click="router.push('/jadwal-visit/statistik')">📊</button>
+        <button class="btn btn-ghost" title="Maintenance rutin" @click="router.push('/jadwal-visit/maintenance')">🔁</button>
         <button class="btn btn-primary" @click="bukaBaru">+ Visit baru</button>
       </div>
     </div>

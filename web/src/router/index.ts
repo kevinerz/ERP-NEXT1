@@ -442,6 +442,16 @@ const router = createRouter({
           name: 'jadwal-visit',
           component: () => import('@/views/visit/JadwalVisitView.vue'),
         },
+        {
+          path: 'jadwal-visit/statistik',
+          name: 'visit-statistik',
+          component: () => import('@/views/visit/VisitStatistikView.vue'),
+        },
+        {
+          path: 'jadwal-visit/maintenance',
+          name: 'visit-maintenance',
+          component: () => import('@/views/visit/MaintenanceRutinView.vue'),
+        },
         // Work Order
         {
           path: 'public-wo',
@@ -485,7 +495,7 @@ const router = createRouter({
 const ROUTE_MODUL: Record<string, string> = {
   'wa-inbox': 'whatsapp', 'wa-statistik': 'whatsapp',
   'ipam': 'operations',
-  'jadwal-visit': 'operations',
+  'jadwal-visit': 'operations', 'visit-statistik': 'operations', 'visit-maintenance': 'operations',
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris', 'hris-undangan': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master', 'master-gudang': 'master',
   'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master', 'master-jenis-gangguan': 'master',

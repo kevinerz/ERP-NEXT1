@@ -767,6 +767,7 @@ model WorkOrder {
   ttd_path              String?   @db.VarChar(255) // tanda tangan PIC store saat selesai
   ttd_nama              String?   @db.VarChar(150)
   gagal_count           Int       @default(0)
+  id_aturan             Int? // dibuat otomatis oleh aturan maintenance rutin
   deskripsi_tugas       String    @db.Text
   status_wo             String    @default("Open") @db.VarChar(30)
   koordinat_checkin     String?   @db.VarChar(100)
@@ -787,6 +788,40 @@ model WorkOrder {
   @@index([status_wo, tgl_jadwal])
   @@index([id_pb])
   @@map("work_orders")
+}
+
+// Aturan maintenance rutin: tiap site cocok yang terakhir di-maintenance > interval_hari lalu
+// otomatis dibuatkan visit Maintenance di antrean (dibatasi maks_per_hari supaya tidak membanjiri antrean)
+model VisitPmAturan {
+  id_aturan      Int       @id @default(autoincrement())
+  nama           String    @db.VarChar(150)
+  id_pelanggan   Int? // null = semua pelanggan
+  kota           String?   @db.VarChar(100) // filter kota (mengandung), opsional
+  interval_hari  Int
+  maks_per_hari  Int       @default(5)
+  tgl_mulai      DateTime? // store yang belum pernah maintenance mulai jatuh tempo pada tanggal ini
+  prioritas      String    @default("Rendah") @db.VarChar(10)
+  deskripsi      String    @db.Text
+  is_aktif       Boolean   @default(true)
+  terakhir_jalan DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  @@map("visit_pm_aturan")
+}
+
+// Jejak kejadian visit (check-in, selesai, gagal) untuk KPI teknisi
+model VisitLog {
+  id_log      Int      @id @default(autoincrement())
+  id_wo       Int
+  id_karyawan Int? // teknisi
+  aksi        String   @db.VarChar(20) // checkin | selesai | gagal | batal
+  catatan     String?  @db.VarChar(500)
+  created_at  DateTime @default(now())
+
+  @@index([created_at])
+  @@index([id_wo])
+  @@map("visit_log")
 }
 
 model WoFoto {

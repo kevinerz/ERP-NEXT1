@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, IsArray, ArrayMaxSize } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, IsArray, ArrayMaxSize } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export const JENIS_VISIT = ['Perbaikan', 'Instalasi', 'Maintenance', 'Survey', 'Relokasi', 'Upgrade', 'Tarik Perangkat', 'Troubleshoot', 'Lainnya'];
@@ -66,4 +66,16 @@ export class SelesaiLapanganDto {
 export class GagalLapanganDto {
   @IsString() @MinLength(3) @MaxLength(100) alasan: string;
   @IsOptional() @IsString() @MaxLength(2000) catatan?: string;
+}
+
+export class AturanPmDto {
+  @IsString() @MinLength(3) @MaxLength(150) nama: string;
+  @IsOptional() @Type(() => Number) @IsInt() id_pelanggan?: number | null;
+  @IsOptional() @IsString() @MaxLength(100) kota?: string;
+  @Type(() => Number) @IsInt() @Min(7) @Max(730) interval_hari: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(100) maks_per_hari: number;
+  @IsOptional() @IsDateString() tgl_mulai?: string;
+  @IsOptional() @IsString() @IsIn(PRIORITAS_VISIT) prioritas?: string;
+  @IsString() @MinLength(3) @MaxLength(3000) deskripsi: string;
+  @IsOptional() @IsBoolean() is_aktif?: boolean;
 }

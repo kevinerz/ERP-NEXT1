@@ -237,6 +237,8 @@ const PAGE_TITLES: Record<string, string> = {
   "instalasi-list":       "Pemasangan",
   "instalasi-detail":     "Pemasangan — Detail",
   "jadwal-visit":         "Jadwal Visit",
+  "visit-statistik":      "Statistik & Peta Visit",
+  "visit-maintenance":    "Maintenance Rutin",
   "wo-list":              "Work Order",
   "wo-detail":            "Work Order — Detail",
   "aset-list":            "Aset",
