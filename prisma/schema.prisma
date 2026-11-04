@@ -736,6 +736,7 @@ model OperationTicket {
   photos            OperationTicketPhoto[]
   prtg_webhooks     IntegrationPrtgWebhook[]
   uptimekuma_webhooks IntegrationUptimeKumaWebhook[]
+  nocaas_pantau       NocaasTiketPantau?
 
   @@index([status_tiket])
   @@index([status_tiket, tgl_open])
@@ -1259,6 +1260,28 @@ model NocaasRouter {
   @@index([id_site])
   @@index([status])
   @@map("nocaas_router")
+}
+
+// Mode pantau (shadow): status NOCaaS dicatat saat tiket PRTG dibuat & selesai, TANPA mengubah alur tiket.
+// Dipakai untuk mengukur berapa tiket yang akan ditahan bila NOCaaS dijadikan gerbang anti alarm palsu.
+model NocaasTiketPantau {
+  id_ticket       Int       @id
+  status_buka     String    @db.VarChar(20) // online | partial | internet_ok | offline | tidak_ada | data_lama
+  site_key        String?   @db.VarChar(150)
+  umur_data_detik Int?      // umur data NOCaaS saat dicatat
+  akan_ditahan    Boolean   @default(false) // aturan gerbang: router online & data segar
+  dicatat_at      DateTime  @default(now())
+  terburuk        String?   @db.VarChar(20) // status NOCaaS terburuk selama tiket aktif
+  terburuk_at     DateTime?
+  status_selesai  String?   @db.VarChar(20)
+  selesai_at      DateTime?
+  durasi_menit    Int?      // tgl_open → tgl_resolved
+  buka_ulang      Int       @default(0)
+
+  ticket OperationTicket @relation(fields: [id_ticket], references: [id_ticket], onDelete: Cascade)
+
+  @@index([dicatat_at])
+  @@map("nocaas_tiket_pantau")
 }
 
 // Rekonsiliasi sementara nama device PRTG ↔ site ERP (halaman publik /rekon-prtg)

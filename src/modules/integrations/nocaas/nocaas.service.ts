@@ -65,6 +65,7 @@ export class NocaasService {
   async cronSinkron() {
     if (this.config.get<string>('NOCAAS_SYNC_ENABLED') === 'false') return;
     await this.sinkron().catch(() => {});
+    await this.pantau().catch((e) => this.logger.warn(`Mode pantau gagal: ${e?.message}`));
   }
 
   async sinkron() {
@@ -215,13 +216,8 @@ export class NocaasService {
     return { data: out };
   }
 
-  /** Pembanding untuk satu tiket: router site tiket + router yang IP tunnel-nya = host device PRTG tiket */
-  async pembandingTiket(id_ticket: number) {
-    const t = await this.prisma.operationTicket.findUnique({
-      where: { id_ticket },
-      select: { id_site: true, sumber_tiket: true, status_tiket: true, tgl_open: true, tgl_sensor_down: true, prtg_webhooks: { select: { prtg_device_name: true }, take: 1 } },
-    });
-    if (!t) throw new NotFoundException('Tiket tidak ditemukan');
+  /** Router site tiket + router yang IP tunnel-nya = host device PRTG tiket, status terburuk di depan */
+  private async routerUntukTiket(t: { id_site: number; prtg_webhooks: { prtg_device_name: string | null }[] }) {
     const where: any[] = [{ id_site: t.id_site }];
     const dev = t.prtg_webhooks[0]?.prtg_device_name;
     if (dev) {
@@ -230,7 +226,17 @@ export class NocaasService {
       if (ip.length) where.push({ ns_ip: { in: ip } }, { un_ip: { in: ip } });
     }
     const rows = await this.prisma.nocaasRouter.findMany({ where: { OR: where }, orderBy: { site_key: 'asc' } });
-    const routers = rows.map((r) => this.bentuk(r)).sort((a, b) => BOBOT[b.status] - BOBOT[a.status]);
+    return rows.map((r) => this.bentuk(r)).sort((a, b) => BOBOT[b.status] - BOBOT[a.status]);
+  }
+
+  /** Pembanding untuk satu tiket */
+  async pembandingTiket(id_ticket: number) {
+    const t = await this.prisma.operationTicket.findUnique({
+      where: { id_ticket },
+      select: { id_site: true, status_tiket: true, prtg_webhooks: { select: { prtg_device_name: true }, take: 1 }, nocaas_pantau: true },
+    });
+    if (!t) throw new NotFoundException('Tiket tidak ditemukan');
+    const routers = await this.routerUntukTiket(t);
     const utama = routers[0];
     return {
       data: {
@@ -238,6 +244,95 @@ export class NocaasService {
         kesimpulan: utama ? { status: utama.status, label: utama.label, saran: utama.saran } : { status: 'tidak_ada', ...KESIMPULAN.tidak_ada },
         sinkron: this.terakhir,
         tiket_aktif: STATUS_TIKET_AKTIF.includes(t.status_tiket),
+        pantau: t.nocaas_pantau,
+      },
+    };
+  }
+
+  // ── Mode pantau (shadow) ───────────────────────────────────────────────────
+  // Tidak mengubah alur tiket PRTG. Hanya mencatat apa kata NOCaaS saat tiket dibuat, selama aktif, dan saat selesai,
+  // untuk mengukur dampak bila nanti NOCaaS dijadikan gerbang (tahan tiket bila router online).
+  async pantau() {
+    const now = Date.now();
+    const umur = this.terakhir?.ok ? Math.round((now - this.terakhir.at.getTime()) / 1000) : null;
+    const segar = umur !== null && umur <= 180;
+    const pilih = { id_ticket: true, id_site: true, status_tiket: true, tgl_open: true, tgl_resolved: true, prtg_webhooks: { select: { prtg_device_name: true }, take: 1 } } as const;
+
+    // 1) Tiket PRTG baru (≤ 10 menit) yang belum dicatat
+    const baru = await this.prisma.operationTicket.findMany({
+      where: { sumber_tiket: 'PRTG', tgl_open: { gte: new Date(now - 10 * 60_000) }, nocaas_pantau: null },
+      select: pilih,
+    });
+    for (const t of baru) {
+      const r = segar ? (await this.routerUntukTiket(t))[0] : undefined;
+      const status = !segar ? 'data_lama' : r?.status ?? 'tidak_ada';
+      await this.prisma.nocaasTiketPantau.create({
+        data: {
+          id_ticket: t.id_ticket, status_buka: status, site_key: r?.site_key ?? null, umur_data_detik: umur,
+          akan_ditahan: segar && status === 'online',
+          terburuk: r ? status : null, terburuk_at: r ? new Date() : null,
+        },
+      }).catch(() => {}); // sudah dicatat proses lain
+    }
+
+    // 2) Tiket yang sedang dipantau: status terburuk selama aktif, selesai, atau dibuka ulang (flapping)
+    const dipantau = await this.prisma.nocaasTiketPantau.findMany({
+      where: { OR: [{ selesai_at: null }, { ticket: { status_tiket: { in: STATUS_TIKET_AKTIF } } }] },
+      include: { ticket: { select: pilih } },
+    });
+    for (const p of dipantau) {
+      const t = p.ticket;
+      const aktif = STATUS_TIKET_AKTIF.includes(t.status_tiket);
+      if (p.selesai_at && aktif) {
+        await this.prisma.nocaasTiketPantau.update({ where: { id_ticket: p.id_ticket }, data: { selesai_at: null, status_selesai: null, durasi_menit: null, buka_ulang: { increment: 1 } } });
+        continue;
+      }
+      const r = segar ? (await this.routerUntukTiket(t))[0] : undefined;
+      if (aktif) {
+        if (r && (!p.terburuk || BOBOT[r.status] > (BOBOT[p.terburuk] ?? -1)))
+          await this.prisma.nocaasTiketPantau.update({ where: { id_ticket: p.id_ticket }, data: { terburuk: r.status, terburuk_at: new Date() } });
+      } else if (!p.selesai_at) {
+        const selesai = t.tgl_resolved ?? new Date();
+        await this.prisma.nocaasTiketPantau.update({
+          where: { id_ticket: p.id_ticket },
+          data: { status_selesai: r?.status ?? (segar ? 'tidak_ada' : 'data_lama'), selesai_at: selesai, durasi_menit: Math.max(0, Math.round((selesai.getTime() - t.tgl_open.getTime()) / 60_000)) },
+        });
+      }
+    }
+  }
+
+  /** Laporan mode pantau: berapa tiket PRTG yang akan ditahan & apakah memang pulih sendiri */
+  async laporanPantau() {
+    const rows = await this.prisma.nocaasTiketPantau.findMany({
+      orderBy: { dicatat_at: 'desc' },
+      include: { ticket: { select: { nomor_tiket: true, judul_tiket: true, status_tiket: true, tgl_open: true, tgl_resolved: true, site: { select: { nama_site: true, kode_site: true } } } } },
+    });
+    const ditahan = rows.filter((r) => r.akan_ditahan);
+    const selesai = ditahan.filter((r) => r.durasi_menit !== null);
+    const dur = selesai.map((r) => r.durasi_menit!).sort((a, b) => a - b);
+    const median = dur.length ? (dur.length % 2 ? dur[(dur.length - 1) / 2] : Math.round((dur[dur.length / 2 - 1] + dur[dur.length / 2]) / 2)) : null;
+    const bermasalah = (r: (typeof rows)[number]) => !!r.terburuk && r.terburuk !== 'online';
+    const per: Record<string, number> = {};
+    for (const r of rows) per[r.status_buka] = (per[r.status_buka] ?? 0) + 1;
+    return {
+      data: {
+        mulai: rows.length ? rows[rows.length - 1].dicatat_at : null,
+        total: rows.length,
+        per_status: per,
+        ditahan: {
+          n: ditahan.length,
+          selesai: selesai.length,
+          pulih_15: selesai.filter((r) => r.durasi_menit! <= 15).length,
+          pulih_30: selesai.filter((r) => r.durasi_menit! <= 30).length,
+          pulih_60: selesai.filter((r) => r.durasi_menit! <= 60).length,
+          lewat_60: ditahan.filter((r) => (r.durasi_menit ?? (Date.now() - r.ticket.tgl_open.getTime()) / 60_000) > 60).length,
+          median_menit: median,
+          masih_aktif: ditahan.length - selesai.length,
+          // Risiko: router "online" saat tiket dibuat, tapi kemudian terlihat bermasalah di NOCaaS → gangguan asli
+          kemudian_bermasalah: ditahan.filter(bermasalah).length,
+          buka_ulang: ditahan.filter((r) => r.buka_ulang > 0).length,
+        },
+        tiket: rows.slice(0, 300).map((r) => ({ ...r, label_buka: KESIMPULAN[r.status_buka as StatusRouter]?.label ?? (r.status_buka === 'data_lama' ? 'Data NOCaaS lama' : 'Tidak terpetakan'), kemudian_bermasalah: r.akan_ditahan && bermasalah(r) })),
       },
     };
   }

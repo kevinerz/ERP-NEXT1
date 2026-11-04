@@ -14,6 +14,7 @@ export class NocaasController {
   @Get('ringkasan') ringkasan() { return this.svc.ringkasan(); }
   @Post('sinkron') sinkron() { return this.svc.sinkron(); }
   @Get('status-site') statusSite(@Query('ids') ids = '') { return this.svc.statusSite(ids.split(',').map(Number)); }
+  @Get('pantau') pantau() { return this.svc.laporanPantau(); }
   @Get('tiket/:id') tiket(@Param('id', ParseIntPipe) id: number) { return this.svc.pembandingTiket(id); }
   @Get('site/:id') site(@Param('id', ParseIntPipe) id: number) { return this.svc.routerSite(id); }
   @Get('belum-terpeta') belum(@Query() q: { cari?: string; page?: number }) { return this.svc.belumTerpeta(q); }
