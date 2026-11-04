@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { cariSiteDariNama } from '../../../common/utils/site-match';
 import { PrtgClient } from '../prtg/prtg.client';
+import { PencocokSaran, SiteCalon } from './nocaas-saran';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { StarsenderService } from '../starsender/starsender.service';
 import { SLA_JAM } from '../../operations/operations.service';
@@ -95,15 +96,15 @@ export class NocaasService {
       const tulis: any[] = [];
       const cacheNama = new Map<string, number | null>();
 
+      // 1) Pemetaan pasti: manual / abaikan tidak pernah ditimpa; lainnya IP tunnel → host PRTG → nama persis
+      const rencana: { x: Paired; status: StatusRouter; ns_ip: string | null; un_ip: string | null; id_site: number | null; sumber_map: string | null }[] = [];
       for (const x of items) {
         if (!x.site_key) continue;
         const status = NocaasService.hitungStatus(x);
         const ns_ip = x.ns?.tunnel_ip || null, un_ip = x.un?.tunnel_ip || null;
         const r = byKey.get(x.site_key);
-
-        // Pemetaan site: manual tidak pernah ditimpa
         let id_site: number | null = r?.id_site ?? null, sumber_map: string | null = r?.sumber_map ?? null;
-        if (sumber_map !== 'manual') {
+        if (sumber_map !== 'manual' && sumber_map !== 'abaikan') {
           id_site = null; sumber_map = null;
           const viaIp = (ns_ip && ipSite.get(ns_ip)) || (un_ip && ipSite.get(un_ip));
           if (viaIp) { id_site = viaIp; sumber_map = 'ip_perangkat'; }
@@ -119,7 +120,22 @@ export class NocaasService {
             if (s) { id_site = s; sumber_map = 'nama'; }
           }
         }
+        rencana.push({ x, status, ns_ip, un_ip, id_site, sumber_map });
+      }
 
+      // 2) Saran yakin (brand + lokasi) untuk yang masih kosong — hanya ke site yang belum punya router,
+      //    dan satu site tidak boleh diklaim dua router (keduanya batal, masuk antrean tinjau)
+      const pencocok = await this.buatPencocok(rencana.filter((p) => p.id_site && p.sumber_map !== 'nama').map((p) => ({ site_key: p.x.site_key, id_site: p.id_site! })), new Set(rencana.filter((p) => p.id_site).map((p) => p.id_site!)));
+      const klaim = new Map<number, typeof rencana>();
+      for (const p of rencana) {
+        if (p.id_site || p.sumber_map) continue;
+        const { saran, yakin } = pencocok.cari(p.x.site_key);
+        if (yakin) klaim.set(saran[0].id_site, [...(klaim.get(saran[0].id_site) ?? []), p]);
+      }
+      for (const [id_site, ps] of klaim) if (ps.length === 1) { ps[0].id_site = id_site; ps[0].sumber_map = 'saran'; }
+
+      for (const { x, status, ns_ip, un_ip, id_site, sumber_map } of rencana) {
+        const r = byKey.get(x.site_key);
         const data = {
           nama_utama: x.primary_name || x.ns?.name || x.un?.name || null,
           id_site, sumber_map, status, ns_ip, un_ip,
@@ -161,6 +177,27 @@ export class NocaasService {
   private hbTerbaru(x: Paired) {
     const t = [x.ns?.hb_at, x.un?.hb_at].filter(Boolean).map((v) => new Date(v!).getTime());
     return t.length ? new Date(Math.max(...t)) : null;
+  }
+
+  /** Site aktif (cache 10 menit) — kandidat saran pemetaan */
+  private siteCache: { exp: number; rows: SiteCalon[] } | null = null;
+  private async siteAktif() {
+    if (!this.siteCache || this.siteCache.exp < Date.now()) {
+      const rows = await this.prisma.sitePelanggan.findMany({ where: { status_site: 'Aktif' }, select: { id_site: true, id_pelanggan: true, nama_site: true, kode_site: true, kota: true } });
+      this.siteCache = { exp: Date.now() + 10 * 60_000, rows };
+    }
+    return this.siteCache.rows;
+  }
+
+  /** @param pasti pasangan router↔site yang pasti (untuk belajar brand) · @param terpakai site yang sudah punya router */
+  private async buatPencocok(pasti: { site_key: string; id_site: number }[], terpakai: Set<number>) {
+    const site = await this.siteAktif();
+    const pel = new Map(site.map((s) => [s.id_site, s.id_pelanggan]));
+    return new PencocokSaran(
+      pasti.filter((p) => pel.has(p.id_site)).map((p) => ({ site_key: p.site_key, id_site: p.id_site, id_pelanggan: pel.get(p.id_site)! })),
+      site.filter((s) => !terpakai.has(s.id_site)),
+      site,
+    );
   }
 
   /** IP tunnel yang tercatat di perangkat site (site aktif) → id_site; IP yang dipakai >1 site diabaikan */
@@ -477,8 +514,9 @@ export class NocaasService {
         tanpa_tiket: tanpaTiket,
         pemetaan: {
           router: per(() => true),
-          terpeta: per((g) => !!g.sumber_map),
-          per_sumber: ['ip_perangkat', 'prtg_host', 'nama', 'manual'].map((s) => ({ sumber: s, n: per((g) => g.sumber_map === s) })),
+          terpeta: per((g) => !!g.sumber_map && g.sumber_map !== 'abaikan'),
+          per_sumber: ['ip_perangkat', 'prtg_host', 'nama', 'saran', 'manual'].map((s) => ({ sumber: s, n: per((g) => g.sumber_map === s) })),
+          abaikan: per((g) => g.sumber_map === 'abaikan'),
           belum: per((g) => !g.sumber_map),
           site_aktif: total,
           site_terpeta: siteTerpeta.length,
@@ -488,14 +526,47 @@ export class NocaasService {
     };
   }
 
-  async belumTerpeta(q: { cari?: string; page?: number }) {
+  // ── Tinjau pemetaan ────────────────────────────────────────────────────────
+  private pencocokTinjau: { exp: number; p: PencocokSaran } | null = null;
+  private async pencocokUntukTinjau() {
+    if (this.pencocokTinjau && this.pencocokTinjau.exp > Date.now()) return this.pencocokTinjau.p;
+    const rows = await this.prisma.nocaasRouter.findMany({ where: { id_site: { not: null } }, select: { site_key: true, id_site: true, sumber_map: true } });
+    const p = await this.buatPencocok(
+      rows.filter((r) => ['ip_perangkat', 'prtg_host', 'manual'].includes(r.sumber_map ?? '')).map((r) => ({ site_key: r.site_key, id_site: r.id_site! })),
+      new Set(rows.map((r) => r.id_site!)),
+    );
+    this.pencocokTinjau = { exp: Date.now() + 2 * 60_000, p };
+    return p;
+  }
+
+  /**
+   * Antrean tinjau: jenis 'belum' (belum terpetakan, dengan 3 saran site — urut skor tertinggi dulu),
+   * 'saran' (dipetakan otomatis dari saran — periksa), 'abaikan' (ditandai tidak punya site ERP)
+   */
+  async tinjau(q: { cari?: string; page?: number; jenis?: string }) {
+    const jenis = ['belum', 'saran', 'abaikan'].includes(q.jenis ?? '') ? q.jenis! : 'belum';
     const page = Math.max(1, Number(q.page) || 1), take = 50;
-    const where: any = { sumber_map: null, ...(q.cari ? { OR: [{ site_key: { contains: q.cari } }, { ns_ip: { contains: q.cari } }, { un_ip: { contains: q.cari } }] } : {}) };
-    const [data, total] = await Promise.all([
-      this.prisma.nocaasRouter.findMany({ where, orderBy: { site_key: 'asc' }, skip: (page - 1) * take, take }),
-      this.prisma.nocaasRouter.count({ where }),
+    const cari = q.cari?.trim();
+    const where: any = {
+      sumber_map: jenis === 'belum' ? null : jenis,
+      ...(cari ? { OR: [{ site_key: { contains: cari } }, { ns_ip: { contains: cari } }, { un_ip: { contains: cari } }] } : {}),
+    };
+    const [rows, jumlah] = await Promise.all([
+      this.prisma.nocaasRouter.findMany({ where, orderBy: { site_key: 'asc' }, include: { site: { select: { nama_site: true, kode_site: true, kota: true, pelanggan: { select: { nama_pelanggan: true } } } } } }),
+      this.prisma.nocaasRouter.groupBy({ by: ['sumber_map'], where: { sumber_map: { in: ['saran', 'abaikan'] } }, _count: { _all: true } }),
     ]);
-    return { data: data.map((r) => this.bentuk(r)), meta: { total, page, pages: Math.ceil(total / take) } };
+    let data: any[] = rows.map((r) => this.bentuk(r));
+    if (jenis === 'belum') {
+      const p = await this.pencocokUntukTinjau();
+      data = data.map((r) => ({ ...r, saran: p.cari(r.site_key).saran }))
+        .sort((a, b) => (b.saran[0]?.skor ?? 0) - (a.saran[0]?.skor ?? 0) || a.site_key.localeCompare(b.site_key));
+    }
+    const n = (s: string) => jumlah.find((j) => j.sumber_map === s)?._count._all ?? 0;
+    const belum = jenis === 'belum' && !cari ? rows.length : await this.prisma.nocaasRouter.count({ where: { sumber_map: null } });
+    return {
+      data: data.slice((page - 1) * take, page * take),
+      meta: { total: data.length, page, pages: Math.max(1, Math.ceil(data.length / take)), jumlah: { belum, saran: n('saran'), abaikan: n('abaikan') } },
+    };
   }
 
   /** Router milik satu site (detail site / pemetaan) */
@@ -504,15 +575,18 @@ export class NocaasService {
     return { data: rows.map((r) => this.bentuk(r)) };
   }
 
-  async petakan(site_key: string, id_site: number | null) {
+  /** id_site → petakan manual · abaikan → router tidak punya site ERP · keduanya kosong → kembalikan ke otomatis */
+  async petakan(site_key: string, id_site: number | null, abaikan = false) {
     const r = await this.prisma.nocaasRouter.findUnique({ where: { site_key } });
     if (!r) throw new NotFoundException('Router tidak ditemukan');
     if (id_site) {
       const s = await this.prisma.sitePelanggan.findUnique({ where: { id_site }, select: { id_site: true } });
       if (!s) throw new BadRequestException('Site tidak ditemukan');
     }
-    // Lepas pemetaan manual → dicocokkan otomatis lagi pada sinkron berikutnya
-    await this.prisma.nocaasRouter.update({ where: { site_key }, data: id_site ? { id_site, sumber_map: 'manual' } : { id_site: null, sumber_map: null } });
-    return { message: id_site ? 'Router dipetakan ke site' : 'Pemetaan dilepas (akan dicocokkan otomatis lagi)' };
+    const data = id_site ? { id_site, sumber_map: 'manual' } : abaikan ? { id_site: null, sumber_map: 'abaikan' } : { id_site: null, sumber_map: null };
+    await this.prisma.nocaasRouter.update({ where: { site_key }, data });
+    this.pencocokTinjau = null;
+    return { message: id_site ? 'Router dipetakan ke site' : abaikan ? 'Router ditandai tidak punya site ERP' : 'Dikembalikan ke pencocokan otomatis' };
   }
+
 }

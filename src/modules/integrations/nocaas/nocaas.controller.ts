@@ -5,6 +5,7 @@ import { NocaasService } from './nocaas.service';
 
 class PetakanDto {
   @IsOptional() @IsInt() @Min(1) id_site?: number | null;
+  @IsOptional() @IsBoolean() abaikan?: boolean;
 }
 
 class KonfigurasiDto {
@@ -27,7 +28,7 @@ export class NocaasController {
   @Put('konfigurasi') @Roles('Admin', 'Director', 'Manager_Ops') ubahKonfigurasi(@Body() dto: KonfigurasiDto) { return this.svc.ubahKonfigurasi(dto); }
   @Get('tiket/:id') tiket(@Param('id', ParseIntPipe) id: number) { return this.svc.pembandingTiket(id); }
   @Get('site/:id') site(@Param('id', ParseIntPipe) id: number) { return this.svc.routerSite(id); }
-  @Get('belum-terpeta') belum(@Query() q: { cari?: string; page?: number }) { return this.svc.belumTerpeta(q); }
+  @Get('tinjau') tinjau(@Query() q: { cari?: string; page?: number; jenis?: string }) { return this.svc.tinjau(q); }
   @Get('router/:key/kejadian') kejadian(@Param('key') key: string, @Query('jam') jam?: string) { return this.svc.kejadian(key, Number(jam) || 72); }
-  @Put('router/:key/site') petakan(@Param('key') key: string, @Body() dto: PetakanDto) { return this.svc.petakan(key, dto.id_site ?? null); }
+  @Put('router/:key/site') petakan(@Param('key') key: string, @Body() dto: PetakanDto) { return this.svc.petakan(key, dto.id_site ?? null, !!dto.abaikan); }
 }

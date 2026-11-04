@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Pembanding tiket gangguan (PRTG / WA / internal) dengan status router dari NOCaaS
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateTime } from '@/composables/useFormat'
@@ -8,7 +8,7 @@ import { alertError } from '@/composables/useDialog'
 
 const router = useRouter()
 const WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', offline: '#dc2626' }
-const SUMBER: Record<string, string> = { ip_perangkat: 'IP tunnel di perangkat site', prtg_host: 'Host device PRTG', nama: 'Kemiripan nama', manual: 'Manual' }
+const SUMBER: Record<string, string> = { ip_perangkat: 'IP tunnel di perangkat site', prtg_host: 'Host device PRTG', nama: 'Nama persis', saran: 'Saran otomatis (brand + lokasi)', manual: 'Manual' }
 
 const data = ref<any>(null)
 const memuat = ref(false)
@@ -39,7 +39,7 @@ async function muat() {
 }
 async function sinkronSekarang() {
   sinkron.value = true
-  try { await api.post('/nocaas/sinkron'); await muat(); if (tab.value === 'belum') muatBelum() } catch (e) { alertError(e, 'Sinkron gagal') } finally { sinkron.value = false }
+  try { await api.post('/nocaas/sinkron'); await muat(); if (tab.value === 'belum') muatBelum(belumMeta.value.page) } catch (e) { alertError(e, 'Sinkron gagal') } finally { sinkron.value = false }
 }
 let timer: ReturnType<typeof setInterval> | undefined
 onMounted(() => { muat(); muatCfg(); timer = setInterval(muat, 60_000) })
@@ -60,18 +60,40 @@ const tiketAlarmPalsu = computed(() => tiket.value.filter((t) => t.nocaas?.statu
 const tanpaTiket = computed(() => ((data.value?.tanpa_tiket ?? []) as any[]).filter((r) =>
   (!filterTanpa.value || r.status === filterTanpa.value) && Date.now() - new Date(sejak(r)).getTime() >= minMenit.value * 60000))
 
-// ── Belum terpetakan ─────────────────────────────────────────────────────────
+// ── Tinjau pemetaan router → site ────────────────────────────────────────────
+type Jenis = 'belum' | 'saran' | 'abaikan'
+const jenis = ref<Jenis>('belum')
 const belum = ref<any[]>([])
-const belumMeta = ref({ total: 0, page: 1, pages: 1 })
+const belumMeta = ref({ total: 0, page: 1, pages: 1, jumlah: { belum: 0, saran: 0, abaikan: 0 } })
 const cariBelum = ref('')
+const fokus = ref(0)
+const sibuk = ref(false)
 async function muatBelum(page = 1) {
   try {
-    const r = (await api.get('/nocaas/belum-terpeta', { params: { cari: cariBelum.value || undefined, page } })).data
-    belum.value = r.data; belumMeta.value = r.meta
+    const r = (await api.get('/nocaas/tinjau', { params: { jenis: jenis.value, cari: cariBelum.value || undefined, page } })).data
+    belum.value = r.data; belumMeta.value = r.meta; fokus.value = 0
   } catch (e) { alertError(e) }
 }
+function gantiJenis(j: Jenis) { jenis.value = j; petaKey.value = ''; muatBelum(1) }
 function bukaTab(t: typeof tab.value) { tab.value = t; if (t === 'belum' && !belum.value.length) muatBelum() }
+const persen = (skor: number) => Math.min(100, Math.round(skor * 100))
 
+async function aksiPeta(key: string, body: { id_site?: number; abaikan?: boolean }) {
+  if (sibuk.value) return
+  sibuk.value = true
+  try {
+    await api.put(`/nocaas/router/${encodeURIComponent(key)}/site`, body)
+    belum.value = belum.value.filter((b) => b.site_key !== key)
+    // Site yang baru dipakai tidak boleh disarankan lagi ke router lain
+    if (body.id_site) for (const b of belum.value) if (b.saran) b.saran = b.saran.filter((x: any) => x.id_site !== body.id_site)
+    belumMeta.value.total--
+    const j = belumMeta.value.jumlah as Record<string, number>
+    if ((j[jenis.value] ?? 0) > 0) j[jenis.value] = j[jenis.value]! - 1
+    if (fokus.value >= belum.value.length) fokus.value = Math.max(0, belum.value.length - 1)
+    petaKey.value = ''
+    if (!belum.value.length && belumMeta.value.total > 0) muatBelum(belumMeta.value.page)
+  } catch (e) { alertError(e) } finally { sibuk.value = false }
+}
 
 const petaKey = ref('')
 const petaCari = ref('')
@@ -86,18 +108,31 @@ function cariSite() {
 }
 function mulaiPeta(r: any) {
   petaKey.value = r.site_key
-  petaCari.value = r.site_key.replace(/[-_]+/g, ' ').trim()
+  petaCari.value = r.site_key.replace(/^[-_]+/, '').split(/[-_]+/).slice(1).join(' ') || r.site_key
+  petaHasil.value = []
   cariSite()
 }
-async function simpanPeta(id_site: number) {
-  try {
-    await api.put(`/nocaas/router/${encodeURIComponent(petaKey.value)}/site`, { id_site })
-    belum.value = belum.value.filter((b) => b.site_key !== petaKey.value)
-    belumMeta.value.total--
-    petaKey.value = ''
-    muat()
-  } catch (e) { alertError(e) }
+function simpanPeta(id_site: number) { return aksiPeta(petaKey.value, { id_site }) }
+
+// Pintasan keyboard (antrean "belum"): 1/2/3 pilih saran · 0 tidak ada site · J/K atau ↓/↑ pindah · L cari site lain
+function onKey(e: KeyboardEvent) {
+  if (tab.value !== 'belum' || jenis.value !== 'belum' || !belum.value.length) return
+  const el = e.target as HTMLElement
+  if (el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName)) return
+  const r = belum.value[fokus.value]
+  if (!r) return
+  const k = e.key.toLowerCase()
+  if (['1', '2', '3'].includes(k)) { const s = r.saran?.[Number(k) - 1]; if (s) aksiPeta(r.site_key, { id_site: s.id_site }) }
+  else if (k === '0') aksiPeta(r.site_key, { abaikan: true })
+  else if (k === 'j' || k === 'arrowdown') fokus.value = Math.min(belum.value.length - 1, fokus.value + 1)
+  else if (k === 'k' || k === 'arrowup') fokus.value = Math.max(0, fokus.value - 1)
+  else if (k === 'l') mulaiPeta(r)
+  else return
+  e.preventDefault()
+  nextTick(() => document.querySelector('.nc-fokus')?.scrollIntoView({ block: 'nearest' }))
 }
+onMounted(() => window.addEventListener('keydown', onKey))
+onUnmounted(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
@@ -155,7 +190,7 @@ async function simpanPeta(id_site: number) {
       <div class="nc-tab">
         <button :class="{ aktif: tab === 'tiket' }" @click="bukaTab('tiket')">Tiket aktif ({{ tiket.length }})</button>
         <button :class="{ aktif: tab === 'tanpa' }" @click="bukaTab('tanpa')">Gangguan tanpa tiket ({{ data.tanpa_tiket.length }})</button>
-        <button :class="{ aktif: tab === 'belum' }" @click="bukaTab('belum')">Router belum terpetakan ({{ data.pemetaan.belum }})</button>
+        <button :class="{ aktif: tab === 'belum' }" @click="bukaTab('belum')">Tinjau pemetaan ({{ data.pemetaan.belum }})</button>
       </div>
 
       <!-- Tiket aktif vs NOCaaS -->
@@ -220,32 +255,73 @@ async function simpanPeta(id_site: number) {
         </div>
       </div>
 
-      <!-- Pemetaan -->
+      <!-- Tinjau pemetaan -->
       <div v-else class="card nc-panel">
         <p class="nc-catatan">
-          Router dicocokkan otomatis ke site lewat:
+          Terpetakan:
           <template v-for="(p, i) in data.pemetaan.per_sumber" :key="p.sumber">{{ i ? ' · ' : ' ' }}{{ SUMBER[p.sumber] }} <b>{{ p.n }}</b></template>.
-          Sisanya petakan manual — pemetaan manual tidak akan ditimpa sinkronisasi.
+          Pilihan di sini disimpan sebagai <b>manual</b> dan tidak akan ditimpa sinkronisasi.
         </p>
         <div class="nc-filter">
+          <div class="nc-jenis">
+            <button :class="{ aktif: jenis === 'belum' }" @click="gantiJenis('belum')">Belum terpetakan ({{ belumMeta.jumlah.belum }})</button>
+            <button :class="{ aktif: jenis === 'saran' }" @click="gantiJenis('saran')">Otomatis dari saran — periksa ({{ belumMeta.jumlah.saran }})</button>
+            <button :class="{ aktif: jenis === 'abaikan' }" @click="gantiJenis('abaikan')">Tidak ada site ({{ belumMeta.jumlah.abaikan }})</button>
+          </div>
           <input v-model="cariBelum" class="form-input" placeholder="Cari nama router / IP tunnel…" @keyup.enter="muatBelum(1)" />
-          <button class="btn btn-ghost" @click="muatBelum(1)">Cari</button>
-          <span class="muted">{{ belumMeta.total }} router</span>
+          <button class="btn btn-ghost btn-sm" @click="muatBelum(1)">Cari</button>
         </div>
+        <p v-if="jenis === 'belum'" class="nc-catatan nc-pintas">
+          Urut dari saran paling yakin. Keyboard: <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pilih saran · <kbd>0</kbd> tidak ada site ·
+          <kbd>J</kbd>/<kbd>K</kbd> pindah baris · <kbd>L</kbd> cari site lain.
+        </p>
         <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Router NOCaaS</th><th>IP tunnel</th><th>Status</th><th>Internet</th><th></th></tr></thead>
+          <table class="data-table nc-tinjau">
+            <thead>
+              <tr v-if="jenis === 'belum'"><th style="width:30%">Router NOCaaS</th><th>Saran site ERP</th><th style="width:150px"></th></tr>
+              <tr v-else><th style="width:30%">Router NOCaaS</th><th>Site ERP</th><th style="width:220px"></th></tr>
+            </thead>
             <tbody>
-              <template v-for="r in belum" :key="r.site_key">
-                <tr>
-                  <td class="mono">{{ r.site_key }}</td>
-                  <td class="mono">{{ [r.ns_ip, r.un_ip].filter(Boolean).join(' · ') }}</td>
-                  <td><span class="nc-status" :style="{ color: WARNA[r.status], borderColor: WARNA[r.status] }">{{ r.label }}</span></td>
-                  <td>{{ r.access_isp || '—' }}</td>
-                  <td><button class="btn btn-ghost btn-sm" @click="petaKey === r.site_key ? (petaKey = '') : mulaiPeta(r)">{{ petaKey === r.site_key ? 'Batal' : 'Petakan' }}</button></td>
+              <tr v-if="!belum.length"><td colspan="3" class="muted nc-kosong">Tidak ada router di sini.</td></tr>
+              <template v-for="(r, i) in belum" :key="r.site_key">
+                <tr :class="{ 'nc-fokus': jenis === 'belum' && i === fokus }" @click="fokus = i">
+                  <td>
+                    <div class="mono nc-rkey">{{ r.site_key }}</div>
+                    <div class="muted mono">{{ [r.ns_ip, r.un_ip].filter(Boolean).join(' · ') }}</div>
+                    <div class="muted"><span :style="{ color: WARNA[r.status] }">●</span> {{ r.label }} · {{ r.access_isp || '—' }}</div>
+                  </td>
+                  <td v-if="jenis === 'belum'">
+                    <div v-if="r.saran?.length" class="nc-saran-list">
+                      <button v-for="(s, n) in r.saran" :key="s.id_site" type="button" class="nc-saran-btn" :disabled="sibuk" @click.stop="aksiPeta(r.site_key, { id_site: s.id_site })">
+                        <kbd>{{ n + 1 }}</kbd>
+                        <span class="nc-saran-nama">{{ s.nama_site }}<small>{{ s.kode_site }}<template v-if="s.kota"> · {{ s.kota }}</template></small></span>
+                        <span class="nc-skor" :class="{ tinggi: persen(s.skor) >= 75, sedang: persen(s.skor) >= 50 && persen(s.skor) < 75 }">{{ persen(s.skor) }}%</span>
+                      </button>
+                    </div>
+                    <span v-else class="muted">Tidak ada saran — cari manual.</span>
+                  </td>
+                  <td v-else>
+                    <template v-if="r.site">{{ r.site.nama_site }}<div class="muted">{{ r.site.kode_site }} · {{ r.site.pelanggan?.nama_pelanggan }} · {{ r.site.kota }}</div></template>
+                    <span v-else class="muted">—</span>
+                  </td>
+                  <td class="nc-aksi">
+                    <template v-if="jenis === 'belum'">
+                      <button class="btn btn-ghost btn-sm" @click.stop="petaKey === r.site_key ? (petaKey = '') : mulaiPeta(r)">{{ petaKey === r.site_key ? 'Tutup' : 'Cari lain' }}</button>
+                      <button class="btn btn-ghost btn-sm" :disabled="sibuk" title="Router ini tidak punya site di ERP (tutup / bukan pelanggan)" @click.stop="aksiPeta(r.site_key, { abaikan: true })">Tidak ada</button>
+                    </template>
+                    <template v-else-if="jenis === 'saran'">
+                      <button class="btn btn-primary btn-sm" :disabled="sibuk" @click.stop="aksiPeta(r.site_key, { id_site: r.id_site })">✓ Benar</button>
+                      <button class="btn btn-ghost btn-sm" @click.stop="petaKey === r.site_key ? (petaKey = '') : mulaiPeta(r)">Ganti</button>
+                      <button class="btn btn-ghost btn-sm" :disabled="sibuk" @click.stop="aksiPeta(r.site_key, { abaikan: true })">Tidak ada</button>
+                    </template>
+                    <template v-else>
+                      <button class="btn btn-ghost btn-sm" :disabled="sibuk" title="Kembalikan ke pencocokan otomatis" @click.stop="aksiPeta(r.site_key, {})">Kembalikan</button>
+                      <button class="btn btn-ghost btn-sm" @click.stop="petaKey === r.site_key ? (petaKey = '') : mulaiPeta(r)">Petakan</button>
+                    </template>
+                  </td>
                 </tr>
                 <tr v-if="petaKey === r.site_key">
-                  <td colspan="5" class="nc-peta">
+                  <td colspan="3" class="nc-peta">
                     <input v-model="petaCari" class="form-input" placeholder="Cari site ERP (nama / kode / pelanggan)…" @input="cariSite" />
                     <div v-for="s in petaHasil" :key="s.id_site" class="nc-pilih" @click="simpanPeta(s.id_site)">
                       <b>{{ s.nama_site }}</b> <span class="muted">{{ s.kode_site }} · {{ s.pelanggan?.nama_pelanggan }} · {{ s.kota }}<template v-if="s.status_site !== 'Aktif'"> · {{ s.status_site }}</template></span>
@@ -259,7 +335,7 @@ async function simpanPeta(id_site: number) {
         </div>
         <div v-if="belumMeta.pages > 1" class="nc-halaman">
           <button class="btn btn-ghost btn-sm" :disabled="belumMeta.page <= 1" @click="muatBelum(belumMeta.page - 1)">‹</button>
-          <span class="muted">{{ belumMeta.page }} / {{ belumMeta.pages }}</span>
+          <span class="muted">{{ belumMeta.page }} / {{ belumMeta.pages }} · {{ belumMeta.total }} router</span>
           <button class="btn btn-ghost btn-sm" :disabled="belumMeta.page >= belumMeta.pages" @click="muatBelum(belumMeta.page + 1)">›</button>
         </div>
       </div>
@@ -287,7 +363,25 @@ async function simpanPeta(id_site: number) {
 .nc-panel > .nc-catatan, .nc-panel > .nc-filter { margin: 0; padding: 12px 16px 0; }
 .nc-panel > .nc-filter + .nc-catatan, .nc-panel > .nc-catatan + .nc-filter { padding-top: 8px; }
 .nc-panel > .table-wrap { margin-top: 12px; border-top: 1px solid var(--border); }
-.nc-panel > .nc-halaman { padding: 0 16px 12px; }
+.nc-panel > .nc-jenis { display: flex; gap: 4px; flex-wrap: wrap; }
+.nc-jenis button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: #f8fafc; cursor: pointer; font-size: 12.5px; font-weight: 600; }
+.nc-jenis button.aktif { background: #0f172a; color: #fff; border-color: #0f172a; }
+.nc-pintas kbd, .nc-saran-btn kbd { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid #cbd5e1; border-bottom-width: 2px; border-radius: 4px; background: #fff; font-size: 11px; font-family: monospace; text-align: center; color: #334155; }
+.nc-tinjau td { vertical-align: top; }
+.nc-tinjau tr.nc-fokus td { background: #eff6ff; }
+.nc-tinjau tr.nc-fokus td:first-child { box-shadow: inset 3px 0 0 #2563eb; }
+.nc-rkey { font-weight: 700; color: #0f172a; word-break: break-all; }
+.nc-saran-list { display: flex; flex-direction: column; gap: 4px; }
+.nc-saran-btn { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; background: #fff; cursor: pointer; font-size: 13px; }
+.nc-saran-btn:hover:not(:disabled) { border-color: #2563eb; background: #eff6ff; }
+.nc-saran-nama { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.nc-saran-nama small { color: #64748b; font-size: 11.5px; }
+.nc-skor { font-size: 11.5px; font-weight: 700; color: #64748b; font-variant-numeric: tabular-nums; }
+.nc-skor.tinggi { color: #15803d; }
+.nc-skor.sedang { color: #b45309; }
+.nc-aksi { white-space: nowrap; text-align: right; }
+.nc-aksi .btn + .btn { margin-left: 4px; }
+.nc-halaman { padding: 0 16px 12px; }
 .nc-kosong { text-align: center; padding: 28px 0 !important; }
 .nc-filter { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .nc-filter .form-select, .nc-filter .form-input { width: auto; min-width: 200px; }
