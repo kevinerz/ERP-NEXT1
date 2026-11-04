@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import api from '@/services/api'
 import { useRouter } from 'vue-router'
 import { useOperationsStore } from '@/stores/operations'
 import { useMasterStore } from '@/stores/master'
@@ -63,6 +64,19 @@ function fetchData() {
   if (search.value)          params.search        = search.value
   ops.fetchList(params)
 }
+// Status router NOCaaS saat ini untuk tiket aktif (pembanding alarm PRTG)
+const AKTIF = ['Open', 'In_Progress', 'Pending_Customer']
+const NOC_WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', offline: '#dc2626' }
+const nocStatus = ref<Record<number, { status: string; label: string }>>({})
+watch(() => ops.list, async (list) => {
+  const ids = [...new Set((list || []).filter((t: any) => AKTIF.includes(t.status_tiket)).map((t: any) => t.id_site))]
+  if (!ids.length) return
+  try {
+    const { data } = await api.get('/nocaas/status-site', { params: { ids: ids.join(',') } })
+    nocStatus.value = { ...nocStatus.value, ...data.data }
+  } catch { /* NOCaaS opsional */ }
+})
+function nocDari(t: any) { return AKTIF.includes(t.status_tiket) ? nocStatus.value[t.id_site] : undefined }
 function doFilter() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
@@ -221,6 +235,11 @@ function rowClass(t: any) {
             <td>
               <div class="site-name">{{ t.site?.nama_site || '—' }}</div>
               <div class="pelanggan">{{ t.site?.pelanggan?.nama_pelanggan }}</div>
+              <span
+                v-if="nocDari(t)"
+                class="noc-badge" :style="{ color: NOC_WARNA[nocDari(t)!.status], borderColor: NOC_WARNA[nocDari(t)!.status] }"
+                title="Status router saat ini menurut NOCaaS"
+              >🛰️ {{ nocDari(t)!.label }}</span>
             </td>
             <td>
               <span
@@ -450,4 +469,5 @@ td { padding: 11px 13px; font-size: 13.5px; color: #0f172a; vertical-align: midd
   .right-filters .filter-select { flex: 1; min-width: 140px; }
   .table-foot { flex-wrap: wrap; gap: 8px; }
 }
+.noc-badge { display: inline-block; margin-top: 3px; font-size: 11px; font-weight: 700; padding: 1px 7px; border: 1px solid; border-radius: 999px; background: #fff; white-space: nowrap; }
 </style>

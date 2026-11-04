@@ -387,6 +387,7 @@ model SitePelanggan {
   invoices        Invoice[]
   ip_alokasi      IpAlokasi[]
   prtg_mapping       IntegrationPrtgMapping[]
+  nocaas_router      NocaasRouter[]
   uptimekuma_mapping IntegrationUptimeKumaMapping[]
   instalasi_orders   InstalasiOrder[]
   dokumen            SiteDokumen[]
@@ -1227,6 +1228,37 @@ model IntegrationPrtgMapping {
   site SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
 
   @@map("integration_prtg_mapping")
+}
+
+// Status router pelanggan dari NOCaaS (aplikasi NOC terpisah, 192.168.200.225) — disinkron tiap menit,
+// dipakai sebagai pembanding tiket gangguan PRTG. Satu baris = satu router fisik (site_key NOCaaS,
+// tunnel NS-/UN- digabung). id_site dicocokkan otomatis (IP tunnel di perangkat site / host PRTG / nama)
+// atau manual (sumber_map 'manual' tidak pernah ditimpa sinkronisasi).
+model NocaasRouter {
+  site_key      String    @id @db.VarChar(150)
+  nama_utama    String?   @db.VarChar(160) // nama device NOCaaS (dengan prefix NS-/UN-), dipakai untuk riwayat kejadian
+  id_site       Int?
+  sumber_map    String?   @db.VarChar(20) // ip_perangkat | prtg_host | nama | manual
+  status        String    @db.VarChar(20) // online | partial | internet_ok | offline
+  ns_ip         String?   @db.VarChar(45)
+  un_ip         String?   @db.VarChar(45)
+  ns_online     Boolean?
+  un_online     Boolean?
+  offline_since DateTime?
+  status_sejak  DateTime  @default(now()) // kapan status di atas mulai berlaku (dicatat ERP)
+  hb_at         DateTime?
+  public_ip     String?   @db.VarChar(45)
+  access_isp    String?   @db.VarChar(100)
+  brand         String?   @db.VarChar(20)
+  downs7        Int       @default(0)
+  flaps24       Int       @default(0)
+  updated_at    DateTime  @updatedAt
+
+  site SitePelanggan? @relation(fields: [id_site], references: [id_site], onDelete: SetNull)
+
+  @@index([id_site])
+  @@index([status])
+  @@map("nocaas_router")
 }
 
 // Rekonsiliasi sementara nama device PRTG ↔ site ERP (halaman publik /rekon-prtg)

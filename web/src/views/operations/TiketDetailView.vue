@@ -100,6 +100,44 @@ const timelineEvents = computed(() => {
   return events.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
 })
 
+// ── NOCaaS (pembanding status router) ───────────────────────
+const noc = ref<any>(null)
+const nocLoading = ref(false)
+const nocError = ref('')
+const nocKejadian = ref<Record<string, any[] | 'memuat' | string>>({})
+const NOC_WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', offline: '#dc2626', tidak_ada: '#64748b' }
+const NOC_KEJADIAN: Record<string, string> = { tunnel_up: 'VPN tersambung', tunnel_down: 'VPN putus', link_up: 'Port naik', link_down: 'Port turun', reboot: 'Reboot' }
+async function fetchNoc() {
+  nocLoading.value = true
+  nocError.value = ''
+  try {
+    const { data } = await api.get(`/nocaas/tiket/${id}`)
+    noc.value = data.data
+  } catch (e: any) {
+    nocError.value = e?.response?.data?.message || 'Gagal memuat status NOCaaS'
+  } finally {
+    nocLoading.value = false
+  }
+}
+async function toggleNocKejadian(key: string) {
+  if (nocKejadian.value[key]) { delete nocKejadian.value[key]; return }
+  nocKejadian.value[key] = 'memuat'
+  try {
+    const { data } = await api.get(`/nocaas/router/${encodeURIComponent(key)}/kejadian`, { params: { jam: 72 } })
+    nocKejadian.value[key] = data.data
+  } catch (e: any) {
+    nocKejadian.value[key] = e?.response?.data?.message || 'Gagal memuat riwayat'
+  }
+}
+function nocSejak(d?: string | null) {
+  if (!d) return ''
+  const m = Math.round((Date.now() - new Date(d).getTime()) / 60000)
+  if (m < 1) return 'baru saja'
+  if (m < 60) return `${m} menit`
+  if (m < 48 * 60) return `${Math.floor(m / 60)} jam ${m % 60} menit`
+  return `${Math.floor(m / 1440)} hari`
+}
+
 // ── PRTG ─────────────────────────────────────────────────────
 const prtgDeviceName = ref('')
 const prtgSensors = ref<any[]>([])
@@ -320,7 +358,7 @@ onMounted(async () => {
   await fetchTeknisiLokasi()
   if (unmounted) return
   lokasiInterval = setInterval(fetchTeknisiLokasi, 15000)
-  await Promise.all([fetchPrtgSensors(), fetchPrtgTicketEvents()])
+  await Promise.all([fetchPrtgSensors(), fetchPrtgTicketEvents(), fetchNoc()])
   if (unmounted) return
   startGraphRefresh()
 })
@@ -766,6 +804,63 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
               </div>
               <div class="wo-status" :style="{ color: WO_STATUS_COLOR[wo.status_wo] }">{{ wo.status_wo }}</div>
             </div>
+          </div>
+
+          <!-- ── PEMBANDING NOCaaS ───────────────────────────── -->
+          <div class="prtg-card noc-card">
+            <div class="prtg-hdr">
+              <div class="prtg-hdr-left">
+                <span class="prtg-icon">🛰️</span>
+                <div>
+                  <div class="prtg-title">Pembanding NOCaaS</div>
+                  <div class="prtg-device-name text-gray">Status router dari NOCaaS (VPN NS/UN + heartbeat syslog)</div>
+                </div>
+              </div>
+              <button class="btn-refresh-prtg" @click="fetchNoc" :disabled="nocLoading" title="Refresh">
+                <span :class="{ spinning: nocLoading }">↻</span>
+              </button>
+            </div>
+            <div v-if="nocLoading && !noc" class="prtg-loading">Memuat status NOCaaS...</div>
+            <div v-else-if="nocError" class="prtg-err">{{ nocError }}</div>
+            <template v-else-if="noc">
+              <div class="noc-kesimpulan" :style="{ borderColor: NOC_WARNA[noc.kesimpulan.status], background: NOC_WARNA[noc.kesimpulan.status] + '12' }">
+                <b :style="{ color: NOC_WARNA[noc.kesimpulan.status] }">{{ noc.kesimpulan.label }}</b>
+                <span>{{ noc.kesimpulan.saran }}</span>
+              </div>
+              <router-link v-if="!noc.routers.length" to="/nocaas" class="noc-link">Petakan router ke site ini →</router-link>
+              <div v-for="r in noc.routers" :key="r.site_key" class="noc-router">
+                <div class="noc-baris">
+                  <span class="noc-dot" :style="{ background: NOC_WARNA[r.status] }"></span>
+                  <div class="noc-info">
+                    <div class="noc-nama">{{ r.site_key }}</div>
+                    <div class="noc-sub">
+                      <b :style="{ color: NOC_WARNA[r.status] }">{{ r.label }}</b> · sejak {{ nocSejak(r.status === 'offline' && r.offline_since ? r.offline_since : r.status_sejak) }}
+                    </div>
+                    <div class="noc-tunnel">
+                      <span v-if="r.ns_ip" :class="r.ns_online ? 'on' : 'off'">NS {{ r.ns_ip }}</span>
+                      <span v-if="r.un_ip" :class="r.un_online ? 'on' : 'off'">UN {{ r.un_ip }}</span>
+                    </div>
+                    <div class="noc-sub">
+                      Internet: {{ r.access_isp || '—' }}<template v-if="r.public_ip"> · {{ r.public_ip }}</template>
+                      <template v-if="r.hb_at"> · heartbeat {{ nocSejak(r.hb_at) }} lalu</template>
+                    </div>
+                    <div class="noc-sub">Putus 7 hari: {{ r.downs7 }}× · flapping 24 jam: {{ r.flaps24 }}×</div>
+                  </div>
+                  <button type="button" class="noc-btn" @click="toggleNocKejadian(r.site_key)">{{ nocKejadian[r.site_key] ? 'Tutup' : 'Riwayat 72 jam' }}</button>
+                </div>
+                <div v-if="nocKejadian[r.site_key]" class="noc-kejadian">
+                  <div v-if="nocKejadian[r.site_key] === 'memuat'" class="prtg-loading">Memuat…</div>
+                  <div v-else-if="typeof nocKejadian[r.site_key] === 'string'" class="prtg-err">{{ nocKejadian[r.site_key] }}</div>
+                  <div v-else-if="!(nocKejadian[r.site_key] as any[]).length" class="prtg-empty">Tidak ada kejadian dalam 72 jam.</div>
+                  <div v-else v-for="(k, i) in (nocKejadian[r.site_key] as any[])" :key="i" class="noc-kj">
+                    <span class="noc-kj-at">{{ fmtDt(k.at) }}</span>
+                    <span :class="['noc-kj-jenis', /down/.test(k.kind) ? 'off' : 'on']">{{ NOC_KEJADIAN[k.kind] || k.kind }}</span>
+                    <span class="noc-kj-det">{{ k.iface }}{{ k.detail ? ' · ' + k.detail : '' }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-if="noc.sinkron && !noc.sinkron.ok" class="prtg-err">Sinkron NOCaaS terakhir gagal: {{ noc.sinkron.pesan }}</div>
+            </template>
           </div>
 
           <!-- ── PRTG SENSOR STATUS ───────────────────────────── -->
@@ -1421,6 +1516,26 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 
 /* ── PRTG SECTION ────────────────────────────── */
 /* Status Card */
+.noc-card { margin-bottom: 16px; }
+.noc-kesimpulan { display: flex; flex-direction: column; gap: 3px; border-left: 4px solid; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #334155; margin-bottom: 12px; }
+.noc-link { font-size: 13px; color: #2563eb; font-weight: 600; }
+.noc-router { border-top: 1px solid var(--border); padding: 10px 0; }
+.noc-baris { display: flex; gap: 10px; align-items: flex-start; }
+.noc-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; }
+.noc-info { flex: 1; min-width: 0; }
+.noc-nama { font-family: monospace; font-weight: 700; font-size: 13px; color: #0f172a; word-break: break-all; }
+.noc-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+.noc-tunnel { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.noc-tunnel span { font-family: monospace; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 5px; }
+.noc-tunnel .on, .noc-kj-jenis.on { background: #dcfce7; color: #166534; }
+.noc-tunnel .off, .noc-kj-jenis.off { background: #fee2e2; color: #991b1b; }
+.noc-btn { flex: none; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: #f8fafc; cursor: pointer; }
+.noc-btn:hover { background: #e2e8f0; }
+.noc-kejadian { margin: 8px 0 0 20px; max-height: 240px; overflow: auto; }
+.noc-kj { display: flex; gap: 8px; align-items: center; font-size: 12px; padding: 3px 0; }
+.noc-kj-at { color: #64748b; white-space: nowrap; font-family: monospace; }
+.noc-kj-jenis { padding: 1px 6px; border-radius: 4px; font-weight: 700; white-space: nowrap; }
+.noc-kj-det { color: #475569; }
 .prtg-card { background: var(--surface); border-radius: var(--r-lg); border: 1px solid var(--border); padding: 20px; box-shadow: var(--shadow-sm); }
 .prtg-hdr { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
 .prtg-hdr-left { display: flex; align-items: flex-start; gap: 12px; }

@@ -38,6 +38,7 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   wa: 'whatsapp', // inbox WhatsApp helpdesk (webhook & stream @Public)
   ipam: 'operations', // IP publik NEXT1
   visit: 'operations', // Jadwal Visit teknis
+  nocaas: 'operations', // Pembanding status router NOCaaS untuk tiket gangguan
 };
 
 // Divisi yang terlibat alur Pasang Baru (Sales → OPS → Instalasi → NOC → Finance)

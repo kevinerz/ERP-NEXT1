@@ -11,6 +11,6 @@ import { StarsenderModule } from '../starsender/starsender.module';
   imports: [StarsenderModule],
   controllers: [PrtgController, PrtgRekonController],
   providers: [PrtgService, PrtgClient, PrtgRekonService, SecretCryptoService],
-  exports: [PrtgService],
+  exports: [PrtgService, PrtgClient],
 })
 export class PrtgModule {}

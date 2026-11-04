@@ -1,0 +1,25 @@
+-- Status router dari NOCaaS sebagai pembanding tiket gangguan PRTG
+CREATE TABLE IF NOT EXISTS nocaas_router (
+  site_key      VARCHAR(150) NOT NULL,
+  nama_utama    VARCHAR(160) NULL,
+  id_site       INT NULL,
+  sumber_map    VARCHAR(20) NULL,
+  status        VARCHAR(20) NOT NULL,
+  ns_ip         VARCHAR(45) NULL,
+  un_ip         VARCHAR(45) NULL,
+  ns_online     TINYINT(1) NULL,
+  un_online     TINYINT(1) NULL,
+  offline_since DATETIME(3) NULL,
+  status_sejak  DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  hb_at         DATETIME(3) NULL,
+  public_ip     VARCHAR(45) NULL,
+  access_isp    VARCHAR(100) NULL,
+  brand         VARCHAR(20) NULL,
+  downs7        INT NOT NULL DEFAULT 0,
+  flaps24       INT NOT NULL DEFAULT 0,
+  updated_at    DATETIME(3) NOT NULL,
+  PRIMARY KEY (site_key),
+  KEY nocaas_router_id_site_idx (id_site),
+  KEY nocaas_router_status_idx (status),
+  CONSTRAINT nocaas_router_id_site_fkey FOREIGN KEY (id_site) REFERENCES site_pelanggan (id_site) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
