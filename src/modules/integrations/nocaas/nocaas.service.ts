@@ -1,3 +1,4 @@
+import { execFile } from 'child_process';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
@@ -277,23 +278,52 @@ export class NocaasService {
     return rows.map((r) => this.bentuk(r)).sort((a, b) => BOBOT[b.status] - BOBOT[a.status]);
   }
 
-  /** Pembanding untuk satu tiket */
+  /**
+   * Ping IP tunnel langsung dari server ERP. Status NOCaaS "online" hanya berarti sesi VPN terdaftar di
+   * Mikrotik pusat — belum tentu data lewat. Ping memastikan jalurnya benar-benar bisa dilewati.
+   */
+  private ping(ip: string): Promise<{ ip: string; terkirim: number; diterima: number; rtt_ms: number | null }> {
+    if (!IP_SAJA.test(ip)) return Promise.resolve({ ip, terkirim: 0, diterima: 0, rtt_ms: null });
+    return new Promise((resolve) => {
+      execFile('ping', ['-n', '-q', '-c', '4', '-i', '0.3', '-W', '1', ip], { timeout: 8000 }, (_e, out) => {
+        const m = /(\d+) packets transmitted, (\d+) (?:packets )?received/.exec(out || '');
+        const rtt = /= [\d.]+\/([\d.]+)\//.exec(out || '');
+        resolve({ ip, terkirim: m ? +m[1] : 4, diterima: m ? +m[2] : 0, rtt_ms: rtt ? Math.round(+rtt[1]) : null });
+      });
+    });
+  }
+
+  async pingRouter(site_key: string) {
+    const r = await this.prisma.nocaasRouter.findUnique({ where: { site_key }, select: { ns_ip: true, un_ip: true, ns_online: true, un_online: true } });
+    if (!r) throw new NotFoundException('Router tidak ditemukan');
+    const [ns, un] = await Promise.all([r.ns_ip ? this.ping(r.ns_ip) : null, r.un_ip ? this.ping(r.un_ip) : null]);
+    return { ns, un };
+  }
+
+  /** Pembanding untuk satu tiket — status NOCaaS dilengkapi ping tunnel dari ERP */
   async pembandingTiket(id_ticket: number) {
     const t = await this.prisma.operationTicket.findUnique({
       where: { id_ticket },
       select: { id_site: true, status_tiket: true, prtg_webhooks: { select: { prtg_device_name: true }, take: 1 } },
     });
     if (!t) throw new NotFoundException('Tiket tidak ditemukan');
-    const routers = await this.routerUntukTiket(t);
+    const routers: any[] = await this.routerUntukTiket(t);
+    await Promise.all(routers.slice(0, 3).map(async (r) => { r.ping = await this.pingRouter(r.site_key); }));
     const utama = routers[0];
-    return {
-      data: {
-        routers,
-        kesimpulan: utama ? { status: utama.status, label: utama.label, saran: utama.saran } : { status: 'tidak_ada', ...KESIMPULAN.tidak_ada },
-        sinkron: this.terakhir,
-        tiket_aktif: STATUS_TIKET_AKTIF.includes(t.status_tiket),
-      },
-    };
+    let kesimpulan: { status: string; label: string; saran: string } = utama
+      ? { status: utama.status, label: utama.label, saran: utama.saran }
+      : { status: 'tidak_ada', ...KESIMPULAN.tidak_ada };
+    if (utama?.ping && utama.status !== 'offline') {
+      // Sesi VPN "tersambung" tapi ping gagal = jalur tidak bisa dilewati
+      const jalur = [['NS', utama.ns_online, utama.ping.ns], ['UN', utama.un_online, utama.ping.un]] as const;
+      const macet = jalur.filter(([, on, p]) => on && p && p.diterima === 0).map(([n]) => n);
+      const lancar = jalur.filter(([, , p]) => p && p.diterima > 0).map(([n]) => n);
+      if (macet.length && lancar.length)
+        kesimpulan = { status: 'partial', label: `Jalur ${macet.join(' & ')} macet`, saran: `Sesi VPN ${macet.join(' & ')} tersambung tapi tidak bisa di-ping dari ERP — lokasi masih jalan lewat ${lancar.join(' & ')}. Cek ISP / tunnel jalur ${macet.join(' & ')} (bukan alarm palsu).` };
+      else if (macet.length && !lancar.length)
+        kesimpulan = { status: 'offline', label: 'VPN tidak bisa dilewati', saran: 'Sesi VPN tercatat tersambung, tapi tidak ada jalur yang bisa di-ping dari ERP — perlakukan sebagai gangguan, cek router/ISP lokasi.' };
+    }
+    return { data: { routers, kesimpulan, sinkron: this.terakhir, tiket_aktif: STATUS_TIKET_AKTIF.includes(t.status_tiket) } };
   }
 
   // ── Tiket gangguan otomatis ────────────────────────────────────────────────

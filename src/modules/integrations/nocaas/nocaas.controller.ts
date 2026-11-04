@@ -29,6 +29,7 @@ export class NocaasController {
   @Get('tiket/:id') tiket(@Param('id', ParseIntPipe) id: number) { return this.svc.pembandingTiket(id); }
   @Get('site/:id') site(@Param('id', ParseIntPipe) id: number) { return this.svc.routerSite(id); }
   @Get('tinjau') tinjau(@Query() q: { cari?: string; page?: number; jenis?: string }) { return this.svc.tinjau(q); }
+  @Get('router/:key/ping') ping(@Param('key') key: string) { return this.svc.pingRouter(key).then((data) => ({ data })); }
   @Get('router/:key/kejadian') kejadian(@Param('key') key: string, @Query('jam') jam?: string) { return this.svc.kejadian(key, Number(jam) || 72); }
   @Put('router/:key/site') petakan(@Param('key') key: string, @Body() dto: PetakanDto) { return this.svc.petakan(key, dto.id_site ?? null, !!dto.abaikan); }
 }

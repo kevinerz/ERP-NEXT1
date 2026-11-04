@@ -129,6 +129,20 @@ async function toggleNocKejadian(key: string) {
     nocKejadian.value[key] = e?.response?.data?.message || 'Gagal memuat riwayat'
   }
 }
+// Sesi VPN (NOCaaS) + ping dari ERP: sesi ada tapi ping gagal = jalur macet
+function tunnelKelas(sesi: boolean | null, p?: { diterima: number } | null) {
+  if (!sesi) return 'off'
+  return p && p.diterima === 0 ? 'macet' : 'on'
+}
+function tunnelJudul(sesi: boolean | null, p?: { diterima: number } | null) {
+  if (!sesi) return 'Sesi VPN putus'
+  return p && p.diterima === 0 ? 'Sesi VPN tersambung, tapi tidak bisa di-ping dari ERP' : 'Sesi VPN tersambung'
+}
+function pingTeks(p: { terkirim: number; diterima: number; rtt_ms: number | null }) {
+  if (!p.diterima) return 'ping gagal'
+  const hilang = Math.round((1 - p.diterima / p.terkirim) * 100)
+  return `ping ${p.rtt_ms ?? '?'} ms${hilang ? ` · hilang ${hilang}%` : ''}`
+}
 function nocSejak(d?: string | null) {
   if (!d) return ''
   const m = Math.round((Date.now() - new Date(d).getTime()) / 60000)
@@ -813,7 +827,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                 <span class="prtg-icon">🛰️</span>
                 <div>
                   <div class="prtg-title">Pembanding NOCaaS</div>
-                  <div class="prtg-device-name text-gray">Status router dari NOCaaS (VPN NS/UN + heartbeat syslog)</div>
+                  <div class="prtg-device-name text-gray">Status router dari NOCaaS (VPN NS/UN + heartbeat syslog) + ping tunnel dari ERP</div>
                 </div>
               </div>
               <button class="btn-refresh-prtg" @click="fetchNoc" :disabled="nocLoading" title="Refresh">
@@ -837,8 +851,8 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                       <b :style="{ color: NOC_WARNA[r.status] }">{{ r.label }}</b> · sejak {{ nocSejak(r.status === 'offline' && r.offline_since ? r.offline_since : r.status_sejak) }}
                     </div>
                     <div class="noc-tunnel">
-                      <span v-if="r.ns_ip" :class="r.ns_online ? 'on' : 'off'">NS {{ r.ns_ip }}</span>
-                      <span v-if="r.un_ip" :class="r.un_online ? 'on' : 'off'">UN {{ r.un_ip }}</span>
+                      <span v-if="r.ns_ip" :class="tunnelKelas(r.ns_online, r.ping?.ns)" :title="tunnelJudul(r.ns_online, r.ping?.ns)">NS {{ r.ns_ip }}<small v-if="r.ping?.ns"> · {{ pingTeks(r.ping.ns) }}</small></span>
+                      <span v-if="r.un_ip" :class="tunnelKelas(r.un_online, r.ping?.un)" :title="tunnelJudul(r.un_online, r.ping?.un)">UN {{ r.un_ip }}<small v-if="r.ping?.un"> · {{ pingTeks(r.ping.un) }}</small></span>
                     </div>
                     <div class="noc-sub">
                       Internet: {{ r.access_isp || '—' }}<template v-if="r.public_ip"> · {{ r.public_ip }}</template>
@@ -1529,6 +1543,8 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .noc-tunnel span { font-family: monospace; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 5px; }
 .noc-tunnel .on, .noc-kj-jenis.on { background: #dcfce7; color: #166534; }
 .noc-tunnel .off, .noc-kj-jenis.off { background: #fee2e2; color: #991b1b; }
+.noc-tunnel .macet { background: #fef3c7; color: #92400e; }
+.noc-tunnel small { font-weight: 600; }
 .noc-btn { flex: none; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: #f8fafc; cursor: pointer; }
 .noc-btn:hover { background: #e2e8f0; }
 .noc-kejadian { margin: 8px 0 0 20px; max-height: 240px; overflow: auto; }
