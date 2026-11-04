@@ -184,6 +184,25 @@ sudo systemctl status nginx
 
 Lihat [`nginx/sites-available/1erp.nextone.id.conf`](nginx/sites-available/1erp.nextone.id.conf) dan [`nginx/sites-available/portal.nextone.id.conf`](nginx/sites-available/portal.nextone.id.conf)
 
+### Port 443 dipilah per domain (SNI) — sejak 4 Nov 2026
+
+Supaya rapat (LiveKit) tetap tersambung di jaringan yang hanya membuka port 443, port 443 di server ERP
+(192.168.200.221) dipegang modul **stream** nginx (`libnginx-mod-stream`), bukan blok `server` http:
+
+| Domain (SNI) | Diteruskan ke |
+|---|---|
+| `turn.nextone.id` | `127.0.0.1:5350` → TLS diakhiri nginx → TCP `192.168.200.189:5349` (TURN LiveKit, `external_tls: true`) |
+| lainnya (1erp, meet, …) | `127.0.0.1:8443` → situs HTTPS biasa |
+
+- Config: `/etc/nginx/stream.d/sni-443.conf`, `stream { include … }` di akhir `/etc/nginx/nginx.conf`,
+  `/etc/nginx/conf.d/real-ip-sni.conf` (IP asli pengunjung via PROXY protocol).
+- **Situs HTTPS baru harus `listen 127.0.0.1:8443 ssl proxy_protocol;`, bukan `listen 443 ssl`.**
+  Setelah `certbot --nginx` untuk domain baru, cek blok yang ditambahkan certbot dan ganti `listen 443 ssl`
+  → kalau tidak, nginx gagal start karena port 443 bentrok dengan stream.
+- Sertifikat `turn.nextone.id` diperpanjang certbot biasa (hook `systemctl reload nginx`).
+- Server LiveKit (192.168.200.189, `/etc/livekit.yaml`): blok `turn:` dengan `domain: turn.nextone.id`,
+  `tls_port: 5349`, `external_tls: true`, `udp_port: 0`. Klien menerima `turns:turn.nextone.id:443?transport=tcp`.
+
 ---
 
 ## Cek Kesehatan Aplikasi
