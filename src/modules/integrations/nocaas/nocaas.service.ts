@@ -37,6 +37,7 @@ export const KESIMPULAN: Record<StatusRouter | 'macet' | 'tidak_ada', { label: s
 // Kondisi SELALU dicatat (untuk laporan); 'aktif' = dibuatkan tiket atau tidak.
 // Tunnel/VPN putus (jalur, sering putus) bawaannya tidak ditiketkan — yang dipantau koneksi toko, bukan tunnel.
 export const KATEGORI_BAWAAN = {
+  vpn_macet: { aktif: false },                // sesi VPN ada tapi tidak satu pun jalur bisa di-ping dari ERP ≥ konfirmasi
   jalur: { aktif: false, menit: 60 },         // 1 jalur VPN (NS/UN) putus ≥ menit
   port_wan_down: { aktif: true },             // port uplink (FO/M2M/…) yang tadinya hidup jadi mati
   port_wan_flap: { aktif: true, min: 3 },     // port WAN naik-turun ≥ min kali / jam
@@ -45,6 +46,7 @@ export const KATEGORI_BAWAAN = {
   pulih_menit: 60,                            // naik-turun / sering putus dianggap pulih setelah tenang sekian menit
 };
 export const LABEL_KATEGORI: Record<string, { label: string; prioritas: string; arti: string }> = {
+  vpn_macet: { label: 'VPN macet', prioritas: 'High', arti: 'Sesi VPN tercatat tersambung, tapi tidak satu pun jalur bisa di-ping dari ERP — data VPN tidak lewat.' },
   jalur: { label: '1 jalur putus', prioritas: 'Medium', arti: 'Salah satu jalur VPN putus lama; lokasi masih tersambung lewat jalur lain — cek ISP jalur yang putus.' },
   port_wan_down: { label: 'Port WAN down', prioritas: 'High', arti: 'Port uplink router yang sebelumnya aktif kini mati (kabel / modem / ISP); lokasi mungkin jalan lewat backup.' },
   port_wan_flap: { label: 'Port WAN naik-turun', prioritas: 'High', arti: 'Port uplink router naik-turun berulang — kabel, modem, atau ISP tidak stabil.' },
@@ -537,6 +539,11 @@ export class NocaasService {
       select: { site_key: true, id_site: true, status: true, status_sejak: true, ns_online: true, un_online: true, ns_ip: true, un_ip: true, wan_status: true, macet_sejak: true },
     });
     const peta = new Map(routers.map((r) => [r.site_key, r]));
+    // VPN macet: macet baru (bukan kondisi lama), bertahan ≥ durasi konfirmasi
+    const batasMacet = now.getTime() - cfg.durasi_konfirmasi_menit * 60_000;
+    for (const r of await this.prisma.nocaasRouter.findMany({ where: { id_site: { not: null }, status: { not: 'offline' }, macet_lama: false, macet_sejak: { gte: cfg.aktif_sejak } }, select: { site_key: true, id_site: true, macet_sejak: true } })) {
+      if (r.macet_sejak!.getTime() <= batasMacet) kini.push({ site_key: r.site_key, id_site: r.id_site!, kategori: 'vpn_macet', detail: '', nilai: null, mulai: r.macet_sejak! });
+    }
     {
       for (const r of routers) {
         if (r.status !== 'partial' || r.status_sejak < cfg.aktif_sejak || now.getTime() - r.status_sejak.getTime() < kat.jalur.menit * 60_000) continue;
@@ -645,6 +652,7 @@ export class NocaasService {
 
   private teksKondisi(g: { kategori: string; detail: string; nilai: number | null; mulai_at: Date }) {
     switch (g.kategori) {
+      case 'vpn_macet': return `VPN tidak bisa di-ping dari ERP sejak ${this.waktuWib(g.mulai_at)}`;
       case 'jalur': return `jalur ${g.detail} putus sejak ${this.waktuWib(g.mulai_at)}`;
       case 'port_wan_down': return `port WAN ${g.detail} down sejak ${this.waktuWib(g.mulai_at)} (dari snapshot config router)`;
       case 'port_wan_flap': case 'port_lan_flap': return `port ${g.detail} naik-turun ${g.nilai}× dalam 1 jam`;
@@ -699,7 +707,7 @@ export class NocaasService {
       const { kat } = await this.kategoriKonfigurasi();
       const angka = (v: any, lama: number, min: number, max: number) => (Number.isFinite(+v) ? Math.min(Math.max(Math.round(+v), min), max) : lama);
       const k: any = { ...kat };
-      for (const nama of ['jalur', 'port_wan_down', 'port_wan_flap', 'port_lan_flap', 'sering_putus'] as const) {
+      for (const nama of ['vpn_macet', 'jalur', 'port_wan_down', 'port_wan_flap', 'port_lan_flap', 'sering_putus'] as const) {
         const v = d.kategori[nama];
         if (!v || typeof v !== 'object') continue;
         const x: any = { ...(kat as any)[nama] };
@@ -745,10 +753,8 @@ export class NocaasService {
     const mati = (await this.prisma.nocaasRouter.findMany({
       where: {
         id_site: { not: null }, site: { status_site: 'Aktif' },
-        OR: [
-          { status: 'offline', status_sejak: { gte: cfg.aktif_sejak, lte: batas } },
-          { status: { not: 'offline' }, macet_lama: false, macet_sejak: { gte: cfg.aktif_sejak, lte: batas } },
-        ],
+        // VPN macet ditangani sistem kategori (vpn_macet) — di sini hanya mati total
+        status: 'offline', status_sejak: { gte: cfg.aktif_sejak, lte: batas },
       },
       include: { site: { select: { id_site: true, nama_site: true } } },
     })).map((r) => ({ ...r, jenis: (r.status === 'offline' ? 'mati' : 'macet') as 'mati' | 'macet', sejak: r.status === 'offline' ? r.status_sejak : r.macet_sejak! }))
@@ -795,7 +801,7 @@ export class NocaasService {
 
     // 2) Auto-resolve tiket NOCaaS yang routernya sudah hidup lagi
     const tiketNoc = await this.prisma.operationTicket.findMany({
-      where: { sumber_tiket: 'NOCaaS', status_tiket: { in: STATUS_TIKET_AKTIF }, OR: [{ jenis_gangguan: null }, { jenis_gangguan: { in: ['Mati total', 'VPN macet'] } }] },
+      where: { sumber_tiket: 'NOCaaS', status_tiket: { in: STATUS_TIKET_AKTIF }, OR: [{ jenis_gangguan: null }, { jenis_gangguan: 'Mati total' }] },
       select: {
         id_ticket: true, nomor_tiket: true, judul_tiket: true, status_tiket: true, id_site: true,
         site: { select: { nama_site: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } } },

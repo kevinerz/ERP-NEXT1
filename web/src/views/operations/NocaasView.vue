@@ -9,6 +9,7 @@ import { alertError } from '@/composables/useDialog'
 const router = useRouter()
 const WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626' }
 const KAT: { kunci: string; label: string; ambang?: 'menit' | 'min'; satuan?: string }[] = [
+  { kunci: 'vpn_macet', label: 'VPN macet (ping gagal)' },
   { kunci: 'jalur', label: '1 jalur VPN putus', ambang: 'menit', satuan: 'menit' },
   { kunci: 'port_wan_down', label: 'Port WAN down' },
   { kunci: 'port_wan_flap', label: 'Port WAN naik-turun', ambang: 'min', satuan: '×/jam' },
@@ -180,7 +181,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             Tiket otomatis {{ cfg.tiket_aktif ? 'AKTIF' : 'MATI' }}
           </span>
           <span class="nc-cfg-teks">
-            Router site terpetakan yang <b>mati total</b> atau <b>VPN macet</b> (sesi ada, ping dari ERP gagal) <b>≥ {{ cfg.durasi_konfirmasi_menit }} menit</b> → tiket <b>[NOCaaS]</b> Critical; kembali tersambung &amp; bisa di-ping → auto-resolve.
+            Router site terpetakan yang <b>mati total ≥ {{ cfg.durasi_konfirmasi_menit }} menit</b> → tiket <b>[NOCaaS]</b> Critical; kembali tersambung → auto-resolve.
             Mati lagi &lt; {{ cfg.cooldown_menit }} menit setelah resolve → tiket dibuka ulang (flapping).
             Lebih dari {{ cfg.maks_tiket_per_putaran }} site sekaligus → ditahan (dicurigai gangguan pusat).
             Hanya gangguan yang mulai setelah {{ fmtDateTime(cfg.aktif_sejak) }}. Site belum terpetakan tetap memakai PRTG.
