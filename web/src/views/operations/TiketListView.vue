@@ -26,7 +26,7 @@ const formError = ref('')
 
 const STATUS_LIST = ['Open', 'In_Progress', 'Pending_Customer', 'Resolved', 'Closed']
 const PRIORITAS_LIST = ['Low', 'Medium', 'High', 'Critical']
-const SUMBER_LIST = ['PRTG', 'Internal', 'Email', 'WhatsApp', 'Telepon']
+const SUMBER_LIST = ['NOCaaS', 'PRTG', 'Internal', 'Email', 'WhatsApp', 'Telepon']
 
 const STATUS_CFG: Record<string, { bg: string; color: string; border: string }> = {
   Open:             { bg: '#dbeafe', color: '#1e40af', border: '#3b82f6' },
@@ -227,6 +227,7 @@ function rowClass(t: any) {
                 class="sumber-badge"
                 :class="{
                   'sb-prtg': t.sumber_tiket === 'PRTG',
+                  'sb-noc': t.sumber_tiket === 'NOCaaS',
                   'sb-wa': t.sumber_tiket === 'WhatsApp',
                   'sb-int': t.sumber_tiket === 'Internal',
                 }"
@@ -422,6 +423,7 @@ td { padding: 11px 13px; font-size: 13.5px; color: #0f172a; vertical-align: midd
 
 .sumber-badge { display: inline-block; margin-top: 4px; padding: 1px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px; }
 .sb-prtg  { background: #fef2f2; color: #b91c1c; }
+.sb-noc   { background: #ede9fe; color: #6d28d9; }
 .sb-wa    { background: #dcfce7; color: #15803d; }
 .sb-int   { background: #f1f5f9; color: #475569; }
 

@@ -4,6 +4,10 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { cariSiteDariNama } from '../../../common/utils/site-match';
 import { PrtgClient } from '../prtg/prtg.client';
+import { NotificationsService } from '../../notifications/notifications.service';
+import { StarsenderService } from '../starsender/starsender.service';
+import { SLA_JAM } from '../../operations/operations.service';
+import { withNextTicketNumber } from '../../../common/utils/ticket-number';
 
 // online = semua tunnel VPN tersambung · partial = salah satu tunnel putus ·
 // internet_ok = internet lokasi hidup tapi VPN putus (heartbeat syslog masih masuk) · offline = mati total
@@ -40,7 +44,13 @@ export class NocaasService {
   private terakhir: { at: Date; ok: boolean; pesan: string; jumlah: number } | null = null;
   private prtgHost: { exp: number; ipKeDevice: Map<string, string> } | null = null;
 
-  constructor(private prisma: PrismaService, private config: ConfigService, private prtg: PrtgClient) {}
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+    private prtg: PrtgClient,
+    private notif: NotificationsService,
+    private wa: StarsenderService,
+  ) {}
 
   private get base() {
     return (this.config.get<string>('NOCAAS_API_URL') || 'http://192.168.200.225:8000').replace(/\/$/, '');
@@ -65,7 +75,7 @@ export class NocaasService {
   async cronSinkron() {
     if (this.config.get<string>('NOCAAS_SYNC_ENABLED') === 'false') return;
     await this.sinkron().catch(() => {});
-    await this.pantau().catch((e) => this.logger.warn(`Mode pantau gagal: ${e?.message}`));
+    await this.prosesTiket().catch((e) => this.logger.warn(`Tiket NOCaaS gagal: ${e?.message}`));
   }
 
   async sinkron() {
@@ -137,6 +147,7 @@ export class NocaasService {
 
       for (let i = 0; i < tulis.length; i += 200) await this.prisma.$transaction(tulis.slice(i, i + 200));
       this.terakhir = { at: now, ok: true, pesan: `${items.length} router, ${tulis.length} perubahan`, jumlah: items.length };
+      await this.prisma.nocaasConfig.upsert({ where: { id: 1 }, create: { id: 1, terakhir_sinkron: now }, update: { terakhir_sinkron: now } });
       return { data: this.terakhir, message: `Sinkron NOCaaS: ${this.terakhir.pesan}` };
     } catch (e: any) {
       this.terakhir = { at: new Date(), ok: false, pesan: e?.message || String(e), jumlah: this.terakhir?.jumlah ?? 0 };
@@ -233,7 +244,7 @@ export class NocaasService {
   async pembandingTiket(id_ticket: number) {
     const t = await this.prisma.operationTicket.findUnique({
       where: { id_ticket },
-      select: { id_site: true, status_tiket: true, prtg_webhooks: { select: { prtg_device_name: true }, take: 1 }, nocaas_pantau: true },
+      select: { id_site: true, status_tiket: true, prtg_webhooks: { select: { prtg_device_name: true }, take: 1 } },
     });
     if (!t) throw new NotFoundException('Tiket tidak ditemukan');
     const routers = await this.routerUntukTiket(t);
@@ -244,97 +255,185 @@ export class NocaasService {
         kesimpulan: utama ? { status: utama.status, label: utama.label, saran: utama.saran } : { status: 'tidak_ada', ...KESIMPULAN.tidak_ada },
         sinkron: this.terakhir,
         tiket_aktif: STATUS_TIKET_AKTIF.includes(t.status_tiket),
-        pantau: t.nocaas_pantau,
       },
     };
   }
 
-  // ── Mode pantau (shadow) ───────────────────────────────────────────────────
-  // Tidak mengubah alur tiket PRTG. Hanya mencatat apa kata NOCaaS saat tiket dibuat, selama aktif, dan saat selesai,
-  // untuk mengukur dampak bila nanti NOCaaS dijadikan gerbang (tahan tiket bila router online).
-  async pantau() {
-    const now = Date.now();
-    const umur = this.terakhir?.ok ? Math.round((now - this.terakhir.at.getTime()) / 1000) : null;
-    const segar = umur !== null && umur <= 180;
-    const pilih = { id_ticket: true, id_site: true, status_tiket: true, tgl_open: true, tgl_resolved: true, prtg_webhooks: { select: { prtg_device_name: true }, take: 1 } } as const;
+  // ── Tiket gangguan otomatis ────────────────────────────────────────────────
+  // Router site aktif yang menjadi "mati total" (tidak ada VPN & tidak ada heartbeat syslog) setelah fitur aktif,
+  // dan bertahan ≥ durasi_konfirmasi → tiket. Router kembali online (atau minimal 1 tunnel) → tiket auto-resolve.
+  async konfigurasi() {
+    return this.prisma.nocaasConfig.upsert({ where: { id: 1 }, create: { id: 1 }, update: {} });
+  }
 
-    // 1) Tiket PRTG baru (≤ 10 menit) yang belum dicatat
-    const baru = await this.prisma.operationTicket.findMany({
-      where: { sumber_tiket: 'PRTG', tgl_open: { gte: new Date(now - 10 * 60_000) }, nocaas_pantau: null },
-      select: pilih,
+  async ubahKonfigurasi(d: { tiket_aktif?: boolean; durasi_konfirmasi_menit?: number; cooldown_menit?: number; maks_tiket_per_putaran?: number }) {
+    await this.konfigurasi();
+    const data: any = {};
+    if (typeof d.tiket_aktif === 'boolean') data.tiket_aktif = d.tiket_aktif;
+    if (d.durasi_konfirmasi_menit !== undefined) data.durasi_konfirmasi_menit = Math.min(Math.max(Math.round(d.durasi_konfirmasi_menit), 1), 240);
+    if (d.cooldown_menit !== undefined) data.cooldown_menit = Math.min(Math.max(Math.round(d.cooldown_menit), 0), 1440);
+    if (d.maks_tiket_per_putaran !== undefined) data.maks_tiket_per_putaran = Math.min(Math.max(Math.round(d.maks_tiket_per_putaran), 1), 500);
+    return { data: await this.prisma.nocaasConfig.update({ where: { id: 1 }, data }), message: 'Konfigurasi disimpan' };
+  }
+
+  private catatanRouter(r: any) {
+    const tunnel = [r.ns_ip && `NS ${r.ns_ip}`, r.un_ip && `UN ${r.un_ip}`].filter(Boolean).join(', ');
+    const hb = r.hb_at ? `heartbeat terakhir ${new Date(r.hb_at).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB` : 'belum pernah heartbeat';
+    return `${r.site_key} (${tunnel || 'tanpa tunnel'}) · internet ${r.access_isp || '—'}${r.public_ip ? ` ${r.public_ip}` : ''} · ${hb}`;
+  }
+
+  private waktuWib(d: Date) {
+    return d.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
+      + ' ' + d.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' }) + ' WIB';
+  }
+
+  async prosesTiket() {
+    const cfg = await this.konfigurasi();
+    if (!cfg.tiket_aktif) return;
+    // Data harus segar — tanpa itu semua router bisa tampak mati dan membanjiri tiket
+    if (!this.terakhir?.ok || Date.now() - this.terakhir.at.getTime() > 3 * 60_000) return;
+    const now = new Date();
+    const hasil = { dibuat: 0, dibuka_ulang: 0, dicatat: 0, resolved: 0 };
+
+    // 1) Kandidat: router mati total, sudah dipetakan ke site aktif, berubah mati SETELAH fitur aktif, lewat masa konfirmasi
+    const mati = await this.prisma.nocaasRouter.findMany({
+      where: {
+        status: 'offline', id_site: { not: null }, site: { status_site: 'Aktif' },
+        status_sejak: { gte: cfg.aktif_sejak, lte: new Date(now.getTime() - cfg.durasi_konfirmasi_menit * 60_000) },
+      },
+      include: { site: { select: { id_site: true, nama_site: true } } },
+      orderBy: { status_sejak: 'asc' },
     });
-    for (const t of baru) {
-      const r = segar ? (await this.routerUntukTiket(t))[0] : undefined;
-      const status = !segar ? 'data_lama' : r?.status ?? 'tidak_ada';
-      await this.prisma.nocaasTiketPantau.create({
-        data: {
-          id_ticket: t.id_ticket, status_buka: status, site_key: r?.site_key ?? null, umur_data_detik: umur,
-          akan_ditahan: segar && status === 'online',
-          terburuk: r ? status : null, terburuk_at: r ? new Date() : null,
-        },
-      }).catch(() => {}); // sudah dicatat proses lain
+    const perSite = new Map<number, typeof mati>();
+    for (const r of mati) perSite.set(r.id_site!, [...(perSite.get(r.id_site!) ?? []), r]);
+
+    const aktif = perSite.size
+      ? await this.prisma.operationTicket.findMany({
+          where: { id_site: { in: [...perSite.keys()] }, status_tiket: { in: STATUS_TIKET_AKTIF } },
+          select: { id_ticket: true, id_site: true, sumber_tiket: true, status_tiket: true, logs: { where: { catatan: { startsWith: 'NOCaaS:' } }, select: { id_log: true }, take: 1 } },
+        })
+      : [];
+    const tiketAktif = new Map(aktif.map((t) => [t.id_site, t]));
+    const perluBaru = [...perSite.keys()].filter((id) => !tiketAktif.has(id));
+
+    // Pengaman: terlalu banyak sekaligus = kemungkinan gangguan pusat / NOCaaS → jangan buat tiket massal
+    if (perluBaru.length > cfg.maks_tiket_per_putaran) {
+      this.logger.warn(`${perluBaru.length} site mati total sekaligus (> ${cfg.maks_tiket_per_putaran}) — tiket ditahan, kemungkinan gangguan pusat`);
+      const kunci = `NOCaaS: ${perluBaru.length} site mati total`;
+      const sudah = await this.prisma.notification.findFirst({ where: { judul: { startsWith: 'NOCaaS:' }, created_at: { gte: new Date(now.getTime() - 3600_000) } } });
+      if (!sudah) this.notif.notifyForModul('operations', { tipe: 'tiket_baru', judul: `${kunci} sekaligus`, deskripsi: 'Tiket otomatis ditahan — cek koneksi pusat / NOCaaS', url: '/nocaas' }).catch(() => {});
+    } else {
+      for (const id_site of perluBaru) {
+        const r = await this.buatTiket(perSite.get(id_site)!, cfg.cooldown_menit);
+        if (r === 'baru') hasil.dibuat++; else if (r === 'ulang') hasil.dibuka_ulang++;
+      }
     }
 
-    // 2) Tiket yang sedang dipantau: status terburuk selama aktif, selesai, atau dibuka ulang (flapping)
-    const dipantau = await this.prisma.nocaasTiketPantau.findMany({
-      where: { OR: [{ selesai_at: null }, { ticket: { status_tiket: { in: STATUS_TIKET_AKTIF } } }] },
-      include: { ticket: { select: pilih } },
+    // Site yang sudah punya tiket aktif dari sumber lain (WA/manual/PRTG): cukup catat sekali di log
+    for (const t of aktif) {
+      if (t.sumber_tiket === 'NOCaaS' || t.logs.length) continue;
+      const rs = perSite.get(t.id_site)!;
+      await this.prisma.operationTicketLog.create({
+        data: { id_ticket: t.id_ticket, status_ke: t.status_tiket, catatan: `NOCaaS: router mati total sejak ${this.waktuWib(rs[0].status_sejak)} — ${rs.map((r) => this.catatanRouter(r)).join(' | ')}` },
+      });
+      hasil.dicatat++;
+    }
+
+    // 2) Auto-resolve tiket NOCaaS yang routernya sudah hidup lagi
+    const tiketNoc = await this.prisma.operationTicket.findMany({
+      where: { sumber_tiket: 'NOCaaS', status_tiket: { in: STATUS_TIKET_AKTIF } },
+      select: {
+        id_ticket: true, nomor_tiket: true, judul_tiket: true, status_tiket: true, id_site: true,
+        site: { select: { nama_site: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } } },
+        logs: { where: { catatan: { startsWith: 'NOCaaS: internet lokasi kembali' } }, select: { id_log: true }, take: 1 },
+      },
     });
-    for (const p of dipantau) {
-      const t = p.ticket;
-      const aktif = STATUS_TIKET_AKTIF.includes(t.status_tiket);
-      if (p.selesai_at && aktif) {
-        await this.prisma.nocaasTiketPantau.update({ where: { id_ticket: p.id_ticket }, data: { selesai_at: null, status_selesai: null, durasi_menit: null, buka_ulang: { increment: 1 } } });
+    for (const t of tiketNoc) {
+      const rs = await this.prisma.nocaasRouter.findMany({ where: { id_site: t.id_site } });
+      if (!rs.length || rs.some((r) => r.status === 'offline')) continue;
+      if (rs.every((r) => r.status === 'internet_ok')) {
+        // Internet lokasi hidup lagi tapi VPN belum → tiket tetap terbuka, tangani remote
+        if (!t.logs.length) await this.prisma.operationTicketLog.create({
+          data: { id_ticket: t.id_ticket, status_ke: t.status_tiket, catatan: 'NOCaaS: internet lokasi kembali (heartbeat syslog masuk), VPN masih putus — tangani remote' },
+        });
         continue;
       }
-      const r = segar ? (await this.routerUntukTiket(t))[0] : undefined;
-      if (aktif) {
-        if (r && (!p.terburuk || BOBOT[r.status] > (BOBOT[p.terburuk] ?? -1)))
-          await this.prisma.nocaasTiketPantau.update({ where: { id_ticket: p.id_ticket }, data: { terburuk: r.status, terburuk_at: new Date() } });
-      } else if (!p.selesai_at) {
-        const selesai = t.tgl_resolved ?? new Date();
-        await this.prisma.nocaasTiketPantau.update({
-          where: { id_ticket: p.id_ticket },
-          data: { status_selesai: r?.status ?? (segar ? 'tidak_ada' : 'data_lama'), selesai_at: selesai, durasi_menit: Math.max(0, Math.round((selesai.getTime() - t.tgl_open.getTime()) / 60_000)) },
-        });
-      }
+      await this.prisma.operationTicket.update({ where: { id_ticket: t.id_ticket }, data: { status_tiket: 'Resolved', tgl_resolved: now } });
+      const hidup = rs.filter((r) => r.status === 'online' || r.status === 'partial');
+      await this.prisma.operationTicketLog.create({
+        data: { id_ticket: t.id_ticket, status_dari: t.status_tiket, status_ke: 'Resolved', catatan: `NOCaaS: router kembali tersambung (${hidup.map((r) => `${r.site_key} ${KESIMPULAN[r.status as StatusRouter].label}`).join(', ')}) — auto-resolved` },
+      });
+      await this.prisma.notification.deleteMany({ where: { is_read: false, url: `/operations/${t.id_ticket}` } }).catch(() => {});
+      this.wa.notifMonitorUp({ sumber: 'NOCaaS', nama: t.site.nama_site, nama_site: t.site.nama_site }).catch(() => {});
+      this.wa.notifTiketUpdate({
+        nomor_tiket: t.nomor_tiket, judul: t.judul_tiket, status_dari: t.status_tiket, status_ke: 'Resolved',
+        nama_site: t.site.nama_site, nama_pelanggan: t.site.pelanggan?.nama_pelanggan ?? '', id_pelanggan: t.site.id_pelanggan, no_hp_customer: t.site.pelanggan?.no_hp_pic_utama,
+      }).catch(() => {});
+      hasil.resolved++;
     }
+    if (hasil.dibuat || hasil.dibuka_ulang || hasil.dicatat || hasil.resolved) this.logger.log(`Tiket NOCaaS: ${JSON.stringify(hasil)}`);
   }
 
-  /** Laporan mode pantau: berapa tiket PRTG yang akan ditahan & apakah memang pulih sendiri */
-  async laporanPantau() {
-    const rows = await this.prisma.nocaasTiketPantau.findMany({
-      orderBy: { dicatat_at: 'desc' },
-      include: { ticket: { select: { nomor_tiket: true, judul_tiket: true, status_tiket: true, tgl_open: true, tgl_resolved: true, site: { select: { nama_site: true, kode_site: true } } } } },
+  /** Tiket baru (atau buka ulang tiket yang baru saja resolve — flapping) untuk satu site */
+  private async buatTiket(rs: any[], cooldownMenit: number): Promise<'baru' | 'ulang'> {
+    const site = rs[0].site as { id_site: number; nama_site: string };
+    const now = new Date();
+    const downAt: Date = rs[0].status_sejak;
+    const prioritas = 'Critical';
+    const rincian = rs.map((r) => this.catatanRouter(r)).join('\n');
+
+    const flapping = await this.prisma.operationTicket.findFirst({
+      where: { id_site: site.id_site, sumber_tiket: 'NOCaaS', status_tiket: { in: ['Resolved', 'Closed'] }, tgl_resolved: { gte: new Date(now.getTime() - cooldownMenit * 60_000) } },
+      orderBy: { tgl_resolved: 'desc' },
     });
-    const ditahan = rows.filter((r) => r.akan_ditahan);
-    const selesai = ditahan.filter((r) => r.durasi_menit !== null);
-    const dur = selesai.map((r) => r.durasi_menit!).sort((a, b) => a - b);
-    const median = dur.length ? (dur.length % 2 ? dur[(dur.length - 1) / 2] : Math.round((dur[dur.length / 2 - 1] + dur[dur.length / 2]) / 2)) : null;
-    const bermasalah = (r: (typeof rows)[number]) => !!r.terburuk && r.terburuk !== 'online';
-    const per: Record<string, number> = {};
-    for (const r of rows) per[r.status_buka] = (per[r.status_buka] ?? 0) + 1;
-    return {
-      data: {
-        mulai: rows.length ? rows[rows.length - 1].dicatat_at : null,
-        total: rows.length,
-        per_status: per,
-        ditahan: {
-          n: ditahan.length,
-          selesai: selesai.length,
-          pulih_15: selesai.filter((r) => r.durasi_menit! <= 15).length,
-          pulih_30: selesai.filter((r) => r.durasi_menit! <= 30).length,
-          pulih_60: selesai.filter((r) => r.durasi_menit! <= 60).length,
-          lewat_60: ditahan.filter((r) => (r.durasi_menit ?? (Date.now() - r.ticket.tgl_open.getTime()) / 60_000) > 60).length,
-          median_menit: median,
-          masih_aktif: ditahan.length - selesai.length,
-          // Risiko: router "online" saat tiket dibuat, tapi kemudian terlihat bermasalah di NOCaaS → gangguan asli
-          kemudian_bermasalah: ditahan.filter(bermasalah).length,
-          buka_ulang: ditahan.filter((r) => r.buka_ulang > 0).length,
-        },
-        tiket: rows.slice(0, 300).map((r) => ({ ...r, label_buka: KESIMPULAN[r.status_buka as StatusRouter]?.label ?? (r.status_buka === 'data_lama' ? 'Data NOCaaS lama' : 'Tidak terpetakan'), kemudian_bermasalah: r.akan_ditahan && bermasalah(r) })),
-      },
-    };
+    if (flapping) {
+      const menit = Math.round((now.getTime() - flapping.tgl_resolved!.getTime()) / 60_000);
+      const ke = (await this.prisma.operationTicketLog.count({ where: { id_ticket: flapping.id_ticket, catatan: { contains: 'flapping' } } })) + 1;
+      await this.prisma.operationTicket.update({
+        where: { id_ticket: flapping.id_ticket },
+        data: { status_tiket: 'In_Progress', tgl_resolved: null, tgl_sensor_down: downAt, sla_due: new Date(downAt.getTime() + (SLA_JAM[flapping.prioritas] ?? 4) * 3600_000), sla_breached: false },
+      });
+      await this.prisma.operationTicketLog.create({
+        data: { id_ticket: flapping.id_ticket, status_dari: flapping.status_tiket, status_ke: 'In_Progress', catatan: `NOCaaS: ⚠️ flapping #${ke} — router mati total lagi ${menit} menit setelah tersambung\n${rincian}` },
+      });
+      this.notif.notifyForModul('operations', {
+        tipe: 'tiket_update', judul: `⚠️ Flapping #${ke}: ${site.nama_site} mati lagi`, deskripsi: `${flapping.nomor_tiket} — ${menit} menit setelah tersambung`, url: `/operations/${flapping.id_ticket}`,
+      }).catch(() => {});
+      return 'ulang';
+    }
+
+    const judul = `[NOCaaS] ${site.nama_site} — Mati total`;
+    const ticket = await withNextTicketNumber(this.prisma, now, (nomor_tiket) =>
+      this.prisma.$transaction(async (tx) => {
+        const t = await tx.operationTicket.create({
+          data: {
+            nomor_tiket, id_site: site.id_site, judul_tiket: judul, prioritas, sumber_tiket: 'NOCaaS',
+            deskripsi_masalah: `Router tidak terlihat di NOCaaS sejak ${this.waktuWib(downAt)}: kedua VPN putus dan tidak ada heartbeat syslog (listrik / perangkat / internet lokasi).\n${rincian}`,
+            tgl_sensor_down: downAt,
+            sla_due: new Date(downAt.getTime() + (SLA_JAM[prioritas] ?? 4) * 3600_000),
+          },
+        });
+        await tx.operationTicketLog.create({ data: { id_ticket: t.id_ticket, status_ke: 'Open', catatan: `NOCaaS: tiket dibuat otomatis — router mati total ≥ ${Math.round((now.getTime() - downAt.getTime()) / 60_000)} menit` } });
+        return t;
+      }),
+    );
+    this.notif.notifyForModul('operations', {
+      tipe: 'tiket_baru', judul: `🔴 [NOCaaS] ${site.nama_site} mati total`, deskripsi: `${ticket.nomor_tiket} — ${rs.map((r) => r.site_key).join(', ')}`, url: `/operations/${ticket.id_ticket}`,
+    }).catch(() => {});
+    (async () => {
+      const sp = await this.prisma.sitePelanggan.findUnique({
+        where: { id_site: site.id_site },
+        select: { id_pelanggan: true, alamat_lengkap: true, koordinat_gps: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } }, pic: { where: { is_utama: true }, select: { no_kontak: true }, take: 1 } },
+      });
+      if (!sp) return;
+      await this.wa.notifTiketBaru({
+        nomor_tiket: ticket.nomor_tiket, judul, nama_site: site.nama_site,
+        nama_pelanggan: sp.pelanggan?.nama_pelanggan ?? '', id_pelanggan: sp.id_pelanggan, no_hp_customer: sp.pelanggan?.no_hp_pic_utama,
+        alamat_site: sp.alamat_lengkap ?? '', koordinat_site: sp.koordinat_gps ?? '', no_hp_pic: sp.pic[0]?.no_kontak ?? '',
+        sensor_detail: 'Router mati total (VPN & heartbeat NOCaaS)', waktu_down: this.waktuWib(downAt),
+      });
+    })().catch(() => {});
+    return 'baru';
   }
 
   /** Riwayat kejadian tunnel/port dari NOCaaS (langsung, tidak disimpan) */

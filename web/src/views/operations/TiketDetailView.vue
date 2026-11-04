@@ -164,7 +164,7 @@ async function fetchPrtgTicketEvents() {
 // Downtime dari tgl_sensor_down (langsung di tiket) — tersedia meski webhook sudah dibersihkan
 const downtimeInfo = computed(() => {
   const t = ops.current
-  if (!t || t.sumber_tiket !== 'PRTG') return null
+  if (!t || !['PRTG', 'NOCaaS'].includes(t.sumber_tiket)) return null
   const waktuDown = prtgEvents.value?.waktu_down ?? (t as any).tgl_sensor_down ?? null
   if (!waktuDown) return null
   const waktuUp = prtgEvents.value?.waktu_up ?? t.tgl_resolved ?? null

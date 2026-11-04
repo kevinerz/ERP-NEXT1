@@ -13,9 +13,25 @@ const SUMBER: Record<string, string> = { ip_perangkat: 'IP tunnel di perangkat s
 const data = ref<any>(null)
 const memuat = ref(false)
 const sinkron = ref(false)
-const tab = ref<'tiket' | 'pantau' | 'tanpa' | 'belum'>('tiket')
+const tab = ref<'tiket' | 'tanpa' | 'belum'>('tiket')
 const minMenit = ref(15)
 const filterTanpa = ref<'' | 'offline' | 'internet_ok'>('')
+
+// ── Tiket otomatis dari NOCaaS ──
+const cfg = ref<any>(null)
+const cfgEdit = ref(false)
+const cfgForm = ref({ tiket_aktif: true, durasi_konfirmasi_menit: 10, cooldown_menit: 60, maks_tiket_per_putaran: 30 })
+async function muatCfg() {
+  try { cfg.value = (await api.get('/nocaas/konfigurasi')).data.data } catch { /* abaikan */ }
+}
+function bukaCfg() {
+  const c = cfg.value
+  cfgForm.value = { tiket_aktif: c.tiket_aktif, durasi_konfirmasi_menit: c.durasi_konfirmasi_menit, cooldown_menit: c.cooldown_menit, maks_tiket_per_putaran: c.maks_tiket_per_putaran }
+  cfgEdit.value = true
+}
+async function simpanCfg() {
+  try { cfg.value = (await api.put('/nocaas/konfigurasi', cfgForm.value)).data.data; cfgEdit.value = false } catch (e) { alertError(e, 'Gagal menyimpan') }
+}
 
 async function muat() {
   memuat.value = true
@@ -26,7 +42,7 @@ async function sinkronSekarang() {
   try { await api.post('/nocaas/sinkron'); await muat(); if (tab.value === 'belum') muatBelum() } catch (e) { alertError(e, 'Sinkron gagal') } finally { sinkron.value = false }
 }
 let timer: ReturnType<typeof setInterval> | undefined
-onMounted(() => { muat(); timer = setInterval(muat, 60_000) })
+onMounted(() => { muat(); muatCfg(); timer = setInterval(muat, 60_000) })
 onUnmounted(() => clearInterval(timer))
 
 function lama(d?: string | null) {
@@ -54,15 +70,8 @@ async function muatBelum(page = 1) {
     belum.value = r.data; belumMeta.value = r.meta
   } catch (e) { alertError(e) }
 }
-function bukaTab(t: typeof tab.value) { tab.value = t; if (t === 'belum' && !belum.value.length) muatBelum(); if (t === 'pantau') muatPantau() }
+function bukaTab(t: typeof tab.value) { tab.value = t; if (t === 'belum' && !belum.value.length) muatBelum() }
 
-// ── Mode pantau: apa kata NOCaaS saat tiket PRTG dibuat (alur tiket tidak diubah) ──
-const pantau = ref<any>(null)
-async function muatPantau() {
-  try { pantau.value = (await api.get('/nocaas/pantau')).data.data } catch (e) { alertError(e) }
-}
-const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) + '%' : '—')
-const WARNA_BUKA: Record<string, string> = { ...WARNA, tidak_ada: '#64748b', data_lama: '#64748b' }
 
 const petaKey = ref('')
 const petaCari = ref('')
@@ -120,9 +129,31 @@ async function simpanPeta(id_site: number) {
         </div>
       </div>
 
+      <div v-if="cfg" class="card nc-cfg">
+        <template v-if="!cfgEdit">
+          <span class="nc-status" :style="{ color: cfg.tiket_aktif ? WARNA.online : WARNA.offline, borderColor: cfg.tiket_aktif ? WARNA.online : WARNA.offline }">
+            Tiket otomatis {{ cfg.tiket_aktif ? 'AKTIF' : 'MATI' }}
+          </span>
+          <span class="nc-cfg-teks">
+            Router site terpetakan yang <b>mati total ≥ {{ cfg.durasi_konfirmasi_menit }} menit</b> → tiket <b>[NOCaaS]</b> Critical; kembali tersambung → auto-resolve.
+            Mati lagi &lt; {{ cfg.cooldown_menit }} menit setelah resolve → tiket dibuka ulang (flapping).
+            Lebih dari {{ cfg.maks_tiket_per_putaran }} site sekaligus → ditahan (dicurigai gangguan pusat).
+            Hanya gangguan yang mulai setelah {{ fmtDateTime(cfg.aktif_sejak) }}. Site belum terpetakan tetap memakai PRTG.
+          </span>
+          <button class="btn btn-ghost btn-sm" @click="bukaCfg">Atur</button>
+        </template>
+        <form v-else class="nc-cfg-form" @submit.prevent="simpanCfg">
+          <label><input v-model="cfgForm.tiket_aktif" type="checkbox" /> Tiket otomatis aktif</label>
+          <label>Konfirmasi (menit) <input v-model.number="cfgForm.durasi_konfirmasi_menit" type="number" min="1" max="240" class="input" /></label>
+          <label>Cooldown flapping (menit) <input v-model.number="cfgForm.cooldown_menit" type="number" min="0" max="1440" class="input" /></label>
+          <label>Maks tiket sekaligus <input v-model.number="cfgForm.maks_tiket_per_putaran" type="number" min="1" max="500" class="input" /></label>
+          <button type="submit" class="btn btn-primary btn-sm">Simpan</button>
+          <button type="button" class="btn btn-ghost btn-sm" @click="cfgEdit = false">Batal</button>
+        </form>
+      </div>
+
       <div class="nc-tab">
         <button :class="{ aktif: tab === 'tiket' }" @click="bukaTab('tiket')">Tiket aktif ({{ tiket.length }})</button>
-        <button :class="{ aktif: tab === 'pantau' }" @click="bukaTab('pantau')">Mode pantau</button>
         <button :class="{ aktif: tab === 'tanpa' }" @click="bukaTab('tanpa')">Gangguan tanpa tiket ({{ data.tanpa_tiket.length }})</button>
         <button :class="{ aktif: tab === 'belum' }" @click="bukaTab('belum')">Router belum terpetakan ({{ data.pemetaan.belum }})</button>
       </div>
@@ -152,49 +183,6 @@ async function simpanPeta(id_site: number) {
             </tbody>
           </table>
         </div>
-      </div>
-
-      <!-- Mode pantau -->
-      <div v-else-if="tab === 'pantau'" class="card">
-        <p class="nc-catatan">
-          <b>Mode pantau aktif</b> — tiket PRTG tetap dibuat seperti biasa. Sistem hanya mencatat status NOCaaS saat tiket dibuat, selama aktif, dan saat selesai.
-          Aturan yang diuji: <b>tahan tiket bila router online di NOCaaS</b> (data ≤ 3 menit).
-          <template v-if="pantau?.mulai"> Dicatat sejak {{ fmtDateTime(pantau.mulai) }}.</template>
-        </p>
-        <p v-if="!pantau" class="muted">Memuat…</p>
-        <p v-else-if="!pantau.total" class="muted">Belum ada tiket PRTG baru sejak mode pantau aktif.</p>
-        <template v-else>
-          <div class="nc-ubin">
-            <div class="card nc-angka"><b>{{ pantau.total }}</b><small>Tiket PRTG dicatat</small></div>
-            <div class="card nc-angka"><span class="nc-titik" :style="{ background: WARNA.online }"></span><b>{{ pantau.ditahan.n }} <small>({{ pct(pantau.ditahan.n, pantau.total) }})</small></b><small>Akan ditahan (router online)</small></div>
-            <div class="card nc-angka"><b>{{ pantau.ditahan.pulih_60 }} <small>/ {{ pantau.ditahan.selesai }}</small></b><small>Yang ditahan pulih ≤ 60 menit (tiket palsu terhindar)</small></div>
-            <div class="card nc-angka"><span class="nc-titik" :style="{ background: WARNA.offline }"></span><b>{{ pantau.ditahan.kemudian_bermasalah }}</b><small>Ditahan tapi kemudian bermasalah di NOCaaS (risiko)</small></div>
-          </div>
-          <p class="nc-catatan">
-            Yang ditahan: pulih ≤ 15 mnt <b>{{ pantau.ditahan.pulih_15 }}</b> · ≤ 30 mnt <b>{{ pantau.ditahan.pulih_30 }}</b> · ≤ 60 mnt <b>{{ pantau.ditahan.pulih_60 }}</b> ·
-            lebih dari 60 mnt <b>{{ pantau.ditahan.lewat_60 }}</b> · median {{ pantau.ditahan.median_menit ?? '—' }} mnt · masih aktif {{ pantau.ditahan.masih_aktif }} · dibuka ulang (flapping) {{ pantau.ditahan.buka_ulang }}.
-            Status saat dibuka:
-            <template v-for="([k, n], i) in Object.entries(pantau.per_status)" :key="k">{{ i ? ' · ' : ' ' }}{{ k }} <b>{{ n }}</b></template>.
-          </p>
-          <div class="table-wrap">
-            <table class="table">
-              <thead><tr><th>Tiket</th><th>Site</th><th>NOCaaS saat dibuka</th><th>Terburuk selama aktif</th><th>Durasi</th><th>Saat selesai</th></tr></thead>
-              <tbody>
-                <tr v-for="r in pantau.tiket" :key="r.id_ticket" class="nc-baris" :class="{ risiko: r.kemudian_bermasalah }" @click="router.push(`/operations/${r.id_ticket}`)">
-                  <td><b class="mono">{{ r.ticket.nomor_tiket }}</b><div class="muted">{{ fmtDateTime(r.ticket.tgl_open) }}</div></td>
-                  <td>{{ r.ticket.site?.nama_site }}<div class="muted">{{ r.site_key || '—' }}</div></td>
-                  <td>
-                    <span class="nc-status" :style="{ color: WARNA_BUKA[r.status_buka], borderColor: WARNA_BUKA[r.status_buka] }">{{ r.label_buka }}</span>
-                    <div v-if="r.akan_ditahan" class="muted">akan ditahan</div>
-                  </td>
-                  <td><span v-if="r.terburuk" class="nc-status" :style="{ color: WARNA[r.terburuk], borderColor: WARNA[r.terburuk] }">{{ r.terburuk }}</span><span v-else class="muted">—</span></td>
-                  <td class="nowrap">{{ r.durasi_menit !== null ? r.durasi_menit + ' mnt' : 'masih aktif' }}<div v-if="r.buka_ulang" class="muted">dibuka ulang {{ r.buka_ulang }}×</div></td>
-                  <td>{{ r.status_selesai || '—' }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </template>
       </div>
 
       <!-- Gangguan di NOCaaS tanpa tiket -->
@@ -288,6 +276,10 @@ async function simpanPeta(id_site: number) {
 .nc-angka b small { font-size: 14px; color: #64748b; font-weight: 600; }
 .nc-angka > small { color: #64748b; font-size: 12.5px; }
 .nc-titik { position: absolute; top: 14px; right: 14px; width: 10px; height: 10px; border-radius: 50%; }
+.nc-cfg { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 14px; }
+.nc-cfg-teks { flex: 1; min-width: 260px; font-size: 12.5px; color: #475569; }
+.nc-cfg-form { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.nc-cfg-form .input { width: 80px; margin-left: 4px; }
 .nc-tab { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
 .nc-tab button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-weight: 600; font-size: 13px; }
 .nc-tab button.aktif { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
@@ -296,7 +288,6 @@ async function simpanPeta(id_site: number) {
 .nc-filter .input { width: auto; }
 .nc-baris { cursor: pointer; }
 .nc-baris:hover { background: #f8fafc; }
-.nc-baris.risiko { background: #fef2f2; }
 .nc-status { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border: 1px solid; border-radius: 999px; white-space: nowrap; }
 .nc-saran { font-size: 12.5px; color: #475569; max-width: 360px; }
 .mono { font-family: monospace; }

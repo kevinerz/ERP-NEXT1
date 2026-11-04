@@ -163,6 +163,16 @@ export class PrtgService {
     return cariSiteDariNama(this.prisma, nama);
   }
 
+  /**
+   * Site yang punya router NOCaaS & NOCaaS sehat (sinkron ≤ 5 menit lalu, tiket NOCaaS aktif) → gangguannya
+   * ditiketkan oleh NOCaaS. PRTG tetap jadi cadangan untuk site yang belum terpetakan atau saat NOCaaS bermasalah.
+   */
+  private async ditanganiNocaas(id_site: number): Promise<boolean> {
+    const cfg = await this.prisma.nocaasConfig.findUnique({ where: { id: 1 } }).catch(() => null);
+    if (!cfg?.tiket_aktif || !cfg.terakhir_sinkron || Date.now() - cfg.terakhir_sinkron.getTime() > 5 * 60_000) return false;
+    return (await this.prisma.nocaasRouter.count({ where: { id_site } })) > 0;
+  }
+
   /** Ambil durasi konfirmasi dari DB config (default 10 menit jika belum ada). */
   private async getDurasiKonfirmasi(): Promise<number> {
     try {
@@ -276,7 +286,7 @@ export class PrtgService {
 
     const durasiKonfirmasiMenit = await this.getDurasiKonfirmasi();
     const cooldownMenit = await this.getCooldownFlapping();
-    const hasil = { tiket_dibuat: 0, flapping_reopened: 0, pending_baru: 0, false_alarm: 0, dilewati: 0, auto_resolved: 0, tanpa_site: 0 };
+    const hasil = { tiket_dibuat: 0, flapping_reopened: 0, pending_baru: 0, false_alarm: 0, dilewati: 0, auto_resolved: 0, tanpa_site: 0, ditangani_nocaas: 0 };
     const now = new Date();
     // Normalisasi device name: trim + lowercase agar tidak mismatch karena whitespace/casing
     const downDevices = new Set(downSensors.map((s) => (s.device?.trim() ?? '').toLowerCase()));
@@ -315,6 +325,9 @@ export class PrtgService {
     }
 
     for (const [device, sensors] of byDevice) {
+      // Site yang sudah terpetakan ke router NOCaaS: tiket dari NOCaaS, bukan dari sensor PRTG
+      const siteDevice = await this.cariSite(device);
+      if (siteDevice && (await this.ditanganiNocaas(siteDevice.id_site))) { hasil.ditangani_nocaas++; continue; }
       // Buat entri pending — TIDAK buat tiket, TIDAK kirim WA dulu
       for (const s of sensors) {
         await this.prisma.integrationPrtgWebhook.create({
@@ -359,6 +372,12 @@ export class PrtgService {
       const firstEntry = entries[0];
       const downSensorList = downSensors.filter((s) => s.device === device);
       const sensorNames = downSensorList.map((s) => s.sensor).join(', ') || 'Sensor';
+
+      if (site && (await this.ditanganiNocaas(site.id_site))) {
+        for (const e of entries) await this.prisma.integrationPrtgWebhook.delete({ where: { id_webhook: e.id_webhook } }).catch(() => {});
+        hasil.ditangani_nocaas++;
+        continue;
+      }
 
       let ticketId: number | null = null;
       if (site) {
