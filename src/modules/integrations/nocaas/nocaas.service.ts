@@ -33,13 +33,15 @@ export const KESIMPULAN: Record<StatusRouter | 'macet' | 'tidak_ada', { label: s
   tidak_ada: { label: 'Tidak terpetakan', saran: 'Site ini belum terhubung ke router NOCaaS — petakan di halaman Pembanding NOCaaS.' },
 };
 
-// Kategori gangguan lain + ambang bawaan (bisa diubah di /nocaas → Atur)
+// Kategori gangguan lain + ambang bawaan (bisa diubah di /nocaas → Atur).
+// Kondisi SELALU dicatat (untuk laporan); 'aktif' = dibuatkan tiket atau tidak.
+// Tunnel/VPN putus (jalur, sering putus) bawaannya tidak ditiketkan — yang dipantau koneksi toko, bukan tunnel.
 export const KATEGORI_BAWAAN = {
-  jalur: { aktif: true, menit: 60 },          // 1 jalur VPN (NS/UN) putus ≥ menit
+  jalur: { aktif: false, menit: 60 },         // 1 jalur VPN (NS/UN) putus ≥ menit
   port_wan_down: { aktif: true },             // port uplink (FO/M2M/…) yang tadinya hidup jadi mati
   port_wan_flap: { aktif: true, min: 3 },     // port WAN naik-turun ≥ min kali / jam
   port_lan_flap: { aktif: false, min: 20 },   // port LAN naik-turun ≥ min kali / jam (sering = perangkat toko)
-  sering_putus: { aktif: true, min: 4 },      // VPN putus-sambung ≥ min kali / jam
+  sering_putus: { aktif: false, min: 4 },     // VPN putus-sambung ≥ min kali / jam
   pulih_menit: 60,                            // naik-turun / sering putus dianggap pulih setelah tenang sekian menit
 };
 export const LABEL_KATEGORI: Record<string, { label: string; prioritas: string; arti: string }> = {
@@ -535,14 +537,14 @@ export class NocaasService {
       select: { site_key: true, id_site: true, status: true, status_sejak: true, ns_online: true, un_online: true, ns_ip: true, un_ip: true, wan_status: true, macet_sejak: true },
     });
     const peta = new Map(routers.map((r) => [r.site_key, r]));
-    if (kat.jalur.aktif) {
+    {
       for (const r of routers) {
         if (r.status !== 'partial' || r.status_sejak < cfg.aktif_sejak || now.getTime() - r.status_sejak.getTime() < kat.jalur.menit * 60_000) continue;
         const putus = [r.ns_ip && !r.ns_online ? 'NS' : null, r.un_ip && !r.un_online ? 'UN' : null].filter(Boolean).join(' & ');
         kini.push({ site_key: r.site_key, id_site: r.id_site!, kategori: 'jalur', detail: putus || 'VPN', nilai: null, mulai: r.status_sejak });
       }
     }
-    if (kat.port_wan_down.aktif) {
+    {
       for (const r of routers) {
         if (r.status === 'offline' || r.macet_sejak) continue; // router mati: snapshot basi, sudah ditangani kategori mati
         for (const [iface, w] of Object.entries((r.wan_status ?? {}) as WanStatus)) {
@@ -551,7 +553,7 @@ export class NocaasService {
         }
       }
     }
-    const minPort = Math.min(kat.port_wan_flap.aktif ? kat.port_wan_flap.min : 999, kat.port_lan_flap.aktif ? kat.port_lan_flap.min : 999);
+    const minPort = Math.min(kat.port_wan_flap.min, kat.port_lan_flap.min);
     if (minPort < 999) {
       const d = await this.ambil<{ items: { site_key: string; iface: string; downs: number; is_wan: boolean }[] }>(`/api/heartbeat/port-flaps?hours=1&min_downs=${Math.max(2, minPort)}&limit=200`, 30_000);
       for (const f of d.items ?? []) {
@@ -559,11 +561,11 @@ export class NocaasService {
         if (!r) continue;
         const k = f.is_wan ? 'port_wan_flap' : 'port_lan_flap';
         const c = kat[k];
-        if (!c.aktif || f.downs < c.min) continue;
+        if (f.downs < c.min) continue;
         kini.push({ site_key: f.site_key, id_site: r.id_site!, kategori: k, detail: f.iface, nilai: f.downs, mulai: now });
       }
     }
-    if (kat.sering_putus.aktif) {
+    {
       const d = await this.ambil<{ items: { site_key: string; downs: number }[] }>(`/api/heartbeat/flapping?hours=1&min_downs=${Math.max(2, kat.sering_putus.min)}`, 30_000);
       for (const f of d.items ?? []) {
         const r = peta.get(f.site_key);
@@ -595,6 +597,7 @@ export class NocaasService {
     for (const g of tanpaTiket) perKat.set(g.kategori, [...(perKat.get(g.kategori) ?? []), g]);
     let dibuat = 0, ditempel = 0;
     for (const [kategori, gs] of perKat) {
+      if (!(kat as any)[kategori]?.aktif) continue; // kategori dicatat saja, tidak ditiketkan
       const info = LABEL_KATEGORI[kategori];
       const site = [...new Set(gs.map((g) => g.id_site!))];
       const aktif = await this.prisma.operationTicket.findMany({

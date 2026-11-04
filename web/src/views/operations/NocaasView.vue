@@ -185,7 +185,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             Lebih dari {{ cfg.maks_tiket_per_putaran }} site sekaligus → ditahan (dicurigai gangguan pusat).
             Hanya gangguan yang mulai setelah {{ fmtDateTime(cfg.aktif_sejak) }}. Site belum terpetakan tetap memakai PRTG.
             WA ke PIC site (lewat WA helpdesk, hanya PIC terkonfirmasi): <b>{{ cfg.wa_pic_aktif ? 'AKTIF' : 'mati' }}</b>.
-            <br />Kategori lain:
+            <br />Kategori lain (selalu dicatat untuk laporan; dicoret = tidak dibuatkan tiket):
             <template v-for="(k, i) in KAT" :key="k.kunci">{{ i ? ' · ' : ' ' }}<span :class="{ 'nc-mati': !cfg.kategori?.[k.kunci]?.aktif }">{{ k.label }}<template v-if="k.ambang && cfg.kategori?.[k.kunci]?.aktif"> ≥ {{ cfg.kategori[k.kunci][k.ambang] }} {{ k.satuan }}</template></span></template>
             · pulih setelah tenang {{ cfg.kategori?.pulih_menit }} menit.
           </span>
@@ -198,6 +198,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <label>Cooldown flapping (menit) <input v-model.number="cfgForm.cooldown_menit" type="number" min="0" max="1440" class="form-input" /></label>
           <label>Maks tiket sekaligus <input v-model.number="cfgForm.maks_tiket_per_putaran" type="number" min="1" max="500" class="form-input" /></label>
           <div v-if="cfgForm.kategori" class="nc-cfg-kat">
+            <span class="muted">Buat tiket untuk:</span>
             <label v-for="k in KAT" :key="k.kunci">
               <input v-model="cfgForm.kategori[k.kunci].aktif" type="checkbox" /> {{ k.label }}
               <template v-if="k.ambang"> ≥ <input v-model.number="cfgForm.kategori[k.kunci][k.ambang]" type="number" min="2" class="form-input" /> {{ k.satuan }}</template>
