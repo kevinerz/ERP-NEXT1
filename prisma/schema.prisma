@@ -1278,6 +1278,7 @@ model NocaasConfig {
   durasi_konfirmasi_menit Int       @default(10) // menit mati total sebelum tiket dibuat (anti kedip)
   cooldown_menit          Int       @default(60) // tiket yang resolve < sekian menit lalu dibuka ulang (flapping)
   maks_tiket_per_putaran  Int       @default(30) // lebih dari ini sekaligus = dicurigai gangguan pusat → tidak buat tiket
+  wa_pic_aktif            Boolean   @default(false) // kirim WA (akun helpdesk) ke PIC site saat tiket NOCaaS dibuka & pulih
   terakhir_sinkron        DateTime? // sinkron NOCaaS terakhir yang BERHASIL (dipakai PRTG untuk tahu NOCaaS sehat)
   updated_at              DateTime  @default(now()) @updatedAt
 
@@ -1603,6 +1604,8 @@ model WaKontak {
   id_site      Int?
   id_pic       Int?
   nama_erp     String?  @db.VarChar(200)
+  // Asal tautan id_site bila tidak dari nomor PIC: 'saran' (dari nama kontak HP, belum dikonfirmasi) | 'tolak' (bukan PIC site)
+  site_sumber  String?  @db.VarChar(20)
   updated_at   DateTime @updatedAt
 
   @@unique([id_akun, jid])

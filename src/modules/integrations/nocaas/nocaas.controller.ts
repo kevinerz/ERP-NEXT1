@@ -10,6 +10,7 @@ class PetakanDto {
 
 class KonfigurasiDto {
   @IsOptional() @IsBoolean() tiket_aktif?: boolean;
+  @IsOptional() @IsBoolean() wa_pic_aktif?: boolean;
   @IsOptional() @IsInt() @Min(1) @Max(240) durasi_konfirmasi_menit?: number;
   @IsOptional() @IsInt() @Min(0) @Max(1440) cooldown_menit?: number;
   @IsOptional() @IsInt() @Min(1) @Max(500) maks_tiket_per_putaran?: number;
@@ -23,6 +24,7 @@ export class NocaasController {
 
   @Get('ringkasan') ringkasan() { return this.svc.ringkasan(); }
   @Post('sinkron') sinkron() { return this.svc.sinkron(); }
+  @Post('kontak-wa/cocokkan') cocokkanKontak() { return this.svc.cocokkanKontakWa(); }
   @Get('status-site') statusSite(@Query('ids') ids = '') { return this.svc.statusSite(ids.split(',').map(Number)); }
   @Get('konfigurasi') async konfigurasi() { return { data: await this.svc.konfigurasi() }; }
   @Put('konfigurasi') @Roles('Admin', 'Director', 'Manager_Ops') ubahKonfigurasi(@Body() dto: KonfigurasiDto) { return this.svc.ubahKonfigurasi(dto); }

@@ -4,7 +4,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import { confirmDialog, promptDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -675,8 +675,12 @@ async function simpanTv() {
 }
 interface Profil {
   id_chat: number; nama: string; nomor: string | null; is_grup: boolean; jumlah_pesan: number; dibuat: string
-  kontak: { nama_wa: string | null; nama_simpan: string | null; nama_kustom: string | null; nama_erp: string | null } | null
+  kontak: { nama_wa: string | null; nama_simpan: string | null; nama_kustom: string | null; nama_erp: string | null; site_sumber?: string | null } | null
   site: { id_site: number; kode_site: string; nama_site: string; kota: string | null; status_site: string } | null
+  jaringan?: {
+    perangkat: { site_key: string; jenis: string; status: string; label: string; sejak: string | null; isp: string | null }[]
+    tiket: { id_ticket: number; nomor_tiket: string; judul_tiket: string; status_tiket: string; tgl_open: string }[]
+  } | null
   pelanggan: { id_pelanggan: number; kode_pelanggan: string; nama_pelanggan: string } | null
   karyawan: { id_karyawan: number; nama_lengkap: string; jabatan: string; departemen: string; status_aktif: boolean }[]
   teknisi: { id_kontak: number; nama: string; asal_vendor: string | null; keahlian: string | null; is_aktif: boolean }[]
@@ -706,6 +710,28 @@ async function tampilkanProfil() {
   }
 }
 watch(() => aktif.value?.id_chat, () => { bukaProfil.value = false })
+
+// Site yang ditebak dari nama kontak di HP helpdesk ("Hamka KK Palembang Square") — konfirmasi jadi PIC resmi atau tolak
+const WARNA_NOC: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626' }
+function konfirmasiSaranPic() {
+  const p = profil.value
+  if (!p?.site) return
+  bukaFormPic()
+  formPic.site = { ...p.site, pelanggan: p.pelanggan ? { nama_pelanggan: p.pelanggan.nama_pelanggan } : null }
+  formPic.cari = p.site.nama_site
+  // Nama PIC = kata sebelum nama brand/site di nama kontak ("Hamka KK Palembang Square" → "Hamka")
+  const nk = (p.kontak?.nama_kustom || p.kontak?.nama_simpan || '').trim().split(/\s+/)
+  formPic.nama = nk.length > 2 ? nk[0]! : formPic.nama
+}
+async function tolakSaranPic() {
+  if (!aktif.value) return
+  try { profil.value = (await api.post(`/wa/chat/${aktif.value.id_chat}/tolak-site`)).data.data } catch (e) { alertError(e, 'Gagal') }
+}
+function lamaSejak(d: string | null) {
+  if (!d) return ''
+  const m = Math.round((Date.now() - new Date(d).getTime()) / 60000)
+  return m < 60 ? `${m} mnt` : m < 2880 ? `${Math.floor(m / 60)} jam` : `${Math.floor(m / 1440)} hari`
+}
 watch(bukaProfil, (v) => { if (!v) { formPic.buka = false; formPic.ok = ''; formTv.buka = false; formTv.ok = '' } })
 
 // ── Real-time (SSE) ──────────────────────────────────────────────────────────
@@ -1227,6 +1253,24 @@ onBeforeUnmount(() => {
                 📍 <RouterLink :to="`/master/site/${profil.site.id_site}`">{{ profil.site.nama_site }}</RouterLink>
                 <small class="muted">{{ profil.site.kode_site }}<template v-if="profil.site.kota"> · {{ profil.site.kota }}</template> · {{ profil.site.status_site }}</small>
               </p>
+              <div v-if="profil.kontak?.site_sumber === 'saran'" class="wa-saran-pic">
+                Ditebak dari nama kontak di HP — belum dikonfirmasi sebagai PIC.
+                <div>
+                  <button class="btn-sm btn-hijau" @click="konfirmasiSaranPic">✓ Benar, jadikan PIC</button>
+                  <button class="btn-sm btn-ghost" @click="tolakSaranPic">Bukan</button>
+                </div>
+              </div>
+              <div v-if="profil.jaringan" class="wa-jaringan">
+                <p v-for="r in profil.jaringan.perangkat" :key="r.site_key">
+                  <span class="wa-noc-dot" :style="{ background: WARNA_NOC[r.status] ?? '#64748b' }"></span>
+                  <b :style="{ color: WARNA_NOC[r.status] }">{{ r.label }}</b>
+                  <small class="muted"> {{ r.site_key }}<template v-if="r.status !== 'online'"> · {{ lamaSejak(r.sejak) }}</template><template v-if="r.isp"> · {{ r.isp }}</template></small>
+                </p>
+                <p v-if="!profil.jaringan.perangkat.length" class="muted kecil">Belum ada perangkat NOCaaS terpetakan ke site ini.</p>
+                <p v-for="t in profil.jaringan.tiket" :key="t.id_ticket">
+                  🎫 <RouterLink :to="`/operations/${t.id_ticket}`">{{ t.nomor_tiket }}</RouterLink> <small class="muted">{{ t.judul_tiket }} · {{ t.status_tiket }}</small>
+                </p>
+              </div>
             </template>
             <p v-for="k in profil.karyawan" :key="'k' + k.id_karyawan">
               🔧 Teknisi NEXT1: <b>{{ k.nama_lengkap }}</b>
@@ -1540,4 +1584,9 @@ onBeforeUnmount(() => {
   .wa-bubble { max-width: 85%; }
   .wa-aksi { opacity: 1; }
 }
+.wa-saran-pic { margin: 6px 0; padding: 7px 9px; border-radius: 8px; background: #fffbeb; border: 1px solid #fde68a; font-size: 12.5px; color: #92400e; }
+.wa-saran-pic div { display: flex; gap: 6px; margin-top: 6px; }
+.wa-jaringan { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0; font-size: 13px; }
+.wa-jaringan p { margin: 3px 0; }
+.wa-noc-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
 </style>

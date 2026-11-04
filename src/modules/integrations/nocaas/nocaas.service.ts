@@ -8,6 +8,7 @@ import { PrtgClient } from '../prtg/prtg.client';
 import { namaNyambung, PencocokSaran, SiteCalon } from './nocaas-saran';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { StarsenderService } from '../starsender/starsender.service';
+import { WaService } from '../../whatsapp/wa.service';
 import { SLA_JAM } from '../../operations/operations.service';
 import { withNextTicketNumber } from '../../../common/utils/ticket-number';
 
@@ -56,6 +57,7 @@ export class NocaasService {
     private prtg: PrtgClient,
     private notif: NotificationsService,
     private wa: StarsenderService,
+    private waHelpdesk: WaService,
   ) {}
 
   private get base() {
@@ -479,10 +481,11 @@ export class NocaasService {
     return this.prisma.nocaasConfig.upsert({ where: { id: 1 }, create: { id: 1 }, update: {} });
   }
 
-  async ubahKonfigurasi(d: { tiket_aktif?: boolean; durasi_konfirmasi_menit?: number; cooldown_menit?: number; maks_tiket_per_putaran?: number }) {
+  async ubahKonfigurasi(d: { tiket_aktif?: boolean; wa_pic_aktif?: boolean; durasi_konfirmasi_menit?: number; cooldown_menit?: number; maks_tiket_per_putaran?: number }) {
     await this.konfigurasi();
     const data: any = {};
     if (typeof d.tiket_aktif === 'boolean') data.tiket_aktif = d.tiket_aktif;
+    if (typeof d.wa_pic_aktif === 'boolean') data.wa_pic_aktif = d.wa_pic_aktif;
     if (d.durasi_konfirmasi_menit !== undefined) data.durasi_konfirmasi_menit = Math.min(Math.max(Math.round(d.durasi_konfirmasi_menit), 1), 240);
     if (d.cooldown_menit !== undefined) data.cooldown_menit = Math.min(Math.max(Math.round(d.cooldown_menit), 0), 1440);
     if (d.maks_tiket_per_putaran !== undefined) data.maks_tiket_per_putaran = Math.min(Math.max(Math.round(d.maks_tiket_per_putaran), 1), 500);
@@ -545,7 +548,12 @@ export class NocaasService {
     } else {
       for (const id_site of perluBaru) {
         const r = await this.buatTiket(perSite.get(id_site)!, cfg.cooldown_menit);
-        if (r === 'baru') hasil.dibuat++; else if (r === 'ulang') hasil.dibuka_ulang++;
+        if (r.hasil === 'baru') hasil.dibuat++; else hasil.dibuka_ulang++;
+        if (cfg.wa_pic_aktif && r.hasil === 'baru') {
+          const rs = perSite.get(id_site)!;
+          const mati = rs.some((x) => x.jenis === 'mati');
+          this.kirimWaPic(id_site, `Halo Bapak/Ibu PIC *${rs[0].site!.nama_site}*,\n\nNOC NEXT1 mendeteksi ${mati ? 'koneksi di lokasi Anda terputus' : 'koneksi jaringan NEXT1 di lokasi Anda terganggu'} sejak ${this.waktuWib(rs[0].sejak)} (tiket ${r.nomor}). Tim kami sedang menangani.\n\n${mati ? 'Mohon bantu cek apakah listrik dan perangkat router/modem di lokasi menyala. ' : ''}Balas pesan ini bila ada informasi tambahan. Terima kasih 🙏`).catch(() => {});
+        }
       }
     }
 
@@ -592,12 +600,13 @@ export class NocaasService {
         nama_site: t.site.nama_site, nama_pelanggan: t.site.pelanggan?.nama_pelanggan ?? '', id_pelanggan: t.site.id_pelanggan, no_hp_customer: t.site.pelanggan?.no_hp_pic_utama,
       }).catch(() => {});
       hasil.resolved++;
+      if (cfg.wa_pic_aktif) this.kirimWaPic(t.id_site, `Halo Bapak/Ibu PIC *${t.site.nama_site}*,\n\nKoneksi di lokasi Anda sudah kembali normal (${now.toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit' })} WIB, tiket ${t.nomor_tiket}). Terima kasih atas kesabarannya 🙏\n\n— NOC NEXT1`).catch(() => {});
     }
     if (hasil.dibuat || hasil.dibuka_ulang || hasil.dicatat || hasil.resolved) this.logger.log(`Tiket NOCaaS: ${JSON.stringify(hasil)}`);
   }
 
   /** Tiket baru (atau buka ulang tiket yang baru saja resolve — flapping) untuk satu site */
-  private async buatTiket(rs: any[], cooldownMenit: number): Promise<'baru' | 'ulang'> {
+  private async buatTiket(rs: any[], cooldownMenit: number): Promise<{ hasil: 'baru' | 'ulang'; nomor: string }> {
     const site = rs[0].site as { id_site: number; nama_site: string };
     const now = new Date();
     const downAt: Date = rs[0].sejak;
@@ -623,7 +632,7 @@ export class NocaasService {
       this.notif.notifyForModul('operations', {
         tipe: 'tiket_update', judul: `⚠️ Flapping #${ke}: ${site.nama_site} mati lagi`, deskripsi: `${flapping.nomor_tiket} — ${menit} menit setelah tersambung`, url: `/operations/${flapping.id_ticket}`,
       }).catch(() => {});
-      return 'ulang';
+      return { hasil: 'ulang', nomor: flapping.nomor_tiket };
     }
 
     const judul = `[NOCaaS] ${site.nama_site} — ${jenisTeks}`;
@@ -661,7 +670,66 @@ export class NocaasService {
         sensor_detail: mati ? 'Router mati total (VPN & heartbeat NOCaaS)' : 'VPN macet (sesi ada, ping gagal)', waktu_down: this.waktuWib(downAt),
       });
     })().catch(() => {});
-    return 'baru';
+    return { hasil: 'baru', nomor: ticket.nomor_tiket };
+  }
+
+  /**
+   * WA ke PIC site lewat akun helpdesk. Penerima hanya yang PASTI: PIC site di ERP (bukan placeholder PRTG)
+   * dan kontak WA yang sudah dikonfirmasi sebagai PIC — saran otomatis dari nama kontak tidak ikut.
+   */
+  private async kirimWaPic(id_site: number, teks: string) {
+    const [pic, kontak] = await Promise.all([
+      this.prisma.picSite.findMany({ where: { id_site, no_kontak: { not: null }, NOT: { nama_pic: { contains: 'PRTG' } } }, select: { no_kontak: true } }),
+      this.prisma.waKontak.findMany({ where: { id_site, id_pic: { not: null }, nomor: { not: null } }, select: { nomor: true } }),
+    ]);
+    const nomor = [...new Set([...pic.map((p) => p.no_kontak!), ...kontak.map((k) => k.nomor!)].map((n) => n.replace(/\D/g, '').replace(/^0/, '62')).filter((n) => n.length >= 10))].slice(0, 5);
+    for (const n of nomor) {
+      try { await this.waHelpdesk.kirimKeNomor(n, teks, 0); } catch (e: any) { this.logger.warn(`WA ke PIC ${n} gagal: ${e?.message}`); }
+    }
+    if (nomor.length) this.logger.log(`WA tiket NOCaaS → ${nomor.length} PIC site#${id_site}`);
+  }
+
+  // ── Kontak WA helpdesk ↔ PIC site ──────────────────────────────────────────
+  // Nama kontak di HP helpdesk berformat "<Nama> <Brand> <Lokasi>" ("Hamka KK Palembang Square"). Kontak yang belum
+  // tertaut lewat nomor PIC dicocokkan ke site dengan pencocok saran yang sama dengan router NOCaaS.
+  // Hasil yakin disimpan sebagai site_sumber 'saran' (tampil di WA Inbox, perlu dikonfirmasi jadi PIC resmi).
+  @Cron('7 * * * *')
+  async cronKontakWa() { await this.cocokkanKontakWa().catch((e) => this.logger.warn(`Cocokkan kontak WA gagal: ${e?.message}`)); }
+
+  async cocokkanKontakWa() {
+    const routers = await this.prisma.nocaasRouter.findMany({ where: { id_site: { not: null }, sumber_map: { in: ['ip_perangkat', 'prtg_host', 'manual', 'saran'] } }, select: { site_key: true, id_site: true } });
+    const pencocok = await this.buatPencocok(routers.map((r) => ({ site_key: r.site_key.replace(/^[A-Z]+:/, ''), id_site: r.id_site! })), new Set());
+    const site = new Map((await this.siteAktif()).map((x) => [x.id_site, x]));
+    const kontak = await this.prisma.waKontak.findMany({
+      where: { id_pic: null, NOT: { jid: { endsWith: '@g.us' } }, OR: [{ site_sumber: 'saran' }, { site_sumber: null, id_site: null }] },
+      select: { id_kontak: true, nama_kustom: true, nama_simpan: true, id_site: true, site_sumber: true },
+    });
+    let baru = 0, lepas = 0;
+    const tulis: any[] = [];
+    for (const k of kontak) {
+      const nama = (k.nama_kustom || k.nama_simpan || '').trim();
+      const t = nama.split(/\s+/);
+      let id: number | null = null;
+      // Lewati nama orang di depan: cari posisi kata yang dikenali sebagai awalan brand
+      for (let i = 0; i < Math.min(3, t.length - 1); i++) {
+        const sisa = t.slice(i).join('-');
+        if (!pencocok.pelangganDari(sisa)) continue;
+        const r = pencocok.cari(sisa);
+        if (r.yakin) id = r.saran[0].id_site;
+        break;
+      }
+      if (id && id !== k.id_site) {
+        const s = site.get(id)!;
+        tulis.push(this.prisma.waKontak.update({ where: { id_kontak: k.id_kontak }, data: { id_site: id, id_pelanggan: s.id_pelanggan, site_sumber: 'saran', nama_erp: `${nama} · ${s.nama_site}`.slice(0, 200) } }));
+        baru++;
+      } else if (!id && k.site_sumber === 'saran') {
+        tulis.push(this.prisma.waKontak.update({ where: { id_kontak: k.id_kontak }, data: { id_site: null, id_pelanggan: null, site_sumber: null, nama_erp: null } }));
+        lepas++;
+      }
+    }
+    for (let i = 0; i < tulis.length; i += 200) await this.prisma.$transaction(tulis.slice(i, i + 200));
+    if (baru || lepas) this.logger.log(`Kontak WA ↔ site: ${baru} tertaut (saran), ${lepas} dilepas`);
+    return { data: { dicek: kontak.length, tertaut: baru, dilepas: lepas }, message: `${baru} kontak WA tertaut ke site (saran), ${lepas} dilepas` };
   }
 
   /** Riwayat kejadian tunnel/port dari NOCaaS (langsung, tidak disimpan) */

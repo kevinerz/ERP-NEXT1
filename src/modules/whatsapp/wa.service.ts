@@ -147,7 +147,7 @@ export class WaService {
       nomor,
       ...(data.nama_wa ? { nama_wa: data.nama_wa.slice(0, 150) } : {}),
       ...(data.nama_simpan ? { nama_simpan: data.nama_simpan.slice(0, 150) } : {}),
-      ...(cocok ? { id_pelanggan: cocok.id_pelanggan, id_site: cocok.id_site, id_pic: cocok.id_pic, nama_erp: cocok.nama.slice(0, 200) } : {}),
+      ...(cocok ? { id_pelanggan: cocok.id_pelanggan, id_site: cocok.id_site, id_pic: cocok.id_pic, nama_erp: cocok.nama.slice(0, 200), ...(cocok.id_pic ? { site_sumber: null } : {}) } : {}),
     };
     return this.prisma.waKontak.upsert({
       where: { id_akun_jid: { id_akun, jid } },
@@ -754,6 +754,31 @@ export class WaService {
     });
   }
 
+  /** Kondisi perangkat site menurut NOCaaS + tiket aktif — supaya helpdesk langsung tahu saat PIC chat */
+  private async jaringanSite(id_site: number) {
+    const LABEL: Record<string, string> = { online: 'Online', partial: '1 tunnel putus', internet_ok: 'Internet hidup, VPN putus', macet: 'VPN macet', offline: 'Mati total' };
+    const [perangkat, tiket] = await Promise.all([
+      this.prisma.nocaasRouter.findMany({ where: { id_site }, select: { site_key: true, jenis: true, status: true, status_sejak: true, macet_sejak: true, access_isp: true }, orderBy: { site_key: 'asc' } }),
+      this.prisma.operationTicket.findMany({ where: { id_site, status_tiket: { in: ['Open', 'In_Progress', 'Pending_Customer'] } }, select: { id_ticket: true, nomor_tiket: true, judul_tiket: true, status_tiket: true, tgl_open: true }, orderBy: { tgl_open: 'desc' }, take: 5 }),
+    ]);
+    return {
+      perangkat: perangkat.map((r) => {
+        const status = r.status !== 'offline' && r.macet_sejak ? 'macet' : r.status;
+        return { site_key: r.site_key, jenis: r.jenis, status, label: LABEL[status] ?? status, sejak: status === 'macet' ? r.macet_sejak : r.status_sejak, isp: r.access_isp };
+      }),
+      tiket,
+    };
+  }
+
+  /** Saran site dari nama kontak ditolak helpdesk → jangan dicocokkan lagi */
+  async tolakSaranSite(id_chat: number) {
+    const chat = await this.prisma.waChat.findUnique({ where: { id_chat } });
+    if (!chat) throw new NotFoundException('Chat tidak ditemukan');
+    await this.prisma.waKontak.updateMany({ where: { id_akun: chat.id_akun, jid: chat.jid, site_sumber: 'saran' }, data: { site_sumber: 'tolak', id_site: null, id_pelanggan: null, nama_erp: null } });
+    await this.siarkanChat(id_chat);
+    return this.profil(id_chat);
+  }
+
   /** Info profil: kontak pribadi (tautan ERP) atau grup (deskripsi + anggota) */
   async profil(id_chat: number) {
     const chat = await this.prisma.waChat.findUnique({ where: { id_chat }, include: { akun: true } });
@@ -770,8 +795,9 @@ export class WaService {
       ]);
       return {
         ...c, jumlah_pesan, dibuat: chat.created_at,
-        kontak: k ? { nama_wa: k.nama_wa, nama_simpan: k.nama_simpan, nama_kustom: k.nama_kustom, nama_erp: k.nama_erp, lid: k.lid } : null,
+        kontak: k ? { nama_wa: k.nama_wa, nama_simpan: k.nama_simpan, nama_kustom: k.nama_kustom, nama_erp: k.nama_erp, lid: k.lid, site_sumber: k.site_sumber } : null,
         site, pelanggan, karyawan: tv.karyawan, teknisi: tv.teknisi, grup: null,
+        jaringan: site ? await this.jaringanSite(site.id_site) : null,
       };
     }
 

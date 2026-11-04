@@ -21,13 +21,13 @@ const filterTanpa = ref<'' | 'offline' | 'internet_ok' | 'macet'>('')
 // ── Tiket otomatis dari NOCaaS ──
 const cfg = ref<any>(null)
 const cfgEdit = ref(false)
-const cfgForm = ref({ tiket_aktif: true, durasi_konfirmasi_menit: 10, cooldown_menit: 60, maks_tiket_per_putaran: 30 })
+const cfgForm = ref({ tiket_aktif: true, wa_pic_aktif: false, durasi_konfirmasi_menit: 10, cooldown_menit: 60, maks_tiket_per_putaran: 30 })
 async function muatCfg() {
   try { cfg.value = (await api.get('/nocaas/konfigurasi')).data.data } catch { /* abaikan */ }
 }
 function bukaCfg() {
   const c = cfg.value
-  cfgForm.value = { tiket_aktif: c.tiket_aktif, durasi_konfirmasi_menit: c.durasi_konfirmasi_menit, cooldown_menit: c.cooldown_menit, maks_tiket_per_putaran: c.maks_tiket_per_putaran }
+  cfgForm.value = { tiket_aktif: c.tiket_aktif, wa_pic_aktif: c.wa_pic_aktif, durasi_konfirmasi_menit: c.durasi_konfirmasi_menit, cooldown_menit: c.cooldown_menit, maks_tiket_per_putaran: c.maks_tiket_per_putaran }
   cfgEdit.value = true
 }
 async function simpanCfg() {
@@ -176,11 +176,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             Mati lagi &lt; {{ cfg.cooldown_menit }} menit setelah resolve → tiket dibuka ulang (flapping).
             Lebih dari {{ cfg.maks_tiket_per_putaran }} site sekaligus → ditahan (dicurigai gangguan pusat).
             Hanya gangguan yang mulai setelah {{ fmtDateTime(cfg.aktif_sejak) }}. Site belum terpetakan tetap memakai PRTG.
+            WA ke PIC site (lewat WA helpdesk, hanya PIC terkonfirmasi): <b>{{ cfg.wa_pic_aktif ? 'AKTIF' : 'mati' }}</b>.
           </span>
           <button class="btn btn-ghost btn-sm" @click="bukaCfg">Atur</button>
         </template>
         <form v-else class="nc-cfg-form" @submit.prevent="simpanCfg">
           <label><input v-model="cfgForm.tiket_aktif" type="checkbox" /> Tiket otomatis aktif</label>
+          <label title="Pesan otomatis lewat WA helpdesk ke PIC site yang sudah dikonfirmasi, saat tiket dibuka & saat pulih"><input v-model="cfgForm.wa_pic_aktif" type="checkbox" /> WA ke PIC site</label>
           <label>Konfirmasi (menit) <input v-model.number="cfgForm.durasi_konfirmasi_menit" type="number" min="1" max="240" class="form-input" /></label>
           <label>Cooldown flapping (menit) <input v-model.number="cfgForm.cooldown_menit" type="number" min="0" max="1440" class="form-input" /></label>
           <label>Maks tiket sekaligus <input v-model.number="cfgForm.maks_tiket_per_putaran" type="number" min="1" max="500" class="form-input" /></label>

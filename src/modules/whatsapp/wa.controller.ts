@@ -59,6 +59,10 @@ export class WaController {
   @Post('chat/:id/pic')
   simpanPic(@Param('id', ParseIntPipe) id: number, @Body() dto: SimpanPicDto) { return this.wa.simpanPic(id, dto); }
 
+  // Saran site dari nama kontak HP salah → tandai bukan PIC site
+  @Post('chat/:id/tolak-site')
+  tolakSite(@Param('id', ParseIntPipe) id: number) { return this.wa.tolakSaranSite(id).then((data) => ({ data })); }
+
   // Simpan kontak sebagai teknisi NEXT1 (No. HP di HRIS) / teknisi vendor pihak ketiga
   @Get('karyawan/cari')
   cariKaryawan(@Query('q') q: string) { return this.wa.cariKaryawan(q); }
