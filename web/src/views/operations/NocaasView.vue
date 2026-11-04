@@ -7,7 +7,7 @@ import { fmtDateTime } from '@/composables/useFormat'
 import { alertError } from '@/composables/useDialog'
 
 const router = useRouter()
-const WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', offline: '#dc2626' }
+const WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626' }
 const SUMBER: Record<string, string> = { ip_perangkat: 'IP tunnel di perangkat site', prtg_host: 'Host device PRTG', nama: 'Nama persis', saran: 'Saran otomatis (brand + lokasi)', manual: 'Manual' }
 
 const data = ref<any>(null)
@@ -15,7 +15,7 @@ const memuat = ref(false)
 const sinkron = ref(false)
 const tab = ref<'tiket' | 'tanpa' | 'belum'>('tiket')
 const minMenit = ref(15)
-const filterTanpa = ref<'' | 'offline' | 'internet_ok'>('')
+const filterTanpa = ref<'' | 'offline' | 'internet_ok' | 'macet'>('')
 
 // ── Tiket otomatis dari NOCaaS ──
 const cfg = ref<any>(null)
@@ -52,7 +52,7 @@ function lama(d?: string | null) {
   if (m < 48 * 60) return `${Math.floor(m / 60)} jam ${m % 60} mnt`
   return `${Math.floor(m / 1440)} hari`
 }
-const sejak = (r: any) => (r.status === 'offline' && r.offline_since ? r.offline_since : r.status_sejak)
+const sejak = (r: any) => (r.status === 'macet' ? r.macet_sejak : r.status === 'offline' && r.offline_since ? r.offline_since : r.status_sejak)
 
 // Tiket aktif: urutkan yang paling perlu perhatian — NOCaaS online (kemungkinan alarm palsu) & mati total di atas
 const tiket = computed(() => (data.value?.tiket ?? []) as any[])
@@ -170,7 +170,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             Tiket otomatis {{ cfg.tiket_aktif ? 'AKTIF' : 'MATI' }}
           </span>
           <span class="nc-cfg-teks">
-            Router site terpetakan yang <b>mati total ≥ {{ cfg.durasi_konfirmasi_menit }} menit</b> → tiket <b>[NOCaaS]</b> Critical; kembali tersambung → auto-resolve.
+            Router site terpetakan yang <b>mati total</b> atau <b>VPN macet</b> (sesi ada, ping dari ERP gagal) <b>≥ {{ cfg.durasi_konfirmasi_menit }} menit</b> → tiket <b>[NOCaaS]</b> Critical; kembali tersambung &amp; bisa di-ping → auto-resolve.
             Mati lagi &lt; {{ cfg.cooldown_menit }} menit setelah resolve → tiket dibuka ulang (flapping).
             Lebih dari {{ cfg.maks_tiket_per_putaran }} site sekaligus → ditahan (dicurigai gangguan pusat).
             Hanya gangguan yang mulai setelah {{ fmtDateTime(cfg.aktif_sejak) }}. Site belum terpetakan tetap memakai PRTG.
@@ -224,9 +224,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       <div v-else-if="tab === 'tanpa'" class="card nc-panel">
         <div class="nc-filter">
           <select v-model="filterTanpa" class="form-select">
-            <option value="">Mati total + VPN putus</option>
+            <option value="">Semua (mati, macet, VPN putus)</option>
             <option value="offline">Mati total saja</option>
             <option value="internet_ok">Internet hidup, VPN putus saja</option>
+            <option value="macet">VPN macet saja</option>
           </select>
           <label class="muted">Minimal sudah
             <select v-model.number="minMenit" class="form-select">

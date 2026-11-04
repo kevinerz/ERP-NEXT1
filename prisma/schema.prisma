@@ -1252,6 +1252,11 @@ model NocaasRouter {
   brand         String?   @db.VarChar(20)
   downs7        Int       @default(0)
   flaps24       Int       @default(0)
+  // Ping tunnel dari server ERP (fping tiap menit) — sesi VPN ada belum tentu data lewat
+  ns_ping_ok    Boolean?
+  un_ping_ok    Boolean?
+  macet_sejak   DateTime? // semua tunnel bersesi tidak menjawab ping sejak
+  macet_lama    Boolean   @default(false) // sudah macet saat pertama dicek → bukan gangguan baru (tidak ditiketkan)
   updated_at    DateTime  @updatedAt
 
   site SitePelanggan? @relation(fields: [id_site], references: [id_site], onDelete: SetNull)

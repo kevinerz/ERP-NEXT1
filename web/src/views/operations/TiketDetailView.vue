@@ -105,7 +105,7 @@ const noc = ref<any>(null)
 const nocLoading = ref(false)
 const nocError = ref('')
 const nocKejadian = ref<Record<string, any[] | 'memuat' | string>>({})
-const NOC_WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', offline: '#dc2626', tidak_ada: '#64748b' }
+const NOC_WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626', tidak_ada: '#64748b' }
 const NOC_KEJADIAN: Record<string, string> = { tunnel_up: 'VPN tersambung', tunnel_down: 'VPN putus', link_up: 'Port naik', link_down: 'Port turun', reboot: 'Reboot' }
 async function fetchNoc() {
   nocLoading.value = true
@@ -848,7 +848,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                   <div class="noc-info">
                     <div class="noc-nama">{{ r.site_key }}</div>
                     <div class="noc-sub">
-                      <b :style="{ color: NOC_WARNA[r.status] }">{{ r.label }}</b> · sejak {{ nocSejak(r.status === 'offline' && r.offline_since ? r.offline_since : r.status_sejak) }}
+                      <b :style="{ color: NOC_WARNA[r.status] }">{{ r.label }}</b> · sejak {{ nocSejak(r.status === 'macet' ? r.macet_sejak : r.status === 'offline' && r.offline_since ? r.offline_since : r.status_sejak) }}
                     </div>
                     <div class="noc-tunnel">
                       <span v-if="r.ns_ip" :class="tunnelKelas(r.ns_online, r.ping?.ns)" :title="tunnelJudul(r.ns_online, r.ping?.ns)">NS {{ r.ns_ip }}<small v-if="r.ping?.ns"> · {{ pingTeks(r.ping.ns) }}</small></span>

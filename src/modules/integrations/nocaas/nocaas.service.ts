@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
@@ -14,15 +14,16 @@ import { withNextTicketNumber } from '../../../common/utils/ticket-number';
 // online = semua tunnel VPN tersambung · partial = salah satu tunnel putus ·
 // internet_ok = internet lokasi hidup tapi VPN putus (heartbeat syslog masih masuk) · offline = mati total
 export type StatusRouter = 'online' | 'partial' | 'internet_ok' | 'offline';
-const BOBOT: Record<string, number> = { offline: 3, internet_ok: 2, partial: 1, online: 0 };
+const BOBOT: Record<string, number> = { offline: 3, macet: 2.5, internet_ok: 2, partial: 1, online: 0 };
 const STATUS_TIKET_AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
 const IP_RE = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
 const IP_SAJA = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
-export const KESIMPULAN: Record<StatusRouter | 'tidak_ada', { label: string; saran: string }> = {
+export const KESIMPULAN: Record<StatusRouter | 'macet' | 'tidak_ada', { label: string; saran: string }> = {
   online: { label: 'Online', saran: 'Kedua jalur VPN tersambung — kemungkinan bukan putus koneksi (alarm PRTG palsu / sensor lain).' },
   partial: { label: '1 tunnel putus', saran: 'Salah satu jalur VPN (NS/UN) putus, lokasi masih tersambung lewat jalur lain — cek ISP jalur yang putus.' },
   internet_ok: { label: 'Internet hidup, VPN putus', saran: 'Internet di lokasi hidup, hanya VPN ke NEXT1 yang putus — tangani remote (tunnel/akun VPN), belum perlu visit.' },
+  macet: { label: 'VPN macet', saran: 'Sesi VPN tercatat tersambung, tapi tidak satu pun jalur bisa di-ping dari ERP — data tidak lewat, cek router / ISP lokasi.' },
   offline: { label: 'Mati total', saran: 'Router tidak terlihat sama sekali (listrik / perangkat / internet lokasi) — konfirmasi PIC, kandidat visit.' },
   tidak_ada: { label: 'Tidak terpetakan', saran: 'Site ini belum terhubung ke router NOCaaS — petakan di halaman Pembanding NOCaaS.' },
 };
@@ -77,6 +78,7 @@ export class NocaasService {
   async cronSinkron() {
     if (this.config.get<string>('NOCAAS_SYNC_ENABLED') === 'false') return;
     await this.sinkron().catch(() => {});
+    await this.sapuPing().catch((e) => this.logger.warn(`Sapuan ping gagal: ${e?.message}`));
     await this.prosesTiket().catch((e) => this.logger.warn(`Tiket NOCaaS gagal: ${e?.message}`));
   }
 
@@ -247,20 +249,27 @@ export class NocaasService {
   }
 
   // ── Pembanding ─────────────────────────────────────────────────────────────
+  /** Status untuk ditampilkan: mati total > VPN macet (sesi ada tapi ping gagal) > status sesi NOCaaS */
+  private statusTampil(r: { status: string; macet_sejak?: Date | null }) {
+    return r.status !== 'offline' && r.macet_sejak ? 'macet' : r.status;
+  }
+
   private bentuk(r: any) {
-    const k = KESIMPULAN[r.status as StatusRouter] ?? KESIMPULAN.offline;
-    return { ...r, label: k.label, saran: k.saran };
+    const status = this.statusTampil(r);
+    const k = KESIMPULAN[status as keyof typeof KESIMPULAN] ?? KESIMPULAN.offline;
+    return { ...r, status, status_sesi: r.status, label: k.label, saran: k.saran };
   }
 
   /** Status terburuk per site (untuk badge di daftar tiket) */
   async statusSite(ids: number[]) {
     const id = [...new Set(ids.filter((x) => Number.isInteger(x) && x > 0))].slice(0, 500);
     if (!id.length) return { data: {} };
-    const rows = await this.prisma.nocaasRouter.findMany({ where: { id_site: { in: id } }, select: { id_site: true, status: true, status_sejak: true } });
+    const rows = await this.prisma.nocaasRouter.findMany({ where: { id_site: { in: id } }, select: { id_site: true, status: true, status_sejak: true, macet_sejak: true } });
     const out: Record<number, { status: string; label: string; sejak: Date }> = {};
     for (const r of rows) {
+      const st = this.statusTampil(r);
       const cur = out[r.id_site!];
-      if (!cur || BOBOT[r.status] > BOBOT[cur.status]) out[r.id_site!] = { status: r.status, label: KESIMPULAN[r.status as StatusRouter]?.label ?? r.status, sejak: r.status_sejak };
+      if (!cur || BOBOT[st] > BOBOT[cur.status]) out[r.id_site!] = { status: st, label: KESIMPULAN[st as keyof typeof KESIMPULAN]?.label ?? st, sejak: st === 'macet' ? r.macet_sejak! : r.status_sejak };
     }
     return { data: out };
   }
@@ -326,6 +335,80 @@ export class NocaasService {
     return { data: { routers, kesimpulan, sinkron: this.terakhir, tiket_aktif: STATUS_TIKET_AKTIF.includes(t.status_tiket) } };
   }
 
+  // ── Sapuan ping (fping) ────────────────────────────────────────────────────
+  // Tiap menit semua tunnel yang sesinya tersambung (router terpetakan, tidak mati total) di-ping dari ERP.
+  // Semua tunnel bersesi tidak menjawab → macet_sejak. Router yang sudah macet saat pertama dicek = macet_lama
+  // (kondisi lama / ICMP diblok) → tidak ditiketkan. Lebih dari 30% macet sekaligus = jalur ERP→VPN yang
+  // bermasalah → hasil sapuan diabaikan.
+  private pingJalan = false;
+  pingTerakhir: { at: Date; ok: boolean; pesan: string } | null = null;
+
+  private fping(ips: string[]): Promise<Map<string, boolean> | null> {
+    return new Promise((resolve) => {
+      let out = '';
+      const p = spawn('fping', ['-q', '-C', '2', '-t', '800', '-r', '0', '-i', '2', '-p', '300']);
+      const t = setTimeout(() => { p.kill(); resolve(null); }, 50_000);
+      p.stdout.on('data', (d) => (out += d));
+      p.stderr.on('data', (d) => (out += d)); // fping -C menulis ringkasan ke stderr
+      p.on('error', () => { clearTimeout(t); resolve(null); });
+      p.on('close', () => {
+        clearTimeout(t);
+        const m = new Map<string, boolean>();
+        for (const l of out.split('\n')) {
+          const [ip, hasil] = l.split(' : ');
+          if (ip && hasil !== undefined && IP_SAJA.test(ip.trim())) m.set(ip.trim(), hasil.trim().split(/\s+/).some((x) => x !== '-'));
+        }
+        resolve(m.size ? m : null);
+      });
+      p.stdin.end(ips.join('\n') + '\n');
+    });
+  }
+
+  async sapuPing() {
+    if (this.pingJalan) return;
+    this.pingJalan = true;
+    try {
+      const rs = await this.prisma.nocaasRouter.findMany({
+        where: { id_site: { not: null }, status: { not: 'offline' } },
+        select: { site_key: true, ns_ip: true, un_ip: true, ns_online: true, un_online: true, ns_ping_ok: true, un_ping_ok: true, macet_sejak: true, macet_lama: true },
+      });
+      const target = new Set<string>();
+      for (const r of rs) { if (r.ns_online && r.ns_ip) target.add(r.ns_ip); if (r.un_online && r.un_ip) target.add(r.un_ip); }
+      if (!target.size) return;
+      const hasil = await this.fping([...target]);
+      const now = new Date();
+      if (!hasil) { this.pingTerakhir = { at: now, ok: false, pesan: 'fping gagal' }; return; }
+
+      const rencana = rs.map((r) => {
+        const ns = r.ns_online && r.ns_ip ? hasil.get(r.ns_ip) ?? false : null;
+        const un = r.un_online && r.un_ip ? hasil.get(r.un_ip) ?? false : null;
+        const dicek = ns !== null || un !== null;
+        return { r, ns, un, macet: dicek && !ns && !un, pertama: r.ns_ping_ok === null && r.un_ping_ok === null };
+      });
+      const nMacet = rencana.filter((x) => x.macet).length;
+      if (nMacet > rs.length * 0.3) {
+        this.pingTerakhir = { at: now, ok: false, pesan: `${nMacet} dari ${rs.length} router tidak menjawab — jalur ERP→VPN dicurigai bermasalah, hasil diabaikan` };
+        this.logger.warn(this.pingTerakhir.pesan);
+        return;
+      }
+      const tulis: any[] = [];
+      for (const { r, ns, un, macet, pertama } of rencana) {
+        const data: any = {};
+        if (ns !== r.ns_ping_ok) data.ns_ping_ok = ns;
+        if (un !== r.un_ping_ok) data.un_ping_ok = un;
+        if (macet && !r.macet_sejak) { data.macet_sejak = now; data.macet_lama = pertama; }
+        if (!macet && r.macet_sejak) { data.macet_sejak = null; data.macet_lama = false; }
+        if (Object.keys(data).length) tulis.push(this.prisma.nocaasRouter.update({ where: { site_key: r.site_key }, data }));
+      }
+      // Router yang kini mati total / tidak terpetakan tidak lagi dihitung macet
+      tulis.push(this.prisma.nocaasRouter.updateMany({ where: { macet_sejak: { not: null }, OR: [{ status: 'offline' }, { id_site: null }] }, data: { macet_sejak: null, macet_lama: false } }));
+      for (let i = 0; i < tulis.length; i += 200) await this.prisma.$transaction(tulis.slice(i, i + 200));
+      this.pingTerakhir = { at: now, ok: true, pesan: `${target.size} tunnel di-ping, ${nMacet} router macet` };
+    } finally {
+      this.pingJalan = false;
+    }
+  }
+
   // ── Tiket gangguan otomatis ────────────────────────────────────────────────
   // Router site aktif yang menjadi "mati total" (tidak ada VPN & tidak ada heartbeat syslog) setelah fitur aktif,
   // dan bertahan ≥ durasi_konfirmasi → tiket. Router kembali online (atau minimal 1 tunnel) → tiket auto-resolve.
@@ -362,15 +445,21 @@ export class NocaasService {
     const now = new Date();
     const hasil = { dibuat: 0, dibuka_ulang: 0, dicatat: 0, resolved: 0 };
 
-    // 1) Kandidat: router mati total, sudah dipetakan ke site aktif, berubah mati SETELAH fitur aktif, lewat masa konfirmasi
-    const mati = await this.prisma.nocaasRouter.findMany({
+    // 1) Kandidat (router terpetakan ke site aktif, gangguan mulai SETELAH fitur aktif, lewat masa konfirmasi):
+    //    - mati total: tidak ada VPN & tidak ada heartbeat syslog
+    //    - VPN macet : sesi VPN ada tapi tidak satu pun jalur menjawab ping dari ERP (bukan kondisi lama)
+    const batas = new Date(now.getTime() - cfg.durasi_konfirmasi_menit * 60_000);
+    const mati = (await this.prisma.nocaasRouter.findMany({
       where: {
-        status: 'offline', id_site: { not: null }, site: { status_site: 'Aktif' },
-        status_sejak: { gte: cfg.aktif_sejak, lte: new Date(now.getTime() - cfg.durasi_konfirmasi_menit * 60_000) },
+        id_site: { not: null }, site: { status_site: 'Aktif' },
+        OR: [
+          { status: 'offline', status_sejak: { gte: cfg.aktif_sejak, lte: batas } },
+          { status: { not: 'offline' }, macet_lama: false, macet_sejak: { gte: cfg.aktif_sejak, lte: batas } },
+        ],
       },
       include: { site: { select: { id_site: true, nama_site: true } } },
-      orderBy: { status_sejak: 'asc' },
-    });
+    })).map((r) => ({ ...r, jenis: (r.status === 'offline' ? 'mati' : 'macet') as 'mati' | 'macet', sejak: r.status === 'offline' ? r.status_sejak : r.macet_sejak! }))
+      .sort((a, b) => a.sejak.getTime() - b.sejak.getTime());
     const perSite = new Map<number, typeof mati>();
     for (const r of mati) perSite.set(r.id_site!, [...(perSite.get(r.id_site!) ?? []), r]);
 
@@ -385,8 +474,8 @@ export class NocaasService {
 
     // Pengaman: terlalu banyak sekaligus = kemungkinan gangguan pusat / NOCaaS → jangan buat tiket massal
     if (perluBaru.length > cfg.maks_tiket_per_putaran) {
-      this.logger.warn(`${perluBaru.length} site mati total sekaligus (> ${cfg.maks_tiket_per_putaran}) — tiket ditahan, kemungkinan gangguan pusat`);
-      const kunci = `NOCaaS: ${perluBaru.length} site mati total`;
+      this.logger.warn(`${perluBaru.length} site mati / VPN macet sekaligus (> ${cfg.maks_tiket_per_putaran}) — tiket ditahan, kemungkinan gangguan pusat`);
+      const kunci = `NOCaaS: ${perluBaru.length} site mati / VPN macet`;
       const sudah = await this.prisma.notification.findFirst({ where: { judul: { startsWith: 'NOCaaS:' }, created_at: { gte: new Date(now.getTime() - 3600_000) } } });
       if (!sudah) this.notif.notifyForModul('operations', { tipe: 'tiket_baru', judul: `${kunci} sekaligus`, deskripsi: 'Tiket otomatis ditahan — cek koneksi pusat / NOCaaS', url: '/nocaas' }).catch(() => {});
     } else {
@@ -401,7 +490,7 @@ export class NocaasService {
       if (t.sumber_tiket === 'NOCaaS' || t.logs.length) continue;
       const rs = perSite.get(t.id_site)!;
       await this.prisma.operationTicketLog.create({
-        data: { id_ticket: t.id_ticket, status_ke: t.status_tiket, catatan: `NOCaaS: router mati total sejak ${this.waktuWib(rs[0].status_sejak)} — ${rs.map((r) => this.catatanRouter(r)).join(' | ')}` },
+        data: { id_ticket: t.id_ticket, status_ke: t.status_tiket, catatan: `NOCaaS: router ${rs.some((r) => r.jenis === 'mati') ? 'mati total' : 'VPN macet (tidak bisa di-ping)'} sejak ${this.waktuWib(rs[0].sejak)} — ${rs.map((r) => this.catatanRouter(r)).join(' | ')}` },
       });
       hasil.dicatat++;
     }
@@ -417,7 +506,7 @@ export class NocaasService {
     });
     for (const t of tiketNoc) {
       const rs = await this.prisma.nocaasRouter.findMany({ where: { id_site: t.id_site } });
-      if (!rs.length || rs.some((r) => r.status === 'offline')) continue;
+      if (!rs.length || rs.some((r) => r.status === 'offline' || r.macet_sejak)) continue;
       if (rs.every((r) => r.status === 'internet_ok')) {
         // Internet lokasi hidup lagi tapi VPN belum → tiket tetap terbuka, tangani remote
         if (!t.logs.length) await this.prisma.operationTicketLog.create({
@@ -445,8 +534,10 @@ export class NocaasService {
   private async buatTiket(rs: any[], cooldownMenit: number): Promise<'baru' | 'ulang'> {
     const site = rs[0].site as { id_site: number; nama_site: string };
     const now = new Date();
-    const downAt: Date = rs[0].status_sejak;
+    const downAt: Date = rs[0].sejak;
     const prioritas = 'Critical';
+    const mati = rs.some((r) => r.jenis === 'mati');
+    const jenisTeks = mati ? 'Mati total' : 'VPN macet';
     const rincian = rs.map((r) => this.catatanRouter(r)).join('\n');
 
     const flapping = await this.prisma.operationTicket.findFirst({
@@ -461,7 +552,7 @@ export class NocaasService {
         data: { status_tiket: 'In_Progress', tgl_resolved: null, tgl_sensor_down: downAt, sla_due: new Date(downAt.getTime() + (SLA_JAM[flapping.prioritas] ?? 4) * 3600_000), sla_breached: false },
       });
       await this.prisma.operationTicketLog.create({
-        data: { id_ticket: flapping.id_ticket, status_dari: flapping.status_tiket, status_ke: 'In_Progress', catatan: `NOCaaS: ⚠️ flapping #${ke} — router mati total lagi ${menit} menit setelah tersambung\n${rincian}` },
+        data: { id_ticket: flapping.id_ticket, status_dari: flapping.status_tiket, status_ke: 'In_Progress', catatan: `NOCaaS: ⚠️ flapping #${ke} — router ${jenisTeks.toLowerCase()} lagi ${menit} menit setelah tersambung\n${rincian}` },
       });
       this.notif.notifyForModul('operations', {
         tipe: 'tiket_update', judul: `⚠️ Flapping #${ke}: ${site.nama_site} mati lagi`, deskripsi: `${flapping.nomor_tiket} — ${menit} menit setelah tersambung`, url: `/operations/${flapping.id_ticket}`,
@@ -469,23 +560,25 @@ export class NocaasService {
       return 'ulang';
     }
 
-    const judul = `[NOCaaS] ${site.nama_site} — Mati total`;
+    const judul = `[NOCaaS] ${site.nama_site} — ${jenisTeks}`;
     const ticket = await withNextTicketNumber(this.prisma, now, (nomor_tiket) =>
       this.prisma.$transaction(async (tx) => {
         const t = await tx.operationTicket.create({
           data: {
             nomor_tiket, id_site: site.id_site, judul_tiket: judul, prioritas, sumber_tiket: 'NOCaaS',
-            deskripsi_masalah: `Router tidak terlihat di NOCaaS sejak ${this.waktuWib(downAt)}: kedua VPN putus dan tidak ada heartbeat syslog (listrik / perangkat / internet lokasi).\n${rincian}`,
+            deskripsi_masalah: mati
+              ? `Router tidak terlihat di NOCaaS sejak ${this.waktuWib(downAt)}: kedua VPN putus dan tidak ada heartbeat syslog (listrik / perangkat / internet lokasi).\n${rincian}`
+              : `Sesi VPN tercatat tersambung, tapi tidak satu pun jalur bisa di-ping dari ERP sejak ${this.waktuWib(downAt)} — data tidak lewat (ISP / router lokasi).\n${rincian}`,
             tgl_sensor_down: downAt,
             sla_due: new Date(downAt.getTime() + (SLA_JAM[prioritas] ?? 4) * 3600_000),
           },
         });
-        await tx.operationTicketLog.create({ data: { id_ticket: t.id_ticket, status_ke: 'Open', catatan: `NOCaaS: tiket dibuat otomatis — router mati total ≥ ${Math.round((now.getTime() - downAt.getTime()) / 60_000)} menit` } });
+        await tx.operationTicketLog.create({ data: { id_ticket: t.id_ticket, status_ke: 'Open', catatan: `NOCaaS: tiket dibuat otomatis — router ${jenisTeks.toLowerCase()} ≥ ${Math.round((now.getTime() - downAt.getTime()) / 60_000)} menit` } });
         return t;
       }),
     );
     this.notif.notifyForModul('operations', {
-      tipe: 'tiket_baru', judul: `🔴 [NOCaaS] ${site.nama_site} mati total`, deskripsi: `${ticket.nomor_tiket} — ${rs.map((r) => r.site_key).join(', ')}`, url: `/operations/${ticket.id_ticket}`,
+      tipe: 'tiket_baru', judul: `🔴 [NOCaaS] ${site.nama_site} ${jenisTeks.toLowerCase()}`, deskripsi: `${ticket.nomor_tiket} — ${rs.map((r) => r.site_key).join(', ')}`, url: `/operations/${ticket.id_ticket}`,
     }).catch(() => {});
     (async () => {
       const sp = await this.prisma.sitePelanggan.findUnique({
@@ -497,7 +590,7 @@ export class NocaasService {
         nomor_tiket: ticket.nomor_tiket, judul, nama_site: site.nama_site,
         nama_pelanggan: sp.pelanggan?.nama_pelanggan ?? '', id_pelanggan: sp.id_pelanggan, no_hp_customer: sp.pelanggan?.no_hp_pic_utama,
         alamat_site: sp.alamat_lengkap ?? '', koordinat_site: sp.koordinat_gps ?? '', no_hp_pic: sp.pic[0]?.no_kontak ?? '',
-        sensor_detail: 'Router mati total (VPN & heartbeat NOCaaS)', waktu_down: this.waktuWib(downAt),
+        sensor_detail: mati ? 'Router mati total (VPN & heartbeat NOCaaS)' : 'VPN macet (sesi ada, ping gagal)', waktu_down: this.waktuWib(downAt),
       });
     })().catch(() => {});
     return 'baru';
@@ -514,19 +607,20 @@ export class NocaasService {
 
   /** Halaman pembanding: tiket aktif vs NOCaaS, gangguan NOCaaS tanpa tiket, ringkasan pemetaan */
   async ringkasan() {
-    const [tiket, bermasalah, grup, total] = await Promise.all([
+    const [tiket, bermasalah, grup, total, macet] = await Promise.all([
       this.prisma.operationTicket.findMany({
         where: { status_tiket: { in: STATUS_TIKET_AKTIF } },
         select: { id_ticket: true, nomor_tiket: true, judul_tiket: true, sumber_tiket: true, status_tiket: true, prioritas: true, tgl_open: true, id_site: true, site: { select: { kode_site: true, nama_site: true, kota: true } } },
         orderBy: { tgl_open: 'desc' }, take: 500,
       }),
       this.prisma.nocaasRouter.findMany({
-        where: { status: { in: ['offline', 'internet_ok'] }, id_site: { not: null }, site: { status_site: 'Aktif' } },
+        where: { OR: [{ status: { in: ['offline', 'internet_ok'] } }, { macet_sejak: { not: null } }], id_site: { not: null }, site: { status_site: 'Aktif' } },
         include: { site: { select: { kode_site: true, nama_site: true, kota: true, pelanggan: { select: { nama_pelanggan: true } } } } },
         orderBy: { status_sejak: 'desc' },
       }),
       this.prisma.nocaasRouter.groupBy({ by: ['status', 'sumber_map'], _count: { _all: true } }),
       this.prisma.sitePelanggan.count({ where: { status_site: 'Aktif' } }),
+      this.prisma.nocaasRouter.count({ where: { macet_sejak: { not: null }, status: { not: 'offline' } } }),
     ]);
     const st = await this.statusSite(tiket.map((t) => t.id_site));
     const siteTiket = new Set(tiket.map((t) => t.id_site));
@@ -539,7 +633,7 @@ export class NocaasService {
         sinkron: this.terakhir,
         tiket: tiket.map((t) => {
           const s = st.data[t.id_site];
-          return { ...t, nocaas: s ? { ...s, saran: KESIMPULAN[s.status as StatusRouter]?.saran } : null };
+          return { ...t, nocaas: s ? { ...s, saran: KESIMPULAN[s.status as keyof typeof KESIMPULAN]?.saran } : null };
         }),
         tanpa_tiket: tanpaTiket,
         pemetaan: {
@@ -551,7 +645,10 @@ export class NocaasService {
           site_aktif: total,
           site_terpeta: siteTerpeta.length,
         },
-        status: ['online', 'partial', 'internet_ok', 'offline'].map((s) => ({ status: s, label: KESIMPULAN[s as StatusRouter].label, n: per((g) => g.status === s) })),
+        status: [
+          ...['online', 'partial', 'internet_ok', 'offline'].map((s) => ({ status: s, label: KESIMPULAN[s as StatusRouter].label, n: per((g) => g.status === s) })),
+          { status: 'macet', label: KESIMPULAN.macet.label, n: macet },
+        ],
       },
     };
   }

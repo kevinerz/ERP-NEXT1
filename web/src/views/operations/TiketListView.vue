@@ -66,7 +66,7 @@ function fetchData() {
 }
 // Status router NOCaaS saat ini untuk tiket aktif (pembanding alarm PRTG)
 const AKTIF = ['Open', 'In_Progress', 'Pending_Customer']
-const NOC_WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', offline: '#dc2626' }
+const NOC_WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626' }
 const nocStatus = ref<Record<number, { status: string; label: string }>>({})
 watch(() => ops.list, async (list) => {
   const ids = [...new Set((list || []).filter((t: any) => AKTIF.includes(t.status_tiket)).map((t: any) => t.id_site))]
