@@ -8,7 +8,8 @@ import { alertError } from '@/composables/useDialog'
 
 const router = useRouter()
 const WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626' }
-const SUMBER: Record<string, string> = { ip_perangkat: 'IP tunnel di perangkat site', prtg_host: 'Host device PRTG', nama: 'Nama persis', saran: 'Saran otomatis (brand + lokasi)', manual: 'Manual' }
+const JENIS: Record<string, string> = { mikrotik: 'Mikrotik', rcms: 'RCMS (Robustel)', ruijie: 'Ruijie' }
+const SUMBER: Record<string, string> = { ip_perangkat: 'IP tunnel di perangkat site', prtg_host: 'Host device PRTG', nama: 'Nama persis', saran: 'Saran otomatis (brand + lokasi)', nama_mikrotik: 'Nama sama dgn router Mikrotik', manual: 'Manual', konflik_ip: 'Konflik IP (perlu ditinjau)' }
 
 const data = ref<any>(null)
 const memuat = ref(false)
@@ -140,7 +141,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
     <div class="page-header">
       <div>
         <h2 class="page-title">🛰️ Pembanding NOCaaS</h2>
-        <p class="page-subtitle">Tiket gangguan dibandingkan dengan status router di NOCaaS (VPN NS/UN + heartbeat syslog) — diperbarui tiap menit</p>
+        <p class="page-subtitle">Tiket gangguan dibandingkan dengan status perangkat di NOCaaS (Mikrotik: VPN NS/UN + heartbeat syslog + ping; RCMS &amp; Ruijie: status cloud) — diperbarui tiap menit</p>
+        <p v-if="data?.per_jenis" class="muted">Perangkat: <template v-for="(j, i) in data.per_jenis" :key="j.jenis">{{ i ? ' · ' : '' }}{{ JENIS[j.jenis] ?? j.jenis }} <b>{{ j.n.toLocaleString('id-ID') }}</b></template></p>
       </div>
       <div class="nc-tombol">
         <span v-if="data?.sinkron" class="muted" :class="{ gagal: !data.sinkron.ok }">
@@ -292,6 +294,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                     <div class="muted"><span :style="{ color: WARNA[r.status] }">●</span> {{ r.label }} · {{ r.access_isp || '—' }}</div>
                   </td>
                   <td v-if="jenis === 'belum'">
+                    <div v-if="r.konflik" class="nc-konflik">
+                      ⚠️ IP router ini di ERP tercatat di <b>{{ r.konflik.nama_site }}</b> ({{ r.konflik.kode_site }}), tapi namanya tidak cocok — kemungkinan IP lama / tertukar.
+                      <button type="button" class="btn btn-ghost btn-sm" :disabled="sibuk" @click.stop="aksiPeta(r.site_key, { id_site: r.konflik.id_site })">Tetap ke site ini</button>
+                    </div>
                     <div v-if="r.saran?.length" class="nc-saran-list">
                       <button v-for="(s, n) in r.saran" :key="s.id_site" type="button" class="nc-saran-btn" :disabled="sibuk" @click.stop="aksiPeta(r.site_key, { id_site: s.id_site })">
                         <kbd>{{ n + 1 }}</kbd>
@@ -380,6 +386,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 .nc-skor { font-size: 11.5px; font-weight: 700; color: #64748b; font-variant-numeric: tabular-nums; }
 .nc-skor.tinggi { color: #15803d; }
 .nc-skor.sedang { color: #b45309; }
+.nc-konflik { margin-bottom: 6px; padding: 6px 8px; border-radius: 7px; background: #fff7ed; border: 1px solid #fed7aa; font-size: 12.5px; color: #9a3412; }
+.nc-konflik .btn { margin-left: 6px; }
 .nc-aksi { white-space: nowrap; text-align: right; }
 .nc-aksi .btn + .btn { margin-left: 4px; }
 .nc-halaman { padding: 0 16px 12px; }

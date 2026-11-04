@@ -107,3 +107,27 @@ export class PencocokSaran {
     return { saran: top.map(({ a: _a, b: _b, bentrok: _c, ...x }) => x), yakin };
   }
 }
+
+// ── Cek kewajaran pasangan "pasti" (IP tunnel di ERP / host PRTG) ───────────────
+// IP tunnel bisa dipakai ulang untuk toko lain sementara data ERP tidak ikut diperbarui
+// (mis. "Chatime Teraskota" memegang IP router KK, ACE, Fore, Informa …). Pasangan dianggap wajar bila
+// ada satu kata yang sama / mirip (toleran salah ketik: GRILMAN ≈ GRILLMAN, KRONOJO ≈ KRONJO).
+const UMUM_CEK = new Set([...UMUM, 'MALL', 'PLAZA', 'RUKO', 'RAYA', 'SQUARE', 'SQ', 'CITY', 'KOTA', 'PASAR', 'CENTER', 'CENTRE']);
+const kataCek = (s: string) => new Set(s.toUpperCase().split(/[^A-Z0-9]+/).filter((t) => t.length >= 3 && !UMUM_CEK.has(t)));
+const rapat = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+function beda1(a: string, b: string) {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  if (a.length === b.length) { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i] && ++d > 1) return false; return true; }
+  const [p, q] = a.length < b.length ? [a, b] : [b, a];
+  for (let i = 0; i < q.length; i++) if (q.slice(0, i) + q.slice(i + 1) === p) return true;
+  return false;
+}
+export function namaNyambung(namaPerangkat: string, namaSite: string) {
+  const r = kataCek(namaPerangkat), s = kataCek(namaSite), rr = rapat(namaPerangkat), rs = rapat(namaSite);
+  for (const a of r) for (const b of s) {
+    if (a === b) return true;
+    if (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a))) return true;
+    if (Math.min(a.length, b.length) >= 5 && beda1(a, b)) return true;
+  }
+  return [...r].some((a) => a.length >= 5 && rs.includes(a)) || [...s].some((b) => b.length >= 5 && rr.includes(b));
+}

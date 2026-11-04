@@ -1237,6 +1237,9 @@ model IntegrationPrtgMapping {
 model NocaasRouter {
   site_key      String    @id @db.VarChar(150)
   nama_utama    String?   @db.VarChar(160) // nama device NOCaaS (dengan prefix NS-/UN-), dipakai untuk riwayat kejadian
+  jenis         String    @default("mikrotik") @db.VarChar(20) // mikrotik | rcms (Robustel) | ruijie
+  konflik_id_site Int?    // site yang memegang IP router ini di ERP, tapi namanya tidak nyambung (sumber_map 'konflik_ip')
+  model         String?   @db.VarChar(40)
   id_site       Int?
   sumber_map    String?   @db.VarChar(20) // ip_perangkat | prtg_host | nama | manual
   status        String    @db.VarChar(20) // online | partial | internet_ok | offline

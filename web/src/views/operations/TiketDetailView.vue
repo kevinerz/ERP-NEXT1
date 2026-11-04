@@ -846,7 +846,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                 <div class="noc-baris">
                   <span class="noc-dot" :style="{ background: NOC_WARNA[r.status] }"></span>
                   <div class="noc-info">
-                    <div class="noc-nama">{{ r.site_key }}</div>
+                    <div class="noc-nama">{{ r.site_key }}<span v-if="r.jenis && r.jenis !== 'mikrotik'" class="noc-jenis">{{ r.jenis.toUpperCase() }}{{ r.model ? ' · ' + r.model : '' }}</span></div>
                     <div class="noc-sub">
                       <b :style="{ color: NOC_WARNA[r.status] }">{{ r.label }}</b> · sejak {{ nocSejak(r.status === 'macet' ? r.macet_sejak : r.status === 'offline' && r.offline_since ? r.offline_since : r.status_sejak) }}
                     </div>
@@ -860,7 +860,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                     </div>
                     <div class="noc-sub">Putus 7 hari: {{ r.downs7 }}× · flapping 24 jam: {{ r.flaps24 }}×</div>
                   </div>
-                  <button type="button" class="noc-btn" @click="toggleNocKejadian(r.site_key)">{{ nocKejadian[r.site_key] ? 'Tutup' : 'Riwayat 72 jam' }}</button>
+                  <button v-if="r.nama_utama" type="button" class="noc-btn" @click="toggleNocKejadian(r.site_key)">{{ nocKejadian[r.site_key] ? 'Tutup' : 'Riwayat 72 jam' }}</button>
                 </div>
                 <div v-if="nocKejadian[r.site_key]" class="noc-kejadian">
                   <div v-if="nocKejadian[r.site_key] === 'memuat'" class="prtg-loading">Memuat…</div>
@@ -1538,6 +1538,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
 .noc-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; }
 .noc-info { flex: 1; min-width: 0; }
 .noc-nama { font-family: monospace; font-weight: 700; font-size: 13px; color: #0f172a; word-break: break-all; }
+.noc-jenis { margin-left: 6px; font-family: inherit; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #e0e7ff; color: #3730a3; }
 .noc-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
 .noc-tunnel { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .noc-tunnel span { font-family: monospace; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 5px; }
