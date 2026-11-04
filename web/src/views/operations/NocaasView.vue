@@ -144,9 +144,9 @@ async function simpanPeta(id_site: number) {
         </template>
         <form v-else class="nc-cfg-form" @submit.prevent="simpanCfg">
           <label><input v-model="cfgForm.tiket_aktif" type="checkbox" /> Tiket otomatis aktif</label>
-          <label>Konfirmasi (menit) <input v-model.number="cfgForm.durasi_konfirmasi_menit" type="number" min="1" max="240" class="input" /></label>
-          <label>Cooldown flapping (menit) <input v-model.number="cfgForm.cooldown_menit" type="number" min="0" max="1440" class="input" /></label>
-          <label>Maks tiket sekaligus <input v-model.number="cfgForm.maks_tiket_per_putaran" type="number" min="1" max="500" class="input" /></label>
+          <label>Konfirmasi (menit) <input v-model.number="cfgForm.durasi_konfirmasi_menit" type="number" min="1" max="240" class="form-input" /></label>
+          <label>Cooldown flapping (menit) <input v-model.number="cfgForm.cooldown_menit" type="number" min="0" max="1440" class="form-input" /></label>
+          <label>Maks tiket sekaligus <input v-model.number="cfgForm.maks_tiket_per_putaran" type="number" min="1" max="500" class="form-input" /></label>
           <button type="submit" class="btn btn-primary btn-sm">Simpan</button>
           <button type="button" class="btn btn-ghost btn-sm" @click="cfgEdit = false">Batal</button>
         </form>
@@ -159,15 +159,15 @@ async function simpanPeta(id_site: number) {
       </div>
 
       <!-- Tiket aktif vs NOCaaS -->
-      <div v-if="tab === 'tiket'" class="card">
+      <div v-if="tab === 'tiket'" class="card nc-panel">
         <p v-if="tiketAlarmPalsu" class="nc-catatan">
           ⚠️ <b>{{ tiketAlarmPalsu }}</b> tiket aktif yang routernya <b>online</b> di NOCaaS — kemungkinan alarm PRTG palsu atau masalah di luar koneksi.
         </p>
         <div class="table-wrap">
-          <table class="table">
+          <table class="data-table">
             <thead><tr><th>Tiket</th><th>Site</th><th>Sumber</th><th>Dibuka</th><th>NOCaaS sekarang</th><th>Arti</th></tr></thead>
             <tbody>
-              <tr v-if="!tiket.length"><td colspan="6" class="muted">Tidak ada tiket aktif.</td></tr>
+              <tr v-if="!tiket.length"><td colspan="6" class="muted nc-kosong">Tidak ada tiket aktif.</td></tr>
               <tr v-for="t in tiket" :key="t.id_ticket" class="nc-baris" @click="router.push(`/operations/${t.id_ticket}`)">
                 <td><b class="mono">{{ t.nomor_tiket }}</b><div class="muted">{{ t.judul_tiket }}</div></td>
                 <td>{{ t.site?.nama_site }}<div class="muted">{{ t.site?.kode_site }} · {{ t.site?.kota }}</div></td>
@@ -186,15 +186,15 @@ async function simpanPeta(id_site: number) {
       </div>
 
       <!-- Gangguan di NOCaaS tanpa tiket -->
-      <div v-else-if="tab === 'tanpa'" class="card">
+      <div v-else-if="tab === 'tanpa'" class="card nc-panel">
         <div class="nc-filter">
-          <select v-model="filterTanpa" class="input">
+          <select v-model="filterTanpa" class="form-select">
             <option value="">Mati total + VPN putus</option>
             <option value="offline">Mati total saja</option>
             <option value="internet_ok">Internet hidup, VPN putus saja</option>
           </select>
           <label class="muted">Minimal sudah
-            <select v-model.number="minMenit" class="input">
+            <select v-model.number="minMenit" class="form-select">
               <option :value="0">kapan pun</option><option :value="15">15 menit</option><option :value="60">1 jam</option>
               <option :value="1440">1 hari</option><option :value="10080">7 hari</option>
             </select>
@@ -203,10 +203,10 @@ async function simpanPeta(id_site: number) {
         </div>
         <p class="nc-catatan">Router site aktif yang di NOCaaS mati / VPN-nya putus, tapi tidak punya tiket aktif di ERP. Router yang mati berbulan-bulan biasanya site yang sudah tutup — cek status sitenya.</p>
         <div class="table-wrap">
-          <table class="table">
+          <table class="data-table">
             <thead><tr><th>Site</th><th>Router NOCaaS</th><th>Status</th><th>Sejak</th><th>Internet</th><th>Putus 7 hari</th></tr></thead>
             <tbody>
-              <tr v-if="!tanpaTiket.length"><td colspan="6" class="muted">Tidak ada.</td></tr>
+              <tr v-if="!tanpaTiket.length"><td colspan="6" class="muted nc-kosong">Tidak ada.</td></tr>
               <tr v-for="r in tanpaTiket" :key="r.site_key">
                 <td>{{ r.site?.nama_site }}<div class="muted">{{ r.site?.kode_site }} · {{ r.site?.pelanggan?.nama_pelanggan }}</div></td>
                 <td class="mono">{{ r.site_key }}<div class="muted">{{ [r.ns_ip && 'NS ' + r.ns_ip, r.un_ip && 'UN ' + r.un_ip].filter(Boolean).join(' · ') }}</div></td>
@@ -221,19 +221,19 @@ async function simpanPeta(id_site: number) {
       </div>
 
       <!-- Pemetaan -->
-      <div v-else class="card">
+      <div v-else class="card nc-panel">
         <p class="nc-catatan">
           Router dicocokkan otomatis ke site lewat:
           <template v-for="(p, i) in data.pemetaan.per_sumber" :key="p.sumber">{{ i ? ' · ' : ' ' }}{{ SUMBER[p.sumber] }} <b>{{ p.n }}</b></template>.
           Sisanya petakan manual — pemetaan manual tidak akan ditimpa sinkronisasi.
         </p>
         <div class="nc-filter">
-          <input v-model="cariBelum" class="input" placeholder="Cari nama router / IP tunnel…" @keyup.enter="muatBelum(1)" />
+          <input v-model="cariBelum" class="form-input" placeholder="Cari nama router / IP tunnel…" @keyup.enter="muatBelum(1)" />
           <button class="btn btn-ghost" @click="muatBelum(1)">Cari</button>
           <span class="muted">{{ belumMeta.total }} router</span>
         </div>
         <div class="table-wrap">
-          <table class="table">
+          <table class="data-table">
             <thead><tr><th>Router NOCaaS</th><th>IP tunnel</th><th>Status</th><th>Internet</th><th></th></tr></thead>
             <tbody>
               <template v-for="r in belum" :key="r.site_key">
@@ -246,7 +246,7 @@ async function simpanPeta(id_site: number) {
                 </tr>
                 <tr v-if="petaKey === r.site_key">
                   <td colspan="5" class="nc-peta">
-                    <input v-model="petaCari" class="input" placeholder="Cari site ERP (nama / kode / pelanggan)…" @input="cariSite" />
+                    <input v-model="petaCari" class="form-input" placeholder="Cari site ERP (nama / kode / pelanggan)…" @input="cariSite" />
                     <div v-for="s in petaHasil" :key="s.id_site" class="nc-pilih" @click="simpanPeta(s.id_site)">
                       <b>{{ s.nama_site }}</b> <span class="muted">{{ s.kode_site }} · {{ s.pelanggan?.nama_pelanggan }} · {{ s.kota }}<template v-if="s.status_site !== 'Aktif'"> · {{ s.status_site }}</template></span>
                     </div>
@@ -279,13 +279,19 @@ async function simpanPeta(id_site: number) {
 .nc-cfg { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 14px; }
 .nc-cfg-teks { flex: 1; min-width: 260px; font-size: 12.5px; color: #475569; }
 .nc-cfg-form { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; }
-.nc-cfg-form .input { width: 80px; margin-left: 4px; }
+.nc-cfg-form .form-input { width: 80px; margin-left: 4px; display: inline-block; }
 .nc-tab { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
 .nc-tab button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-weight: 600; font-size: 13px; }
 .nc-tab button.aktif { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
 .nc-catatan { font-size: 13px; color: #475569; margin: 0 0 12px; }
+.nc-panel > .nc-catatan, .nc-panel > .nc-filter { margin: 0; padding: 12px 16px 0; }
+.nc-panel > .nc-filter + .nc-catatan, .nc-panel > .nc-catatan + .nc-filter { padding-top: 8px; }
+.nc-panel > .table-wrap { margin-top: 12px; border-top: 1px solid var(--border); }
+.nc-panel > .nc-halaman { padding: 0 16px 12px; }
+.nc-kosong { text-align: center; padding: 28px 0 !important; }
 .nc-filter { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-.nc-filter .input { width: auto; }
+.nc-filter .form-select, .nc-filter .form-input { width: auto; min-width: 200px; }
+.nc-filter label { display: flex; align-items: center; gap: 6px; }
 .nc-baris { cursor: pointer; }
 .nc-baris:hover { background: #f8fafc; }
 .nc-status { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border: 1px solid; border-radius: 999px; white-space: nowrap; }
@@ -294,7 +300,7 @@ async function simpanPeta(id_site: number) {
 .nowrap { white-space: nowrap; }
 .muted { color: #64748b; font-size: 12px; }
 .nc-peta { background: #f8fafc; }
-.nc-peta .input { max-width: 420px; margin-bottom: 6px; }
+.nc-peta .form-input { max-width: 420px; margin-bottom: 6px; }
 .nc-pilih { padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .nc-pilih:hover { background: #dbeafe; }
 .nc-halaman { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 10px; }
