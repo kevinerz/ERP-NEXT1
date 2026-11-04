@@ -8,6 +8,13 @@ import { alertError } from '@/composables/useDialog'
 
 const router = useRouter()
 const WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626' }
+const KAT: { kunci: string; label: string; ambang?: 'menit' | 'min'; satuan?: string }[] = [
+  { kunci: 'jalur', label: '1 jalur VPN putus', ambang: 'menit', satuan: 'menit' },
+  { kunci: 'port_wan_down', label: 'Port WAN down' },
+  { kunci: 'port_wan_flap', label: 'Port WAN naik-turun', ambang: 'min', satuan: '×/jam' },
+  { kunci: 'port_lan_flap', label: 'Port LAN naik-turun', ambang: 'min', satuan: '×/jam' },
+  { kunci: 'sering_putus', label: 'Sering putus (VPN)', ambang: 'min', satuan: '×/jam' },
+]
 const JENIS: Record<string, string> = { mikrotik: 'Mikrotik', rcms: 'RCMS (Robustel)', ruijie: 'Ruijie' }
 const SUMBER: Record<string, string> = { ip_perangkat: 'IP tunnel di perangkat site', prtg_host: 'Host device PRTG', nama: 'Nama persis', saran: 'Saran otomatis (brand + lokasi)', nama_mikrotik: 'Nama sama dgn router Mikrotik', manual: 'Manual', konflik_ip: 'Konflik IP (perlu ditinjau)' }
 
@@ -21,13 +28,13 @@ const filterTanpa = ref<'' | 'offline' | 'internet_ok' | 'macet'>('')
 // ── Tiket otomatis dari NOCaaS ──
 const cfg = ref<any>(null)
 const cfgEdit = ref(false)
-const cfgForm = ref({ tiket_aktif: true, wa_pic_aktif: false, durasi_konfirmasi_menit: 10, cooldown_menit: 60, maks_tiket_per_putaran: 30 })
+const cfgForm = ref<any>({ tiket_aktif: true, wa_pic_aktif: false, durasi_konfirmasi_menit: 10, cooldown_menit: 60, maks_tiket_per_putaran: 30, kategori: null })
 async function muatCfg() {
   try { cfg.value = (await api.get('/nocaas/konfigurasi')).data.data } catch { /* abaikan */ }
 }
 function bukaCfg() {
   const c = cfg.value
-  cfgForm.value = { tiket_aktif: c.tiket_aktif, wa_pic_aktif: c.wa_pic_aktif, durasi_konfirmasi_menit: c.durasi_konfirmasi_menit, cooldown_menit: c.cooldown_menit, maks_tiket_per_putaran: c.maks_tiket_per_putaran }
+  cfgForm.value = { tiket_aktif: c.tiket_aktif, wa_pic_aktif: c.wa_pic_aktif, durasi_konfirmasi_menit: c.durasi_konfirmasi_menit, cooldown_menit: c.cooldown_menit, maks_tiket_per_putaran: c.maks_tiket_per_putaran, kategori: JSON.parse(JSON.stringify(c.kategori)) }
   cfgEdit.value = true
 }
 async function simpanCfg() {
@@ -148,6 +155,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         <span v-if="data?.sinkron" class="muted" :class="{ gagal: !data.sinkron.ok }">
           {{ data.sinkron.ok ? 'Sinkron' : 'Sinkron gagal' }} {{ fmtDateTime(data.sinkron.at) }}<template v-if="!data.sinkron.ok"> — {{ data.sinkron.pesan }}</template>
         </span>
+        <button class="btn btn-ghost" @click="router.push('/nocaas/laporan')">📑 Laporan</button>
         <button class="btn btn-ghost" :disabled="sinkron" @click="sinkronSekarang">{{ sinkron ? 'Menyinkron…' : '↻ Sinkron sekarang' }}</button>
       </div>
     </div>
@@ -177,6 +185,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             Lebih dari {{ cfg.maks_tiket_per_putaran }} site sekaligus → ditahan (dicurigai gangguan pusat).
             Hanya gangguan yang mulai setelah {{ fmtDateTime(cfg.aktif_sejak) }}. Site belum terpetakan tetap memakai PRTG.
             WA ke PIC site (lewat WA helpdesk, hanya PIC terkonfirmasi): <b>{{ cfg.wa_pic_aktif ? 'AKTIF' : 'mati' }}</b>.
+            <br />Kategori lain:
+            <template v-for="(k, i) in KAT" :key="k.kunci">{{ i ? ' · ' : ' ' }}<span :class="{ 'nc-mati': !cfg.kategori?.[k.kunci]?.aktif }">{{ k.label }}<template v-if="k.ambang && cfg.kategori?.[k.kunci]?.aktif"> ≥ {{ cfg.kategori[k.kunci][k.ambang] }} {{ k.satuan }}</template></span></template>
+            · pulih setelah tenang {{ cfg.kategori?.pulih_menit }} menit.
           </span>
           <button class="btn btn-ghost btn-sm" @click="bukaCfg">Atur</button>
         </template>
@@ -186,6 +197,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
           <label>Konfirmasi (menit) <input v-model.number="cfgForm.durasi_konfirmasi_menit" type="number" min="1" max="240" class="form-input" /></label>
           <label>Cooldown flapping (menit) <input v-model.number="cfgForm.cooldown_menit" type="number" min="0" max="1440" class="form-input" /></label>
           <label>Maks tiket sekaligus <input v-model.number="cfgForm.maks_tiket_per_putaran" type="number" min="1" max="500" class="form-input" /></label>
+          <div v-if="cfgForm.kategori" class="nc-cfg-kat">
+            <label v-for="k in KAT" :key="k.kunci">
+              <input v-model="cfgForm.kategori[k.kunci].aktif" type="checkbox" /> {{ k.label }}
+              <template v-if="k.ambang"> ≥ <input v-model.number="cfgForm.kategori[k.kunci][k.ambang]" type="number" min="2" class="form-input" /> {{ k.satuan }}</template>
+            </label>
+            <label>Pulih setelah tenang <input v-model.number="cfgForm.kategori.pulih_menit" type="number" min="10" class="form-input" /> menit</label>
+          </div>
           <button type="submit" class="btn btn-primary btn-sm">Simpan</button>
           <button type="button" class="btn btn-ghost btn-sm" @click="cfgEdit = false">Batal</button>
         </form>
@@ -364,6 +382,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 .nc-cfg { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 14px; }
 .nc-cfg-teks { flex: 1; min-width: 260px; font-size: 12.5px; color: #475569; }
 .nc-cfg-form { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.nc-mati { color: #94a3b8; text-decoration: line-through; }
+.nc-cfg-kat { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 8px 0; border-top: 1px dashed var(--border); }
 .nc-cfg-form .form-input { width: 80px; margin-left: 4px; display: inline-block; }
 .nc-tab { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
 .nc-tab button { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-weight: 600; font-size: 13px; }

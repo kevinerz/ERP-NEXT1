@@ -1260,6 +1260,8 @@ model NocaasRouter {
   un_ping_ok    Boolean?
   macet_sejak   DateTime? // semua tunnel bersesi tidak menjawab ping sejak
   macet_lama    Boolean   @default(false) // sudah macet saat pertama dicek → bukan gangguan baru (tidak ditiketkan)
+  wan_status    Json?     // { iface: { running, pernah_hidup, sejak } } dari snapshot config router (live_config)
+  live_at       DateTime? // waktu snapshot config router terakhir
   updated_at    DateTime  @updatedAt
 
   site SitePelanggan? @relation(fields: [id_site], references: [id_site], onDelete: SetNull)
@@ -1279,10 +1281,33 @@ model NocaasConfig {
   cooldown_menit          Int       @default(60) // tiket yang resolve < sekian menit lalu dibuka ulang (flapping)
   maks_tiket_per_putaran  Int       @default(30) // lebih dari ini sekaligus = dicurigai gangguan pusat → tidak buat tiket
   wa_pic_aktif            Boolean   @default(false) // kirim WA (akun helpdesk) ke PIC site saat tiket NOCaaS dibuka & pulih
+  kategori                Json?     // aktif & ambang per kategori gangguan lain (jalur, port, sering putus) — lihat KATEGORI_BAWAAN
   terakhir_sinkron        DateTime? // sinkron NOCaaS terakhir yang BERHASIL (dipakai PRTG untuk tahu NOCaaS sehat)
   updated_at              DateTime  @default(now()) @updatedAt
 
   @@map("nocaas_config")
+}
+
+// Riwayat kondisi gangguan NOCaaS selain mati total / VPN macet: 1 jalur putus, port WAN down, port naik-turun,
+// sering putus. Satu baris = satu kondisi (site_key + kategori + detail) dari mulai sampai selesai; dipakai untuk
+// tiket otomatis dan laporan gangguan.
+model NocaasGangguan {
+  id           Int       @id @default(autoincrement())
+  site_key     String    @db.VarChar(150)
+  id_site      Int?
+  kategori     String    @db.VarChar(30) // jalur | port_wan_down | port_wan_flap | port_lan_flap | sering_putus
+  detail       String    @default("") @db.VarChar(60) // jalur NS/UN, nama port
+  nilai        Int?      // jumlah putus / naik-turun per jam terakhir (terbesar)
+  mulai_at     DateTime
+  terakhir_at  DateTime  // terakhir kondisi terlihat
+  selesai_at   DateTime?
+  id_ticket    Int?
+
+  @@index([selesai_at])
+  @@index([id_site, kategori])
+  @@index([id_ticket])
+  @@index([mulai_at])
+  @@map("nocaas_gangguan")
 }
 
 // Rekonsiliasi sementara nama device PRTG ↔ site ERP (halaman publik /rekon-prtg)

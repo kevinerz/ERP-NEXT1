@@ -232,6 +232,11 @@ const router = createRouter({
           component: () => import('@/views/operations/NocaasView.vue'),
         },
         {
+          path: 'nocaas/laporan',
+          name: 'laporan-gangguan',
+          component: () => import('@/views/operations/LaporanGangguanView.vue'),
+        },
+        {
           path: 'operations/:id',
           name: 'tiket-detail',
           component: () => import('@/views/operations/TiketDetailView.vue'),
@@ -501,7 +506,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'wa-inbox': 'whatsapp', 'wa-statistik': 'whatsapp',
   'ipam': 'operations',
   'jadwal-visit': 'operations', 'visit-statistik': 'operations', 'visit-maintenance': 'operations',
-  'nocaas': 'operations',
+  'nocaas': 'operations', 'laporan-gangguan': 'operations',
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris', 'hris-undangan': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master', 'master-gudang': 'master',
   'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master', 'master-jenis-gangguan': 'master',

@@ -20,6 +20,9 @@ const STATUS_TIKET_AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
 const IP_RE = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
 const IP_SAJA = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 const normal = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+// Port uplink (WAN) menurut penamaan interface di router pelanggan ("ether1-FO", "ether2-M2M", "lte1", "pppoe-out1")
+const PORT_WAN = /(^|[-_ ])(FO|M2M|WAN|ISP|LTE|INDIHOME|ASTINET|BIZNET|ICON|STARLINK|BACKUP|MODEM|UPLINK)([-_ 0-9]|$)|^lte\d|^pppoe-out/i;
+type WanStatus = Record<string, { running: boolean; pernah_hidup: boolean; sejak: string | null }>;
 
 export const KESIMPULAN: Record<StatusRouter | 'macet' | 'tidak_ada', { label: string; saran: string }> = {
   online: { label: 'Online', saran: 'Kedua jalur VPN tersambung — kemungkinan bukan putus koneksi (alarm PRTG palsu / sensor lain).' },
@@ -30,10 +33,28 @@ export const KESIMPULAN: Record<StatusRouter | 'macet' | 'tidak_ada', { label: s
   tidak_ada: { label: 'Tidak terpetakan', saran: 'Site ini belum terhubung ke router NOCaaS — petakan di halaman Pembanding NOCaaS.' },
 };
 
+// Kategori gangguan lain + ambang bawaan (bisa diubah di /nocaas → Atur)
+export const KATEGORI_BAWAAN = {
+  jalur: { aktif: true, menit: 60 },          // 1 jalur VPN (NS/UN) putus ≥ menit
+  port_wan_down: { aktif: true },             // port uplink (FO/M2M/…) yang tadinya hidup jadi mati
+  port_wan_flap: { aktif: true, min: 3 },     // port WAN naik-turun ≥ min kali / jam
+  port_lan_flap: { aktif: false, min: 20 },   // port LAN naik-turun ≥ min kali / jam (sering = perangkat toko)
+  sering_putus: { aktif: true, min: 4 },      // VPN putus-sambung ≥ min kali / jam
+  pulih_menit: 60,                            // naik-turun / sering putus dianggap pulih setelah tenang sekian menit
+};
+export const LABEL_KATEGORI: Record<string, { label: string; prioritas: string; arti: string }> = {
+  jalur: { label: '1 jalur putus', prioritas: 'Medium', arti: 'Salah satu jalur VPN putus lama; lokasi masih tersambung lewat jalur lain — cek ISP jalur yang putus.' },
+  port_wan_down: { label: 'Port WAN down', prioritas: 'High', arti: 'Port uplink router yang sebelumnya aktif kini mati (kabel / modem / ISP); lokasi mungkin jalan lewat backup.' },
+  port_wan_flap: { label: 'Port WAN naik-turun', prioritas: 'High', arti: 'Port uplink router naik-turun berulang — kabel, modem, atau ISP tidak stabil.' },
+  port_lan_flap: { label: 'Port LAN naik-turun', prioritas: 'Low', arti: 'Port LAN router naik-turun berulang — kabel / perangkat di toko.' },
+  sering_putus: { label: 'Sering putus', prioritas: 'High', arti: 'Koneksi VPN putus-sambung berulang dalam 1 jam — kualitas ISP / jaringan lokasi buruk.' },
+};
+
 interface Paired {
   site_key: string; primary_name?: string; brand?: string; public_ip?: string; access_isp?: string;
   // Perangkat non-Mikrotik (RCMS / Ruijie): jenis, nama asli perangkat, model
   jenis?: string; nama?: string; model?: string;
+  live_config?: { interfaces?: { name: string; running?: boolean; disabled?: boolean; rx_byte?: number }[] } | null; live_config_at?: string | null;
   offline_since?: string | null; downs7?: number; flaps24?: number; any_online?: boolean;
   ns?: { name?: string; tunnel_ip?: string; is_online?: boolean; net_status?: string; hb_at?: string | null } | null;
   un?: { name?: string; tunnel_ip?: string; is_online?: boolean; net_status?: string; hb_at?: string | null } | null;
@@ -85,6 +106,7 @@ export class NocaasService {
     await this.sinkron().catch(() => {});
     await this.sapuPing().catch((e) => this.logger.warn(`Sapuan ping gagal: ${e?.message}`));
     await this.prosesTiket().catch((e) => this.logger.warn(`Tiket NOCaaS gagal: ${e?.message}`));
+    await this.prosesKategori().catch((e) => this.logger.warn(`Gangguan kategori gagal: ${e?.message}`));
   }
 
   async sinkron() {
@@ -162,6 +184,19 @@ export class NocaasService {
 
       for (const { x, status, ns_ip, un_ip, id_site, sumber_map, konflik } of rencana) {
         const r = byKey.get(x.site_key);
+        // Status port WAN dari snapshot config router — hanya diperbarui bila snapshot baru
+        let wan: { wan_status: any; live_at: Date } | null = null;
+        if (x.live_config_at && x.live_config?.interfaces && (!r?.live_at || r.live_at.getTime() !== new Date(x.live_config_at).getTime())) {
+          const lama = (r?.wan_status ?? {}) as WanStatus, baru: WanStatus = {};
+          const at = new Date(x.live_config_at);
+          for (const i of x.live_config.interfaces) {
+            if (!i?.name || !PORT_WAN.test(i.name) || i.disabled) continue;
+            const run = !!i.running, l = lama[i.name];
+            // sejak = waktu perubahan yang TERAMATI ERP (snapshot pertama tidak punya 'sejak' → bukan gangguan baru)
+            baru[i.name] = { running: run, pernah_hidup: !!(l?.pernah_hidup || run || (i.rx_byte ?? 0) > 0), sejak: l ? (l.running !== run ? at.toISOString() : l.sejak) : null };
+          }
+          wan = { wan_status: baru, live_at: at };
+        }
         const data = {
           jenis: x.jenis ?? 'mikrotik', model: x.model?.slice(0, 40) ?? null, konflik_id_site: konflik,
           nama_utama: x.jenis === 'mikrotik' ? x.primary_name || x.ns?.name || x.un?.name || null : null,
@@ -173,6 +208,7 @@ export class NocaasService {
           downs7: x.downs7 ?? 0, flaps24: x.flaps24 ?? 0,
         };
         if (!r) {
+          if (wan) Object.assign(data, wan);
           // Baru pertama tercatat dalam keadaan mati = kondisi lama (sebelum fitur tiket aktif), bukan gangguan baru
           const sejakMati = data.offline_since ?? new Date(Math.min(now.getTime(), cfgTiket.aktif_sejak.getTime()) - 1000);
           tulis.push(this.prisma.nocaasRouter.create({ data: { site_key: x.site_key, ...data, status_sejak: status === 'offline' ? sejakMati : now } }));
@@ -183,7 +219,7 @@ export class NocaasService {
           if (k === 'hb_at') return Math.abs((a?.getTime?.() ?? 0) - (b?.getTime?.() ?? 0)) > 5 * 60_000;
           return a instanceof Date || b instanceof Date ? (a?.getTime?.() ?? null) !== (b?.getTime?.() ?? null) : (a ?? null) !== (b ?? null);
         });
-        if (berubah) tulis.push(this.prisma.nocaasRouter.update({ where: { site_key: x.site_key }, data: { ...data, ...(r.status !== status ? { status_sejak: now } : {}) } }));
+        if (berubah || wan) tulis.push(this.prisma.nocaasRouter.update({ where: { site_key: x.site_key }, data: { ...data, ...(wan ?? {}), ...(r.status !== status ? { status_sejak: now } : {}) } }));
       }
       // Perangkat yang sudah dihapus dari NOCaaS — hanya untuk jenis yang datanya berhasil diambil lengkap
       const ada = new Set(items.map((x) => x.site_key));
@@ -474,22 +510,209 @@ export class NocaasService {
     }
   }
 
+  // ── Kategori gangguan lain ─────────────────────────────────────────────────
+  // Selain mati total / VPN macet: 1 jalur VPN putus lama, port WAN down, port naik-turun, koneksi sering putus.
+  // Tiap kondisi dicatat di nocaas_gangguan (mulai → selesai) lalu dibuatkan tiket [NOCaaS] per site + kategori.
+  async kategoriKonfigurasi() {
+    const cfg = await this.konfigurasi();
+    const k = (cfg.kategori ?? {}) as Partial<typeof KATEGORI_BAWAAN>;
+    const out: any = {};
+    for (const [nama, bawaan] of Object.entries(KATEGORI_BAWAAN)) out[nama] = typeof bawaan === 'object' ? { ...bawaan, ...((k as any)[nama] ?? {}) } : (k as any)[nama] ?? bawaan;
+    return { cfg, kat: out as typeof KATEGORI_BAWAAN };
+  }
+
+  async prosesKategori() {
+    const { cfg, kat } = await this.kategoriKonfigurasi();
+    if (!cfg.tiket_aktif) return;
+    if (!this.terakhir?.ok || Date.now() - this.terakhir.at.getTime() > 3 * 60_000) return;
+    const now = new Date();
+
+    // 1) Kondisi saat ini
+    type Kondisi = { site_key: string; id_site: number; kategori: string; detail: string; nilai: number | null; mulai: Date };
+    const kini: Kondisi[] = [];
+    const routers = await this.prisma.nocaasRouter.findMany({
+      where: { id_site: { not: null }, jenis: 'mikrotik', site: { status_site: 'Aktif' } },
+      select: { site_key: true, id_site: true, status: true, status_sejak: true, ns_online: true, un_online: true, ns_ip: true, un_ip: true, wan_status: true, macet_sejak: true },
+    });
+    const peta = new Map(routers.map((r) => [r.site_key, r]));
+    if (kat.jalur.aktif) {
+      for (const r of routers) {
+        if (r.status !== 'partial' || r.status_sejak < cfg.aktif_sejak || now.getTime() - r.status_sejak.getTime() < kat.jalur.menit * 60_000) continue;
+        const putus = [r.ns_ip && !r.ns_online ? 'NS' : null, r.un_ip && !r.un_online ? 'UN' : null].filter(Boolean).join(' & ');
+        kini.push({ site_key: r.site_key, id_site: r.id_site!, kategori: 'jalur', detail: putus || 'VPN', nilai: null, mulai: r.status_sejak });
+      }
+    }
+    if (kat.port_wan_down.aktif) {
+      for (const r of routers) {
+        if (r.status === 'offline' || r.macet_sejak) continue; // router mati: snapshot basi, sudah ditangani kategori mati
+        for (const [iface, w] of Object.entries((r.wan_status ?? {}) as WanStatus)) {
+          if (w.running || !w.pernah_hidup || !w.sejak || new Date(w.sejak) < cfg.aktif_sejak) continue;
+          kini.push({ site_key: r.site_key, id_site: r.id_site!, kategori: 'port_wan_down', detail: iface, nilai: null, mulai: new Date(w.sejak) });
+        }
+      }
+    }
+    const minPort = Math.min(kat.port_wan_flap.aktif ? kat.port_wan_flap.min : 999, kat.port_lan_flap.aktif ? kat.port_lan_flap.min : 999);
+    if (minPort < 999) {
+      const d = await this.ambil<{ items: { site_key: string; iface: string; downs: number; is_wan: boolean }[] }>(`/api/heartbeat/port-flaps?hours=1&min_downs=${Math.max(2, minPort)}&limit=200`, 30_000);
+      for (const f of d.items ?? []) {
+        const r = peta.get(f.site_key);
+        if (!r) continue;
+        const k = f.is_wan ? 'port_wan_flap' : 'port_lan_flap';
+        const c = kat[k];
+        if (!c.aktif || f.downs < c.min) continue;
+        kini.push({ site_key: f.site_key, id_site: r.id_site!, kategori: k, detail: f.iface, nilai: f.downs, mulai: now });
+      }
+    }
+    if (kat.sering_putus.aktif) {
+      const d = await this.ambil<{ items: { site_key: string; downs: number }[] }>(`/api/heartbeat/flapping?hours=1&min_downs=${Math.max(2, kat.sering_putus.min)}`, 30_000);
+      for (const f of d.items ?? []) {
+        const r = peta.get(f.site_key);
+        if (r && r.status !== 'offline') kini.push({ site_key: f.site_key, id_site: r.id_site!, kategori: 'sering_putus', detail: '', nilai: f.downs, mulai: now });
+      }
+    }
+
+    // 2) Riwayat kondisi: buka / perbarui / tutup
+    const terbuka = await this.prisma.nocaasGangguan.findMany({ where: { selesai_at: null } });
+    const kunci = (x: { site_key: string; kategori: string; detail: string }) => `${x.site_key}|${x.kategori}|${x.detail}`;
+    const byKunci = new Map(terbuka.map((g) => [kunci(g), g]));
+    const ada = new Set<string>();
+    for (const c of kini) {
+      const k = kunci(c); ada.add(k);
+      const g = byKunci.get(k);
+      if (g) await this.prisma.nocaasGangguan.update({ where: { id: g.id }, data: { terakhir_at: now, id_site: c.id_site, ...(c.nilai !== null && c.nilai > (g.nilai ?? 0) ? { nilai: c.nilai } : {}) } });
+      else { const baru = await this.prisma.nocaasGangguan.create({ data: { site_key: c.site_key, id_site: c.id_site, kategori: c.kategori, detail: c.detail, nilai: c.nilai, mulai_at: c.mulai, terakhir_at: now } }); byKunci.set(k, baru); }
+    }
+    // Kondisi keadaan (jalur, port down) selesai begitu tidak terlihat; naik-turun / sering putus setelah tenang sekian menit
+    for (const g of terbuka) {
+      if (ada.has(kunci(g))) continue;
+      const tenang = ['port_wan_flap', 'port_lan_flap', 'sering_putus'].includes(g.kategori) ? kat.pulih_menit * 60_000 : 0;
+      if (now.getTime() - g.terakhir_at.getTime() >= tenang) await this.prisma.nocaasGangguan.update({ where: { id: g.id }, data: { selesai_at: now } });
+    }
+
+    // 3) Tiket untuk kondisi terbuka yang belum punya tiket (satu tiket per site + kategori)
+    const tanpaTiket = await this.prisma.nocaasGangguan.findMany({ where: { selesai_at: null, id_ticket: null, id_site: { not: null } }, orderBy: { mulai_at: 'asc' } });
+    const perKat = new Map<string, typeof tanpaTiket>();
+    for (const g of tanpaTiket) perKat.set(g.kategori, [...(perKat.get(g.kategori) ?? []), g]);
+    let dibuat = 0, ditempel = 0;
+    for (const [kategori, gs] of perKat) {
+      const info = LABEL_KATEGORI[kategori];
+      const site = [...new Set(gs.map((g) => g.id_site!))];
+      const aktif = await this.prisma.operationTicket.findMany({
+        where: { id_site: { in: site }, sumber_tiket: 'NOCaaS', status_tiket: { in: STATUS_TIKET_AKTIF }, jenis_gangguan: { in: [info.label, 'Mati total', 'VPN macet'] } },
+        select: { id_ticket: true, id_site: true, status_tiket: true, jenis_gangguan: true },
+      });
+      const baruSite = site.filter((id) => !aktif.some((t) => t.id_site === id));
+      if (baruSite.length > cfg.maks_tiket_per_putaran) {
+        this.logger.warn(`${baruSite.length} site ${info.label} sekaligus — tiket kategori ini ditahan`);
+        continue;
+      }
+      for (const id_site of site) {
+        const kondisi = gs.filter((g) => g.id_site === id_site);
+        const t = aktif.find((x) => x.id_site === id_site && x.jenis_gangguan === info.label) ?? aktif.find((x) => x.id_site === id_site);
+        const rincian = kondisi.map((g) => this.teksKondisi(g)).join('\n');
+        let id_ticket: number;
+        if (t) {
+          id_ticket = t.id_ticket;
+          await this.prisma.operationTicketLog.create({ data: { id_ticket, status_ke: t.status_tiket, catatan: `NOCaaS: ${info.label} — ${rincian}` } });
+          ditempel++;
+        } else {
+          id_ticket = await this.buatTiketKategori(id_site, kategori, kondisi, rincian);
+          dibuat++;
+        }
+        await this.prisma.nocaasGangguan.updateMany({ where: { id: { in: kondisi.map((g) => g.id) } }, data: { id_ticket } });
+      }
+    }
+
+    // 4) Auto-resolve tiket kategori ini bila semua kondisinya sudah selesai
+    let resolved = 0;
+    const tiket = await this.prisma.operationTicket.findMany({
+      where: { sumber_tiket: 'NOCaaS', status_tiket: { in: STATUS_TIKET_AKTIF }, jenis_gangguan: { in: Object.values(LABEL_KATEGORI).map((x) => x.label) } },
+      select: { id_ticket: true, status_tiket: true },
+    });
+    for (const t of tiket) {
+      const masih = await this.prisma.nocaasGangguan.count({ where: { id_ticket: t.id_ticket, selesai_at: null } });
+      if (masih) continue;
+      await this.prisma.operationTicket.update({ where: { id_ticket: t.id_ticket }, data: { status_tiket: 'Resolved', tgl_resolved: now } });
+      await this.prisma.operationTicketLog.create({ data: { id_ticket: t.id_ticket, status_dari: t.status_tiket, status_ke: 'Resolved', catatan: 'NOCaaS: kondisi sudah normal kembali — auto-resolved' } });
+      await this.prisma.notification.deleteMany({ where: { is_read: false, url: `/operations/${t.id_ticket}` } }).catch(() => {});
+      resolved++;
+    }
+    if (dibuat || ditempel || resolved) this.logger.log(`Gangguan kategori: ${JSON.stringify({ dibuat, ditempel, resolved })}`);
+  }
+
+  private teksKondisi(g: { kategori: string; detail: string; nilai: number | null; mulai_at: Date }) {
+    switch (g.kategori) {
+      case 'jalur': return `jalur ${g.detail} putus sejak ${this.waktuWib(g.mulai_at)}`;
+      case 'port_wan_down': return `port WAN ${g.detail} down sejak ${this.waktuWib(g.mulai_at)} (dari snapshot config router)`;
+      case 'port_wan_flap': case 'port_lan_flap': return `port ${g.detail} naik-turun ${g.nilai}× dalam 1 jam`;
+      case 'sering_putus': return `VPN putus-sambung ${g.nilai}× dalam 1 jam`;
+      default: return g.kategori;
+    }
+  }
+
+  private async buatTiketKategori(id_site: number, kategori: string, kondisi: { mulai_at: Date; site_key: string }[], rincian: string) {
+    const info = LABEL_KATEGORI[kategori];
+    const site = (await this.prisma.sitePelanggan.findUnique({ where: { id_site }, select: { nama_site: true } }))!;
+    const now = new Date();
+    const mulai = kondisi.reduce((m, g) => (g.mulai_at < m ? g.mulai_at : m), now);
+    const detail = [...new Set(kondisi.map((g: any) => g.detail).filter(Boolean))].join(', ');
+    const judul = `[NOCaaS] ${site.nama_site} — ${info.label}${detail ? ` (${detail})` : ''}`.slice(0, 255);
+    const t = await withNextTicketNumber(this.prisma, now, (nomor_tiket) =>
+      this.prisma.$transaction(async (tx) => {
+        const x = await tx.operationTicket.create({
+          data: {
+            nomor_tiket, id_site, judul_tiket: judul, prioritas: info.prioritas, sumber_tiket: 'NOCaaS', jenis_gangguan: info.label,
+            deskripsi_masalah: `${info.arti}\n${rincian}\nPerangkat: ${[...new Set(kondisi.map((g) => g.site_key))].join(', ')}`,
+            tgl_sensor_down: mulai, sla_due: new Date(mulai.getTime() + (SLA_JAM[info.prioritas] ?? 24) * 3600_000),
+          },
+        });
+        await tx.operationTicketLog.create({ data: { id_ticket: x.id_ticket, status_ke: 'Open', catatan: `NOCaaS: tiket dibuat otomatis — ${info.label}` } });
+        return x;
+      }),
+    );
+    this.notif.notifyForModul('operations', { tipe: 'tiket_baru', judul: `🟠 [NOCaaS] ${site.nama_site} — ${info.label}`, deskripsi: `${t.nomor_tiket} — ${rincian.split('\n')[0]}`, url: `/operations/${t.id_ticket}` }).catch(() => {});
+    return t.id_ticket;
+  }
+
   // ── Tiket gangguan otomatis ────────────────────────────────────────────────
   // Router site aktif yang menjadi "mati total" (tidak ada VPN & tidak ada heartbeat syslog) setelah fitur aktif,
   // dan bertahan ≥ durasi_konfirmasi → tiket. Router kembali online (atau minimal 1 tunnel) → tiket auto-resolve.
+  /** Konfigurasi + kategori lengkap (bawaan digabung dengan yang disimpan) — untuk halaman /nocaas */
+  async konfigurasiLengkap() {
+    const { cfg, kat } = await this.kategoriKonfigurasi();
+    return { ...cfg, kategori: kat };
+  }
+
   async konfigurasi() {
     return this.prisma.nocaasConfig.upsert({ where: { id: 1 }, create: { id: 1 }, update: {} });
   }
 
-  async ubahKonfigurasi(d: { tiket_aktif?: boolean; wa_pic_aktif?: boolean; durasi_konfirmasi_menit?: number; cooldown_menit?: number; maks_tiket_per_putaran?: number }) {
+  async ubahKonfigurasi(d: { kategori?: Record<string, any>; tiket_aktif?: boolean; wa_pic_aktif?: boolean; durasi_konfirmasi_menit?: number; cooldown_menit?: number; maks_tiket_per_putaran?: number }) {
     await this.konfigurasi();
     const data: any = {};
     if (typeof d.tiket_aktif === 'boolean') data.tiket_aktif = d.tiket_aktif;
     if (typeof d.wa_pic_aktif === 'boolean') data.wa_pic_aktif = d.wa_pic_aktif;
+    if (d.kategori && typeof d.kategori === 'object') {
+      const { kat } = await this.kategoriKonfigurasi();
+      const angka = (v: any, lama: number, min: number, max: number) => (Number.isFinite(+v) ? Math.min(Math.max(Math.round(+v), min), max) : lama);
+      const k: any = { ...kat };
+      for (const nama of ['jalur', 'port_wan_down', 'port_wan_flap', 'port_lan_flap', 'sering_putus'] as const) {
+        const v = d.kategori[nama];
+        if (!v || typeof v !== 'object') continue;
+        const x: any = { ...(kat as any)[nama] };
+        if (typeof v.aktif === 'boolean') x.aktif = v.aktif;
+        if ('menit' in x && v.menit !== undefined) x.menit = angka(v.menit, x.menit, 5, 1440);
+        if ('min' in x && v.min !== undefined) x.min = angka(v.min, x.min, 2, 500);
+        k[nama] = x;
+      }
+      if (d.kategori.pulih_menit !== undefined) k.pulih_menit = angka(d.kategori.pulih_menit, kat.pulih_menit, 10, 1440);
+      data.kategori = k;
+    }
     if (d.durasi_konfirmasi_menit !== undefined) data.durasi_konfirmasi_menit = Math.min(Math.max(Math.round(d.durasi_konfirmasi_menit), 1), 240);
     if (d.cooldown_menit !== undefined) data.cooldown_menit = Math.min(Math.max(Math.round(d.cooldown_menit), 0), 1440);
     if (d.maks_tiket_per_putaran !== undefined) data.maks_tiket_per_putaran = Math.min(Math.max(Math.round(d.maks_tiket_per_putaran), 1), 500);
-    return { data: await this.prisma.nocaasConfig.update({ where: { id: 1 }, data }), message: 'Konfigurasi disimpan' };
+    await this.prisma.nocaasConfig.update({ where: { id: 1 }, data });
+    return { data: await this.konfigurasiLengkap(), message: 'Konfigurasi disimpan' };
   }
 
   private catatanRouter(r: any) {
@@ -569,7 +792,7 @@ export class NocaasService {
 
     // 2) Auto-resolve tiket NOCaaS yang routernya sudah hidup lagi
     const tiketNoc = await this.prisma.operationTicket.findMany({
-      where: { sumber_tiket: 'NOCaaS', status_tiket: { in: STATUS_TIKET_AKTIF } },
+      where: { sumber_tiket: 'NOCaaS', status_tiket: { in: STATUS_TIKET_AKTIF }, OR: [{ jenis_gangguan: null }, { jenis_gangguan: { in: ['Mati total', 'VPN macet'] } }] },
       select: {
         id_ticket: true, nomor_tiket: true, judul_tiket: true, status_tiket: true, id_site: true,
         site: { select: { nama_site: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } } },
@@ -616,7 +839,7 @@ export class NocaasService {
     const rincian = rs.map((r) => this.catatanRouter(r)).join('\n');
 
     const flapping = await this.prisma.operationTicket.findFirst({
-      where: { id_site: site.id_site, sumber_tiket: 'NOCaaS', status_tiket: { in: ['Resolved', 'Closed'] }, tgl_resolved: { gte: new Date(now.getTime() - cooldownMenit * 60_000) } },
+      where: { id_site: site.id_site, sumber_tiket: 'NOCaaS', jenis_gangguan: { in: ['Mati total', 'VPN macet'] }, status_tiket: { in: ['Resolved', 'Closed'] }, tgl_resolved: { gte: new Date(now.getTime() - cooldownMenit * 60_000) } },
       orderBy: { tgl_resolved: 'desc' },
     });
     if (flapping) {
@@ -640,7 +863,7 @@ export class NocaasService {
       this.prisma.$transaction(async (tx) => {
         const t = await tx.operationTicket.create({
           data: {
-            nomor_tiket, id_site: site.id_site, judul_tiket: judul, prioritas, sumber_tiket: 'NOCaaS',
+            nomor_tiket, id_site: site.id_site, judul_tiket: judul, prioritas, sumber_tiket: 'NOCaaS', jenis_gangguan: jenisTeks,
             deskripsi_masalah: mati
               ? rs.every((r) => r.jenis !== 'mikrotik')
                 ? `Perangkat ${[...new Set(rs.map((r) => r.jenis.toUpperCase()))].join('/')} offline di NOCaaS sejak ${this.waktuWib(downAt)} (listrik / perangkat / internet lokasi).\n${rincian}`
