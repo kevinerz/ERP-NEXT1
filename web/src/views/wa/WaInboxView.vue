@@ -436,6 +436,7 @@ async function muatMedia(p: Pesan) {
   try {
     const { data } = await api.get(`/wa/media/${p.id_pesan}`, { responseType: 'blob' })
     urlMedia[p.id_pesan] = URL.createObjectURL(data)
+    if (data?.type) tipeMedia[p.id_pesan] = data.type
   } catch { /* tampil tombol coba lagi */ } finally {
     memuatMedia[p.id_pesan] = false
   }
@@ -458,20 +459,38 @@ async function unduhUlang(p: Pesan) {
   if (baru?.media?.ada && (baru.media.jenis === 'image' || baru.media.jenis === 'sticker')) muatMedia(baru)
 }
 
+const EKSTENSI: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'video/mp4': 'mp4', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'application/pdf': 'pdf' }
+function simpanBerkas(url: string, nama: string) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nama
+  a.click()
+}
+/** Nama berkas unduhan: nama asli (dokumen) atau "wa-<nama chat>-<tanggal jam>.<ekstensi>" untuk foto / video / audio */
+function namaBerkas(p: Pesan, mime?: string) {
+  if (p.media?.nama) return p.media.nama
+  const t = new Date(p.waktu)
+  const cap = `${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, '0')}${String(t.getDate()).padStart(2, '0')}-${String(t.getHours()).padStart(2, '0')}${String(t.getMinutes()).padStart(2, '0')}`
+  const chat = (aktif.value?.nama || 'chat').replace(/[^\w-]+/g, '-').replace(/-+/g, '-').slice(0, 40)
+  const ext = (mime && EKSTENSI[mime]) || (p.media?.jenis === 'image' ? 'jpg' : p.media?.jenis === 'video' ? 'mp4' : p.media?.jenis === 'audio' ? 'ogg' : 'bin')
+  return `wa-${chat}-${cap}-${p.id_pesan}.${ext}`
+}
+const tipeMedia = reactive<Record<number, string>>({})
 async function unduh(p: Pesan) {
   await muatMedia(p)
   const u = urlMedia[p.id_pesan]
   if (!u) return
-  const a = document.createElement('a')
-  a.href = u
-  a.download = p.media?.nama || `wa-${p.id_pesan}`
-  a.click()
+  simpanBerkas(u, namaBerkas(p, tipeMedia[p.id_pesan]))
+}
+function bukaFoto(p: Pesan) {
+  const url = urlMedia[p.id_pesan]
+  if (url) lihatFoto.value = { url, nama: namaBerkas(p, tipeMedia[p.id_pesan]) }
 }
 // Foto & stiker dimuat otomatis; video/audio/dokumen saat diklik
 watch(pesan, (list) => {
   for (const p of list) if (p.media?.ada && (p.media.jenis === 'image' || p.media.jenis === 'sticker')) muatMedia(p)
 }, { deep: false })
-const lihatFoto = ref<string | null>(null)
+const lihatFoto = ref<{ url: string; nama: string } | null>(null)
 
 // ── Foto profil (diambil lewat API ber-login, maks 3 bersamaan, di-cache ERP 24 jam) ──
 const foto = reactive<Record<number, string>>({}) // id_chat → object URL
@@ -1052,12 +1071,18 @@ onBeforeUnmount(() => {
                 <template v-else>
                   <!-- Foto / stiker -->
                   <template v-if="p.media && (p.media.jenis === 'image' || p.media.jenis === 'sticker')">
-                    <img v-if="urlMedia[p.id_pesan]" :src="urlMedia[p.id_pesan]" :class="p.media.jenis === 'sticker' ? 'wa-stiker' : 'wa-foto'" alt="" @click="p.media.jenis === 'image' && (lihatFoto = urlMedia[p.id_pesan] ?? null)" />
+                    <div v-if="urlMedia[p.id_pesan]" class="wa-media-bungkus">
+                      <img :src="urlMedia[p.id_pesan]" :class="p.media.jenis === 'sticker' ? 'wa-stiker' : 'wa-foto'" alt="" @click="p.media.jenis === 'image' && bukaFoto(p)" />
+                      <button v-if="p.media.jenis === 'image'" type="button" class="wa-unduh-media" title="Unduh foto" @click.stop="unduh(p)">⬇</button>
+                    </div>
                     <div v-else class="wa-media-box">{{ p.media.ada ? '⏳ Memuat foto…' : (p.riwayat ? '📷 Foto (riwayat, tidak diunduh)' : '📷 Foto belum tersedia') }}</div>
                   </template>
                   <!-- Video -->
                   <template v-else-if="p.media && p.media.jenis === 'video'">
-                    <video v-if="urlMedia[p.id_pesan]" :src="urlMedia[p.id_pesan]" controls class="wa-foto"></video>
+                    <div v-if="urlMedia[p.id_pesan]" class="wa-media-bungkus">
+                      <video :src="urlMedia[p.id_pesan]" controls class="wa-foto"></video>
+                      <button type="button" class="wa-unduh-media" title="Unduh video" @click.stop="unduh(p)">⬇</button>
+                    </div>
                     <button v-else class="wa-media-box klik" :disabled="!p.media.ada" @click="muatMedia(p)">
                       🎥 {{ p.media.ada ? (memuatMedia[p.id_pesan] ? 'Memuat…' : 'Putar video') : 'Video (tidak tersedia)' }} {{ ukuran(p.media.ukuran) }}
                     </button>
@@ -1232,7 +1257,7 @@ onBeforeUnmount(() => {
       <aside class="wa-profil">
         <header><b>{{ aktif?.is_grup ? 'Info grup' : 'Info kontak' }}</b><button @click="bukaProfil = false">✕</button></header>
         <div class="wa-profil-foto">
-          <img v-if="fotoBesar" :src="fotoBesar" alt="" @click="lihatFoto = fotoBesar" />
+          <img v-if="fotoBesar" :src="fotoBesar" alt="" @click="lihatFoto = { url: fotoBesar, nama: `foto-profil-${(aktif?.nama || 'wa').replace(/[^\w-]+/g, '-')}.jpg` }" />
           <div v-else class="wa-avatar besar" :class="{ grup: aktif?.is_grup }">{{ aktif?.is_grup ? '👥' : inisial(aktif?.nama || '') }}</div>
           <h3>
             {{ profil?.nama || aktif?.nama }}
@@ -1376,7 +1401,13 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Foto layar penuh -->
-    <div v-if="lihatFoto" class="wa-modal" @click="lihatFoto = null"><img :src="lihatFoto" class="wa-foto-besar" alt="" /></div>
+    <div v-if="lihatFoto" class="wa-modal" @click="lihatFoto = null">
+      <div class="wa-foto-alat" @click.stop>
+        <button type="button" class="btn-sm btn-hijau" @click="simpanBerkas(lihatFoto.url, lihatFoto.nama)">⬇ Unduh</button>
+        <button type="button" class="btn-sm btn-ghost" @click="lihatFoto = null">✕ Tutup</button>
+      </div>
+      <img :src="lihatFoto.url" class="wa-foto-besar" alt="" @click.stop />
+    </div>
   </div>
 </template>
 
@@ -1573,7 +1604,13 @@ onBeforeUnmount(() => {
 .wa-modal-box h3 { margin: 0 0 10px; }
 .wa-modal-box ol { text-align: left; font-size: 14px; color: #334155; padding-left: 20px; }
 .wa-qr { width: 280px; height: 280px; max-width: 100%; margin: 8px auto; display: block; image-rendering: pixelated; }
-.wa-foto-besar { max-width: 92vw; max-height: 90vh; border-radius: 8px; }
+.wa-foto-besar { max-width: 92vw; max-height: 84vh; border-radius: 8px; }
+.wa-foto-alat { position: fixed; top: 14px; right: 16px; display: flex; gap: 8px; z-index: 51; }
+.wa-foto-alat .btn-ghost { background: #fff; }
+.wa-media-bungkus { position: relative; display: inline-block; max-width: 100%; }
+.wa-unduh-media { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border: 0; border-radius: 50%; background: rgba(15, 23, 42, .55); color: #fff; font-size: 15px; cursor: pointer; opacity: 0; transition: opacity .15s; }
+.wa-media-bungkus:hover .wa-unduh-media, .wa-unduh-media:focus { opacity: 1; }
+@media (hover: none) { .wa-unduh-media { opacity: .85; } }
 
 @media (max-width: 900px) {
   .wa-page { grid-template-columns: 1fr; height: calc(100vh - 100px); }
