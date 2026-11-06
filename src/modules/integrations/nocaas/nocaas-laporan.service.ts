@@ -22,7 +22,7 @@ export class NocaasLaporanService {
   constructor(private prisma: PrismaService, private config: ConfigService) {}
 
   private async nocaas<T>(path: string): Promise<T | null> {
-    const base = (this.config.get<string>('NOCAAS_API_URL') || 'http://192.168.200.225:8000').replace(/\/$/, '');
+    const base = (this.config.get<string>('NOCAAS_API_URL') || 'http://180.214.165.166:8000').replace(/\/$/, '');
     try {
       const r = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(30_000) });
       return r.ok ? ((await r.json()) as T) : null;

@@ -86,7 +86,7 @@ export class NocaasService {
   ) {}
 
   private get base() {
-    return (this.config.get<string>('NOCAAS_API_URL') || 'http://192.168.200.225:8000').replace(/\/$/, '');
+    return (this.config.get<string>('NOCAAS_API_URL') || 'http://180.214.165.166:8000').replace(/\/$/, '');
   }
 
   private async ambil<T = any>(path: string, timeout = 30_000): Promise<T> {
