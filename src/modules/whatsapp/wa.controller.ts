@@ -6,7 +6,7 @@ import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { AlihkanDto, ChatBaruDto, DaftarChatQuery, KirimPesanDto, NamaKontakDto, ReaksiDto, SimpanPicDto, SimpanKaryawanDto, SimpanTeknisiDto, TemplateDto } from './dto';
+import { AlihkanDto, ChatBaruDto, DaftarChatQuery, EditPesanDto, KirimPesanDto, NamaKontakDto, ReaksiDto, SimpanPicDto, SimpanKaryawanDto, SimpanTeknisiDto, TemplateDto } from './dto';
 import { WaGatewayClient } from './wa-gateway.client';
 import { WaRealtimeService } from './wa-realtime.service';
 import { WaService, type FileUnggah } from './wa.service';
@@ -135,6 +135,12 @@ export class WaController {
 
   @Post('chat/:id/lepas-sematan')
   lepasSematan(@Param('id', ParseIntPipe) id: number) { return this.wa.sematkan(id, false); }
+
+  @Post('pesan/:id/tarik')
+  tarik(@Param('id', ParseIntPipe) id: number, @CurrentUser('id_karyawan') id_karyawan: number) { return this.wa.tarikPesan(id, id_karyawan); }
+
+  @Post('pesan/:id/edit')
+  edit(@Param('id', ParseIntPipe) id: number, @Body() dto: EditPesanDto, @CurrentUser('id_karyawan') id_karyawan: number) { return this.wa.editPesan(id, dto.teks, id_karyawan); }
 
   @Post('pesan/:id/reaksi')
   reaksi(@Param('id', ParseIntPipe) id: number, @Body() dto: ReaksiDto) { return this.wa.reaksi(id, dto.emoji); }

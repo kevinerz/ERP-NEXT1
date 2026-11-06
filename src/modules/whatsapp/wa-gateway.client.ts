@@ -71,6 +71,8 @@ export class WaGatewayClient {
   reaksi(akun: string, jid: string, target: { id: string; dari_saya: boolean; pengirim_jid?: string | null }, emoji: string) {
     return this.panggil<boolean>('POST', `/akun/${akun}/reaksi`, { jid, target, emoji });
   }
+  tarik(akun: string, jid: string, id: string) { return this.panggil<boolean>('POST', `/akun/${akun}/tarik`, { jid, id }); }
+  edit(akun: string, jid: string, id: string, teks: string) { return this.panggil<boolean>('POST', `/akun/${akun}/edit`, { jid, id, teks }); }
   unduhUlang(akun: string, id: string) { return this.panggil<{ file: string }>('POST', `/akun/${akun}/media/ulang`, { id }, 180_000); }
   cekNomor(akun: string, nomor: string) {
     return this.panggil<{ jid: string | null; terdaftar: boolean; dibatasi: { sampai: string | null; jenis: string | null } | null }>('POST', `/akun/${akun}/cek-nomor`, { nomor }, 20_000);

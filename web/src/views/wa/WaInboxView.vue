@@ -149,6 +149,8 @@ async function bukaChat(c: Chat) {
   pesan.value = []
   kutip.value = null
   teks.value = ''
+  editPesan.value = null
+  bukaEmoji.value = false
   hapusFile()
   memuatPesan.value = true
   try {
@@ -295,6 +297,7 @@ const antreanAktif = computed(() => antrean.value.filter((a) => a.id_chat === ak
 
 function kirim() {
   if (!aktif.value) return
+  if (editPesan.value) { simpanEdit(); return }
   if (!teks.value.trim() && !file.value) return
   const a: Antre = {
     kunci: ++kunciAntre, id_chat: aktif.value.id_chat, teks: teks.value.trim(), file: file.value,
@@ -350,6 +353,7 @@ function onKey(e: KeyboardEvent) {
     if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey && !e.isComposing) { e.preventDefault(); pakaiGaring(garingDaftar.value[garingPilih.value]!); return }
   }
   if (garing.value && e.key === 'Escape') { e.preventDefault(); garing.value = null; return }
+  if (e.key === 'Escape' && (editPesan.value || bukaEmoji.value)) { e.preventDefault(); bukaEmoji.value = false; if (editPesan.value) batalEdit(); return }
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); kirim() }
 }
 function upsertPesan(p: Pesan) {
@@ -364,6 +368,69 @@ function upsertPesan(p: Pesan) {
   }
   // watch(pesan) tidak terpicu oleh push/ganti elemen → foto baru dimuat di sini
   if (p.media?.ada && (p.media.jenis === 'image' || p.media.jenis === 'sticker')) muatMedia(p)
+}
+
+// ── Edit & tarik pesan sendiri (batas WhatsApp: edit ±15 menit, tarik ±2 hari) ──
+const editPesan = ref<Pesan | null>(null)
+const umurPesan = (p: Pesan) => Date.now() - new Date(p.waktu).getTime()
+const bisaEdit = (p: Pesan) => p.dari_saya && !p.dihapus && !!p.wa_id && p.tipe !== 'sticker'
+  && (!p.media || p.media.jenis === 'image' || p.media.jenis === 'video') && umurPesan(p) < 15 * 60_000
+const bisaTarik = (p: Pesan) => p.dari_saya && !p.dihapus && !!p.wa_id && umurPesan(p) < 2 * 24 * 3600_000
+const tanpaTtd = (t: string | null) => (t ?? '').replace(/^\*[^*\n]+\*\n/, '')
+function mulaiEdit(p: Pesan) {
+  editPesan.value = p
+  kutip.value = null
+  teks.value = tanpaTtd(p.teks)
+  nextTick(() => { const el = kotakTeks.value; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length) } })
+}
+function batalEdit() {
+  editPesan.value = null
+  teks.value = ''
+}
+async function simpanEdit() {
+  const p = editPesan.value
+  const t = teks.value.trim()
+  if (!p || !t) return
+  if (t === tanpaTtd(p.teks).trim()) { batalEdit(); return }
+  try {
+    await api.post(`/wa/pesan/${p.id_pesan}/edit`, { teks: t })
+    batalEdit()
+    errKirim.value = ''
+  } catch (e: any) {
+    errKirim.value = e?.response?.data?.message || 'Gagal mengedit pesan'
+  }
+}
+async function tarikPesan(p: Pesan) {
+  if (!(await confirmDialog({ title: 'Tarik pesan?', message: 'Pesan dihapus untuk semua orang di chat ini (seperti "Hapus untuk semua" di WhatsApp).', confirmLabel: 'Tarik', variant: 'danger' }))) return
+  try { await api.post(`/wa/pesan/${p.id_pesan}/tarik`) } catch (e) { alertError(e, 'Gagal menarik pesan') }
+}
+
+// ── Emoji ──
+const bukaEmoji = ref(false)
+const DAFTAR_EMOJI = [
+  '😀', '😁', '😂', '🤣', '😊', '😇', '🙂', '😉', '😍', '😘', '😋', '😎', '🤗', '🤔', '😐', '😅', '😬', '🙄', '😴', '😷',
+  '😢', '😭', '😡', '😱', '🥺', '😮', '🤝', '🙏', '👍', '👎', '👌', '✌️', '👏', '🙌', '💪', '👋', '☝️', '👉', '👈', '👇',
+  '❤️', '💙', '💚', '💛', '🧡', '💜', '🔥', '⭐', '✨', '🎉', '✅', '❌', '⚠️', '❗', '❓', '💯', '📌', '📍', '📞', '📱',
+  '💻', '🖥️', '📶', '🔌', '🔧', '🛠️', '⏳', '⏰', '📅', '📝', '📎', '📷', '🚗', '🏠', '🏢', '☕', '🍜', '🌧️', '☀️', '🙇',
+]
+function sisipEmoji(e: string) {
+  const el = kotakTeks.value
+  const a = el?.selectionStart ?? teks.value.length, b = el?.selectionEnd ?? a
+  teks.value = teks.value.slice(0, a) + e + teks.value.slice(b)
+  nextTick(() => { if (el) { el.focus(); const pos = a + e.length; el.setSelectionRange(pos, pos) } })
+}
+
+// ── Ketik langsung: tombol huruf di mana saja (tanpa klik kolom pesan) masuk ke kolom pesan ──
+function ketikLangsung(e: KeyboardEvent) {
+  if (!aktif.value || !terhubung.value || e.isComposing || e.altKey) return
+  const tempel = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v'
+  if ((e.ctrlKey || e.metaKey) && !tempel) return
+  if (!tempel && e.key.length !== 1) return
+  const el = document.activeElement as HTMLElement | null
+  if (el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable)) return
+  if (document.querySelector('.wa-modal, .dh-overlay, .cd-overlay')) return
+  if (window.getSelection()?.toString()) return // sedang memilih teks untuk disalin
+  kotakTeks.value?.focus() // fokus saat keydown → karakter / tempelan langsung masuk ke kolom pesan
 }
 
 async function reaksi(p: Pesan, emoji: string) {
@@ -930,6 +997,7 @@ onMounted(async () => {
   }, 10_000)
   document.addEventListener('visibilitychange', onTampil)
   window.addEventListener('online', onTampil)
+  window.addEventListener('keydown', ketikLangsung)
 })
 let terakhirSinkron = Date.now()
 onBeforeUnmount(() => {
@@ -938,6 +1006,7 @@ onBeforeUnmount(() => {
   es = null
   document.removeEventListener('visibilitychange', onTampil)
   window.removeEventListener('online', onTampil)
+  window.removeEventListener('keydown', ketikLangsung)
   if (timerJaga) clearInterval(timerJaga)
   if (timerKoneksi) clearInterval(timerKoneksi)
   if (timerSambung) clearTimeout(timerSambung)
@@ -1132,6 +1201,8 @@ onBeforeUnmount(() => {
               <div v-if="!p.dihapus" class="wa-aksi">
                 <button title="Balas" @click="kutip = p">↩</button>
                 <button v-for="e in EMOJI.slice(0, 4)" :key="e" :title="`Reaksi ${e}`" @click="reaksi(p, e)">{{ e }}</button>
+                <button v-if="bisaEdit(p)" title="Edit pesan (maks 15 menit)" @click="mulaiEdit(p)">✏️</button>
+                <button v-if="bisaTarik(p)" title="Tarik pesan (hapus untuk semua)" @click="tarikPesan(p)">🗑</button>
               </div>
             </div>
           </template>
@@ -1161,6 +1232,10 @@ onBeforeUnmount(() => {
 
         <!-- ── Penulisan pesan ── -->
         <footer class="wa-tulis">
+          <div v-if="editPesan" class="wa-tulis-kutip wa-tulis-edit">
+            <span>✏️ Mengedit pesan: {{ tanpaTtd(editPesan.teks) || '📎 Media' }}</span>
+            <button title="Batal (Esc)" @click="batalEdit">✕</button>
+          </div>
           <div v-if="kutip" class="wa-tulis-kutip">
             <span>↩ {{ kutip.teks || (kutip.media ? '📎 ' + (kutip.media.nama || kutip.media.jenis) : 'Pesan') }}</span>
             <button @click="kutip = null">✕</button>
@@ -1187,7 +1262,13 @@ onBeforeUnmount(() => {
                 <button class="btn-sm btn-ghost" @click="tambahTemplate">+ Tambah balasan cepat</button>
               </div>
             </div>
-            <button class="wa-ikon" title="Lampirkan file (maks 16 MB)" @click="inputFile?.click()">📎</button>
+            <div class="wa-template-wrap">
+              <button class="wa-ikon" title="Emoji" @click="bukaEmoji = !bukaEmoji">😊</button>
+              <div v-if="bukaEmoji" class="wa-emoji" @mousedown.prevent>
+                <button v-for="e in DAFTAR_EMOJI" :key="e" type="button" @click="sisipEmoji(e)">{{ e }}</button>
+              </div>
+            </div>
+            <button class="wa-ikon" title="Lampirkan file (maks 16 MB)" :disabled="!!editPesan" @click="inputFile?.click()">📎</button>
             <input ref="inputFile" type="file" hidden @change="pilihFile" />
             <div v-if="garing" class="wa-garing" @mousedown.prevent>
               <div class="wa-garing-kepala">⚡ Balasan cepat<template v-if="garing.cari">: “{{ garing.cari }}”</template><small>↑↓ pilih · Enter pakai · Esc tutup</small></div>
@@ -1201,7 +1282,7 @@ onBeforeUnmount(() => {
               ref="kotakTeks" v-model="teks" rows="1" :placeholder="terhubung ? 'Tulis pesan… (/ balasan cepat, Enter kirim, Shift+Enter baris baru)' : 'WhatsApp belum terhubung'"
               :disabled="!terhubung" @keydown="onKey" @paste="onPaste" @input="cekGaring" @click="cekGaring" @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && cekGaring()" @blur="garing = null"
             ></textarea>
-            <button class="wa-kirim" :disabled="!terhubung || (!teks.trim() && !file)" @click="kirim">➤</button>
+            <button class="wa-kirim" :title="editPesan ? 'Simpan perubahan' : 'Kirim'" :disabled="!terhubung || (!teks.trim() && !file)" @click="kirim">{{ editPesan ? '✓' : '➤' }}</button>
           </div>
         </footer>
       </template>
@@ -1577,6 +1658,10 @@ onBeforeUnmount(() => {
 .wa-tulis-kutip { display: flex; justify-content: space-between; gap: 8px; background: #fff; border-left: 3px solid var(--wa-hijau); border-radius: 6px; padding: 6px 10px; margin-bottom: 6px; font-size: 13px; color: #475569; }
 .wa-tulis-kutip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wa-tulis-kutip button { border: 0; background: none; cursor: pointer; }
+.wa-tulis-edit { border-left-color: #2563eb; }
+.wa-emoji { position: absolute; bottom: 46px; left: 0; z-index: 20; width: 320px; box-sizing: border-box; max-height: 220px; overflow-y: auto; overflow-x: hidden; display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 8px; background: #fff; border: 1px solid var(--wa-garis); border-radius: 10px; box-shadow: 0 8px 24px rgba(15, 23, 42, .15); }
+.wa-emoji button { border: 0; background: none; font-size: 20px; padding: 3px 0; min-width: 0; border-radius: 6px; cursor: pointer; }
+.wa-emoji button:hover { background: #f1f5f9; }
 .wa-err { color: #dc2626; font-size: 13px; margin: 0 0 6px; }
 .wa-tulis-baris { position: relative; display: flex; align-items: flex-end; gap: 6px; }
 .wa-garing { position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; max-height: 300px; overflow-y: auto; background: #fff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 6px; z-index: 6; }

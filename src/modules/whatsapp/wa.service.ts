@@ -679,6 +679,41 @@ export class WaService {
     return { ok: true };
   }
 
+  // Batas WhatsApp: edit ±15 menit, tarik (hapus untuk semua) ±2 hari setelah dikirim
+  private async pesanSendiri(id_pesan: number) {
+    const p = await this.prisma.waPesan.findUnique({ where: { id_pesan }, include: { chat: { include: { akun: true } } } });
+    if (!p) throw new NotFoundException('Pesan tidak ditemukan');
+    if (!p.dari_saya) throw new BadRequestException('Hanya pesan yang dikirim dari helpdesk yang bisa diubah');
+    if (p.dihapus) throw new BadRequestException('Pesan sudah ditarik');
+    if (!p.wa_id) throw new BadRequestException('Pesan belum terkirim ke WhatsApp');
+    return p;
+  }
+
+  async tarikPesan(id_pesan: number, id_karyawan: number) {
+    const p = await this.pesanSendiri(id_pesan);
+    if (Date.now() - p.waktu.getTime() > 2 * 24 * 3600_000) throw new BadRequestException('Pesan lebih dari 2 hari tidak bisa ditarik (batas WhatsApp)');
+    await this.gw.tarik(p.chat.akun.kode, p.chat.jid, p.wa_id);
+    await this.prisma.waPesan.update({ where: { id_pesan }, data: { dihapus: true } });
+    this.logger.log(`Pesan #${id_pesan} ditarik oleh karyawan #${id_karyawan}`);
+    await this.siarkanPesan(p.id_chat, id_pesan);
+    return { ok: true };
+  }
+
+  async editPesan(id_pesan: number, teks: string, id_karyawan: number) {
+    const p = await this.pesanSendiri(id_pesan);
+    const baru = teks.trim();
+    if (!baru) throw new BadRequestException('Teks tidak boleh kosong');
+    if (p.media_jenis && p.media_jenis !== 'image' && p.media_jenis !== 'video') throw new BadRequestException('Pesan jenis ini tidak bisa diedit');
+    if (Date.now() - p.waktu.getTime() > 15 * 60_000) throw new BadRequestException('Pesan lebih dari 15 menit tidak bisa diedit (batas WhatsApp)');
+    // Tanda tangan "*Nama*" di awal pesan dipertahankan
+    const ttd = /^\*[^*\n]+\*\n/.exec(p.teks ?? '')?.[0] ?? '';
+    await this.gw.edit(p.chat.akun.kode, p.chat.jid, p.wa_id, ttd + baru);
+    await this.prisma.waPesan.update({ where: { id_pesan }, data: { teks: ttd + baru, diedit: true } });
+    this.logger.log(`Pesan #${id_pesan} diedit oleh karyawan #${id_karyawan}`);
+    await this.siarkanPesan(p.id_chat, id_pesan);
+    return { ok: true };
+  }
+
   private async siarkanChat(id_chat: number) {
     const c = await this.detailChat(id_chat);
     this.rt.siarkan({ tipe: 'chat', chat: c });

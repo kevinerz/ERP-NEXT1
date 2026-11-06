@@ -16,6 +16,10 @@ export class AlihkanDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) id_karyawan?: number | null;
 }
 
+export class EditPesanDto {
+  @IsString() @MaxLength(4096) teks: string;
+}
+
 export class ReaksiDto {
   @IsString() @MaxLength(16) emoji: string;
 }
