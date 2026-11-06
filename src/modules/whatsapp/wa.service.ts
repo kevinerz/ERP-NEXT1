@@ -560,6 +560,48 @@ export class WaService {
     return { saya, belum, grup };
   }
 
+  // ── Pencarian isi pesan ──────────────────────────────────────────────────────
+  private cuplikan(teks: string, q: string) {
+    const t = teks.replace(/\s+/g, ' ');
+    const i = t.toLowerCase().indexOf(q.toLowerCase());
+    if (i < 0) return t.slice(0, 120);
+    const a = Math.max(0, i - 40), b = Math.min(t.length, i + q.length + 80);
+    return (a > 0 ? '…' : '') + t.slice(a, b) + (b < t.length ? '…' : '');
+  }
+
+  /** Cari teks di semua chat (pribadi & grup) satu akun — terbaru dulu */
+  async cariPesan(kode: string, q: string) {
+    const kata = (q || '').trim();
+    if (kata.length < 2) return { data: [] };
+    const id_akun = await this.idAkun(kode);
+    const rows = await this.prisma.waPesan.findMany({
+      where: { chat: { id_akun }, dihapus: false, teks: { contains: kata } },
+      orderBy: { waktu: 'desc' }, take: 60,
+      select: { id_pesan: true, id_chat: true, teks: true, waktu: true, dari_saya: true, nama_pengirim: true, pengirim_jid: true },
+    });
+    const chats = await this.prisma.waChat.findMany({ where: { id_chat: { in: [...new Set(rows.map((r) => r.id_chat))] } } });
+    const fc = new Map((await this.formatChat(chats)).map((c: any) => [c.id_chat, c]));
+    return {
+      data: rows.filter((r) => fc.has(r.id_chat)).map((r) => ({
+        id_pesan: r.id_pesan, id_chat: r.id_chat, waktu: r.waktu, dari_saya: r.dari_saya,
+        pengirim: r.dari_saya ? 'Anda' : r.nama_pengirim || (r.pengirim_jid ? '+' + r.pengirim_jid.split('@')[0] : null),
+        cuplikan: this.cuplikan(r.teks ?? '', kata), chat: fc.get(r.id_chat),
+      })),
+    };
+  }
+
+  /** Cari teks dalam satu chat — semua kecocokan (maks 500), terbaru dulu */
+  async cariDalamChat(id_chat: number, q: string) {
+    const kata = (q || '').trim();
+    if (kata.length < 2) return { data: [] };
+    const rows = await this.prisma.waPesan.findMany({
+      where: { id_chat, dihapus: false, teks: { contains: kata } },
+      orderBy: [{ waktu: 'desc' }, { id_pesan: 'desc' }], take: 500,
+      select: { id_pesan: true, teks: true, waktu: true, dari_saya: true, nama_pengirim: true },
+    });
+    return { data: rows.map((r) => ({ id_pesan: r.id_pesan, waktu: r.waktu, dari_saya: r.dari_saya, pengirim: r.dari_saya ? 'Anda' : r.nama_pengirim, cuplikan: this.cuplikan(r.teks ?? '', kata) })) };
+  }
+
   async detailChat(id_chat: number) {
     const chat = await this.prisma.waChat.findUnique({ where: { id_chat } });
     if (!chat) throw new NotFoundException('Chat tidak ditemukan');
@@ -567,7 +609,20 @@ export class WaService {
     return c;
   }
 
-  async daftarPesan(id_chat: number, sebelum?: number, limit = 50) {
+  async daftarPesan(id_chat: number, sebelum?: number, limit = 50, sampai?: number) {
+    // Lompat ke pesan tertentu (hasil pencarian): muat dari pesan itu (+ sedikit konteks) sampai yang terbaru
+    if (sampai) {
+      const t = await this.prisma.waPesan.findFirst({ where: { id_pesan: sampai, id_chat }, select: { waktu: true } });
+      if (!t) throw new NotFoundException('Pesan tidak ditemukan di chat ini');
+      const [baru, konteks] = await Promise.all([
+        this.prisma.waPesan.findMany({ where: { id_chat, waktu: { gte: t.waktu } }, orderBy: [{ waktu: 'desc' }, { id_pesan: 'desc' }], take: 3000 }),
+        this.prisma.waPesan.findMany({ where: { id_chat, waktu: { lt: t.waktu } }, orderBy: [{ waktu: 'desc' }, { id_pesan: 'desc' }], take: 15 }),
+      ]);
+      const rows = [...baru, ...konteks].reverse();
+      const data = [];
+      for (const r of rows) data.push(await this.formatPesan(r));
+      return { data, meta: { ada_lagi: konteks.length === 15, terpotong: baru.length === 3000 } };
+    }
     const rows = await this.prisma.waPesan.findMany({
       where: { id_chat, ...(sebelum ? { id_pesan: { lt: sebelum } } : {}) },
       orderBy: [{ waktu: 'desc' }, { id_pesan: 'desc' }],

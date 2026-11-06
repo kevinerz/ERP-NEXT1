@@ -100,7 +100,28 @@ async function muatChat(lanjut = false) {
   }
 }
 function gantiFilter(f: typeof filter.value) { filter.value = f; muatChat() }
-watch(cari, () => { if (timerCari) clearTimeout(timerCari); timerCari = setTimeout(() => muatChat(), 350) })
+watch(cari, () => { if (timerCari) clearTimeout(timerCari); timerCari = setTimeout(() => { muatChat(); cariPesanGlobal() }, 350) })
+
+// ── Pencarian isi pesan di semua chat (pribadi & grup) ──
+interface HasilCari { id_pesan: number; id_chat: number; waktu: string; dari_saya: boolean; pengirim: string | null; cuplikan: string; chat?: Chat }
+const hasilPesan = ref<HasilCari[]>([])
+const mencariPesan = ref(false)
+async function cariPesanGlobal() {
+  const q = cari.value.trim()
+  if (q.length < 2) { hasilPesan.value = []; return }
+  mencariPesan.value = true
+  try {
+    const { data } = await api.get('/wa/cari-pesan', { params: { akun: AKUN, q } })
+    if (cari.value.trim() === q) hasilPesan.value = data.data
+  } catch { hasilPesan.value = [] } finally { mencariPesan.value = false }
+}
+async function bukaHasil(h: HasilCari) {
+  if (!h.chat) return
+  const q = cari.value.trim()
+  if (aktif.value?.id_chat !== h.chat.id_chat) await bukaChat(h.chat)
+  sorotGlobal.value = q
+  await lompatKe(h.id_pesan)
+}
 function muatLagiChat() { halaman.value++; muatChat(true) }
 
 function cocokFilter(c: Chat): boolean {
@@ -151,6 +172,10 @@ async function bukaChat(c: Chat) {
   teks.value = ''
   editPesan.value = null
   bukaEmoji.value = false
+  bukaTemplate.value = false
+  if (cariChat.buka) tutupCariChat()
+  sorotId.value = null
+  sorotGlobal.value = ''
   hapusFile()
   memuatPesan.value = true
   try {
@@ -182,6 +207,116 @@ async function muatSebelumnya() {
     memuatPesan.value = false
   }
 }
+// ── Lompat ke pesan tertentu (hasil pencarian) + sorot ──
+const sorotId = ref<number | null>(null)
+const sorotGlobal = ref('') // kata dari pencarian daftar chat — disorot di chat yang dibuka
+async function lompatKe(id_pesan: number) {
+  const c = aktif.value
+  if (!c) return
+  if (!pesan.value.some((p) => p.id_pesan === id_pesan)) {
+    memuatPesan.value = true
+    try {
+      const { data } = await api.get(`/wa/chat/${c.id_chat}/pesan`, { params: { sampai: id_pesan } })
+      if (aktif.value?.id_chat !== c.id_chat) return
+      pesan.value = data.data
+      adaLagi.value = !!data.meta?.ada_lagi
+    } finally { memuatPesan.value = false }
+  }
+  sorotId.value = id_pesan
+  nempelBawah.value = false
+  waktuLompat = Date.now()
+  await nextTick()
+  gulirKeSorot('smooth')
+}
+let waktuLompat = 0
+function gulirKeSorot(behavior: ScrollBehavior = 'auto') {
+  if (sorotId.value) kotakPesan.value?.querySelector(`[data-pesan="${sorotId.value}"]`)?.scrollIntoView({ block: 'center', behavior })
+}
+
+// ── Pencarian dalam chat yang dibuka (pribadi / grup) ──
+const cariChat = reactive({ buka: false, q: '', hasil: [] as { id_pesan: number }[], pos: -1, mencari: false })
+const inputCariChat = ref<HTMLInputElement | null>(null)
+let timerCariChat: ReturnType<typeof setTimeout> | null = null
+function bukaCariChat() {
+  cariChat.buka = true
+  nextTick(() => { inputCariChat.value?.focus(); inputCariChat.value?.select() })
+}
+function tutupCariChat() {
+  Object.assign(cariChat, { buka: false, q: '', hasil: [], pos: -1, mencari: false })
+  sorotId.value = null
+}
+watch(() => cariChat.q, () => {
+  if (timerCariChat) clearTimeout(timerCariChat)
+  timerCariChat = setTimeout(cariDalamChat, 300)
+})
+async function cariDalamChat() {
+  const c = aktif.value, q = cariChat.q.trim()
+  if (!c || q.length < 2) { cariChat.hasil = []; cariChat.pos = -1; sorotId.value = null; return }
+  cariChat.mencari = true
+  try {
+    const { data } = await api.get(`/wa/chat/${c.id_chat}/cari`, { params: { q } })
+    if (cariChat.q.trim() !== q || aktif.value?.id_chat !== c.id_chat) return
+    cariChat.hasil = data.data
+    cariChat.pos = cariChat.hasil.length ? 0 : -1
+    if (cariChat.pos >= 0) lompatKe(cariChat.hasil[0]!.id_pesan)
+  } catch { cariChat.hasil = [] } finally { cariChat.mencari = false }
+}
+// arah 1 = hasil lebih lama (ke atas), -1 = lebih baru (ke bawah)
+function navCari(arah: 1 | -1) {
+  const n = cariChat.hasil.length
+  if (!n) return
+  cariChat.pos = (cariChat.pos + arah + n) % n
+  lompatKe(cariChat.hasil[cariChat.pos]!.id_pesan)
+}
+function onKeyCariChat(e: KeyboardEvent) {
+  if (e.key === 'Enter') { e.preventDefault(); navCari(e.shiftKey ? -1 : 1) }
+  else if (e.key === 'Escape') { e.preventDefault(); tutupCariChat() }
+}
+const kataSorot = computed(() => (cariChat.buka ? cariChat.q : sorotGlobal.value).trim())
+function pecahSorot(t: string) {
+  const q = kataSorot.value
+  if (q.length < 2 || !t) return [{ t, c: false }]
+  const out: { t: string; c: boolean }[] = []
+  const kecil = t.toLowerCase(), qk = q.toLowerCase()
+  let i = 0
+  for (;;) {
+    const j = kecil.indexOf(qk, i)
+    if (j < 0) { out.push({ t: t.slice(i), c: false }); break }
+    if (j > i) out.push({ t: t.slice(i, j), c: false })
+    out.push({ t: t.slice(j, j + q.length), c: true })
+    i = j + q.length
+  }
+  return out
+}
+function cuplikanSorot(t: string, q: string) {
+  const qk = q.trim().toLowerCase()
+  if (qk.length < 2) return [{ t, c: false }]
+  const i = t.toLowerCase().indexOf(qk)
+  return i < 0 ? [{ t, c: false }] : [{ t: t.slice(0, i), c: false }, { t: t.slice(i, i + qk.length), c: true }, { t: t.slice(i + qk.length), c: false }]
+}
+
+// ── Layar sentuh / HP: aksi pesan muncul saat pesan diketuk ──
+const mqKecil = typeof window !== 'undefined' ? window.matchMedia('(max-width: 900px)') : null
+const layarKecil = ref(!!mqKecil?.matches)
+const onMq = (e: MediaQueryListEvent) => { layarKecil.value = e.matches }
+const aksiDibuka = ref<number | null>(null)
+function ketukPesan(p: Pesan, e: MouseEvent) {
+  if (!layarKecil.value || p.dihapus) return
+  const baris = e.currentTarget as HTMLElement
+  if ((e.target as HTMLElement).closest('a, button, video, audio, .wa-media-bungkus')) return
+  aksiDibuka.value = aksiDibuka.value === p.id_pesan ? null : p.id_pesan
+  if (aksiDibuka.value) nextTick(() => baris.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+}
+
+// ── Panel ⚡ / 😊 tertutup otomatis saat klik di luar ──
+const wadahEmoji = ref<HTMLElement | null>(null)
+const wadahTemplate = ref<HTMLElement | null>(null)
+function tutupPanelLuar(e: MouseEvent | TouchEvent) {
+  const t = e.target as Node
+  if (bukaEmoji.value && wadahEmoji.value && !wadahEmoji.value.contains(t)) bukaEmoji.value = false
+  if (bukaTemplate.value && wadahTemplate.value && !wadahTemplate.value.contains(t)) bukaTemplate.value = false
+}
+
 // nempelBawah: pengguna sedang di dasar chat → pesan baru & foto yang selesai dimuat tetap menjaga posisi di bawah
 const nempelBawah = ref(true)
 const baruDiBawah = ref(0)
@@ -201,6 +336,7 @@ function keBawah() {
   if (el) el.scrollTop = el.scrollHeight
 }
 function lompatBawah() {
+  sorotId.value = null
   keBawah()
   nempelBawah.value = true
   baruDiBawah.value = 0
@@ -208,6 +344,8 @@ function lompatBawah() {
 // Foto/video/stiker selesai dimuat → tinggi chat bertambah; tetap di bawah bila tadinya di bawah
 function onMediaMuat() {
   if (nempelBawah.value) keBawah()
+  // Baru lompat ke hasil pencarian: foto di atasnya yang selesai dimuat menggeser posisi → kunci ulang
+  else if (sorotId.value && Date.now() - waktuLompat < 5000) gulirKeSorot()
 }
 let timerBaca: ReturnType<typeof setTimeout> | null = null
 function tandaiDibaca(c: Chat) {
@@ -422,6 +560,11 @@ function sisipEmoji(e: string) {
 
 // ── Ketik langsung: tombol huruf di mana saja (tanpa klik kolom pesan) masuk ke kolom pesan ──
 function ketikLangsung(e: KeyboardEvent) {
+  if (aktif.value && (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'f' && !document.querySelector('.wa-modal, .dh-overlay, .cd-overlay')) {
+    e.preventDefault()
+    bukaCariChat()
+    return
+  }
   if (!aktif.value || !terhubung.value || e.isComposing || e.altKey) return
   const tempel = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v'
   if ((e.ctrlKey || e.metaKey) && !tempel) return
@@ -998,6 +1141,9 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', onTampil)
   window.addEventListener('online', onTampil)
   window.addEventListener('keydown', ketikLangsung)
+  document.addEventListener('mousedown', tutupPanelLuar)
+  mqKecil?.addEventListener('change', onMq)
+  document.addEventListener('touchstart', tutupPanelLuar, { passive: true })
 })
 let terakhirSinkron = Date.now()
 onBeforeUnmount(() => {
@@ -1007,6 +1153,10 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onTampil)
   window.removeEventListener('online', onTampil)
   window.removeEventListener('keydown', ketikLangsung)
+  document.removeEventListener('mousedown', tutupPanelLuar)
+  mqKecil?.removeEventListener('change', onMq)
+  document.removeEventListener('touchstart', tutupPanelLuar)
+  if (timerCariChat) clearTimeout(timerCariChat)
   if (timerJaga) clearInterval(timerJaga)
   if (timerKoneksi) clearInterval(timerKoneksi)
   if (timerSambung) clearTimeout(timerSambung)
@@ -1037,8 +1187,8 @@ onBeforeUnmount(() => {
       <p v-if="sinkron" class="wa-sinkron">⏳ {{ sinkron }}</p>
 
       <div class="wa-cari">
-        <input v-model="cari" type="search" placeholder="Cari nama, nomor, pelanggan…" />
-        <button class="btn-sm btn-hijau" :disabled="!terhubung" title="Mulai chat baru" @click="mulaiChatBaru">✏️ Chat baru</button>
+        <input v-model="cari" type="search" placeholder="Cari chat, nomor, atau isi pesan…" />
+        <button class="btn-sm btn-hijau" :disabled="!terhubung" title="Mulai chat baru" @click="mulaiChatBaru">✏️ <span class="wa-teks-tombol">Chat baru</span></button>
       </div>
       <div class="wa-filter">
         <button :class="{ on: filter === 'semua' }" @click="gantiFilter('semua')">Semua</button>
@@ -1071,8 +1221,24 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </li>
-        <li v-if="!chats.length && !memuatChat" class="wa-kosong">Belum ada chat{{ cari ? ' yang cocok' : '' }}.</li>
+        <li v-if="!chats.length && !memuatChat && !(cari.trim().length >= 2 && hasilPesan.length)" class="wa-kosong">Belum ada chat{{ cari ? ' yang cocok' : '' }}.</li>
         <li v-if="chats.length < total" class="wa-lagi"><button class="btn-sm btn-ghost" :disabled="memuatChat" @click.stop="muatLagiChat">Muat lebih banyak</button></li>
+        <template v-if="cari.trim().length >= 2">
+          <li class="wa-seksi">Pesan<template v-if="mencariPesan"> · mencari…</template><template v-else> · {{ hasilPesan.length }}{{ hasilPesan.length >= 60 ? '+' : '' }}</template></li>
+          <li v-for="h in hasilPesan" :key="'h' + h.id_pesan" class="wa-hasil" @click="bukaHasil(h)">
+            <div class="wa-li-body">
+              <div class="wa-li-top">
+                <b class="wa-li-nama">{{ h.chat?.is_grup ? '👥 ' : '' }}{{ h.chat?.nama }}</b>
+                <small>{{ jam(h.waktu) }}</small>
+              </div>
+              <div class="wa-hasil-teks">
+                <span v-if="h.pengirim" class="wa-hasil-dari">{{ h.pengirim }}: </span>
+                <template v-for="(x, k) in cuplikanSorot(h.cuplikan, cari)" :key="k"><mark v-if="x.c" class="wa-mark">{{ x.t }}</mark><template v-else>{{ x.t }}</template></template>
+              </div>
+            </div>
+          </li>
+          <li v-if="!mencariPesan && !hasilPesan.length" class="wa-kosong kecil">Tidak ada pesan berisi “{{ cari.trim() }}”.</li>
+        </template>
       </ul>
     </aside>
 
@@ -1103,6 +1269,7 @@ onBeforeUnmount(() => {
               <template v-if="aktif.erp"> · 🏢 {{ aktif.erp.nama }}</template>
             </small>
           </div>
+          <button class="wa-ikon-head" :class="{ on: cariChat.buka }" title="Cari di chat ini (Ctrl+F)" @click="cariChat.buka ? tutupCariChat() : bukaCariChat()">🔍</button>
           <div class="wa-head-act">
             <select class="wa-select" :value="aktif.pic?.id_karyawan ?? 0" title="Ditangani oleh" @change="alihkan">
               <option :value="0">— Belum ditangani —</option>
@@ -1110,13 +1277,24 @@ onBeforeUnmount(() => {
               <option v-if="aktif.pic && !staf.some((s) => s.id_karyawan === aktif!.pic!.id_karyawan)" :value="aktif.pic.id_karyawan">{{ aktif.pic.nama }}</option>
             </select>
             <button class="btn-sm btn-ghost" :title="aktif.disematkan ? 'Lepas sematan' : 'Sematkan di atas daftar (untuk semua staf)'" @click="ubahSematan(aktif)">
-              📌 {{ aktif.disematkan ? 'Lepas' : 'Sematkan' }}
+              📌 <span class="wa-teks-tombol">{{ aktif.disematkan ? 'Lepas' : 'Sematkan' }}</span>
             </button>
             <button v-if="!milikSaya" class="btn-sm btn-ghost" @click="ambilChat">Ambil</button>
             <button v-if="aktif.status === 'Terbuka'" class="btn-sm btn-hijau" @click="ubahStatus(true)">✓ Selesai</button>
             <button v-else class="btn-sm btn-ghost" @click="ubahStatus(false)">Buka lagi</button>
           </div>
         </header>
+        <div v-if="cariChat.buka" class="wa-cari-chat">
+          <span>🔍</span>
+          <input ref="inputCariChat" v-model="cariChat.q" type="search" :placeholder="aktif.is_grup ? 'Cari di grup ini…' : 'Cari di chat ini…'" @keydown="onKeyCariChat" />
+          <small class="wa-cari-info">
+            <template v-if="cariChat.mencari">mencari…</template>
+            <template v-else-if="cariChat.q.trim().length >= 2">{{ cariChat.hasil.length ? `${cariChat.pos + 1} / ${cariChat.hasil.length}${cariChat.hasil.length >= 500 ? '+' : ''}` : 'tidak ada' }}</template>
+          </small>
+          <button title="Lebih lama (Enter)" :disabled="!cariChat.hasil.length" @click="navCari(1)">▲</button>
+          <button title="Lebih baru (Shift+Enter)" :disabled="!cariChat.hasil.length" @click="navCari(-1)">▼</button>
+          <button title="Tutup (Esc)" @click="tutupCariChat">✕</button>
+        </div>
 
         <div ref="kotakPesan" class="wa-pesan" @scroll.passive="onScroll" @load.capture="onMediaMuat" @loadedmetadata.capture="onMediaMuat">
           <div v-if="adaLagi" class="wa-muat-lama"><button class="btn-sm btn-ghost" :disabled="memuatPesan" @click="muatSebelumnya">Muat pesan sebelumnya</button></div>
@@ -1127,7 +1305,7 @@ onBeforeUnmount(() => {
 
             <div v-if="p.tipe === 'call'" class="wa-sistem">📞 {{ p.teks }} · {{ jamPesan(p.waktu) }}</div>
 
-            <div v-else class="wa-baris" :class="{ saya: p.dari_saya }">
+            <div v-else class="wa-baris" :class="{ saya: p.dari_saya, tersorot: sorotId === p.id_pesan, 'aksi-buka': aksiDibuka === p.id_pesan }" :data-pesan="p.id_pesan" @click="ketukPesan(p, $event)">
               <div class="wa-bubble" :class="{ saya: p.dari_saya, stiker: p.tipe === 'sticker' && !p.dihapus }">
                 <div v-if="aktif.is_grup && !p.dari_saya" class="wa-anggota">{{ namaAnggota(p) }}</div>
 
@@ -1185,7 +1363,7 @@ onBeforeUnmount(() => {
                   <!-- Teks / caption -->
                   <div v-if="p.teks && p.tipe !== 'location'" class="wa-teks" :class="{ miring: p.tipe === 'unsupported' || p.tipe === 'poll' }">
                     <template v-if="p.tipe === 'poll'">📊 </template>
-                    <template v-for="(s, j) in potong(p.teks)" :key="j"><a v-if="s.url" :href="s.url" target="_blank" rel="noopener noreferrer">{{ s.teks }}</a><template v-else>{{ s.teks }}</template></template>
+                    <template v-for="(s, j) in potong(p.teks)" :key="j"><a v-if="s.url" :href="s.url" target="_blank" rel="noopener noreferrer">{{ s.teks }}</a><template v-else><template v-for="(x, k) in pecahSorot(s.teks)" :key="k"><mark v-if="x.c" class="wa-mark">{{ x.t }}</mark><template v-else>{{ x.t }}</template></template></template></template>
                   </div>
                 </template>
 
@@ -1199,7 +1377,7 @@ onBeforeUnmount(() => {
               </div>
 
               <div v-if="!p.dihapus" class="wa-aksi">
-                <button title="Balas" @click="kutip = p">↩</button>
+                <button title="Balas" @click="kutip = p; aksiDibuka = null">↩</button>
                 <button v-for="e in EMOJI.slice(0, 4)" :key="e" :title="`Reaksi ${e}`" @click="reaksi(p, e)">{{ e }}</button>
                 <button v-if="bisaEdit(p)" title="Edit pesan (maks 15 menit)" @click="mulaiEdit(p)">✏️</button>
                 <button v-if="bisaTarik(p)" title="Tarik pesan (hapus untuk semua)" @click="tarikPesan(p)">🗑</button>
@@ -1251,7 +1429,7 @@ onBeforeUnmount(() => {
             ✍️ Tanda tangan<template v-if="pakaiTtd && namaSaya">: <b>*{{ namaSaya }}*</b></template>
           </label>
           <div class="wa-tulis-baris">
-            <div class="wa-template-wrap">
+            <div ref="wadahTemplate" class="wa-template-wrap wa-wadah-cepat">
               <button class="wa-ikon" title="Balasan cepat" @click="bukaTemplate = !bukaTemplate">⚡</button>
               <div v-if="bukaTemplate" class="wa-template">
                 <div v-for="t in template" :key="t.id_template" class="wa-template-item">
@@ -1262,7 +1440,7 @@ onBeforeUnmount(() => {
                 <button class="btn-sm btn-ghost" @click="tambahTemplate">+ Tambah balasan cepat</button>
               </div>
             </div>
-            <div class="wa-template-wrap">
+            <div ref="wadahEmoji" class="wa-template-wrap">
               <button class="wa-ikon" title="Emoji" @click="bukaEmoji = !bukaEmoji">😊</button>
               <div v-if="bukaEmoji" class="wa-emoji" @mousedown.prevent>
                 <button v-for="e in DAFTAR_EMOJI" :key="e" type="button" @click="sisipEmoji(e)">{{ e }}</button>
@@ -1279,7 +1457,7 @@ onBeforeUnmount(() => {
               <p v-if="!garingDaftar.length" class="muted">{{ template.length ? 'Tidak ada yang cocok.' : 'Belum ada balasan cepat — tambah lewat tombol ⚡.' }}</p>
             </div>
             <textarea
-              ref="kotakTeks" v-model="teks" rows="1" :placeholder="terhubung ? 'Tulis pesan… (/ balasan cepat, Enter kirim, Shift+Enter baris baru)' : 'WhatsApp belum terhubung'"
+              ref="kotakTeks" v-model="teks" rows="1" :placeholder="!terhubung ? 'WhatsApp belum terhubung' : layarKecil ? 'Tulis pesan… ( / balasan cepat)' : 'Tulis pesan… (/ balasan cepat, Enter kirim, Shift+Enter baris baru)'"
               :disabled="!terhubung" @keydown="onKey" @paste="onPaste" @input="cekGaring" @click="cekGaring" @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && cekGaring()" @blur="garing = null"
             ></textarea>
             <button class="wa-kirim" :title="editPesan ? 'Simpan perubahan' : 'Kirim'" :disabled="!terhubung || (!teks.trim() && !file)" @click="kirim">{{ editPesan ? '✓' : '➤' }}</button>
@@ -1672,7 +1850,7 @@ onBeforeUnmount(() => {
 .wa-garing button b { font-size: 13px; }
 .wa-garing button small { display: block; color: var(--wa-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wa-garing .muted { padding: 6px 10px; margin: 0; font-size: 13px; }
-.wa-tulis-baris textarea { flex: 1; resize: none; border: 0; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: inherit; max-height: 140px; min-height: 40px; field-sizing: content; }
+.wa-tulis-baris textarea { flex: 1; width: 100%; min-width: 0; resize: none; border: 0; border-radius: 10px; padding: 10px 12px; font-size: 14px; font-family: inherit; max-height: 140px; min-height: 40px; field-sizing: content; }
 .wa-ikon { border: 0; background: none; font-size: 20px; cursor: pointer; padding: 6px; }
 .wa-kirim { border: 0; background: var(--wa-hijau); color: #fff; width: 42px; height: 42px; border-radius: 50%; font-size: 18px; cursor: pointer; flex: none; }
 .wa-kirim:disabled { opacity: .5; cursor: not-allowed; }
@@ -1705,6 +1883,63 @@ onBeforeUnmount(() => {
   .wa-pesan { padding: 12px; }
   .wa-bubble { max-width: 85%; }
   .wa-aksi { opacity: 1; }
+}
+/* Pencarian */
+.wa-seksi { padding: 10px 14px 4px !important; font-size: 11.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--wa-muted); cursor: default !important; background: #f8fafc; }
+.wa-hasil-teks { font-size: 13px; color: #475569; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.wa-hasil-dari { color: #334155; font-weight: 600; }
+.wa-mark { background: #fde68a; color: inherit; border-radius: 3px; padding: 0 1px; }
+.wa-kosong.kecil { padding: 14px 16px; font-size: 12.5px; }
+.wa-ikon-head { flex: none; width: 34px; height: 34px; border: 0; border-radius: 50%; background: none; cursor: pointer; font-size: 16px; }
+.wa-ikon-head:hover, .wa-ikon-head.on { background: #e2e8f0; }
+.wa-cari-chat { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: #fff; border-bottom: 1px solid var(--wa-garis); }
+.wa-cari-chat input { flex: 1; min-width: 0; border: 1px solid #cbd5e1; border-radius: 18px; padding: 6px 12px; font-size: 14px; background: #f8fafc; }
+.wa-cari-chat button { flex: none; width: 30px; height: 30px; border: 0; border-radius: 50%; background: none; cursor: pointer; color: #334155; }
+.wa-cari-chat button:hover:not(:disabled) { background: #f1f5f9; }
+.wa-cari-chat button:disabled { opacity: .35; cursor: default; }
+.wa-cari-info { flex: none; min-width: 64px; text-align: right; color: var(--wa-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.wa-baris.tersorot .wa-bubble { animation: wa-sorot 1.6s ease-out; box-shadow: 0 0 0 2px #f59e0b; }
+@keyframes wa-sorot { 0% { box-shadow: 0 0 0 6px rgba(245, 158, 11, .55); } 100% { box-shadow: 0 0 0 2px #f59e0b; } }
+
+/* Responsif */
+.wa-page { height: calc(100vh - 120px); height: calc(100dvh - 120px); }
+.wa-emoji { width: min(320px, calc(100vw - 40px)); }
+.wa-tulis { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+@media (max-width: 900px) {
+  .wa-page { grid-template-columns: minmax(0, 1fr); height: calc(100vh - 96px); height: calc(100dvh - 96px); min-height: 0; border-radius: 0; }
+  .wa-side, .wa-main { min-width: 0; }
+  .wa-side { border-right: 0; }
+  .wa-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .wa-filter::-webkit-scrollbar { display: none; }
+  .wa-filter button { flex: none; }
+  .wa-head { flex-wrap: nowrap; padding: 8px 10px; gap: 8px; }
+  .wa-head-info { min-width: 0; }
+  .wa-head-act { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 46vw; }
+  .wa-head-act::-webkit-scrollbar { display: none; }
+  .wa-head-act .wa-select { max-width: 130px; }
+  .wa-tulis-baris textarea { font-size: 16px; } /* iOS: cegah zoom otomatis saat mengetik */
+  .wa-cari-chat input { font-size: 16px; }
+}
+@media (max-width: 900px) {
+  /* Aksi pesan: tersembunyi, muncul di bawah pesan saat diketuk */
+  .wa-baris { flex-wrap: wrap; }
+  .wa-aksi { display: none; opacity: 1; flex-basis: 100%; }
+  .wa-baris.saya .wa-aksi { justify-content: flex-end; }
+  .wa-baris.aksi-buka .wa-aksi { display: flex; }
+  .wa-baris.aksi-buka .wa-bubble { box-shadow: 0 0 0 2px #93c5fd; }
+}
+@media (max-width: 600px) {
+  .wa-teks-tombol { display: none; }
+  .wa-wadah-cepat { display: none; } /* balasan cepat tetap lewat ketik "/" */
+  .wa-tulis-baris { gap: 4px; }
+  .wa-head { flex-wrap: wrap; row-gap: 6px; }
+  .wa-head-info b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wa-head-act { order: 5; flex-basis: 100%; max-width: none; }
+  .wa-head .wa-avatar { width: 34px; height: 34px; }
+  .wa-pesan { padding: 10px 8px; }
+  .wa-bubble { max-width: 88%; }
+  .wa-aksi button { width: 30px; height: 30px; }
+  .wa-ttd { font-size: 11px; }
 }
 .wa-saran-pic { margin: 6px 0; padding: 7px 9px; border-radius: 8px; background: #fffbeb; border: 1px solid #fde68a; font-size: 12.5px; color: #92400e; }
 .wa-saran-pic div { display: flex; gap: 6px; margin-top: 6px; }

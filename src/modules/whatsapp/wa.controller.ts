@@ -94,9 +94,16 @@ export class WaController {
   }
 
   @Get('chat/:id/pesan')
-  pesan(@Param('id', ParseIntPipe) id: number, @Query('sebelum') sebelum?: string) {
-    return this.wa.daftarPesan(id, sebelum ? Number(sebelum) : undefined);
+  pesan(@Param('id', ParseIntPipe) id: number, @Query('sebelum') sebelum?: string, @Query('sampai') sampai?: string) {
+    return this.wa.daftarPesan(id, sebelum ? Number(sebelum) : undefined, 50, sampai ? Number(sampai) : undefined);
   }
+
+  // Pencarian isi pesan: semua chat (?akun=helpdesk&q=) atau dalam satu chat
+  @Get('cari-pesan')
+  cariPesan(@Query('akun') akun = 'helpdesk', @Query('q') q = '') { return this.wa.cariPesan(akun, q); }
+
+  @Get('chat/:id/cari')
+  cariDalamChat(@Param('id', ParseIntPipe) id: number, @Query('q') q = '') { return this.wa.cariDalamChat(id, q); }
 
   // Batas 16 MB (nginx 20 MB; video WhatsApp maks 16 MB)
   @Post('chat/:id/kirim')
