@@ -49,6 +49,7 @@ import { MekariModule } from './modules/integrations/mekari/mekari.module';
 import { DigiflazzModule } from './modules/integrations/digiflazz/digiflazz.module';
 import { UptimeKumaModule } from './modules/integrations/uptimekuma/uptimekuma.module';
 import { NocaasModule } from './modules/integrations/nocaas/nocaas.module';
+import { QcModule } from './modules/qc/qc.module';
 import { StarsenderModule } from './modules/integrations/starsender/starsender.module';
 import { MobileModule } from './modules/mobile/mobile.module';
 import { InstalasiModule } from './modules/instalasi/instalasi.module';
@@ -115,6 +116,7 @@ import { PresalesModule } from './modules/presales/presales.module';
     DigiflazzModule,
     UptimeKumaModule,
     NocaasModule,
+    QcModule,
     StarsenderModule,
     MobileModule,
     InstalasiModule,

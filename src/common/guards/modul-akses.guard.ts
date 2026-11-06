@@ -48,6 +48,7 @@ const MODUL_PASANG_BARU = ['sales', 'operations', 'instalasi', 'finance'];
 // inbox miliknya sendiri (bukan data organisasi yang perlu dibatasi role).
 const UNGATED = new Set([
   'auth', 'notifications', 'settings', 'admin', 'mailer', 'webhook', 'email', 'portal', 'health', 'onboarding', 'onboarding-open',
+  'qc', // evaluasi QC ERP — semua pengguna login boleh melihat & memberi catatan
 ]);
 
 @Injectable()

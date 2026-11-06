@@ -77,6 +77,12 @@ const router = createRouter({
 
     // Standalone print views — no AppLayout, no sidebar
     {
+      path: '/qc/cetak',
+      name: 'qc-cetak',
+      component: () => import('@/views/qc/QcCetakView.vue'),
+      meta: { public: false },
+    },
+    {
       path: '/reports/laporan-bulanan/print',
       name: 'laporan-bulanan-print',
       component: () => import('@/views/reports/LaporanBulananPrintView.vue'),
@@ -230,6 +236,11 @@ const router = createRouter({
           path: 'nocaas',
           name: 'nocaas',
           component: () => import('@/views/operations/NocaasView.vue'),
+        },
+        {
+          path: 'qc',
+          name: 'qc',
+          component: () => import('@/views/qc/QcView.vue'),
         },
         {
           path: 'nocaas/laporan',

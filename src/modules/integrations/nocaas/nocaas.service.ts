@@ -20,6 +20,8 @@ const STATUS_TIKET_AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
 const IP_RE = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
 const IP_SAJA = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 const normal = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+// Beri giliran ke permintaan HTTP lain di tengah loop berat (event loop Node tidak tersumbat)
+const jeda = () => new Promise<void>((r) => setImmediate(r));
 // Port uplink (WAN) menurut penamaan interface di router pelanggan ("ether1-FO", "ether2-M2M", "lte1", "pppoe-out1")
 const PORT_WAN = /(^|[-_ ])(FO|M2M|WAN|ISP|LTE|INDIHOME|ASTINET|BIZNET|ICON|STARLINK|BACKUP|MODEM|UPLINK)([-_ 0-9]|$)|^lte\d|^pppoe-out/i;
 type WanStatus = Record<string, { running: boolean; pernah_hidup: boolean; sejak: string | null }>;
@@ -75,6 +77,9 @@ export class NocaasService {
   private sedang = false;
   private terakhir: { at: Date; ok: boolean; pesan: string; jumlah: number } | null = null;
   private prtgHost: { exp: number; ipKeDevice: Map<string, string> } | null = null;
+  // Hasil pencocokan nama & saran disimpan 10 menit — perhitungannya berat (ribuan router × ribuan site)
+  private cacheNama: { exp: number; map: Map<string, number | null> } | null = null;
+  private saranCache: { exp: number; hasil: Map<string, number> } | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -107,17 +112,29 @@ export class NocaasService {
   @Cron('*/1 * * * *')
   async cronSinkron() {
     if (this.config.get<string>('NOCAAS_SYNC_ENABLED') === 'false') return;
-    await this.sinkron().catch(() => {});
-    await this.sapuPing().catch((e) => this.logger.warn(`Sapuan ping gagal: ${e?.message}`));
-    await this.prosesTiket().catch((e) => this.logger.warn(`Tiket NOCaaS gagal: ${e?.message}`));
-    await this.prosesKategori().catch((e) => this.logger.warn(`Gangguan kategori gagal: ${e?.message}`));
+    await this.ukur('sinkron', () => this.sinkron().catch(() => {}));
+    await this.ukur('sapuPing', () => this.sapuPing().catch((e) => this.logger.warn(`Sapuan ping gagal: ${e?.message}`)));
+    await this.ukur('prosesTiket', () => this.prosesTiket().catch((e) => this.logger.warn(`Tiket NOCaaS gagal: ${e?.message}`)));
+    await this.ukur('prosesKategori', () => this.prosesKategori().catch((e) => this.logger.warn(`Gangguan kategori gagal: ${e?.message}`)));
   }
+
+  /** Catat tahap yang lambat (> 2 dtk) — untuk memantau beban cron terhadap respons aplikasi */
+  private async ukur<T>(nama: string, f: () => Promise<T>) {
+    const t = Date.now();
+    try { return await f(); } finally {
+      const ms = Date.now() - t;
+      if (ms > 2000) this.logger.warn(`Tahap ${nama} lambat: ${ms} ms`);
+    }
+  }
+  private tandai: Record<string, number> = {};
 
   async sinkron() {
     if (this.sedang) return { data: this.terakhir, message: 'Sinkronisasi sedang berjalan' };
     this.sedang = true;
     try {
+      const t0 = Date.now();
       const { items: mikrotik } = await this.ambil<{ items: Paired[] }>('/api/devices/paired?limit=10000', 60_000);
+      this.tandai = { ambil: Date.now() - t0 };
       if (!Array.isArray(mikrotik) || !mikrotik.length) throw new Error('Data NOCaaS kosong');
       // Perangkat lain di NOCaaS (opsional — gagal tidak menghentikan sinkron Mikrotik)
       const lain = await this.perangkatLain();
@@ -133,13 +150,16 @@ export class NocaasService {
       const cfgTiket = await this.konfigurasi();
       const now = new Date();
       const tulis: any[] = [];
-      const cacheNama = new Map<string, number | null>();
+      if (!this.cacheNama || this.cacheNama.exp < Date.now()) this.cacheNama = { exp: Date.now() + 10 * 60_000, map: new Map() };
+      const cacheNama = this.cacheNama.map;
 
       // 1) Pemetaan pasti: manual / abaikan tidak pernah ditimpa; lainnya IP tunnel → host PRTG → nama persis
       const rencana: { x: Paired; status: StatusRouter; ns_ip: string | null; un_ip: string | null; id_site: number | null; sumber_map: string | null; konflik: number | null }[] = [];
       const infoSite = new Map((await this.siteAktif()).map((s) => [s.id_site, `${s.nama_site} ${s.kota ?? ''}`]));
+      let n = 0;
       for (const x of items) {
         if (!x.site_key) continue;
+        if (++n % 100 === 0) await jeda();
         const status = NocaasService.hitungStatus(x);
         const ns_ip = x.ns?.tunnel_ip || null, un_ip = x.un?.tunnel_ip || null;
         const r = byKey.get(x.site_key);
@@ -175,16 +195,29 @@ export class NocaasService {
         if (id) { p.id_site = id; p.sumber_map = 'nama_mikrotik'; }
       }
 
+      this.tandai.pass1 = Date.now() - t0;
       // 2) Saran yakin (brand + lokasi) untuk yang masih kosong — hanya ke site yang belum punya router,
       //    dan satu site tidak boleh diklaim dua router (keduanya batal, masuk antrean tinjau)
-      const pencocok = await this.buatPencocok(rencana.filter((p) => p.id_site && ['ip_perangkat', 'prtg_host', 'manual'].includes(p.sumber_map ?? '')).map((p) => ({ site_key: p.x.nama ?? p.x.site_key, id_site: p.id_site! })), new Set(rencana.filter((p) => p.id_site).map((p) => p.id_site!)));
-      const klaim = new Map<number, typeof rencana>();
+      const terpakai = new Set(rencana.filter((p) => p.id_site).map((p) => p.id_site!));
+      if (!this.saranCache || this.saranCache.exp < Date.now()) {
+        const pencocok = await this.buatPencocok(rencana.filter((p) => p.id_site && ['ip_perangkat', 'prtg_host', 'manual'].includes(p.sumber_map ?? '')).map((p) => ({ site_key: p.x.nama ?? p.x.site_key, id_site: p.id_site! })), terpakai);
+        const klaim = new Map<number, string[]>();
+        let i = 0;
+        for (const p of rencana) {
+          if (p.id_site || (p.sumber_map && p.sumber_map !== 'konflik_ip')) continue;
+          if (++i % 25 === 0) await jeda();
+          const { saran, yakin } = pencocok.cari(p.x.nama ?? p.x.site_key);
+          if (yakin) klaim.set(saran[0].id_site, [...(klaim.get(saran[0].id_site) ?? []), p.x.site_key]);
+        }
+        const hasil = new Map<string, number>();
+        for (const [id_site, keys] of klaim) if (keys.length === 1) hasil.set(keys[0], id_site);
+        this.saranCache = { exp: Date.now() + 10 * 60_000, hasil };
+      }
       for (const p of rencana) {
         if (p.id_site || (p.sumber_map && p.sumber_map !== 'konflik_ip')) continue;
-        const { saran, yakin } = pencocok.cari(p.x.nama ?? p.x.site_key);
-        if (yakin) klaim.set(saran[0].id_site, [...(klaim.get(saran[0].id_site) ?? []), p]);
+        const id = this.saranCache.hasil.get(p.x.site_key);
+        if (id && !terpakai.has(id)) { p.id_site = id; p.sumber_map = 'saran'; terpakai.add(id); }
       }
-      for (const [id_site, ps] of klaim) if (ps.length === 1) { ps[0].id_site = id_site; ps[0].sumber_map = 'saran'; }
 
       for (const { x, status, ns_ip, un_ip, id_site, sumber_map, konflik } of rencana) {
         const r = byKey.get(x.site_key);
@@ -230,7 +263,10 @@ export class NocaasService {
       const hilang = lama.filter((r) => jenisOk.has(r.jenis) && !ada.has(r.site_key)).map((r) => r.site_key);
       if (hilang.length && mikrotik.length > 1000) tulis.push(this.prisma.nocaasRouter.deleteMany({ where: { site_key: { in: hilang } } }));
 
+      this.tandai.pass2 = Date.now() - t0;
       for (let i = 0; i < tulis.length; i += 200) await this.prisma.$transaction(tulis.slice(i, i + 200));
+      this.tandai.tulis = Date.now() - t0;
+      if (this.tandai.tulis > 2000) this.logger.warn(`Rincian sinkron (kumulatif ms): ${JSON.stringify(this.tandai)}`);
       this.terakhir = { at: now, ok: true, pesan: `${items.length} router, ${tulis.length} perubahan`, jumlah: items.length };
       await this.prisma.nocaasConfig.upsert({ where: { id: 1 }, create: { id: 1, terakhir_sinkron: now }, update: { terakhir_sinkron: now } });
       return { data: this.terakhir, message: `Sinkron NOCaaS: ${this.terakhir.pesan}` };
@@ -938,7 +974,9 @@ export class NocaasService {
     });
     let baru = 0, lepas = 0;
     const tulis: any[] = [];
+    let n = 0;
     for (const k of kontak) {
+      if (++n % 50 === 0) await jeda();
       const nama = (k.nama_kustom || k.nama_simpan || '').trim();
       const t = nama.split(/\s+/);
       let id: number | null = null;
@@ -1057,7 +1095,12 @@ export class NocaasService {
       const p = await this.pencocokUntukTinjau();
       const idKonflik = [...new Set(rows.map((r) => r.konflik_id_site).filter((x): x is number => !!x))];
       const siteKonflik = new Map((await this.prisma.sitePelanggan.findMany({ where: { id_site: { in: idKonflik } }, select: { id_site: true, nama_site: true, kode_site: true, kota: true } })).map((s) => [s.id_site, s]));
-      data = data.map((r) => ({ ...r, saran: p.cari(r.jenis !== 'mikrotik' ? r.site_key.replace(/^[A-Z]+:/, '') : r.site_key).saran, konflik: r.konflik_id_site ? siteKonflik.get(r.konflik_id_site) ?? null : null }))
+      const hasil: any[] = [];
+      for (const r of data) {
+        if (hasil.length % 25 === 24) await jeda();
+        hasil.push({ ...r, saran: p.cari(r.jenis !== 'mikrotik' ? r.site_key.replace(/^[A-Z]+:/, '') : r.site_key).saran, konflik: r.konflik_id_site ? siteKonflik.get(r.konflik_id_site) ?? null : null });
+      }
+      data = hasil
         .sort((a, b) => (b.saran[0]?.skor ?? 0) - (a.saran[0]?.skor ?? 0) || a.site_key.localeCompare(b.site_key));
     }
     const n = (s: string) => jumlah.find((j) => j.sumber_map === s)?._count._all ?? 0;
@@ -1085,6 +1128,7 @@ export class NocaasService {
     const data = id_site ? { id_site, sumber_map: 'manual' } : abaikan ? { id_site: null, sumber_map: 'abaikan' } : { id_site: null, sumber_map: null };
     await this.prisma.nocaasRouter.update({ where: { site_key }, data });
     this.pencocokTinjau = null;
+    this.saranCache = null;
     return { message: id_site ? 'Router dipetakan ke site' : abaikan ? 'Router ditandai tidak punya site ERP' : 'Dikembalikan ke pencocokan otomatis' };
   }
 

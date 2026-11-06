@@ -900,9 +900,11 @@ export class PrtgService {
     };
   }
 
+  private static readonly STOPWORDS = new Set(['the', 'and', 'atau', 'ke', 'di', 'dari', 'untuk', 'sc', 'fo', 'm2m', 'site']);
+
   /** Normalisasi string untuk matching: lowercase, hapus karakter non-alfanumerik, pisah token. */
   private nameTokens(s: string): string[] {
-    const STOPWORDS = new Set(['the', 'and', 'atau', 'ke', 'di', 'di', 'dari', 'untuk', 'sc', 'fo', 'm2m', 'site']);
+    const STOPWORDS = PrtgService.STOPWORDS;
     return s
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, ' ')
@@ -918,10 +920,21 @@ export class PrtgService {
    * 3. Skor kode_site: jika device_name diawali kode_site (misal "CT " → Chatime)
    */
   private matchScore(deviceName: string, site: { kode_site: string; nama_site: string }, comment = ''): number {
-    const dn = deviceName.toLowerCase();
-    const sn = site.nama_site.toLowerCase();
-    const kode = site.kode_site.toLowerCase();
-    const cm = comment.toLowerCase();
+    return this.matchScoreSiap(this.siapDevice(deviceName, comment), this.siapSite(site));
+  }
+
+  // Bentuk siap-pakai (huruf kecil + token) — dihitung sekali per device / site, bukan per pasangan.
+  // getProvisionPreview membandingkan ±2.000 device × ±3.000 site; tanpa ini event loop tersumbat ±30 detik.
+  private siapDevice(deviceName: string, comment = '') {
+    return { dn: deviceName.toLowerCase(), dt: this.nameTokens(deviceName), cm: comment.toLowerCase(), cmTokens: comment ? this.nameTokens(comment) : [] };
+  }
+  private siapSite(site: { kode_site: string; nama_site: string }) {
+    return { sn: site.nama_site.toLowerCase(), kode: site.kode_site.toLowerCase(), st: this.nameTokens(site.nama_site) };
+  }
+
+  private matchScoreSiap(d: ReturnType<PrtgService['siapDevice']>, s: ReturnType<PrtgService['siapSite']>): number {
+    const { dn, cm } = d;
+    const { sn, kode } = s;
 
     // Komentar PRTG mengandung kode_site atau nama_site → sinyal kuat
     if (cm && kode.length >= 2 && cm.includes(kode)) return 0.95;
@@ -934,19 +947,19 @@ export class PrtgService {
     if (kode.length >= 2 && (dn.startsWith(kode + ' ') || dn.startsWith(kode + '-') || dn === kode)) return 0.9;
 
     // Token overlap
-    const dt = this.nameTokens(deviceName);
-    const st = this.nameTokens(site.nama_site);
+    const dt = d.dt;
+    const st = s.st;
     if (!dt.length || !st.length) return 0;
 
     let matches = 0;
-    for (const s of st) {
-      if (dt.some((d) => d.includes(s) || s.includes(d))) matches++;
+    for (const t of st) {
+      if (dt.some((x) => x.includes(t) || t.includes(x))) matches++;
     }
     const tokenScore = matches / st.length;
 
     // Bonus komentar: token nama_site muncul di komentar
     if (cm && tokenScore > 0) {
-      const cmTokens = this.nameTokens(comment);
+      const cmTokens = d.cmTokens;
       const cmMatches = st.filter((t) => cmTokens.some((c) => c.includes(t) || t.includes(c))).length;
       if (cmMatches >= Math.ceil(st.length * 0.5)) return Math.max(tokenScore, 0.75);
     }
@@ -995,7 +1008,12 @@ export class PrtgService {
 
     const AUTO_THRESHOLD = 0.5; // skor minimum untuk dianggap auto-match
 
-    const data = prtgDevices.map((d) => {
+    const siteSiap = allSites.map((s) => ({ s, siap: this.siapSite(s) }));
+    const data: any[] = [];
+    let urut = 0;
+    for (const d of prtgDevices) {
+      // Beri giliran ke permintaan HTTP lain (pencocokan ini berat)
+      if (++urut % 20 === 0) await new Promise<void>((r) => setImmediate(r));
       const mapping = mappingByDevice.get(d.device) ?? null;
       const ip = d.host || null;
       const parsed = this.parseComment(d.comments ?? '');
@@ -1011,8 +1029,9 @@ export class PrtgService {
       if (!mapping) {
         let best = 0;
         let bestSite: typeof allSites[0] | null = null;
-        for (const s of allSites) {
-          const score = this.matchScore(d.device, s, parsed.teks);
+        const dSiap = this.siapDevice(d.device, parsed.teks);
+        for (const { s, siap } of siteSiap) {
+          const score = this.matchScoreSiap(dSiap, siap);
           if (score > best) { best = score; bestSite = s; }
         }
         if (bestSite && best >= AUTO_THRESHOLD) {
@@ -1026,7 +1045,7 @@ export class PrtgService {
       }
 
       const sudahAda = id_site && ip ? perangkatSet.has(`${id_site}:${ip}`) : false;
-      return {
+      data.push({
         objid: d.objid,
         device_name: d.device,
         ip_address: ip,
@@ -1044,8 +1063,8 @@ export class PrtgService {
         parsed_sns: parsed.sns,
         parsed_ip: parsed.ip,
         parsed_pic: parsed.pic,
-      };
-    });
+      });
+    }
 
     // Urutkan: manual mapping → auto match → belum match, lalu nama
     data.sort((a, b) => {

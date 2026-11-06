@@ -137,6 +137,7 @@ const menuGroups = [
       { label: 'WhatsApp',    emoji: '💬', to: '/whatsapp',        modul: 'whatsapp' },
       { label: 'Statistik Helpdesk', emoji: '📈', to: '/whatsapp/statistik', modul: 'whatsapp' },
       { label: 'Meeting',     emoji: '📹', to: '/meeting',         modul: null },
+      { label: 'QC ERP',      emoji: '🧪', to: '/qc',              modul: null },
     ],
   },
   {
@@ -250,6 +251,7 @@ const PAGE_TITLES: Record<string, string> = {
   "noc-board":            "NOC Board",
   "nocaas":               "Pembanding NOCaaS",
   "laporan-gangguan":     "Laporan Gangguan",
+  "qc":                   "QC & Evaluasi ERP",
   "finance-dashboard":    "Finance — Dashboard",
   "invoice-list":         "Finance — Invoice",
   "invoice-detail":       "Finance — Detail Invoice",

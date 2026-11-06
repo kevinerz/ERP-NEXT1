@@ -1928,3 +1928,46 @@ model PbRiwayat {
   @@index([id_pb])
   @@map("pb_riwayat")
 }
+
+// ── QC / evaluasi ERP: daftar modul + catatan revisi / bug / upgrade ─────────────
+model QcModul {
+  id          Int       @id @default(autoincrement())
+  kode        String    @unique @db.VarChar(60)
+  grup        String    @db.VarChar(40)
+  nama        String    @db.VarChar(100)
+  path        String?   @db.VarChar(120)
+  deskripsi   String?   @db.Text
+  status      String    @default("Belum dievaluasi") @db.VarChar(30) // Baik | Perlu revisi | Kritis | Belum dipakai | Belum dievaluasi
+  skor        Int?      // 1–5
+  pic         String?   @db.VarChar(100)
+  urutan      Int       @default(0)
+  diubah_oleh String?   @db.VarChar(100)
+  updated_at  DateTime  @updatedAt
+  created_at  DateTime  @default(now())
+
+  catatan QcCatatan[]
+
+  @@map("qc_modul")
+}
+
+model QcCatatan {
+  id          Int       @id @default(autoincrement())
+  id_modul    Int
+  jenis       String    @db.VarChar(20) // Bug | Revisi | Upgrade | Data | Keamanan | Saran
+  judul       String    @db.VarChar(200)
+  isi         String?   @db.Text
+  prioritas   String    @default("Sedang") @db.VarChar(10) // Tinggi | Sedang | Rendah
+  status      String    @default("Baru") @db.VarChar(20) // Baru | Dikerjakan | Selesai | Ditolak
+  pembuat     String    @db.VarChar(100)
+  id_karyawan Int?
+  selesai_at  DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  modul QcModul @relation(fields: [id_modul], references: [id], onDelete: Cascade)
+
+  @@index([id_modul])
+  @@index([status])
+  @@map("qc_catatan")
+}
+
