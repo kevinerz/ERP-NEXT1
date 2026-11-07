@@ -208,6 +208,8 @@ const kurirAktif = computed(() => !!kirim.value?.kurir_order_id && !['cancelled'
 const riwayatKurir = computed<{ status: string; message: string; occurred_at: string }[]>(() => {
   try { return JSON.parse(kirim.value?.kurir_riwayat || '[]').slice().reverse() } catch { return [] }
 })
+const resiManual = computed(() => !kurirAktif.value && !!kirim.value?.nomor_resi)
+const adaLacak = computed(() => kurirAktif.value || (resiManual.value && !!kirim.value?.kurir_status))
 const bukaKurir = ref(false)
 const lacakKurir = () => jalankan(() => api.post(`/pasang-baru/order/${id.value}/kurir-api/lacak`))
 async function batalKurir() {
@@ -485,12 +487,12 @@ const AKSI: Record<string, string> = {
                 <div class="op-head">
                   <b>📦 Kurir</b>
                   <span class="op-wo-aksi">
-                    <button v-if="kurirAktif" class="btn btn-sm btn-ghost" :disabled="proses" @click="lacakKurir">🔄 Lacak</button>
+                    <button v-if="kurirAktif || resiManual" class="btn btn-sm btn-ghost" :disabled="proses" :title="resiManual ? 'Lacak lewat BinderByte (kuota 100/bulan, selanjutnya Rp 15)' : ''" @click="lacakKurir">🔄 Lacak resi</button>
                     <button v-if="kurirAktif && ['processing', 'waiting'].includes(kirim.kurir_status) && bisaUbah('Network')" class="btn btn-sm btn-ghost" :disabled="proses" @click="batalKurir">Batalkan order kurir</button>
                     <button v-if="!kurirAktif && bisaUbah('Network') && !woSelesai" class="btn btn-sm btn-primary" @click="bukaKurir = true">Pesan kurir via api.co.id</button>
                   </span>
                 </div>
-                <template v-if="kurirAktif">
+                <template v-if="adaLacak">
                   <p class="op-kurir-info">
                     <b>{{ kirim.nama_ekspedisi }}</b> {{ kirim.kurir_layanan }} · resi <b>{{ kirim.nomor_resi || '(menunggu)' }}</b> ·
                     <span class="badge" :class="['delivered', 'completed'].includes(kirim.kurir_status) ? 'badge-green' : kirim.kurir_status === 'problem' ? 'badge-red' : 'badge-blue'">{{ STATUS_KURIR[kirim.kurir_status] || kirim.kurir_status }}</span>
@@ -500,9 +502,13 @@ const AKSI: Record<string, string> = {
                   <ol v-if="riwayatKurir.length" class="op-lacak">
                     <li v-for="(h, i) in riwayatKurir" :key="i"><small class="muted">{{ fmtDateTime(h.occurred_at) }}</small> · {{ h.message }}</li>
                   </ol>
-                  <p class="form-hint">Dilacak otomatis tiap 2 jam; status kiriman ikut diperbarui (Diterima saat paket sampai).</p>
+                  <p class="form-hint">
+                    {{ kurirAktif ? 'Order api.co.id — dilacak otomatis tiap 2 jam.' : 'Resi manual — dilacak lewat BinderByte otomatis tiap ±8 jam selama dalam pengiriman (maks 14 hari).' }}
+                    Status kiriman ikut diperbarui (Diterima saat paket sampai).
+                  </p>
                 </template>
-                <p v-else class="form-hint">Pesan lewat api.co.id agar resi terisi otomatis dan bisa dilacak. Bila dikirim sendiri di loket kurir, isi kurir & resi di atas (tidak bisa dilacak otomatis).</p>
+                <p v-else-if="resiManual" class="form-hint">Resi {{ kirim.nomor_resi }} ({{ kirim.nama_ekspedisi || 'kurir belum dipilih' }}) — klik <b>Lacak resi</b> untuk cek lewat BinderByte; setelah itu dilacak otomatis selama status kiriman "Dikirim".</p>
+                <p v-else class="form-hint">Pesan lewat api.co.id agar resi terisi & dilacak otomatis. Bila dikirim sendiri di loket kurir, pilih kurir & isi resi di atas lalu simpan — bisa dilacak lewat BinderByte.</p>
               </div>
 
               <div v-if="net.wo" class="op-wo">

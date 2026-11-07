@@ -1165,7 +1165,12 @@ export class PasangBaruService {
         tgl_kirim: dto.tgl_kirim ? new Date(dto.tgl_kirim) : null, status_pengiriman: dto.status_pengiriman || 'Packing',
         ...(dto.status_pengiriman === 'Diterima' ? { tgl_terima: new Date() } : {}),
       };
-      if (kirim) await this.prisma.pengirimanPerangkat.update({ where: { id_pengiriman: kirim.id_pengiriman }, data: dataKirim });
+      // Resi / kurir manual diganti → hasil lacak lama tidak berlaku
+      const ganti = kirim && !kirim.kurir_order_id && (kirim.nomor_resi !== dataKirim.nomor_resi || kirim.nama_ekspedisi !== dataKirim.nama_ekspedisi);
+      if (kirim) await this.prisma.pengirimanPerangkat.update({
+        where: { id_pengiriman: kirim.id_pengiriman },
+        data: { ...dataKirim, ...(ganti ? { kurir_status: null, kurir_riwayat: null, kurir_cek_at: null, kurir_kode: null, kurir_layanan: null } : {}) },
+      });
       else {
         await this.prisma.pengirimanPerangkat.create({
           data: { id_wo: wo.id_wo, ...dataKirim, items: { create: perangkat.map((p) => ({ id_aset: p.id_aset, nama_item: p.nama_item })) } },
