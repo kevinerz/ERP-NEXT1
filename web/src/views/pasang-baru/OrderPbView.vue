@@ -208,6 +208,8 @@ const kurirAktif = computed(() => !!kirim.value?.kurir_order_id && !['cancelled'
 const riwayatKurir = computed<{ status: string; message: string; occurred_at: string }[]>(() => {
   try { return JSON.parse(kirim.value?.kurir_riwayat || '[]').slice().reverse() } catch { return [] }
 })
+// Pengiriman "kirim + vendor" sudah tersimpan (WO vendor ada) → bisa pesan kurir
+const kirimSiap = computed(() => !!net.value.wo && net.value.wo.tipe_eksekutor === 'Vendor_Ketiga' && o.value?.network_metode === 'Kirim_Vendor')
 const resiManual = computed(() => !kurirAktif.value && !!kirim.value?.nomor_resi)
 const adaLacak = computed(() => kurirAktif.value || (resiManual.value && !!kirim.value?.kurir_status))
 const bukaKurir = ref(false)
@@ -483,13 +485,13 @@ const AKSI: Record<string, string> = {
                 </button>
               </div>
 
-              <div v-if="net.wo && fn.metode === 'Kirim_Vendor' && net.wo.tipe_eksekutor === 'Vendor_Ketiga'" class="op-kurir">
+              <div v-if="fn.metode === 'Kirim_Vendor'" class="op-kurir">
                 <div class="op-head">
                   <b>📦 Kurir</b>
                   <span class="op-wo-aksi">
                     <button v-if="kurirAktif || resiManual" class="btn btn-sm btn-ghost" :disabled="proses" :title="resiManual ? 'Lacak lewat BinderByte (kuota 100/bulan, selanjutnya Rp 15)' : ''" @click="lacakKurir">🔄 Lacak resi</button>
                     <button v-if="kurirAktif && ['processing', 'waiting'].includes(kirim.kurir_status) && bisaUbah('Network')" class="btn btn-sm btn-ghost" :disabled="proses" @click="batalKurir">Batalkan order kurir</button>
-                    <button v-if="!kurirAktif && bisaUbah('Network') && !woSelesai" class="btn btn-sm btn-primary" @click="bukaKurir = true">Pesan kurir via api.co.id</button>
+                    <button v-if="!kurirAktif && bisaUbah('Network') && !woSelesai" class="btn btn-sm btn-primary" :disabled="!kirimSiap" :title="kirimSiap ? '' : 'Pilih teknisi vendor lalu simpan dulu'" @click="bukaKurir = true">📦 Pesan kurir via api.co.id</button>
                   </span>
                 </div>
                 <template v-if="adaLacak">
@@ -507,6 +509,10 @@ const AKSI: Record<string, string> = {
                     Status kiriman ikut diperbarui (Diterima saat paket sampai).
                   </p>
                 </template>
+                <p v-else-if="!kirimSiap" class="form-hint op-langkah">
+                  ① Pilih <b>teknisi vendor</b> di atas → ② klik <b>Simpan pengiriman &amp; vendor</b> → ③ tombol <b>Pesan kurir via api.co.id</b> aktif.
+                  Kalau dikirim sendiri di loket, cukup pilih kurir &amp; isi resi lalu simpan — resi dilacak lewat BinderByte.
+                </p>
                 <p v-else-if="resiManual" class="form-hint">Resi {{ kirim.nomor_resi }} ({{ kirim.nama_ekspedisi || 'kurir belum dipilih' }}) — klik <b>Lacak resi</b> untuk cek lewat BinderByte; setelah itu dilacak otomatis selama status kiriman "Dikirim".</p>
                 <p v-else class="form-hint">Pesan lewat api.co.id agar resi terisi & dilacak otomatis. Bila dikirim sendiri di loket kurir, pilih kurir & isi resi di atas lalu simpan — bisa dilacak lewat BinderByte.</p>
               </div>
@@ -793,6 +799,7 @@ const AKSI: Record<string, string> = {
 .op-kurir { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; }
 .op-kurir-info { margin: 6px 0; font-size: 13.5px; }
 .op-lacak { margin: 6px 0; padding-left: 18px; font-size: 13px; }
+.op-langkah { background: #eff6ff; border-radius: 6px; padding: 6px 8px; }
 .op-lacak li:first-child { font-weight: 600; }
 .op-baru { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px; border: 1px dashed #93c5fd; border-radius: 8px; }
 .op-wa { display: flex; gap: 6px; align-items: center; font-size: 13px; margin-right: auto; }
