@@ -1,9 +1,9 @@
 // Bersama untuk halaman Pasang Baru
-// Tahap order setelah SPH disetujui. Sementara: OPS (pasang vendor ISP) → Terpasang; tahap berikutnya ditata menyusul.
-export const TAHAP_ORDER = ['OPS', 'Terpasang'] as const
+// Tahap order setelah SPH disetujui: OPS (pasang vendor ISP) → Network (Mikrotik, kirim/visit, BA) → Selesai. Aktivasi menyusul.
+export const TAHAP_ORDER = ['OPS', 'Network', 'Selesai'] as const
 
 export const KELAS_TAHAP: Record<string, string> = {
-  Draft: 'badge-gray', OPS: 'badge-purple', Terpasang: 'badge-green', Batal: 'badge-red',
+  Draft: 'badge-gray', OPS: 'badge-purple', Network: 'badge-sky', Selesai: 'badge-green', Batal: 'badge-red',
 }
 export const KELAS_SPH: Record<string, string> = {
   Draft: 'badge-gray', 'Menunggu Director': 'badge-amber', Disetujui: 'badge-green', Ditolak: 'badge-red',
@@ -11,7 +11,7 @@ export const KELAS_SPH: Record<string, string> = {
 
 // Role yang memegang tahap (Admin & Director selalu boleh) — cermin dari backend
 export const PEMEGANG: Record<string, string[]> = {
-  Draft: ['Sales'], OPS: ['OPS', 'Manager_Ops'], Terpasang: ['OPS', 'Manager_Ops'],
+  Draft: ['Sales'], OPS: ['OPS', 'Manager_Ops'], Network: ['Helpdesk', 'Manager_Ops'], Selesai: ['Helpdesk', 'Manager_Ops'],
 }
 
 export interface Layanan { id_layanan: number; nama_layanan: string }

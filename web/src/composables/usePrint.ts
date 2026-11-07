@@ -903,3 +903,66 @@ export async function printLabelAset(asetList: any[]) {
   // onclick inline dibuang DOMPurify, jadi listener dipasang dari sini.
   win.document.getElementById('btn-cetak-label')?.addEventListener('click', () => { win.focus(); win.print() })
 }
+
+// ─────────────────────────────────────────────
+// BERITA ACARA AKTIVASI — PASANG BARU
+// ─────────────────────────────────────────────
+export function printBaAktivasi(o: any) {
+  const e = escapeHtml
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : '-'
+  const fmtTgl = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
+  const abs = (p: string | null) => (p ? (p.startsWith('http') ? p : `${location.origin}${p}`) : '')
+  const site = o.site || {}
+  const alamat = `${o.alamat}${o.lantai_unit ? ' — ' + o.lantai_unit : ''}${o.kota ? ', ' + o.kota : ''}`
+  const perangkat = (o.network?.perangkat || []).filter((p: any) => p.aset)
+  const barisPerangkat = perangkat.length
+    ? perangkat.map((p: any, i: number) => `<tr><td>${i + 1}</td><td>${e(p.aset.nama_perangkat)}</td><td>${e([p.aset.merk, p.aset.tipe_model].filter(Boolean).join(' ') || '-')}</td><td>${e(p.aset.serial_number || '-')}</td><td>${e(p.aset.kode_aset)}</td></tr>`).join('')
+    : `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:10px">—</td></tr>`
+  const links = site.sumber_internet || []
+  const barisLink = links.length
+    ? links.map((l: any, i: number) => `<tr><td>${i + 1}</td><td>${e(l.vendor?.nama_vendor || '-')} (${e(l.peruntukan_link)})</td><td>${e(l.nomor_pelanggan_isp || '-')}</td><td>${e(l.bandwidth_mbps || '-')}</td><td>${e(l.sn_modem || '-')}</td><td>${l.speedtest_down ? `↓ ${Number(l.speedtest_down)} / ↑ ${Number(l.speedtest_up)} Mbps` : '-'}</td></tr>`).join('')
+    : `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:10px">—</td></tr>`
+  const wo = o.network?.wo
+  const pelaksana = o.network_metode === 'Kirim_Vendor'
+    ? `Vendor teknisi ${e(wo?.vendor?.nama_vendor || '-')}${wo?.pengiriman?.[0]?.nama_ekspedisi ? ` · perangkat dikirim via ${e(wo.pengiriman[0].nama_ekspedisi)}${wo.pengiriman[0].nomor_resi ? ' (resi ' + e(wo.pengiriman[0].nomor_resi) + ')' : ''}` : ''}`
+    : `Teknisi internal ${e(wo?.teknisi?.nama_lengkap || '-')}`
+  const ttd = (src: string | null) => src ? `<img src="${abs(src)}" style="height:70px;max-width:200px;object-fit:contain;display:block;margin:0 auto 4px">` : '<div style="height:74px"></div>'
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>BA Aktivasi ${e(o.ba_nomor || o.nomor_pb)}</title>${baseStyle()}
+  <style>.sign-label{margin-bottom:6px!important}</style></head>
+  <body><div class="doc">
+    <div class="header">
+      <div class="header-left">${companyHeader()}</div>
+      <div class="doc-title-block"><div class="doc-title">BERITA ACARA AKTIVASI</div><div class="doc-nomor">${e(o.ba_nomor || '-')}</div><div class="doc-date">${fmtTgl(o.ba_tgl)}</div></div>
+    </div>
+    <p style="font-size:10pt;color:#334155;margin-bottom:16px;line-height:1.7">
+      Pada hari ini, <b>${fmtDate(o.ba_tgl)}</b>, telah dilakukan pemasangan dan aktivasi layanan internet oleh ${e(getCompany().name)} di lokasi pelanggan dengan rincian sebagai berikut:
+    </p>
+    <div class="section">
+      <div class="section-title">Pelanggan &amp; Lokasi</div>
+      <table class="info">
+        <tr><td>Pelanggan</td><td>:</td><td><b>${e(o.sph?.pelanggan?.nama_pelanggan || '-')}</b></td></tr>
+        <tr><td>Site</td><td>:</td><td>${e(site.kode_site || '')} — ${e(o.nama_site)}</td></tr>
+        <tr><td>Alamat</td><td>:</td><td>${e(alamat)}</td></tr>
+        <tr><td>Layanan</td><td>:</td><td>${e(o.layanan?.nama_layanan || '-')}</td></tr>
+        <tr><td>No. order</td><td>:</td><td>${e(o.nomor_pb || '-')} · ${e(o.sph?.nomor_sph || '')}</td></tr>
+        <tr><td>Pelaksana</td><td>:</td><td>${pelaksana}</td></tr>
+      </table>
+    </div>
+    <div class="section">
+      <div class="section-title">Koneksi Internet</div>
+      <table class="grid"><thead><tr><th>No</th><th>Provider</th><th>ID Pelanggan</th><th>Layanan</th><th>SN Modem</th><th>Speedtest</th></tr></thead><tbody>${barisLink}</tbody></table>
+    </div>
+    <div class="section">
+      <div class="section-title">Perangkat Terpasang</div>
+      <table class="grid"><thead><tr><th>No</th><th>Perangkat</th><th>Merk / Tipe</th><th>Serial Number</th><th>Kode Aset</th></tr></thead><tbody>${barisPerangkat}</tbody></table>
+    </div>
+    <p style="font-size:10pt;color:#475569;margin:14px 0 8px;line-height:1.6">Dengan ditandatanganinya berita acara ini, pelanggan menyatakan layanan dan perangkat di atas telah terpasang dan berfungsi dengan baik.</p>
+    <div class="signature-row">
+      <div class="sign-box"><div class="sign-label">Pelaksana,</div>${ttd(null)}<div class="sign-line"><div class="sign-name">( ${e(o.ba_nama_next1 || '_________________________')} )</div><div class="sign-jabatan">${e(getCompany().name)}</div></div></div>
+      <div class="sign-box"><div class="sign-label">Pelanggan,</div>${ttd(o.ba_ttd)}<div class="sign-line"><div class="sign-name">( ${e(o.ba_nama || '_________________________')} )</div><div class="sign-jabatan">${e(o.ba_jabatan || o.sph?.pelanggan?.nama_pelanggan || 'Pelanggan')}</div></div></div>
+    </div>
+    ${docFooter(o.ba_nomor || o.nomor_pb || '')}
+  </div></body></html>`
+  printDocument(html)
+}

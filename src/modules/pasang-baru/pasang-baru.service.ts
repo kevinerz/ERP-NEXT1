@@ -6,18 +6,21 @@ import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UPLOAD_ROOT } from '../../common/upload/upload-root';
 import { buatWo } from '../visit/visit.service';
-import { CatatanDto, DokumenDto, FotoLinkDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
+import { AssetsService } from '../assets/assets.service';
+import { BaDto, CatatanDto, DokumenDto, FotoLinkDto, LinkDto, NetworkDto, PerangkatDto, RequestPerangkatDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 
 export interface Pengguna { id_karyawan: number; roles: string[] }
 
 // Urutan tahap order PB. Draft = SPH belum disetujui Director.
-// Sementara: SPH disetujui → OPS (pasang vendor ISP: modem, speedtest) → Terpasang. Tahap setelahnya ditata menyusul.
-export const TAHAP = ['Draft', 'OPS', 'Terpasang'] as const;
+// SPH disetujui → OPS (pasang vendor ISP: modem, speedtest) → Network (Mikrotik, kirim/visit, BA aktivasi) → Selesai.
+// Aktivasi site (Aktif, kontrak, invoice) ditata menyusul — site tetap Prospek.
+export const TAHAP = ['Draft', 'OPS', 'Network', 'Selesai'] as const;
 // Role yang memegang tiap tahap (Admin & Director selalu boleh)
 const PEMEGANG: Record<string, string[]> = {
   Draft: ['Sales'],
   OPS: ['OPS', 'Manager_Ops'],
-  Terpasang: ['OPS', 'Manager_Ops'],
+  Network: ['Helpdesk', 'Manager_Ops'],
+  Selesai: ['Helpdesk', 'Manager_Ops'],
 };
 const SEMUA_TAHAP = ['Admin', 'Director'];
 const EXT_DOKUMEN: Record<string, string> = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' };
@@ -25,7 +28,7 @@ const EXT_DOKUMEN: Record<string, string> = { 'application/pdf': 'pdf', 'image/j
 @Injectable()
 export class PasangBaruService {
   private readonly logger = new Logger('PasangBaru');
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private assets: AssetsService) {}
 
   // ── Hak akses ────────────────────────────────────────────────────────────────
   private boleh(u: Pengguna, tahap: string) {
@@ -104,8 +107,18 @@ export class PasangBaruService {
       take: 500,
     });
     const nama = await this.namaKaryawan(rows.map((r) => r.sph.id_sales));
+    const idPb = rows.map((r) => r.id_pb);
+    const [perangkat, wo] = await Promise.all([
+      idPb.length ? this.prisma.pbPerangkat.findMany({ where: { id_pb: { in: idPb } }, select: { id_pb: true, id_aset: true, nama_item: true } }) : [],
+      this.prisma.workOrder.findMany({
+        where: { id_wo: { in: rows.map((r) => r.id_wo).filter((x): x is number => !!x) } },
+        select: { id_wo: true, nomor_wo: true, status_wo: true, tgl_jadwal: true, tipe_eksekutor: true, teknisi: { select: { nama_lengkap: true } }, vendor: { select: { nama_vendor: true } }, pengiriman: { select: { nama_ekspedisi: true, nomor_resi: true, status_pengiriman: true }, take: 1 } },
+      }),
+    ]);
     return rows.map((r) => ({
       ...r,
+      perangkat: perangkat.filter((p) => p.id_pb === r.id_pb),
+      wo: wo.find((w) => w.id_wo === r.id_wo) ?? null,
       sales: r.sph.id_sales ? nama.get(r.sph.id_sales) ?? null : null,
       modal_vendor: (r.site?.sumber_internet ?? []).reduce((a, l) => a + Number(l.biaya_mrc_vendor), 0),
       vendor: (r.site?.sumber_internet ?? []).map((l) => `${l.vendor.nama_vendor} (${l.peruntukan_link})`),
@@ -533,6 +546,23 @@ export class PasangBaruService {
     if (!s) throw new NotFoundException('SPH tidak ditemukan');
 
     const idSite = s.order.map((o) => o.id_site).filter((x): x is number => !!x);
+    // Perangkat yang dialokasikan tahap Network → kembalikan ke gudang dulu, jejak perangkat di site hasil SPH ini dihapus
+    const pbPerangkat = await this.prisma.pbPerangkat.findMany({ where: { id_pb: { in: s.order.map((o) => o.id_pb) } } });
+    const asetPb = pbPerangkat.map((p) => p.id_aset).filter((x): x is number => !!x);
+    if (asetPb.length) {
+      const userId = await this.idUser(u.id_karyawan);
+      await this.prisma.$transaction(async (tx) => {
+        for (const id_aset of asetPb) {
+          const a = await tx.gudangAset.findUnique({ where: { id_aset } });
+          if (a && (!a.is_serialized || (a.status_aset === 'Terpasang' && a.id_site && idSite.includes(a.id_site)))) {
+            await this.assets.applyMutasiTx(tx, { id_aset, jenis_mutasi: 'Return', jumlah: 1, id_site_asal: a.id_site ?? undefined, keterangan: `Hapus permanen ${s.nomor_sph}` }, userId);
+          }
+        }
+      });
+      const siteSph = (await this.prisma.sitePelanggan.findMany({ where: { id_site: { in: idSite } }, select: { id_site: true, catatan: true } }))
+        .filter((x) => x.catatan?.includes(s.nomor_sph)).map((x) => x.id_site);
+      await this.prisma.perangkatSite.deleteMany({ where: { id_site: { in: siteSph }, id_aset: { in: asetPb }, status_perangkat: { not: 'Aktif' } } });
+    }
     const site = await this.prisma.sitePelanggan.findMany({
       where: { id_site: { in: idSite } },
       select: {
@@ -562,6 +592,7 @@ export class PasangBaruService {
     const dokumen = await this.prisma.siteDokumen.findMany({
       where: { OR: [{ id_pb: { in: idPb } }, { id_site: { in: siteHapus } }] }, select: { url_file: true },
     });
+    const baTtd = (await this.prisma.pbOrder.findMany({ where: { id_pb: { in: idPb } }, select: { ba_ttd: true } })).map((x) => x.ba_ttd);
     const fotoLink = await this.prisma.sumberInternetSite.findMany({ where: { id_site: { in: siteHapus } }, select: { foto_modem: true, foto_speedtest: true } });
 
     await this.prisma.$transaction([
@@ -571,6 +602,7 @@ export class PasangBaruService {
       this.prisma.pbRiwayat.deleteMany({ where: { OR: [{ id_sph }, { id_pb: { in: idPb } }] } }),
       this.prisma.siteDokumen.deleteMany({ where: { OR: [{ id_pb: { in: idPb } }, { id_site: { in: siteHapus } }] } }),
       this.prisma.workOrder.deleteMany({ where: { id_pb: { in: idPb } } }),
+      this.prisma.pbPerangkat.deleteMany({ where: { id_pb: { in: idPb } } }),
       this.prisma.pbOrder.deleteMany({ where: { id_sph } }),
       this.prisma.pbSph.delete({ where: { id_sph } }),
       this.prisma.picSite.deleteMany({ where: { id_site: { in: siteHapus } } }),
@@ -582,7 +614,7 @@ export class PasangBaruService {
         await fsp.rm(join(UPLOAD_ROOT, d.url_file.slice('/uploads/'.length)), { force: true }).catch(() => undefined);
       }
     }
-    await this.hapusFileUnggah(...fotoLink.flatMap((f) => [f.foto_modem, f.foto_speedtest]));
+    await this.hapusFileUnggah(...fotoLink.flatMap((f) => [f.foto_modem, f.foto_speedtest]), ...baTtd);
     for (const id_pb of idPb) await fsp.rmdir(join(UPLOAD_ROOT, 'pasang-baru', String(id_pb))).catch(() => undefined);
     await this.bukaLagiSurvey(s.id_survey, u, s.nomor_sph);
 
@@ -716,11 +748,13 @@ export class PasangBaruService {
       },
     });
     if (!o) throw new NotFoundException('Order tidak ditemukan');
+    await this.sinkronBa(o);
     const riwayat = await this.prisma.pbRiwayat.findMany({ where: { id_pb }, orderBy: { created_at: 'desc' } });
     const nama = await this.namaKaryawan([o.sph.id_sales, ...riwayat.map((r) => r.id_karyawan)]);
     const tahapBoleh = Object.keys(PEMEGANG).filter((t) => this.boleh(u, t));
     return {
       ...o,
+      network: await this.infoNetwork(o),
       sales: o.sph.id_sales ? nama.get(o.sph.id_sales) ?? null : null,
       riwayat: riwayat.map((r) => ({ ...r, oleh: r.id_karyawan ? nama.get(r.id_karyawan) ?? null : null })),
       hak: { tahap: tahapBoleh, director: this.director(u) },
@@ -857,24 +891,20 @@ export class PasangBaruService {
     const o = await this.prisma.pbOrder.findUnique({ where: { id_pb }, include: { sph: { include: { pelanggan: true } } } });
     if (!o) throw new NotFoundException('Order tidak ditemukan');
     const i = TAHAP.indexOf(o.tahap as any);
-    if (i < 1 || i >= TAHAP.length - 1) throw new BadRequestException(o.tahap === 'Terpasang' ? 'Order sudah terpasang — tahap berikutnya menyusul' : `Order berstatus ${o.tahap}`);
+    if (i < 1 || i >= TAHAP.length - 1) throw new BadRequestException(o.tahap === 'Selesai' ? 'Order sudah selesai — tahap aktivasi menyusul' : `Order berstatus ${o.tahap}`);
     this.wajib(u, o.tahap);
     const kurang = (await this.syarat(o)).filter((s) => !s.ok);
     if (kurang.length) throw new BadRequestException(`Belum lengkap: ${kurang.map((s) => s.label).join(', ')}`);
     const ke = TAHAP[i + 1];
     await this.pindah(o, ke, u, 'serahkan', dto.catatan);
-    if (ke === 'Terpasang') {
-      if (o.sph.id_sales) await this.beriTahu([o.sph.id_sales], {
-        tipe: 'pb_terpasang', judul: 'Vendor ISP terpasang',
-        deskripsi: `${o.nomor_pb} · ${o.nama_site} · ${o.sph.pelanggan.nama_pelanggan}`, url: `/pasang-baru/order/${id_pb}`,
-      });
-    } else {
-      await this.beriTahuRole(PEMEGANG[ke] ?? [], {
-        tipe: 'pb_masuk', judul: `Pasang baru masuk ${ke}`,
-        deskripsi: `${o.nomor_pb} · ${o.nama_site} · ${o.sph.pelanggan.nama_pelanggan}`, url: `/pasang-baru/order/${id_pb}`,
-      });
+    const ket = `${o.nomor_pb} · ${o.nama_site} · ${o.sph.pelanggan.nama_pelanggan}`;
+    if (ke === 'Network') {
+      await this.beriTahuRole(PEMEGANG.Network, { tipe: 'pb_masuk', judul: 'Pasang baru masuk Network — siapkan perangkat', deskripsi: ket, url: `/pasang-baru/order/${id_pb}` });
+      if (o.sph.id_sales) await this.beriTahu([o.sph.id_sales], { tipe: 'pb_terpasang', judul: 'Vendor ISP terpasang', deskripsi: ket, url: `/pasang-baru/order/${id_pb}` });
+    } else if (ke === 'Selesai') {
+      if (o.sph.id_sales) await this.beriTahu([o.sph.id_sales], { tipe: 'pb_selesai', judul: 'Pasang baru selesai — BA aktivasi ditandatangani', deskripsi: ket, url: `/pasang-baru/order/${id_pb}` });
     }
-    return { message: ke === 'Terpasang' ? 'Order ditandai terpasang' : `Diserahkan ke ${ke}` };
+    return { message: ke === 'Network' ? 'Vendor ISP terpasang — order diserahkan ke Network' : ke === 'Selesai' ? 'Order selesai' : `Diserahkan ke ${ke}` };
   }
 
   /** Order masuk tahap Instalasi → otomatis masuk antrean Jadwal Visit (sekali per order) */
@@ -913,7 +943,7 @@ export class PasangBaruService {
     const o = await this.prisma.pbOrder.findUnique({ where: { id_pb } });
     if (!o) throw new NotFoundException('Order tidak ditemukan');
     if (!this.boleh(u, 'Draft')) throw new ForbiddenException('Pembatalan oleh Sales atau Director');
-    if (['Draft', 'Terpasang', 'Batal'].includes(o.tahap)) throw new BadRequestException(`Order berstatus ${o.tahap}`);
+    if (['Draft', 'Selesai', 'Batal'].includes(o.tahap)) throw new BadRequestException(`Order berstatus ${o.tahap}`);
     if (!dto.catatan?.trim()) throw new BadRequestException('Isi alasan pembatalan');
     await this.pindah(o, 'Batal', u, 'batal', dto.catatan.trim());
     if (o.id_site) {
@@ -926,9 +956,243 @@ export class PasangBaruService {
     return { message: 'Order dibatalkan' };
   }
 
+  // ── Tahap Network: perangkat, pemasangan, BA ─────────────────────────────────
+  private async infoNetwork(o: { id_pb: number; id_wo: number | null }) {
+    const [perangkat, wo] = await Promise.all([
+      this.prisma.pbPerangkat.findMany({ where: { id_pb: o.id_pb }, orderBy: { id_pb_perangkat: 'asc' } }),
+      o.id_wo ? this.prisma.workOrder.findUnique({
+        where: { id_wo: o.id_wo },
+        include: {
+          teknisi: { select: { nama_lengkap: true, no_hp: true } }, vendor: { select: { nama_vendor: true, no_telp: true } },
+          pengiriman: { orderBy: { id_pengiriman: 'desc' }, take: 1 }, foto: { select: { id_foto: true, jenis_foto: true, file_path: true } },
+        },
+      }) : null,
+    ]);
+    const [aset, pengajuan] = await Promise.all([
+      this.prisma.gudangAset.findMany({
+        where: { id_aset: { in: perangkat.map((p) => p.id_aset).filter((x): x is number => !!x) } },
+        select: { id_aset: true, kode_aset: true, nama_perangkat: true, merk: true, tipe_model: true, serial_number: true, status_aset: true, gudang: { select: { nama_gudang: true } } },
+      }),
+      this.prisma.pengajuanAset.findMany({
+        where: { id_pengajuan: { in: perangkat.map((p) => p.id_pengajuan).filter((x): x is number => !!x) } },
+        select: { id_pengajuan: true, nama_item: true, jumlah: true, status_pengajuan: true, id_aset_hasil: true, catatan_approval: true },
+      }),
+    ]);
+    return {
+      perangkat: perangkat.map((p) => ({ ...p, aset: aset.find((a) => a.id_aset === p.id_aset) ?? null, pengajuan: pengajuan.find((x) => x.id_pengajuan === p.id_pengajuan) ?? null })),
+      wo: wo ? { ...wo, link_lapangan: wo.token_lapangan ? `${process.env.APP_BASE_URL || 'https://1erp.nextone.id'}/v/${wo.token_lapangan}` : null } : null,
+    };
+  }
+
+  /** Visit/WO pemasangan selesai dengan tanda tangan PIC → jadi BA aktivasi order (sekali) */
+  private async sinkronBa(o: { id_pb: number; id_wo: number | null; ba_ttd: string | null; tahap: string; ba_nomor: string | null }) {
+    if (!o.id_wo || o.ba_ttd || o.tahap !== 'Network') return;
+    const wo = await this.prisma.workOrder.findUnique({ where: { id_wo: o.id_wo }, select: { status_wo: true, ttd_path: true, ttd_nama: true, completed_at: true, teknisi: { select: { nama_lengkap: true } }, vendor: { select: { nama_vendor: true } } } });
+    if (wo?.status_wo !== 'Completed' || !wo.ttd_path) return;
+    const data = {
+      ba_nomor: o.ba_nomor ?? (await this.nomorBa()), ba_nama: wo.ttd_nama, ba_ttd: wo.ttd_path, ba_tgl: wo.completed_at ?? new Date(), ba_sumber: 'Lapangan',
+      ba_nama_next1: wo.teknisi?.nama_lengkap.trim() ?? wo.vendor?.nama_vendor ?? null,
+    };
+    Object.assign(o, data);
+    await this.prisma.pbOrder.update({ where: { id_pb: o.id_pb }, data });
+    await this.catat({ id_pb: o.id_pb, aksi: 'ba', catatan: `BA ${data.ba_nomor} ditandatangani ${wo.ttd_nama ?? ''} (visit)` });
+  }
+
+  private async nomorBa() {
+    const d = new Date();
+    const prefix = `BA/N1/${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/`;
+    const akhir = await this.prisma.pbOrder.findFirst({ where: { ba_nomor: { startsWith: prefix } }, orderBy: { ba_nomor: 'desc' }, select: { ba_nomor: true } });
+    const n = akhir?.ba_nomor ? parseInt(akhir.ba_nomor.slice(prefix.length), 10) || 0 : 0;
+    return `${prefix}${String(n + 1).padStart(3, '0')}`;
+  }
+
+  private async idUser(id_karyawan: number) {
+    const x = await this.prisma.coreUser.findFirst({ where: { id_karyawan }, select: { id_user: true } });
+    return x?.id_user;
+  }
+
+  /** Stok perangkat di gudang (Mikrotik / Router dulu) untuk dipilih Network */
+  async stokPerangkat(q: { cari?: string }) {
+    const kata = (q.cari || '').trim();
+    const rows = await this.prisma.gudangAset.findMany({
+      where: {
+        status_aset: 'Di_Gudang',
+        OR: [{ is_serialized: true }, { stok_jumlah: { gt: 0 } }],
+        ...(kata ? { OR: [{ nama_perangkat: { contains: kata } }, { merk: { contains: kata } }, { tipe_model: { contains: kata } }, { serial_number: { contains: kata } }, { kode_aset: { contains: kata } }] }
+          : { kategori: { in: ['Mikrotik', 'Router'] } }),
+      },
+      select: { id_aset: true, kode_aset: true, nama_perangkat: true, merk: true, tipe_model: true, serial_number: true, kategori: true, is_serialized: true, stok_jumlah: true, kondisi: true, gudang: { select: { nama_gudang: true } } },
+      orderBy: [{ kategori: 'asc' }, { nama_perangkat: 'asc' }],
+      take: 200,
+    });
+    return rows;
+  }
+
+  private async orderNetwork(u: Pengguna, id_pb: number) {
+    const o = await this.orderDiTahap(u, id_pb, 'Network');
+    if (!o.id_site) throw new BadRequestException('Order belum punya site');
+    return o as typeof o & { id_site: number };
+  }
+
+  async ambilPerangkat(u: Pengguna, id_pb: number, dto: PerangkatDto) {
+    const o = await this.orderNetwork(u, id_pb);
+    const userId = await this.idUser(u.id_karyawan);
+    const aset = await this.prisma.gudangAset.findUnique({ where: { id_aset: dto.id_aset } });
+    if (!aset) throw new NotFoundException('Aset tidak ditemukan');
+    await this.prisma.$transaction(async (tx) => {
+      await this.assets.applyMutasiTx(tx, {
+        id_aset: dto.id_aset, jenis_mutasi: 'Deploy', jumlah: 1, id_site_tujuan: o.id_site, id_gudang_asal: aset.id_gudang ?? undefined,
+        keterangan: `Pasang baru ${o.nomor_pb} — ${o.nama_site}`,
+      }, userId);
+      await tx.pbPerangkat.create({ data: { id_pb, id_aset: dto.id_aset, nama_item: [aset.nama_perangkat, aset.tipe_model].filter(Boolean).join(' '), id_karyawan: u.id_karyawan } });
+    });
+    await this.catat({ id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'perangkat', catatan: `${aset.kode_aset} ${aset.nama_perangkat}${aset.serial_number ? ` SN ${aset.serial_number}` : ''}` });
+    return { message: `${aset.nama_perangkat} dialokasikan ke ${o.nama_site}` };
+  }
+
+  /** Stok kosong → ajukan pembelian (modul Pengajuan Aset, approval Director/Manager Ops) */
+  async requestPerangkat(u: Pengguna, id_pb: number, dto: RequestPerangkatDto) {
+    const o = await this.orderNetwork(u, id_pb);
+    const userId = await this.idUser(u.id_karyawan);
+    if (!userId) throw new BadRequestException('Akun pengguna tidak ditemukan');
+    const r = await this.assets.createPengajuan({
+      nama_item: dto.nama_item.trim(), kategori: 'Mikrotik', jumlah: dto.jumlah ?? 1, estimasi_harga: dto.estimasi_harga ?? 0,
+      link_marketplace: dto.link_marketplace?.trim() || undefined,
+      alasan: [`Stok kosong untuk pasang baru ${o.nomor_pb} — ${o.nama_site}`, dto.alasan?.trim()].filter(Boolean).join('. '),
+    } as any, userId);
+    await this.prisma.pbPerangkat.create({ data: { id_pb, id_pengajuan: r.data.id_pengajuan, nama_item: dto.nama_item.trim(), id_karyawan: u.id_karyawan } });
+    await this.catat({ id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'perangkat', catatan: `Request ${dto.nama_item.trim()} (stok kosong)` });
+    return { message: 'Request perangkat diajukan — menunggu approval' };
+  }
+
+  /** Lepas perangkat dari order: aset dikembalikan ke gudang (Return) / request dihapus dari daftar */
+  async lepasPerangkat(u: Pengguna, id: number) {
+    const p = await this.prisma.pbPerangkat.findUnique({ where: { id_pb_perangkat: id } });
+    if (!p) throw new NotFoundException('Perangkat tidak ditemukan');
+    const o = await this.orderNetwork(u, p.id_pb);
+    const userId = await this.idUser(u.id_karyawan);
+    await this.prisma.$transaction(async (tx) => {
+      if (p.id_aset) {
+        const aset = await tx.gudangAset.findUnique({ where: { id_aset: p.id_aset } });
+        if (aset && (!aset.is_serialized || (aset.status_aset === 'Terpasang' && aset.id_site === o.id_site))) {
+          await this.assets.applyMutasiTx(tx, { id_aset: p.id_aset, jenis_mutasi: 'Return', jumlah: 1, id_site_asal: o.id_site, keterangan: `Batal dipakai pasang baru ${o.nomor_pb}` }, userId);
+        }
+      }
+      await tx.pbPerangkat.delete({ where: { id_pb_perangkat: id } });
+    });
+    await this.catat({ id_sph: o.id_sph, id_pb: o.id_pb, id_karyawan: u.id_karyawan, aksi: 'perangkat', catatan: `Lepas ${p.nama_item}` });
+    return { message: p.id_aset ? 'Perangkat dikembalikan ke gudang' : 'Request dihapus dari daftar' };
+  }
+
+  /** Request yang sudah selesai dibeli (aset hasil) → alokasikan ke order */
+  async pakaiHasilRequest(u: Pengguna, id: number) {
+    const p = await this.prisma.pbPerangkat.findUnique({ where: { id_pb_perangkat: id } });
+    if (!p?.id_pengajuan || p.id_aset) throw new BadRequestException('Bukan request yang menunggu');
+    const g = await this.prisma.pengajuanAset.findUnique({ where: { id_pengajuan: p.id_pengajuan } });
+    if (!g?.id_aset_hasil) throw new BadRequestException('Barang request belum masuk gudang');
+    const r = await this.ambilPerangkat(u, p.id_pb, { id_aset: g.id_aset_hasil });
+    await this.prisma.pbPerangkat.delete({ where: { id_pb_perangkat: id } });
+    return r;
+  }
+
+  /** Atur pemasangan: kirim via ekspedisi + vendor teknisi, atau visit teknisi internal (antrean Jadwal Visit) */
+  async simpanNetwork(u: Pengguna, id_pb: number, dto: NetworkDto) {
+    const o = await this.orderNetwork(u, id_pb);
+    const perangkat = await this.prisma.pbPerangkat.findMany({ where: { id_pb } });
+    const daftar = perangkat.map((p) => p.nama_item).join(', ') || 'Mikrotik';
+    const vendor = dto.metode === 'Kirim_Vendor';
+    if (vendor && !dto.id_vendor_ketiga) throw new BadRequestException('Pilih vendor teknisi');
+    const deskripsi = `Pasang baru ${o.nomor_pb} — ${o.nama_site}: pasang & konfigurasi ${daftar}, tanda tangan BA aktivasi oleh PIC.${dto.catatan?.trim() ? ` ${dto.catatan.trim()}` : ''}`;
+    let wo = o.id_wo ? await this.prisma.workOrder.findUnique({ where: { id_wo: o.id_wo } }) : null;
+    if (wo && ['Completed', 'Cancelled'].includes(wo.status_wo) && wo.status_wo === 'Completed') throw new BadRequestException('Pemasangan sudah selesai');
+    if (wo?.status_wo === 'Cancelled') wo = null;
+    const dataWo = {
+      tipe_eksekutor: vendor ? 'Vendor_Ketiga' : 'Internal_NEXT1',
+      id_vendor_ketiga: vendor ? dto.id_vendor_ketiga! : null,
+      fee_vendor: vendor ? dto.fee_vendor ?? 0 : 0,
+      ...(vendor ? { tgl_jadwal: dto.tgl_jadwal ? new Date(dto.tgl_jadwal) : null, id_teknisi_internal: null } : {}),
+      deskripsi_tugas: deskripsi,
+    };
+    if (wo) {
+      // Ganti metode internal → vendor: lepas dari jadwal teknisi internal
+      wo = await this.prisma.workOrder.update({ where: { id_wo: wo.id_wo }, data: dataWo });
+    } else {
+      wo = await buatWo(this.prisma, { jenis_wo: 'Instalasi', id_site: o.id_site, id_pb, dibuat_oleh: u.id_karyawan, ...dataWo });
+    }
+    if (vendor && !wo.token_lapangan) {
+      wo = await this.prisma.workOrder.update({ where: { id_wo: wo.id_wo }, data: { token_lapangan: randomBytes(18).toString('base64url') } });
+    }
+    // Pengiriman ekspedisi (satu per WO)
+    if (vendor) {
+      const kirim = await this.prisma.pengirimanPerangkat.findFirst({ where: { id_wo: wo.id_wo } });
+      const dataKirim = {
+        jenis_pengiriman: 'Ekspedisi', nama_ekspedisi: dto.nama_ekspedisi?.trim() || null, nomor_resi: dto.nomor_resi?.trim() || null,
+        tgl_kirim: dto.tgl_kirim ? new Date(dto.tgl_kirim) : null, status_pengiriman: dto.status_pengiriman || 'Packing',
+        ...(dto.status_pengiriman === 'Diterima' ? { tgl_terima: new Date() } : {}),
+      };
+      if (kirim) await this.prisma.pengirimanPerangkat.update({ where: { id_pengiriman: kirim.id_pengiriman }, data: dataKirim });
+      else {
+        await this.prisma.pengirimanPerangkat.create({
+          data: { id_wo: wo.id_wo, ...dataKirim, items: { create: perangkat.map((p) => ({ id_aset: p.id_aset, nama_item: p.nama_item })) } },
+        });
+      }
+    }
+    await this.prisma.pbOrder.update({ where: { id_pb }, data: { network_metode: dto.metode, id_wo: wo.id_wo } });
+    await this.catat({ id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'ubah', catatan: vendor ? `Kirim + vendor teknisi · ${wo.nomor_wo}` : `Visit teknisi internal · ${wo.nomor_wo}` });
+    return { message: vendor ? 'Pengiriman & vendor teknisi disimpan' : `Masuk antrean Jadwal Visit (${wo.nomor_wo})` };
+  }
+
+  /** Vendor teknisi selesai (dilaporkan Network bila vendor tidak memakai link lapangan) */
+  async selesaiPemasangan(u: Pengguna, id_pb: number, dto: CatatanDto) {
+    const o = await this.orderNetwork(u, id_pb);
+    if (!o.id_wo) throw new BadRequestException('Atur pemasangan dulu');
+    const wo = await this.prisma.workOrder.findUnique({ where: { id_wo: o.id_wo } });
+    if (!wo || wo.status_wo === 'Completed') throw new BadRequestException('Pemasangan sudah selesai');
+    if (wo.tipe_eksekutor !== 'Vendor_Ketiga') throw new BadRequestException('Visit internal diselesaikan teknisi lewat link lapangan / Jadwal Visit');
+    await this.prisma.workOrder.update({
+      where: { id_wo: wo.id_wo },
+      data: { status_wo: 'Completed', completed_at: new Date(), catatan_teknisi: [wo.catatan_teknisi, `[Selesai, dicatat Network] ${dto.catatan?.trim() || ''}`.trim()].filter(Boolean).join('\n') },
+    });
+    await this.catat({ id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'ubah', catatan: 'Pemasangan vendor selesai' });
+    return { message: 'Pemasangan ditandai selesai' };
+  }
+
+  /** Tanda tangan BA langsung di ERP (bila tidak lewat link lapangan) */
+  async tandaTanganBa(u: Pengguna, id_pb: number, dto: BaDto) {
+    const o = await this.orderNetwork(u, id_pb);
+    const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dto.ttd);
+    if (!m) throw new BadRequestException('Tanda tangan tidak valid');
+    const rel = join('pasang-baru', String(id_pb), `ba-${randomBytes(8).toString('hex')}.png`);
+    await fsp.mkdir(join(UPLOAD_ROOT, 'pasang-baru', String(id_pb)), { recursive: true });
+    await fsp.writeFile(join(UPLOAD_ROOT, rel), Buffer.from(m[1], 'base64'));
+    if (o.ba_ttd && o.ba_sumber === 'ERP') await this.hapusFileUnggah(o.ba_ttd);
+    const nama = await this.namaKaryawan([u.id_karyawan]);
+    const ba_nomor = o.ba_nomor ?? (await this.nomorBa());
+    await this.prisma.pbOrder.update({
+      where: { id_pb },
+      data: {
+        ba_nomor, ba_nama: dto.nama.trim(), ba_jabatan: dto.jabatan?.trim() || null, ba_ttd: `/uploads/${rel}`, ba_tgl: new Date(), ba_sumber: 'ERP',
+        ba_nama_next1: dto.nama_next1?.trim() || nama.get(u.id_karyawan) || null,
+      },
+    });
+    await this.catat({ id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'ba', catatan: `BA ${ba_nomor} ditandatangani ${dto.nama.trim()}` });
+    return { message: `BA ${ba_nomor} ditandatangani` };
+  }
+
   // ── Pembantu ─────────────────────────────────────────────────────────────────
   /** Syarat untuk menyerahkan order dari tahapnya sekarang */
   private async syarat(o: { id_pb: number; id_site: number | null; tahap: string }) {
+    if (o.tahap === 'Network') {
+      const [perangkat, wo] = await Promise.all([
+        this.prisma.pbPerangkat.findMany({ where: { id_pb: o.id_pb } }),
+        (o as any).id_wo ? this.prisma.workOrder.findUnique({ where: { id_wo: (o as any).id_wo }, select: { status_wo: true } }) : null,
+      ]);
+      return [
+        { label: 'Perangkat dari stok gudang', ok: perangkat.some((p) => p.id_aset) && !perangkat.some((p) => !p.id_aset) },
+        { label: 'Pemasangan (kirim + vendor / visit internal) selesai', ok: wo?.status_wo === 'Completed' },
+        { label: 'BA aktivasi ditandatangani', ok: !!(o as any).ba_ttd },
+      ];
+    }
     if (o.tahap === 'OPS') {
       const link = o.id_site ? await this.prisma.sumberInternetSite.findMany({ where: { id_site: o.id_site } }) : [];
       const cek = (f: (l: (typeof link)[number]) => unknown) => link.length > 0 && link.every((l) => !!f(l));

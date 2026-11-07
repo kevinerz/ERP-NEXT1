@@ -142,6 +142,35 @@ export class FotoLinkDto {
   @IsIn(['modem', 'speedtest']) jenis: string;
 }
 
+// ── Tahap Network ──
+export class PerangkatDto {
+  @Type(() => Number) @IsInt() id_aset: number;
+}
+export class RequestPerangkatDto {
+  @IsString() @MinLength(2) @MaxLength(150) nama_item: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) jumlah?: number;
+  @IsOptional() @IsString() @MaxLength(2000) alasan?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) estimasi_harga?: number;
+  @IsOptional() @IsString() @MaxLength(500) link_marketplace?: string;
+}
+export class NetworkDto {
+  @IsIn(['Kirim_Vendor', 'Visit_Internal']) metode: string;
+  @IsOptional() @Type(() => Number) @IsInt() id_vendor_ketiga?: number | null;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) fee_vendor?: number;
+  @IsOptional() @IsDateString() tgl_jadwal?: string | null;
+  @IsOptional() @IsString() @MaxLength(100) nama_ekspedisi?: string;
+  @IsOptional() @IsString() @MaxLength(100) nomor_resi?: string;
+  @IsOptional() @IsDateString() tgl_kirim?: string | null;
+  @IsOptional() @IsIn(['Packing', 'Dikirim', 'Diterima']) status_pengiriman?: string;
+  @IsOptional() @IsString() @MaxLength(2000) catatan?: string;
+}
+export class BaDto {
+  @IsString() @MinLength(2) @MaxLength(150) nama: string;
+  @IsOptional() @IsString() @MaxLength(100) jabatan?: string;
+  @IsString() @MaxLength(700_000) ttd: string; // data:image/png;base64,...
+  @IsOptional() @IsString() @MaxLength(150) nama_next1?: string;
+}
+
 export const JENIS_DOKUMEN = ['FAB', 'BA', 'TOPOLOGI', 'LAIN'] as const;
 export class DokumenDto {
   @IsIn(JENIS_DOKUMEN as unknown as string[]) jenis: string;

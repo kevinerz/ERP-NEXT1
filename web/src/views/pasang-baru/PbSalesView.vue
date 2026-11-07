@@ -43,7 +43,7 @@ async function muat() {
     const [a, b, c] = await Promise.all([
       api.get('/pasang-baru/survey', { params: { ...p, status: 'aktif' } }),
       api.get('/pasang-baru/sph', { params: p }),
-      api.get('/pasang-baru/order', { params: { ...p, tahap: 'OPS,Terpasang' } }),
+      api.get('/pasang-baru/order', { params: { ...p, tahap: 'OPS,Network' } }),
     ])
     survey.value = a.data.data
     sph.value = b.data.data

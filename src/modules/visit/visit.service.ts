@@ -59,6 +59,7 @@ const INCLUDE = {
     },
   },
   teknisi: { select: { id_karyawan: true, nama_lengkap: true, no_hp: true } },
+  vendor: { select: { nama_vendor: true } },
   ticket: { select: { id_ticket: true, nomor_tiket: true, judul_tiket: true } },
 } satisfies Prisma.WorkOrderInclude;
 type Wo = Prisma.WorkOrderGetPayload<{ include: typeof INCLUDE }>;
@@ -81,7 +82,7 @@ export class VisitService {
     return {
       id_wo: w.id_wo, nomor_wo: w.nomor_wo, jenis_wo: w.jenis_wo, prioritas: w.prioritas, status_wo: w.status_wo,
       tgl: w.tgl_jadwal ? strWib(w.tgl_jadwal) : null, jam: w.jam_jadwal, urutan: w.urutan,
-      id_teknisi: w.id_teknisi_internal, teknisi: w.teknisi?.nama_lengkap?.trim() || null,
+      id_teknisi: w.id_teknisi_internal, teknisi: w.teknisi?.nama_lengkap?.trim() || (w.vendor ? `Vendor ${w.vendor.nama_vendor}` : null),
       deskripsi: w.deskripsi_tugas, catatan_teknisi: w.catatan_teknisi, id_pb: w.id_pb,
       tipe_eksekutor: w.tipe_eksekutor,
       wa_teknisi_at: w.wa_teknisi_at, wa_pic_at: w.wa_pic_at, created_at: w.created_at, completed_at: w.completed_at,
@@ -365,7 +366,12 @@ export class VisitService {
   /** Bisa dilaporkan: aktif & masih terjadwal ke teknisi (bukan sedang dijadwal ulang) */
   private wajibAktif(w: Wo) {
     if (!AKTIF.includes(w.status_wo)) throw new BadRequestException('Visit sudah selesai');
-    if (!w.tgl_jadwal || !w.id_teknisi_internal) throw new BadRequestException('Visit ini sedang dijadwal ulang — tunggu jadwal baru dari helpdesk');
+    if (!this.siapLapor(w)) throw new BadRequestException('Visit ini sedang dijadwal ulang — tunggu jadwal baru dari helpdesk');
+  }
+  /** Teknisi internal terjadwal, atau vendor teknisi (pasang baru) — vendor boleh lapor tanpa tanggal pasti */
+  private siapLapor(w: { tgl_jadwal: Date | null; id_teknisi_internal: number | null; tipe_eksekutor: string; id_vendor_ketiga: number | null }) {
+    if (w.tipe_eksekutor === 'Vendor_Ketiga') return !!w.id_vendor_ketiga;
+    return !!w.tgl_jadwal && !!w.id_teknisi_internal;
   }
 
   async lapanganInfo(token: string) {
@@ -379,7 +385,7 @@ export class VisitService {
         pic_nama: v.pic_nama, pic_hp: v.pic_hp, tiket: v.tiket ? { nomor: v.tiket.nomor, judul: v.tiket.judul } : null,
         maps: this.maps(w), checkin_at: v.checkin_at, koordinat_checkin: v.koordinat_checkin, completed_at: v.completed_at,
         ttd_path: v.ttd_path, ttd_nama: v.ttd_nama, catatan_teknisi: v.catatan_teknisi, foto,
-        bisa_lapor: AKTIF.includes(w.status_wo) && !!w.tgl_jadwal && !!w.id_teknisi_internal,
+        bisa_lapor: AKTIF.includes(w.status_wo) && this.siapLapor(w),
       },
     };
   }
@@ -405,7 +411,7 @@ export class VisitService {
       this.logger.warn(`notifikasi gagal: ${e?.message}`);
     }
   }
-  private namaTek(w: Wo) { return w.teknisi?.nama_lengkap.trim() || 'Teknisi'; }
+  private namaTek(w: Wo) { return w.teknisi?.nama_lengkap.trim() || (w.vendor ? `Vendor ${w.vendor.nama_vendor}` : 'Teknisi'); }
   private async catatLog(w: { id_wo: number; id_teknisi_internal: number | null }, aksi: string, catatan?: string | null) {
     await this.prisma.visitLog.create({ data: { id_wo: w.id_wo, id_karyawan: w.id_teknisi_internal, aksi, catatan: catatan?.slice(0, 500) ?? null } }).catch(() => undefined);
   }

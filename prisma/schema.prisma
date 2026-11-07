@@ -1912,6 +1912,16 @@ model PbOrder {
   ikg_nominal     Decimal   @default(0) @db.Decimal(15, 2)
   ikg_pengelola   String?   @db.VarChar(150)
   ikg_catatan     String?   @db.VarChar(500)
+  // Tahap Network: perangkat Mikrotik + pemasangan (kirim ekspedisi & vendor teknisi / visit teknisi internal) + BA
+  network_metode  String?   @db.VarChar(20) // Kirim_Vendor | Visit_Internal
+  id_wo           Int? // visit / WO pemasangan perangkat
+  ba_nomor        String?   @unique @db.VarChar(40)
+  ba_nama         String?   @db.VarChar(150) // penandatangan pelanggan
+  ba_jabatan      String?   @db.VarChar(100)
+  ba_ttd          String?   @db.VarChar(255)
+  ba_nama_next1   String?   @db.VarChar(150)
+  ba_tgl          DateTime?
+  ba_sumber       String?   @db.VarChar(20) // Lapangan | ERP
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
@@ -1996,6 +2006,20 @@ model PbSurveyVendor {
 
   @@index([id_survey_site])
   @@map("pb_survey_vendor")
+}
+
+// Perangkat (Mikrotik dll.) untuk order pasang baru: dari stok gudang (aset di-Deploy ke site) atau request (pengajuan aset)
+model PbPerangkat {
+  id_pb_perangkat Int      @id @default(autoincrement())
+  id_pb           Int
+  id_aset         Int?
+  id_pengajuan    Int?
+  nama_item       String   @db.VarChar(150)
+  id_karyawan     Int?
+  created_at      DateTime @default(now())
+
+  @@index([id_pb])
+  @@map("pb_perangkat")
 }
 
 model PbRiwayat {

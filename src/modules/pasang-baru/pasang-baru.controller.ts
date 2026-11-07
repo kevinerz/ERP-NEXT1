@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { CatatanDto, DokumenDto, FotoLinkDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
+import { BaDto, CatatanDto, DokumenDto, FotoLinkDto, LinkDto, NetworkDto, PerangkatDto, RequestPerangkatDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 import { PasangBaruService, Pengguna } from './pasang-baru.service';
 
 // Akses modul: sales / operations / instalasi / finance (lihat ModulAksesGuard); hak ubah per tahap dicek di service
@@ -95,6 +95,26 @@ export class PasangBaruController {
     return this.svc.unggahDokumen(u, id, dto, file);
   }
   @Delete('dokumen/:id') hapusDokumen(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.hapusDokumen(u, id); }
+
+  // Tahap Network
+  @Get('stok') stok(@Query() q: { cari?: string }) { return this.svc.stokPerangkat(q); }
+  @Post('order/:id/perangkat') ambilPerangkat(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: PerangkatDto) {
+    return this.svc.ambilPerangkat(u, id, dto);
+  }
+  @Post('order/:id/perangkat/request') requestPerangkat(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: RequestPerangkatDto) {
+    return this.svc.requestPerangkat(u, id, dto);
+  }
+  @Delete('perangkat/:id') lepasPerangkat(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.lepasPerangkat(u, id); }
+  @Post('perangkat/:id/pakai') pakaiHasil(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.pakaiHasilRequest(u, id); }
+  @Put('order/:id/network') simpanNetwork(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: NetworkDto) {
+    return this.svc.simpanNetwork(u, id, dto);
+  }
+  @Post('order/:id/pemasangan-selesai') pemasanganSelesai(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
+    return this.svc.selesaiPemasangan(u, id, dto);
+  }
+  @Post('order/:id/ba') tandaTanganBa(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: BaDto) {
+    return this.svc.tandaTanganBa(u, id, dto);
+  }
 
   @Post('order/:id/serahkan') serahkan(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
     return this.svc.serahkan(u, id, dto);

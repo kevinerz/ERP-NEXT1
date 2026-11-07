@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import PbSalesView from './PbSalesView.vue'
 import PbOpsView from './PbOpsView.vue'
+import PbNetworkView from './PbNetworkView.vue'
 import PbSemuaView from './PbSemuaView.vue'
 
 const route = useRoute()
@@ -15,6 +16,7 @@ const punya = (...r: string[]) => r.some((x) => auth.hasRole(x))
 const TAMPILAN = [
   { k: 'sales', t: '💼 Sales', boleh: () => punya('Sales', 'Admin', 'Director') },
   { k: 'ops', t: '🛠 OPS', boleh: () => punya('OPS', 'Manager_Ops', 'Admin', 'Director') },
+  { k: 'network', t: '🌐 Network', boleh: () => punya('Helpdesk', 'Manager_Ops', 'Admin', 'Director') },
   { k: 'semua', t: '📋 Semua tahap', boleh: () => true },
 ]
 const pilihan = computed(() => TAMPILAN.filter((x) => x.boleh()))
@@ -23,6 +25,7 @@ const bawaan = computed(() => {
   if (punya('Admin', 'Director')) return 'semua'
   if (punya('Sales')) return 'sales'
   if (punya('OPS', 'Manager_Ops')) return 'ops'
+  if (punya('Helpdesk')) return 'network'
   return 'semua'
 })
 const tampilan = computed(() => {
@@ -36,7 +39,8 @@ const bisaBuat = computed(() => punya('Sales', 'Director', 'Admin'))
 const SUB: Record<string, string> = {
   sales: 'Survey → OPS → SPH → Director. Fokus pada survey & SPH Anda.',
   ops: 'Antrian kerja OPS: cek survey (vendor ISP, IKG, deposit, cover) dan order tahap OPS.',
-  semua: 'Survey → OPS → SPH → Director → OPS pasang vendor ISP → Terpasang',
+  network: 'Antrian Network: siapkan Mikrotik, kirim (ekspedisi + vendor teknisi) atau visit teknisi internal, lalu BA aktivasi.',
+  semua: 'Survey → OPS → SPH → Director → OPS pasang vendor ISP → Network (Mikrotik & BA) → Selesai',
 }
 </script>
 
@@ -51,7 +55,7 @@ const SUB: Record<string, string> = {
         <div v-if="pilihan.length > 1" class="pb-tampilan" role="tablist">
           <button v-for="x in pilihan" :key="x.k" :class="{ aktif: tampilan === x.k }" @click="ganti(x.k)">{{ x.t }}</button>
         </div>
-        <template v-if="bisaBuat && tampilan !== 'ops'">
+        <template v-if="bisaBuat && !['ops', 'network'].includes(tampilan)">
           <button class="btn btn-ghost" title="SPH tanpa survey" @click="router.push('/pasang-baru/sph/baru')">+ SPH langsung</button>
           <button class="btn btn-primary" @click="router.push('/pasang-baru/survey/baru')">+ Survey Baru</button>
         </template>
@@ -60,6 +64,7 @@ const SUB: Record<string, string> = {
 
     <PbSalesView v-if="tampilan === 'sales'" />
     <PbOpsView v-else-if="tampilan === 'ops'" />
+    <PbNetworkView v-else-if="tampilan === 'network'" />
     <PbSemuaView v-else />
   </div>
 </template>
