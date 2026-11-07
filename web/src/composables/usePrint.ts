@@ -905,64 +905,139 @@ export async function printLabelAset(asetList: any[]) {
 }
 
 // ─────────────────────────────────────────────
-// BERITA ACARA AKTIVASI — PASANG BARU
+// BERITA ACARA AKTIVASI — PASANG BARU (format NextOne: aktivasi / instalasi / migrasi / relokasi / dismantle)
+// basah = cetak untuk tanda tangan basah (kotak TTD kosong, nama pelanggan ditulis tangan)
 // ─────────────────────────────────────────────
-export function printBaAktivasi(o: any) {
+export function printBaAktivasi(o: any, opsi: { basah?: boolean } = {}) {
   const e = escapeHtml
-  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) : '-'
-  const fmtTgl = (d: string | null) => d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '-'
-  const abs = (p: string | null) => (p ? (p.startsWith('http') ? p : `${location.origin}${p}`) : '')
+  const c = getCompany()
+  const basah = !!opsi.basah
+  const tglPanjang = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase() : ''
+  const tglPendek = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
+  const abs = (p: string | null) => (p ? (p.startsWith('http') || p.startsWith('data:') ? p : `${location.origin}${p}`) : '')
+  const telp = (n: string) => { const d = String(n || '').replace(/\D/g, '').replace(/^62/, '0'); return d.replace(/^(\d{4})(\d{4})(\d+)$/, '$1 $2 $3') }
+  let data: any = {}
+  try { data = JSON.parse(o.ba_data || '{}') } catch { /* abaikan */ }
   const site = o.site || {}
-  const alamat = `${o.alamat}${o.lantai_unit ? ' — ' + o.lantai_unit : ''}${o.kota ? ', ' + o.kota : ''}`
-  const perangkat = (o.network?.perangkat || []).filter((p: any) => p.aset)
-  const barisPerangkat = perangkat.length
-    ? perangkat.map((p: any, i: number) => `<tr><td>${i + 1}</td><td>${e(p.aset.nama_perangkat)}</td><td>${e([p.aset.merk, p.aset.tipe_model].filter(Boolean).join(' ') || '-')}</td><td>${e(p.aset.serial_number || '-')}</td><td>${e(p.aset.kode_aset)}</td></tr>`).join('')
-    : `<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:10px">—</td></tr>`
   const links = site.sumber_internet || []
-  const barisLink = links.length
-    ? links.map((l: any, i: number) => `<tr><td>${i + 1}</td><td>${e(l.vendor?.nama_vendor || '-')} (${e(l.peruntukan_link)})</td><td>${e(l.nomor_pelanggan_isp || '-')}</td><td>${e(l.bandwidth_mbps || '-')}</td><td>${e(l.sn_modem || '-')}</td><td>${l.speedtest_down ? `↓ ${Number(l.speedtest_down)} / ↑ ${Number(l.speedtest_up)} Mbps` : '-'}</td></tr>`).join('')
-    : `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:10px">—</td></tr>`
+  const utama = links.find((l: any) => l.peruntukan_link === 'Main') ?? links[0]
   const wo = o.network?.wo
-  const pelaksana = o.network_metode === 'Kirim_Vendor'
-    ? `Teknisi vendor ${e(wo?.kontak_teknisi?.nama || wo?.vendor?.nama_vendor || '-')}${wo?.kontak_teknisi?.asal_vendor ? ' (' + e(wo.kontak_teknisi.asal_vendor) + ')' : ''}${wo?.pengiriman?.[0]?.nama_ekspedisi ? ` · perangkat dikirim ${wo.pengiriman[0].tujuan_kirim === 'Teknisi' ? 'ke teknisi' : 'ke store'} via ${e(wo.pengiriman[0].nama_ekspedisi)}${wo.pengiriman[0].nomor_resi ? ' (resi ' + e(wo.pengiriman[0].nomor_resi) + ')' : ''}` : ''}`
-    : `Teknisi internal ${e(wo?.teknisi?.nama_lengkap || '-')}`
-  const ttd = (src: string | null) => src ? `<img src="${abs(src)}" style="height:70px;max-width:200px;object-fit:contain;display:block;margin:0 auto 4px">` : '<div style="height:74px"></div>'
+  const pelaksana: string[] = wo?.teknisi?.nama_lengkap ? [wo.teknisi.nama_lengkap]
+    : wo?.kontak_teknisi ? [`${wo.kontak_teknisi.nama}${wo.kontak_teknisi.asal_vendor ? ' (' + wo.kontak_teknisi.asal_vendor + ')' : ''}`]
+    : o.ba_nama_next1 ? [o.ba_nama_next1] : []
+  const perangkat: { nama: string; sn: string }[] = [
+    ...links.map((l: any) => ({ nama: `Modem ${l.vendor?.nama_vendor || ''}${l.peruntukan_link === 'Backup' ? ' (Backup)' : ''}`.trim(), sn: l.sn_modem || '' })),
+    ...(o.network?.perangkat || []).filter((p: any) => p.aset).map((p: any) => ({ nama: [p.aset.merk, p.aset.tipe_model || p.aset.nama_perangkat].filter(Boolean).join(' '), sn: p.aset.serial_number || '' })),
+  ]
+  while (perangkat.length < 5) perangkat.push({ nama: '', sn: '' })
+  const lain: string[] = String(data.lain || '').split('\n').map((x) => x.trim()).filter(Boolean)
+  while (lain.length < 3) lain.push('')
+  const bandwidth = data.bandwidth || [utama?.bandwidth_mbps, o.layanan?.nama_layanan].filter(Boolean).join(' · ')
+  const catatan = data.catatan || (links.length ? links.map((l: any) => `${l.vendor?.nama_vendor || ''}${l.nomor_pelanggan_isp ? ' ID ' + l.nomor_pelanggan_isp : ''}${l.speedtest_down ? ` · speedtest ↓${Number(l.speedtest_down)}/↑${Number(l.speedtest_up)} Mbps` : ''}`).join('; ') : '')
+  const kontak = [o.pic_store_nama || o.sph?.nama_pic, o.pic_store_hp || o.sph?.telp_pic].filter(Boolean)
+  const alamat = `${o.alamat}${o.lantai_unit ? ' — ' + o.lantai_unit : ''}${o.kota ? ', ' + o.kota : ''}`
+  const baris = (label: string, isi: string, tebal = true) => `<tr><td class="lb">${label}</td><td class="isi${tebal ? ' b' : ''}">${isi || '&nbsp;'}</td></tr>`
+  const kosong = (label = '') => `<tr><td class="lb">${label}</td><td class="isi">&nbsp;</td></tr>`
+  const cek = (on: boolean) => `<span class="cek">${on ? '■' : '□'}</span>`
+  const ttdPelanggan = !basah && o.ba_ttd ? `<img src="${abs(o.ba_ttd)}" class="ttd-img">` : ''
+  const namaPelanggan = basah ? '' : (o.ba_nama || '')
+  const logo = c.logo ? `<img src="${c.logo}" class="logo">` : `<div class="logo-teks">${e(c.brand)}</div>`
 
-  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>BA Aktivasi ${e(o.ba_nomor || o.nomor_pb)}</title>${baseStyle()}
-  <style>.sign-label{margin-bottom:6px!important}</style></head>
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>BA ${e(o.ba_nomor || o.nomor_pb)}${basah ? ' (ttd basah)' : ''}</title>
+  <style>
+    @page { size: A4; margin: 10mm 12mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; font-size: 9pt; color: #111; background:#fff; }
+    .doc { max-width: 190mm; margin: 0 auto; }
+    .kop { background: #2c6a66; color: #fff; display:flex; align-items:center; justify-content:space-between; padding: 10px 14px 18px; border-radius: 0 0 40% 0 / 0 0 30% 0; }
+    .kop .kiri { display:flex; align-items:center; gap:10px; }
+    .logo { height: 46px; width:auto; background:#fff; border-radius:6px; padding:3px; }
+    .logo-teks { font-size: 20pt; font-weight: 800; }
+    .kop .judul { font-size: 22pt; font-weight: 800; letter-spacing: 2px; }
+    .kop .alamat { font-size: 7pt; text-align: right; line-height: 1.35; font-style: italic; opacity: .95; }
+    .baris2 { display:flex; justify-content:space-between; align-items:flex-end; margin: 8px 0 4px; gap: 12px; }
+    .cc { border: 1px solid #2c6a66; width: 62mm; }
+    .cc .h { background:#2c6a66; color:#fff; text-align:center; font-weight:700; font-style: italic; letter-spacing: 2px; font-size: 8pt; padding: 2px; }
+    .cc table { width:100%; font-size: 8pt; } .cc td { padding: 1px 6px; }
+    .nomor { border: 1px solid #2c6a66; width: 62mm; font-size: 8.5pt; }
+    .nomor td { padding: 2px 6px; border-bottom: 1px solid #ccc; } .nomor .h { background:#2c6a66; color:#fff; text-align:center; font-weight:700; font-style: italic; letter-spacing: 2px; }
+    .jenis { display:flex; gap: 14px; font-size: 8.5pt; margin: 4px 0 6px; flex-wrap: wrap; }
+    .cek { font-size: 10pt; margin-right: 3px; }
+    .bar { background:#2c6a66; color:#fff; font-weight:700; padding: 2px 6px; font-size: 9pt; margin-top: 6px; }
+    table.data { width: 100%; border-collapse: collapse; }
+    table.data td { padding: 2.5px 4px; vertical-align: bottom; }
+    td.lb { width: 34%; color: #333; }
+    td.isi { border-bottom: 1px solid #555; } td.b { font-weight: 700; }
+    table.prk td.sn { width: 6%; text-align:right; color:#333; } table.prk td.nm { width: 30%; } table.prk td.snv { width: 30%; }
+    .ttd { display:flex; justify-content:space-between; margin-top: 18px; gap: 10px; }
+    .kotak { border: 1px solid #2c6a66; width: 30%; text-align:center; display:flex; flex-direction:column; }
+    .kotak .h { background:#2c6a66; color:#fff; font-size: 8.5pt; padding: 2px; }
+    .kotak .area { height: 70px; display:flex; align-items:center; justify-content:center; }
+    .ttd-img { max-height: 66px; max-width: 95%; object-fit: contain; }
+    .kotak .nm { border-top: 1px solid #2c6a66; padding: 3px; font-weight: 700; font-size: 8.5pt; min-height: 20px; }
+    .kaki { margin-top: 6px; font-size: 7pt; color: #666; display:flex; justify-content:space-between; }
+  </style></head>
   <body><div class="doc">
-    <div class="header">
-      <div class="header-left">${companyHeader()}</div>
-      <div class="doc-title-block"><div class="doc-title">BERITA ACARA AKTIVASI</div><div class="doc-nomor">${e(o.ba_nomor || '-')}</div><div class="doc-date">${fmtTgl(o.ba_tgl)}</div></div>
+    <div class="kop">
+      <div class="kiri">${logo}</div>
+      <div class="judul">BERITA ACARA</div>
+      <div class="alamat">Head Office<br>${e(c.address).replace(/\n|\\n/g, '<br>')}<br>Phone : ${e(telp(c.phone))}<br>Email : ${e(c.email)}<br>Website : ${e((useSettingsStore().settings as any).company_website || '')}</div>
     </div>
-    <p style="font-size:10pt;color:#334155;margin-bottom:16px;line-height:1.7">
-      Pada hari ini, <b>${fmtDate(o.ba_tgl)}</b>, telah dilakukan pemasangan dan aktivasi layanan internet oleh ${e(getCompany().name)} di lokasi pelanggan dengan rincian sebagai berikut:
-    </p>
-    <div class="section">
-      <div class="section-title">Pelanggan &amp; Lokasi</div>
-      <table class="info">
-        <tr><td>Pelanggan</td><td>:</td><td><b>${e(o.sph?.pelanggan?.nama_pelanggan || '-')}</b></td></tr>
-        <tr><td>Site</td><td>:</td><td>${e(site.kode_site || '')} — ${e(o.nama_site)}</td></tr>
-        <tr><td>Alamat</td><td>:</td><td>${e(alamat)}</td></tr>
-        <tr><td>Layanan</td><td>:</td><td>${e(o.layanan?.nama_layanan || '-')}</td></tr>
-        <tr><td>No. order</td><td>:</td><td>${e(o.nomor_pb || '-')} · ${e(o.sph?.nomor_sph || '')}</td></tr>
-        <tr><td>Pelaksana</td><td>:</td><td>${pelaksana}</td></tr>
+    <div class="baris2">
+      <div class="cc"><div class="h">Call Center ${e(c.brand)}</div>
+        <table><tr><td>Whatsapp</td><td><b>${e(telp(c.phone))}</b></td></tr><tr><td>Phone</td><td><b>${e(telp(c.phone))}</b></td></tr></table>
+      </div>
+      <table class="nomor">
+        <tr><td>Tanggal</td><td><b>${basah ? '' : e(tglPanjang(o.ba_tgl || new Date().toISOString()))}</b></td></tr>
+        <tr><td>No</td><td><b>${e(o.ba_nomor || 'BA/N1/')}</b></td></tr>
+        <tr><td colspan="2" class="h">Berita Acara</td></tr>
       </table>
     </div>
-    <div class="section">
-      <div class="section-title">Koneksi Internet</div>
-      <table class="grid"><thead><tr><th>No</th><th>Provider</th><th>ID Pelanggan</th><th>Layanan</th><th>SN Modem</th><th>Speedtest</th></tr></thead><tbody>${barisLink}</tbody></table>
+    <div class="jenis">
+      <span>${cek(true)}Aktivasi</span><span>${cek(false)}Instalasi</span><span>${cek(false)}Upgrade / Downgrade</span>
+      <span>${cek(false)}Dismantle</span><span>${cek(false)}Migrasi</span><span>${cek(false)}Relokasi</span><span>${cek(false)}Lain - Lain</span>
     </div>
-    <div class="section">
-      <div class="section-title">Perangkat Terpasang</div>
-      <table class="grid"><thead><tr><th>No</th><th>Perangkat</th><th>Merk / Tipe</th><th>Serial Number</th><th>Kode Aset</th></tr></thead><tbody>${barisPerangkat}</tbody></table>
+
+    <div class="bar">Data Pelanggan</div>
+    <table class="data">
+      ${baris('Nama Pelanggan', e(`${o.sph?.pelanggan?.nama_pelanggan || ''}${o.nama_site ? ' - ' + o.nama_site : ''}`.toUpperCase()))}
+      ${baris('ID Pelanggan', e(utama?.nomor_pelanggan_isp || site.kode_site || ''))}
+      ${baris('Nama / Kontak Pelanggan', e(kontak.join('  /  ').toUpperCase()))}
+      ${baris('Alamat Pemasangan', e(alamat))}
+      ${kosong()}
+      ${baris('Phone / Fax', e(o.sph?.telp_pic || ''))}
+      ${baris('Email', e(o.sph?.email_pic || ''))}
+    </table>
+
+    <div class="bar">Data Teknisi</div>
+    <table class="data">
+      ${baris('No WO', e(wo?.nomor_wo || ''))}
+      ${baris('Nama Pekerjaan', 'Instalasi Perangkat Pemasangan Baru')}
+      ${baris('Rincian Pekerjaan', e(`Pemasangan Perangkat${o.nomor_pb ? ' — ' + o.nomor_pb : ''}`))}
+      ${kosong()}
+      ${baris('Penanggung Jawab', e(data.penanggung_jawab || ''))}
+      ${baris('Pelaksana', e(pelaksana.map((p, i) => `${i + 1}) ${p}`).join('   ') || '1)'))}
+      ${baris('Tanggal Mulai Pekerjaan', e(tglPendek(wo?.checkin_at || wo?.tgl_jadwal)))}
+      ${baris('Tanggal Selesai Pekerjaan', basah ? '' : e(tglPendek(wo?.completed_at || o.ba_tgl)))}
+    </table>
+
+    <div class="bar">Data Perangkat</div>
+    <table class="data prk">
+      ${perangkat.map((p, i) => `<tr><td class="lb">${i === 0 ? 'Nama Perangkat' : ''}</td><td class="isi b nm">${e(p.nama) || '&nbsp;'}</td><td class="sn">S/N</td><td class="isi b snv">${e(p.sn) || '&nbsp;'}</td></tr>`).join('')}
+    </table>
+    <table class="data" style="margin-top:6px">
+      ${lain.map((x, i) => baris(i === 0 ? 'Lain Lain' : '', e(x))).join('')}
+      ${baris('IP Address', e(data.ip || ''))}
+      ${baris('Bandwidth', e(bandwidth))}
+      ${baris('Catatan', e(catatan))}
+    </table>
+
+    <div class="ttd">
+      <div class="kotak"><div class="h">Penanggung Jawab</div><div class="area"></div><div class="nm">${e((data.penanggung_jawab || '').toUpperCase()) || '&nbsp;'}</div></div>
+      <div class="kotak"><div class="h">Pelaksana</div><div class="area"></div><div class="nm">${e((pelaksana[0] || o.ba_nama_next1 || '').replace(/\s*\(.*\)$/, '').toUpperCase()) || '&nbsp;'}</div></div>
+      <div class="kotak"><div class="h">Pelanggan</div><div class="area">${ttdPelanggan}</div><div class="nm">${e(namaPelanggan.toUpperCase()) || '&nbsp;'}</div></div>
     </div>
-    <p style="font-size:10pt;color:#475569;margin:14px 0 8px;line-height:1.6">Dengan ditandatanganinya berita acara ini, pelanggan menyatakan layanan dan perangkat di atas telah terpasang dan berfungsi dengan baik.</p>
-    <div class="signature-row">
-      <div class="sign-box"><div class="sign-label">Pelaksana,</div>${ttd(null)}<div class="sign-line"><div class="sign-name">( ${e(o.ba_nama_next1 || '_________________________')} )</div><div class="sign-jabatan">${e(getCompany().name)}</div></div></div>
-      <div class="sign-box"><div class="sign-label">Pelanggan,</div>${ttd(o.ba_ttd)}<div class="sign-line"><div class="sign-name">( ${e(o.ba_nama || '_________________________')} )</div><div class="sign-jabatan">${e(o.ba_jabatan || o.sph?.pelanggan?.nama_pelanggan || 'Pelanggan')}</div></div></div>
-    </div>
-    ${docFooter(o.ba_nomor || o.nomor_pb || '')}
+    <div class="kaki"><span>Pelanggan: tanda tangan, nama terang &amp; stempel outlet</span><span>${e(o.ba_nomor || o.nomor_pb || '')}</span></div>
   </div></body></html>`
   printDocument(html)
 }

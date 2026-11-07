@@ -71,6 +71,7 @@ function isiForm() {
   const x = o.value
   Object.assign(fo, { ikg_nominal: Number(x.ikg_nominal), ikg_pengelola: x.ikg_pengelola || '', ikg_catatan: x.ikg_catatan || '' })
   isiNetwork()
+  isiBaData()
   muatReferensiNetwork()
 }
 const simpanOps = () => jalankan(() => api.patch(`/pasang-baru/order/${id.value}/ops`, { ...fo, ikg_nominal: Number(fo.ikg_nominal) || 0 }))
@@ -255,6 +256,40 @@ async function simpanBa() {
   fb.buka = false
 }
 const cetakBa = () => printBaAktivasi(o.value)
+// Data tambahan BA format NextOne
+const fbd = reactive({ penanggung_jawab: '', ip: '', bandwidth: '', lain: '', catatan: '' })
+function isiBaData() {
+  let d: any = {}
+  try { d = JSON.parse(o.value.ba_data || '{}') } catch { /* abaikan */ }
+  Object.assign(fbd, { penanggung_jawab: d.penanggung_jawab || '', ip: d.ip || '', bandwidth: d.bandwidth || '', lain: d.lain || '', catatan: d.catatan || '' })
+}
+const simpanBaData = () => jalankan(() => api.put(`/pasang-baru/order/${id.value}/ba-data`, fbd))
+// Cetak untuk tanda tangan basah: nomor BA dipesan dulu supaya tercetak di kertas
+async function cetakBasah() {
+  proses.value = true
+  try {
+    if (bisaUbah('Network')) {
+      await api.put(`/pasang-baru/order/${id.value}/ba-data`, fbd)
+      await api.post(`/pasang-baru/order/${id.value}/ba-nomor`)
+      await muat()
+    }
+    printBaAktivasi(o.value, { basah: true })
+  } catch (e) { alertError(e) } finally { proses.value = false }
+}
+// Unggah scan BA yang sudah ditandatangani basah
+const inputScan = ref<HTMLInputElement | null>(null)
+const scan = reactive({ buka: false, nama: '', jabatan: '', file: null as File | null })
+function bukaScan() { Object.assign(scan, { buka: true, nama: o.value.pic_store_nama || o.value.sph.nama_pic || '', jabatan: o.value.pic_store_nama ? 'PIC Store' : '', file: null }) }
+function pilihScan(ev: Event) { scan.file = (ev.target as HTMLInputElement).files?.[0] ?? null }
+async function kirimScan() {
+  if (!scan.file) return
+  const fd = new FormData()
+  fd.append('file', scan.file)
+  fd.append('nama', scan.nama)
+  if (scan.jabatan) fd.append('jabatan', scan.jabatan)
+  await jalankan(() => api.post(`/pasang-baru/order/${id.value}/ba-scan`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  scan.buka = false
+}
 
 // ── Dokumen ──────────────────────────────────────────────────────────────────
 const dokumen = computed<any[]>(() => (o.value?.site?.dokumen || []).filter((d: any) => d.id_pb === o.value.id_pb || !d.id_pb))
@@ -556,8 +591,10 @@ const AKSI: Record<string, string> = {
             <div class="detail-section-header op-head">
               <b>3 · BA aktivasi</b>
               <span class="op-wo-aksi">
-                <button v-if="bisaUbah('Network')" class="btn btn-sm btn-ghost" @click="bukaBa">✍ {{ o.ba_ttd ? 'Tanda tangan ulang' : 'Tanda tangan di sini' }}</button>
-                <button class="btn btn-sm btn-primary" :disabled="!o.ba_ttd" :title="o.ba_ttd ? '' : 'BA belum ditandatangani'" @click="cetakBa">⬇ Unduh PDF BA</button>
+                <button class="btn btn-sm btn-ghost" :disabled="proses" title="Format NextOne, kotak tanda tangan kosong" @click="cetakBasah">🖨 Cetak BA (TTD basah)</button>
+                <button v-if="bisaUbah('Network')" class="btn btn-sm btn-ghost" @click="bukaScan">⬆ Unggah scan BA</button>
+                <button v-if="bisaUbah('Network')" class="btn btn-sm btn-ghost" @click="bukaBa">✍ {{ o.ba_ttd ? 'TTD digital ulang' : 'TTD digital di sini' }}</button>
+                <button class="btn btn-sm btn-primary" :disabled="!o.ba_ttd" :title="o.ba_ttd ? '' : 'Belum ada tanda tangan digital'" @click="cetakBa">⬇ Unduh PDF BA</button>
               </span>
             </div>
             <div class="detail-section-body">
@@ -569,7 +606,28 @@ const AKSI: Record<string, string> = {
                   <small class="muted">{{ fmtDateTime(o.ba_tgl) }} · {{ o.ba_sumber === 'Lapangan' ? 'di lokasi lewat link lapangan' : 'di ERP' }}<template v-if="o.ba_nama_next1"> · pelaksana {{ o.ba_nama_next1 }}</template></small>
                 </div>
               </div>
-              <p v-else class="muted op-kosong">Belum ditandatangani. Biasanya PIC tanda tangan di HP teknisi saat visit selesai (link lapangan) — otomatis masuk ke sini. Bisa juga tanda tangan langsung di ERP.</p>
+              <div v-if="o.ba_scan" class="op-ba-scan">
+                📄 <a :href="o.ba_scan" target="_blank" rel="noopener"><b>Scan BA tanda tangan basah</b></a>
+                <small class="muted"> — {{ o.ba_nama }}<template v-if="o.ba_jabatan"> ({{ o.ba_jabatan }})</template> · {{ o.ba_nomor }}</small>
+              </div>
+              <p v-if="!o.ba_ttd && !o.ba_scan" class="muted op-kosong">
+                Belum ditandatangani. Pilih salah satu: PIC tanda tangan di HP teknisi (link lapangan, otomatis masuk), <b>TTD digital di sini</b>,
+                atau <b>Cetak BA (TTD basah)</b> → ditandatangani &amp; distempel di lokasi → <b>Unggah scan BA</b>.
+              </p>
+
+              <details class="op-ba-data" :open="bisaUbah('Network') && !o.ba_ttd && !o.ba_scan">
+                <summary>Isi BA (format NextOne)</summary>
+                <div class="grid-2">
+                  <div class="form-group"><label class="form-label">Penanggung jawab <small class="muted">(SPV / Manager Network &amp; Teknik)</small></label><input v-model="fbd.penanggung_jawab" class="form-input" maxlength="150" :disabled="!bisaUbah('Network')" /></div>
+                  <div class="grid-2">
+                    <div class="form-group"><label class="form-label">IP Address</label><input v-model="fbd.ip" class="form-input" maxlength="100" placeholder="mis. Dynamic IP" :disabled="!bisaUbah('Network')" /></div>
+                    <div class="form-group"><label class="form-label">Bandwidth</label><input v-model="fbd.bandwidth" class="form-input" maxlength="100" placeholder="otomatis dari link" :disabled="!bisaUbah('Network')" /></div>
+                  </div>
+                  <div class="form-group"><label class="form-label">Lain-lain <small class="muted">(satu baris per item)</small></label><textarea v-model="fbd.lain" rows="3" class="form-textarea" maxlength="1000" placeholder="Adaptor Mikrotik 12V-1A&#10;Adaptor Modem 12V-1A&#10;Kabel LAN 2 Meter" :disabled="!bisaUbah('Network')"></textarea></div>
+                  <div class="form-group"><label class="form-label">Catatan <small class="muted">(wajib: nomor SIM card &amp; provider bila ada)</small></label><textarea v-model="fbd.catatan" rows="3" class="form-textarea" maxlength="1000" placeholder="kosong = provider & ID pelanggan dari link vendor" :disabled="!bisaUbah('Network')"></textarea></div>
+                </div>
+                <div v-if="bisaUbah('Network')" class="op-simpan"><button class="btn btn-sm btn-ghost" :disabled="proses" @click="simpanBaData">Simpan isi BA</button></div>
+              </details>
             </div>
           </div>
         </template>
@@ -679,6 +737,22 @@ const AKSI: Record<string, string> = {
           <div class="form-group"><label class="form-label">Catatan</label><textarea v-model="req.alasan" rows="2" class="form-textarea" maxlength="2000"></textarea></div>
         </div>
         <div class="modal-footer"><button class="btn btn-ghost" @click="req.buka = false">Batal</button><button class="btn btn-primary" :disabled="req.nama_item.trim().length < 2 || proses" @click="kirimRequest">Ajukan</button></div>
+      </div>
+    </div>
+
+    <!-- Unggah scan BA ttd basah -->
+    <div v-if="scan.buka" class="modal-overlay" @click.self="scan.buka = false">
+      <div class="modal">
+        <div class="modal-header"><h3 class="modal-title">Unggah scan BA (tanda tangan basah)</h3><button class="btn-modal-close" @click="scan.buka = false">×</button></div>
+        <div class="modal-body">
+          <p class="form-hint">Foto / scan BA yang sudah ditandatangani penanggung jawab, pelaksana &amp; pelanggan (+ stempel outlet). PDF, JPG, atau PNG maks 15 MB.</p>
+          <input ref="inputScan" type="file" accept=".pdf,.jpg,.jpeg,.png" class="form-input" @change="pilihScan" />
+          <div class="grid-2" style="margin-top:10px">
+            <div class="form-group"><label class="form-label form-required">Nama penandatangan (pelanggan)</label><input v-model="scan.nama" class="form-input" maxlength="150" /></div>
+            <div class="form-group"><label class="form-label">Jabatan</label><input v-model="scan.jabatan" class="form-input" maxlength="100" /></div>
+          </div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-ghost" @click="scan.buka = false">Batal</button><button class="btn btn-primary" :disabled="!scan.file || scan.nama.trim().length < 2 || proses" @click="kirimScan">Unggah</button></div>
       </div>
     </div>
 
@@ -813,6 +887,9 @@ const AKSI: Record<string, string> = {
 .op-pilih button small { color: var(--text-3); font-size: 12px; }
 .op-pilih button.aktif { border-color: #2563eb; background: rgba(37, 99, 235, .06); }
 @media (max-width: 700px) { .op-pilih { grid-template-columns: 1fr; } }
+.op-ba-scan { margin-top: 8px; font-size: 13.5px; }
+.op-ba-data { margin-top: 12px; border-top: 1px dashed var(--border, #e2e8f0); padding-top: 8px; }
+.op-ba-data summary { cursor: pointer; font-weight: 600; font-size: 13px; margin-bottom: 8px; }
 .op-langkah { background: #eff6ff; border-radius: 6px; padding: 6px 8px; }
 .op-lacak li:first-child { font-weight: 600; }
 .op-baru { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px; border: 1px dashed #93c5fd; border-radius: 8px; }

@@ -181,6 +181,18 @@ export class BaDto {
   @IsOptional() @IsString() @MaxLength(150) nama_next1?: string;
 }
 
+export class BaDataDto {
+  @IsOptional() @IsString() @MaxLength(150) penanggung_jawab?: string;
+  @IsOptional() @IsString() @MaxLength(100) ip?: string;
+  @IsOptional() @IsString() @MaxLength(100) bandwidth?: string;
+  @IsOptional() @IsString() @MaxLength(1000) lain?: string; // satu baris per item (adaptor, kabel, dll.)
+  @IsOptional() @IsString() @MaxLength(1000) catatan?: string; // mis. SIM card & provider
+}
+export class BaScanDto {
+  @IsString() @MinLength(2) @MaxLength(150) nama: string;
+  @IsOptional() @IsString() @MaxLength(100) jabatan?: string;
+}
+
 export const JENIS_DOKUMEN = ['FAB', 'BA', 'TOPOLOGI', 'LAIN'] as const;
 export class DokumenDto {
   @IsIn(JENIS_DOKUMEN as unknown as string[]) jenis: string;

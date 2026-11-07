@@ -8,7 +8,7 @@ import { UPLOAD_ROOT } from '../../common/upload/upload-root';
 import { buatWo } from '../visit/visit.service';
 import { AssetsService } from '../assets/assets.service';
 import { WaService } from '../whatsapp/wa.service';
-import { BaDto, CatatanDto, DokumenDto, FotoLinkDto, LinkDto, NetworkDto, PerangkatDto, RequestPerangkatDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
+import { BaDataDto, BaDto, BaScanDto, CatatanDto, DokumenDto, FotoLinkDto, LinkDto, NetworkDto, PerangkatDto, RequestPerangkatDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 
 export interface Pengguna { id_karyawan: number; roles: string[] }
 
@@ -987,8 +987,8 @@ export class PasangBaruService {
   }
 
   /** Visit/WO pemasangan selesai dengan tanda tangan PIC → jadi BA aktivasi order (sekali) */
-  private async sinkronBa(o: { id_pb: number; id_wo: number | null; ba_ttd: string | null; tahap: string; ba_nomor: string | null }) {
-    if (!o.id_wo || o.ba_ttd || o.tahap !== 'Network') return;
+  private async sinkronBa(o: { id_pb: number; id_wo: number | null; ba_ttd: string | null; ba_scan: string | null; tahap: string; ba_nomor: string | null }) {
+    if (!o.id_wo || o.ba_ttd || o.ba_scan || o.tahap !== 'Network') return;
     const wo = await this.prisma.workOrder.findUnique({ where: { id_wo: o.id_wo }, select: { status_wo: true, ttd_path: true, ttd_nama: true, completed_at: true, teknisi: { select: { nama_lengkap: true } }, vendor: { select: { nama_vendor: true } }, kontak_teknisi: { select: { nama: true, asal_vendor: true } } } });
     if (wo?.status_wo !== 'Completed' || !wo.ttd_path) return;
     const data = {
@@ -1246,6 +1246,46 @@ export class PasangBaruService {
     return { message: 'Pemasangan ditandai selesai' };
   }
 
+  /** Data tambahan BA format NextOne (penanggung jawab, IP, bandwidth, lain-lain, catatan) */
+  async simpanBaData(u: Pengguna, id_pb: number, dto: BaDataDto) {
+    const o = await this.orderNetwork(u, id_pb);
+    const bersih = Object.fromEntries(Object.entries(dto).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]).filter(([, v]) => v));
+    await this.prisma.pbOrder.update({ where: { id_pb }, data: { ba_data: JSON.stringify(bersih) } });
+    await this.catat({ id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'ubah', catatan: 'Data BA' });
+    return { message: 'Data BA disimpan' };
+  }
+
+  /** Nomor BA dipesan sebelum dicetak untuk tanda tangan basah */
+  async nomorBaOrder(u: Pengguna, id_pb: number) {
+    const o = await this.orderNetwork(u, id_pb);
+    if (o.ba_nomor) return { data: { ba_nomor: o.ba_nomor } };
+    const ba_nomor = await this.nomorBa();
+    await this.prisma.pbOrder.update({ where: { id_pb }, data: { ba_nomor } });
+    return { data: { ba_nomor }, message: `Nomor BA ${ba_nomor}` };
+  }
+
+  /** Scan / foto BA yang sudah ditandatangani basah → BA sah + tersimpan di dokumen site */
+  async unggahBaScan(u: Pengguna, id_pb: number, dto: BaScanDto, file: any) {
+    if (!file) throw new BadRequestException('File scan BA wajib diunggah');
+    const o = await this.orderNetwork(u, id_pb);
+    const ext = EXT_DOKUMEN[file.mimetype];
+    if (!ext) throw new BadRequestException('Format file harus PDF, JPG, atau PNG');
+    const rel = join('pasang-baru', String(id_pb), `ba-basah-${randomBytes(8).toString('hex')}.${ext}`);
+    await fsp.mkdir(join(UPLOAD_ROOT, 'pasang-baru', String(id_pb)), { recursive: true });
+    await fsp.writeFile(join(UPLOAD_ROOT, rel), file.buffer);
+    const url = `/uploads/${rel}`;
+    const ba_nomor = o.ba_nomor ?? (await this.nomorBa());
+    await this.prisma.siteDokumen.create({
+      data: { id_site: o.id_site, id_pb, jenis: 'BA', nama_file: `BA ${ba_nomor} (ttd basah).${ext}`, url_file: url, tipe_file: ext, keterangan: `BA aktivasi ttd basah — ${dto.nama.trim()}`, ukuran_byte: file.size },
+    });
+    await this.prisma.pbOrder.update({
+      where: { id_pb },
+      data: { ba_nomor, ba_scan: url, ba_nama: dto.nama.trim(), ba_jabatan: dto.jabatan?.trim() || null, ba_tgl: o.ba_tgl ?? new Date(), ba_sumber: o.ba_ttd ? o.ba_sumber : 'Basah' },
+    });
+    await this.catat({ id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'ba', catatan: `Scan BA ${ba_nomor} ttd basah (${dto.nama.trim()})` });
+    return { message: `Scan BA ${ba_nomor} disimpan` };
+  }
+
   /** Tanda tangan BA langsung di ERP (bila tidak lewat link lapangan) */
   async tandaTanganBa(u: Pengguna, id_pb: number, dto: BaDto) {
     const o = await this.orderNetwork(u, id_pb);
@@ -1279,7 +1319,7 @@ export class PasangBaruService {
       return [
         { label: 'Perangkat dari stok gudang', ok: perangkat.some((p) => p.id_aset) && !perangkat.some((p) => !p.id_aset) },
         { label: 'Pemasangan (kirim + vendor / visit internal) selesai', ok: wo?.status_wo === 'Completed' },
-        { label: 'BA aktivasi ditandatangani', ok: !!(o as any).ba_ttd },
+        { label: 'BA aktivasi ditandatangani', ok: !!((o as any).ba_ttd || (o as any).ba_scan) },
       ];
     }
     if (o.tahap === 'OPS') {

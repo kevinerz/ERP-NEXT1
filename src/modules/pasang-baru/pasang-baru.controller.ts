@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { BaDto, CatatanDto, DokumenDto, FotoLinkDto, LinkDto, NetworkDto, PerangkatDto, RequestPerangkatDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
+import { BaDataDto, BaDto, BaScanDto, CatatanDto, DokumenDto, FotoLinkDto, LinkDto, NetworkDto, PerangkatDto, RequestPerangkatDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 import { PasangBaruService, Pengguna } from './pasang-baru.service';
 import { KurirApiService } from './kurir-api.service';
 
@@ -130,6 +130,15 @@ export class PasangBaruController {
   @Post('order/:id/wa-teknisi') waTeknisi(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.kirimWaTeknisi(u, id); }
   @Post('order/:id/pemasangan-selesai') pemasanganSelesai(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
     return this.svc.selesaiPemasangan(u, id, dto);
+  }
+  @Put('order/:id/ba-data') baData(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: BaDataDto) {
+    return this.svc.simpanBaData(u, id, dto);
+  }
+  @Post('order/:id/ba-nomor') baNomor(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.nomorBaOrder(u, id); }
+  @Post('order/:id/ba-scan')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
+  baScan(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: BaScanDto, @UploadedFile() file: any) {
+    return this.svc.unggahBaScan(u, id, dto, file);
   }
   @Post('order/:id/ba') tandaTanganBa(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: BaDto) {
     return this.svc.tandaTanganBa(u, id, dto);

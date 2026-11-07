@@ -8,7 +8,7 @@ import { umur } from './pb'
 
 interface Order {
   id_pb: number; nomor_pb: string | null; nama_site: string; kota: string | null; tahap: string; tahap_at: string; tgl_rfs: string | null
-  network_metode: string | null; ba_nomor: string | null; ba_ttd: string | null; ba_tgl: string | null
+  network_metode: string | null; ba_nomor: string | null; ba_ttd: string | null; ba_scan: string | null; ba_tgl: string | null
   sph: { nomor_sph: string; pelanggan: { nama_pelanggan: string } }; layanan: { nama_layanan: string }; site: { kode_site: string } | null
   perangkat: { id_aset: number | null; nama_item: string }[]
   wo: {
@@ -58,7 +58,7 @@ function langkah(o: Order): { t: string; w: string } {
     }
     return { t: o.wo.tgl_jadwal ? `Visit ${fmtDate(o.wo.tgl_jadwal)}` : 'Antre Jadwal Visit', w: 'biru' }
   }
-  if (!o.ba_ttd) return { t: 'TTD BA aktivasi', w: 'merah' }
+  if (!o.ba_ttd && !o.ba_scan) return { t: 'TTD BA aktivasi', w: 'merah' }
   return { t: 'Siap diselesaikan', w: 'hijau' }
 }
 const jam = (d: string) => (Date.now() - new Date(d).getTime()) / 3600_000

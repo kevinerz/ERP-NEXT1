@@ -1933,7 +1933,9 @@ model PbOrder {
   ba_ttd          String?   @db.VarChar(255)
   ba_nama_next1   String?   @db.VarChar(150)
   ba_tgl          DateTime?
-  ba_sumber       String?   @db.VarChar(20) // Lapangan | ERP
+  ba_sumber       String?   @db.VarChar(20) // Lapangan | ERP | Basah (scan BA tanda tangan basah)
+  ba_scan         String?   @db.VarChar(255) // file scan BA tanda tangan basah
+  ba_data         String?   @db.Text // JSON: penanggung_jawab, ip, bandwidth, lain, catatan (isi BA format NextOne)
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 
