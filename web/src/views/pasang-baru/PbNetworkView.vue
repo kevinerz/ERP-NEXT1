@@ -13,7 +13,7 @@ interface Order {
   perangkat: { id_aset: number | null; nama_item: string }[]
   wo: {
     nomor_wo: string; status_wo: string; tgl_jadwal: string | null; tipe_eksekutor: string; teknisi: { nama_lengkap: string } | null
-    vendor: { nama_vendor: string } | null; pengiriman: { nama_ekspedisi: string | null; nomor_resi: string | null; status_pengiriman: string }[]
+    vendor: { nama_vendor: string } | null; kontak_teknisi: { nama: string } | null; pengiriman: { nama_ekspedisi: string | null; nomor_resi: string | null; status_pengiriman: string }[]
   } | null
 }
 
@@ -69,7 +69,7 @@ const kpi = computed(() => [
   { t: 'Lewat 3 hari', n: antrian.value.filter((o) => jam(o.tahap_at) > 72).length, w: 'merah' },
 ])
 const pelaksana = (o: Order) => (o.network_metode === 'Kirim_Vendor'
-  ? `🚚 ${o.wo?.vendor?.nama_vendor ?? 'Vendor'}${o.wo?.pengiriman[0]?.nama_ekspedisi ? ` · ${o.wo.pengiriman[0].nama_ekspedisi}` : ''}`
+  ? `🚚 ${o.wo?.kontak_teknisi?.nama ?? o.wo?.vendor?.nama_vendor ?? 'Vendor'}${o.wo?.pengiriman[0]?.nama_ekspedisi ? ` · ${o.wo.pengiriman[0].nama_ekspedisi}` : ''}`
   : o.network_metode === 'Visit_Internal' ? `👷 ${o.wo?.teknisi?.nama_lengkap ?? 'Teknisi internal'}` : '—')
 </script>
 

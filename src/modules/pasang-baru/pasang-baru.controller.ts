@@ -109,6 +109,9 @@ export class PasangBaruController {
   @Put('order/:id/network') simpanNetwork(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: NetworkDto) {
     return this.svc.simpanNetwork(u, id, dto);
   }
+  @Get('kontak-teknisi') kontakTeknisi() { return this.svc.daftarKontakTeknisi(); }
+  @Get('kurir') kurir() { return this.svc.daftarKurir(); }
+  @Post('order/:id/wa-teknisi') waTeknisi(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.kirimWaTeknisi(u, id); }
   @Post('order/:id/pemasangan-selesai') pemasanganSelesai(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
     return this.svc.selesaiPemasangan(u, id, dto);
   }

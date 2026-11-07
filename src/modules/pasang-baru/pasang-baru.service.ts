@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { UPLOAD_ROOT } from '../../common/upload/upload-root';
 import { buatWo } from '../visit/visit.service';
 import { AssetsService } from '../assets/assets.service';
+import { WaService } from '../whatsapp/wa.service';
 import { BaDto, CatatanDto, DokumenDto, FotoLinkDto, LinkDto, NetworkDto, PerangkatDto, RequestPerangkatDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 
 export interface Pengguna { id_karyawan: number; roles: string[] }
@@ -28,7 +29,7 @@ const EXT_DOKUMEN: Record<string, string> = { 'application/pdf': 'pdf', 'image/j
 @Injectable()
 export class PasangBaruService {
   private readonly logger = new Logger('PasangBaru');
-  constructor(private prisma: PrismaService, private assets: AssetsService) {}
+  constructor(private prisma: PrismaService, private assets: AssetsService, private wa: WaService) {}
 
   // ── Hak akses ────────────────────────────────────────────────────────────────
   private boleh(u: Pengguna, tahap: string) {
@@ -112,7 +113,7 @@ export class PasangBaruService {
       idPb.length ? this.prisma.pbPerangkat.findMany({ where: { id_pb: { in: idPb } }, select: { id_pb: true, id_aset: true, nama_item: true } }) : [],
       this.prisma.workOrder.findMany({
         where: { id_wo: { in: rows.map((r) => r.id_wo).filter((x): x is number => !!x) } },
-        select: { id_wo: true, nomor_wo: true, status_wo: true, tgl_jadwal: true, tipe_eksekutor: true, teknisi: { select: { nama_lengkap: true } }, vendor: { select: { nama_vendor: true } }, pengiriman: { select: { nama_ekspedisi: true, nomor_resi: true, status_pengiriman: true }, take: 1 } },
+        select: { id_wo: true, nomor_wo: true, status_wo: true, tgl_jadwal: true, tipe_eksekutor: true, teknisi: { select: { nama_lengkap: true } }, vendor: { select: { nama_vendor: true } }, kontak_teknisi: { select: { nama: true } }, pengiriman: { select: { nama_ekspedisi: true, nomor_resi: true, status_pengiriman: true }, take: 1 } },
       }),
     ]);
     return rows.map((r) => ({
@@ -964,6 +965,7 @@ export class PasangBaruService {
         where: { id_wo: o.id_wo },
         include: {
           teknisi: { select: { nama_lengkap: true, no_hp: true } }, vendor: { select: { nama_vendor: true, no_telp: true } },
+          kontak_teknisi: { select: { id_kontak: true, nama: true, no_hp: true, asal_vendor: true } },
           pengiriman: { orderBy: { id_pengiriman: 'desc' }, take: 1 }, foto: { select: { id_foto: true, jenis_foto: true, file_path: true } },
         },
       }) : null,
@@ -987,15 +989,38 @@ export class PasangBaruService {
   /** Visit/WO pemasangan selesai dengan tanda tangan PIC → jadi BA aktivasi order (sekali) */
   private async sinkronBa(o: { id_pb: number; id_wo: number | null; ba_ttd: string | null; tahap: string; ba_nomor: string | null }) {
     if (!o.id_wo || o.ba_ttd || o.tahap !== 'Network') return;
-    const wo = await this.prisma.workOrder.findUnique({ where: { id_wo: o.id_wo }, select: { status_wo: true, ttd_path: true, ttd_nama: true, completed_at: true, teknisi: { select: { nama_lengkap: true } }, vendor: { select: { nama_vendor: true } } } });
+    const wo = await this.prisma.workOrder.findUnique({ where: { id_wo: o.id_wo }, select: { status_wo: true, ttd_path: true, ttd_nama: true, completed_at: true, teknisi: { select: { nama_lengkap: true } }, vendor: { select: { nama_vendor: true } }, kontak_teknisi: { select: { nama: true, asal_vendor: true } } } });
     if (wo?.status_wo !== 'Completed' || !wo.ttd_path) return;
     const data = {
       ba_nomor: o.ba_nomor ?? (await this.nomorBa()), ba_nama: wo.ttd_nama, ba_ttd: wo.ttd_path, ba_tgl: wo.completed_at ?? new Date(), ba_sumber: 'Lapangan',
-      ba_nama_next1: wo.teknisi?.nama_lengkap.trim() ?? wo.vendor?.nama_vendor ?? null,
+      ba_nama_next1: wo.teknisi?.nama_lengkap.trim() ?? wo.kontak_teknisi?.nama ?? wo.vendor?.nama_vendor ?? null,
     };
     Object.assign(o, data);
     await this.prisma.pbOrder.update({ where: { id_pb: o.id_pb }, data });
     await this.catat({ id_pb: o.id_pb, aksi: 'ba', catatan: `BA ${data.ba_nomor} ditandatangani ${wo.ttd_nama ?? ''} (visit)` });
+  }
+
+  /** Daftar kurir dari api.co.id (cache 1 hari); bila API tidak bisa diakses pakai daftar bawaan */
+  private kurirCache: { at: number; data: { code: string; name: string }[] } | null = null;
+  async daftarKurir() {
+    if (this.kurirCache && Date.now() - this.kurirCache.at < 86400_000) return this.kurirCache.data;
+    const lain = [{ code: 'tiki', name: 'TIKI' }, { code: 'pos', name: 'POS Indonesia' }, { code: 'lalamove', name: 'Lalamove' }, { code: 'gosend', name: 'GoSend' }, { code: 'grab', name: 'GrabExpress' }, { code: 'lainnya', name: 'Lainnya' }];
+    const key = process.env.KURIR_API_KEY;
+    if (key) {
+      try {
+        const r = await fetch('https://use.api.co.id/courier/v1/couriers', { headers: { 'x-api-co-id': key }, signal: AbortSignal.timeout(8000) });
+        const j: any = await r.json();
+        if (j?.is_success && Array.isArray(j.data)) {
+          const data = [...j.data.map((x: any) => ({ code: String(x.code), name: String(x.name) })), ...lain];
+          this.kurirCache = { at: Date.now(), data };
+          return data;
+        }
+        this.logger.warn(`daftar kurir api.co.id: ${j?.message ?? r.status}`);
+      } catch (e: any) {
+        this.logger.warn(`daftar kurir api.co.id gagal: ${e?.message}`);
+      }
+    }
+    return [{ code: 'jne', name: 'JNE Express' }, { code: 'jnt', name: 'JNT Express' }, { code: 'sicepat', name: 'Sicepat Express' }, { code: 'anteraja', name: 'Anteraja' }, ...lain];
   }
 
   private async nomorBa() {
@@ -1101,14 +1126,24 @@ export class PasangBaruService {
     const perangkat = await this.prisma.pbPerangkat.findMany({ where: { id_pb } });
     const daftar = perangkat.map((p) => p.nama_item).join(', ') || 'Mikrotik';
     const vendor = dto.metode === 'Kirim_Vendor';
-    if (vendor && !dto.id_vendor_ketiga) throw new BadRequestException('Pilih vendor teknisi');
+    let id_kontak_teknisi = dto.id_kontak_teknisi ?? null;
+    if (vendor && dto.kontak_baru) {
+      const hp = dto.kontak_baru.no_hp.replace(/[^\d+]/g, '');
+      const ada = await this.prisma.masterKontakTeknisi.findFirst({ where: { no_hp: { in: [hp, hp.replace(/^\+?62/, '0'), hp.replace(/^0/, '62')] } } });
+      id_kontak_teknisi = ada?.id_kontak ?? (await this.prisma.masterKontakTeknisi.create({
+        data: { nama: dto.kontak_baru.nama.trim(), no_hp: hp, asal_vendor: dto.kontak_baru.asal_vendor?.trim() || null, catatan: `Ditambahkan dari pasang baru ${o.nomor_pb}` },
+      })).id_kontak;
+    }
+    if (vendor && !id_kontak_teknisi) throw new BadRequestException('Pilih teknisi vendor dari kontak teknisi, atau tambah teknisi baru');
+    if (vendor && !(await this.prisma.masterKontakTeknisi.findUnique({ where: { id_kontak: id_kontak_teknisi! } }))) throw new BadRequestException('Kontak teknisi tidak ditemukan');
     const deskripsi = `Pasang baru ${o.nomor_pb} — ${o.nama_site}: pasang & konfigurasi ${daftar}, tanda tangan BA aktivasi oleh PIC.${dto.catatan?.trim() ? ` ${dto.catatan.trim()}` : ''}`;
     let wo = o.id_wo ? await this.prisma.workOrder.findUnique({ where: { id_wo: o.id_wo } }) : null;
     if (wo && ['Completed', 'Cancelled'].includes(wo.status_wo) && wo.status_wo === 'Completed') throw new BadRequestException('Pemasangan sudah selesai');
     if (wo?.status_wo === 'Cancelled') wo = null;
     const dataWo = {
       tipe_eksekutor: vendor ? 'Vendor_Ketiga' : 'Internal_NEXT1',
-      id_vendor_ketiga: vendor ? dto.id_vendor_ketiga! : null,
+      id_vendor_ketiga: vendor ? dto.id_vendor_ketiga ?? null : null,
+      id_kontak_teknisi: vendor ? id_kontak_teknisi : null,
       fee_vendor: vendor ? dto.fee_vendor ?? 0 : 0,
       ...(vendor ? { tgl_jadwal: dto.tgl_jadwal ? new Date(dto.tgl_jadwal) : null, id_teknisi_internal: null } : {}),
       deskripsi_tugas: deskripsi,
@@ -1139,7 +1174,54 @@ export class PasangBaruService {
     }
     await this.prisma.pbOrder.update({ where: { id_pb }, data: { network_metode: dto.metode, id_wo: wo.id_wo } });
     await this.catat({ id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'ubah', catatan: vendor ? `Kirim + vendor teknisi · ${wo.nomor_wo}` : `Visit teknisi internal · ${wo.nomor_wo}` });
-    return { message: vendor ? 'Pengiriman & vendor teknisi disimpan' : `Masuk antrean Jadwal Visit (${wo.nomor_wo})` };
+    let pesanWa = '';
+    if (vendor && dto.kirim_wa) {
+      try { pesanWa = ` · ${(await this.kirimWaTeknisi(u, id_pb)).message}`; } catch (e: any) { pesanWa = ` · WA gagal: ${e?.response?.message || e?.message}`; }
+    }
+    return { message: (vendor ? 'Pengiriman & teknisi vendor disimpan' : `Masuk antrean Jadwal Visit (${wo.nomor_wo})`) + pesanWa };
+  }
+
+  async daftarKontakTeknisi() {
+    return this.prisma.masterKontakTeknisi.findMany({
+      where: { is_aktif: true }, select: { id_kontak: true, nama: true, no_hp: true, asal_vendor: true, keahlian: true }, orderBy: { nama: 'asc' },
+    });
+  }
+
+  /** Kirim tugas pemasangan + link lapangan ke WA teknisi vendor (akun WA helpdesk ERP) */
+  async kirimWaTeknisi(u: Pengguna, id_pb: number) {
+    const o = await this.orderNetwork(u, id_pb);
+    if (!o.id_wo) throw new BadRequestException('Atur pemasangan dulu');
+    const wo = await this.prisma.workOrder.findUnique({
+      where: { id_wo: o.id_wo },
+      include: { kontak_teknisi: true, pengiriman: { orderBy: { id_pengiriman: 'desc' }, take: 1 } },
+    });
+    if (!wo?.kontak_teknisi) throw new BadRequestException('Pemasangan ini tidak memakai teknisi vendor');
+    const [sph, perangkat] = await Promise.all([
+      this.prisma.pbSph.findUnique({ where: { id_sph: o.id_sph }, include: { pelanggan: { select: { nama_pelanggan: true } } } }),
+      this.prisma.pbPerangkat.findMany({ where: { id_pb } }),
+    ]);
+    const k = wo.pengiriman[0];
+    const fmt = (d: Date | null) => (d ? d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jakarta' }) : null);
+    const pic = [o.pic_store_nama || sph?.nama_pic, o.pic_store_hp || sph?.telp_pic].filter(Boolean).join(' — ');
+    const baris = [
+      `Halo ${wo.kontak_teknisi.nama}, ada tugas pemasangan dari *NEXT1*:`,
+      '',
+      `📍 *${o.nama_site}* — ${sph?.pelanggan.nama_pelanggan ?? ''}`,
+      `${o.alamat}${o.lantai_unit ? ` — ${o.lantai_unit}` : ''}${o.kota ? `, ${o.kota}` : ''}`,
+      pic ? `👤 PIC: ${pic}` : '',
+      `🖧 Perangkat: ${perangkat.map((p) => p.nama_item).join(', ') || '-'}`,
+      k?.nama_ekspedisi || k?.nomor_resi ? `🚚 Dikirim via ${k?.nama_ekspedisi ?? '-'}${k?.nomor_resi ? ` · resi ${k.nomor_resi}` : ''}` : '',
+      wo.tgl_jadwal ? `📅 Jadwal: ${fmt(wo.tgl_jadwal)}` : '',
+      '',
+      `Saat di lokasi, lapor check-in, foto, dan minta tanda tangan BA ke PIC lewat link ini:`,
+      `${process.env.APP_BASE_URL || 'https://1erp.nextone.id'}/v/${wo.token_lapangan}`,
+      '',
+      `No. ${wo.nomor_wo} · ${o.nomor_pb}`,
+    ].filter((x, i, a) => x !== '' || (i > 0 && a[i - 1] !== ''));
+    await this.wa.kirimKeNomor(wo.kontak_teknisi.no_hp, baris.join('\n'), u.id_karyawan);
+    await this.prisma.workOrder.update({ where: { id_wo: wo.id_wo }, data: { wa_teknisi_at: new Date() } });
+    await this.catat({ id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'wa', catatan: `WA tugas ke ${wo.kontak_teknisi.nama} (${wo.kontak_teknisi.no_hp})` });
+    return { message: `WA terkirim ke ${wo.kontak_teknisi.nama}` };
   }
 
   /** Vendor teknisi selesai (dilaporkan Network bila vendor tidak memakai link lapangan) */

@@ -70,6 +70,7 @@ function isiForm() {
   const x = o.value
   Object.assign(fo, { ikg_nominal: Number(x.ikg_nominal), ikg_pengelola: x.ikg_pengelola || '', ikg_catatan: x.ikg_catatan || '' })
   isiNetwork()
+  muatReferensiNetwork()
 }
 const simpanOps = () => jalankan(() => api.patch(`/pasang-baru/order/${id.value}/ops`, { ...fo, ikg_nominal: Number(fo.ikg_nominal) || 0 }))
 
@@ -139,7 +140,14 @@ const kurangLink = (l: any) => [
 
 // ── Tab Network: perangkat ───────────────────────────────────────────────────
 const net = computed<any>(() => o.value?.network ?? { perangkat: [], wo: null })
-const vendorTeknisi = computed(() => vendor.value.filter((v) => !['ISP', 'Mobile_Operator'].includes(v.tipe_vendor)))
+const kontakTeknisi = ref<{ id_kontak: number; nama: string; no_hp: string; asal_vendor: string | null; keahlian: string | null }[]>([])
+const kurir = ref<{ code: string; name: string }[]>([])
+async function muatReferensiNetwork() {
+  if (kontakTeknisi.value.length || !o.value || o.value.tahap !== 'Network') return
+  const [a, b] = await Promise.all([api.get('/pasang-baru/kontak-teknisi'), api.get('/pasang-baru/kurir')]).catch(() => [null, null])
+  if (a) kontakTeknisi.value = a.data.data
+  if (b) kurir.value = b.data.data
+}
 const stok = reactive({ buka: false, cari: '', isi: [] as any[], memuat: false })
 let timerStok: ReturnType<typeof setTimeout> | null = null
 async function muatStok() {
@@ -165,12 +173,12 @@ async function lepas(p: any) {
 const pakai = (p: any) => jalankan(() => api.post(`/pasang-baru/perangkat/${p.id_pb_perangkat}/pakai`))
 
 // ── Tab Network: pemasangan ──────────────────────────────────────────────────
-const EKSPEDISI = ['JNE', 'TIKI', 'J&T', 'SiCepat', 'POS Indonesia', 'AnterAja', 'Lalamove', 'GoSend', 'GrabExpress', 'Lainnya']
-const fn = reactive({ metode: '' as '' | 'Kirim_Vendor' | 'Visit_Internal', id_vendor_ketiga: '' as number | '', fee_vendor: 0, tgl_jadwal: '', nama_ekspedisi: '', nomor_resi: '', tgl_kirim: '', status_pengiriman: 'Packing', catatan: '' })
+const fn = reactive({ metode: '' as '' | 'Kirim_Vendor' | 'Visit_Internal', id_kontak_teknisi: '' as number | '' | 'baru', baru: { nama: '', no_hp: '', asal_vendor: '' }, kirim_wa: true, fee_vendor: 0, tgl_jadwal: '', nama_ekspedisi: '', nomor_resi: '', tgl_kirim: '', status_pengiriman: 'Packing', catatan: '' })
 function isiNetwork() {
   const w = net.value.wo, k = w?.pengiriman?.[0]
   Object.assign(fn, {
-    metode: o.value.network_metode || '', id_vendor_ketiga: w?.id_vendor_ketiga || '', fee_vendor: Number(w?.fee_vendor || 0),
+    metode: o.value.network_metode || '', id_kontak_teknisi: w?.id_kontak_teknisi || '', baru: { nama: '', no_hp: '', asal_vendor: '' },
+    kirim_wa: !w?.wa_teknisi_at, fee_vendor: Number(w?.fee_vendor || 0),
     tgl_jadwal: w?.tgl_jadwal ? w.tgl_jadwal.slice(0, 10) : '', nama_ekspedisi: k?.nama_ekspedisi || '', nomor_resi: k?.nomor_resi || '',
     tgl_kirim: k?.tgl_kirim ? k.tgl_kirim.slice(0, 10) : '', status_pengiriman: k?.status_pengiriman || 'Packing', catatan: '',
   })
@@ -179,10 +187,20 @@ const woSelesai = computed(() => net.value.wo?.status_wo === 'Completed')
 const simpanNetwork = () => jalankan(() => api.put(`/pasang-baru/order/${id.value}/network`, {
   metode: fn.metode, catatan: fn.catatan || undefined,
   ...(fn.metode === 'Kirim_Vendor' ? {
-    id_vendor_ketiga: Number(fn.id_vendor_ketiga) || null, fee_vendor: Number(fn.fee_vendor) || 0, tgl_jadwal: fn.tgl_jadwal || null,
+    ...(fn.id_kontak_teknisi === 'baru'
+      ? { kontak_baru: { nama: fn.baru.nama.trim(), no_hp: fn.baru.no_hp.trim(), asal_vendor: fn.baru.asal_vendor.trim() || undefined } }
+      : { id_kontak_teknisi: Number(fn.id_kontak_teknisi) || null }),
+    kirim_wa: fn.kirim_wa, fee_vendor: Number(fn.fee_vendor) || 0, tgl_jadwal: fn.tgl_jadwal || null,
     nama_ekspedisi: fn.nama_ekspedisi || undefined, nomor_resi: fn.nomor_resi || undefined, tgl_kirim: fn.tgl_kirim || null, status_pengiriman: fn.status_pengiriman,
   } : {}),
-}))
+}).then(() => { kontakTeknisi.value = []; muatReferensiNetwork() }))
+const teknisiSiap = computed(() => fn.id_kontak_teknisi === 'baru' ? fn.baru.nama.trim().length >= 2 && fn.baru.no_hp.replace(/\D/g, '').length >= 9 : !!fn.id_kontak_teknisi)
+const teknisiDipilih = computed(() => kontakTeknisi.value.find((k) => k.id_kontak === fn.id_kontak_teknisi))
+async function kirimWa() {
+  const k = net.value.wo?.kontak_teknisi
+  if (!(await confirmDialog({ title: 'Kirim WA ke teknisi', message: `Kirim tugas pemasangan + link lapangan ke ${k?.nama} (${k?.no_hp}) lewat WhatsApp helpdesk?`, confirmLabel: 'Kirim' }))) return
+  jalankan(() => api.post(`/pasang-baru/order/${id.value}/wa-teknisi`))
+}
 async function selesaiVendor() {
   const catatan = await promptDialog({ title: 'Pemasangan vendor selesai', message: 'Pakai ini bila vendor tidak melapor lewat link lapangan.', label: 'Catatan hasil (opsional)', confirmLabel: 'Selesai' })
   if (catatan === null) return
@@ -192,13 +210,6 @@ const tersalin = ref(false)
 async function salinLink() {
   try { await navigator.clipboard.writeText(net.value.wo.link_lapangan); tersalin.value = true; setTimeout(() => (tersalin.value = false), 2000) } catch { /* abaikan */ }
 }
-const waVendor = computed(() => {
-  const w = net.value.wo
-  if (!w?.link_lapangan) return ''
-  const hp = String(w.vendor?.no_telp || '').replace(/\D/g, '').replace(/^0/, '62')
-  const teks = `Halo, mohon pemasangan perangkat untuk ${o.value.nama_site} (${o.value.alamat}${o.value.kota ? ', ' + o.value.kota : ''}). PIC: ${o.value.pic_store_nama || o.value.sph.nama_pic} ${o.value.pic_store_hp || o.value.sph.telp_pic || ''}.\nLapor check-in, foto & tanda tangan BA PIC di: ${w.link_lapangan}`
-  return `https://wa.me/${hp}?text=${encodeURIComponent(teks)}`
-})
 
 // ── Tab Network: BA aktivasi ─────────────────────────────────────────────────
 const fb = reactive({ buka: false, nama: '', jabatan: '', nama_next1: '' })
@@ -411,12 +422,19 @@ const AKSI: Record<string, string> = {
 
               <div v-if="fn.metode === 'Kirim_Vendor'" class="grid-2 op-form-net">
                 <div class="form-group">
-                  <label class="form-label form-required">Vendor teknisi</label>
-                  <select v-model="fn.id_vendor_ketiga" class="form-input" :disabled="!bisaUbah('Network') || woSelesai">
-                    <option value="">— pilih —</option>
-                    <option v-for="v in vendorTeknisi" :key="v.id_vendor" :value="v.id_vendor">{{ v.nama_vendor }}</option>
+                  <label class="form-label form-required">Teknisi vendor</label>
+                  <select v-model="fn.id_kontak_teknisi" class="form-input" :disabled="!bisaUbah('Network') || woSelesai">
+                    <option value="">— pilih dari kontak teknisi —</option>
+                    <option v-for="k in kontakTeknisi" :key="k.id_kontak" :value="k.id_kontak">{{ k.nama }}{{ k.asal_vendor ? ` · ${k.asal_vendor}` : '' }} · {{ k.no_hp }}</option>
+                    <option value="baru">+ Teknisi baru (belum ada di kontak)…</option>
                   </select>
-                  <small class="form-hint">Tambah vendor teknisi di Master Data → Vendor (tipe PARTNER).</small>
+                  <small v-if="teknisiDipilih?.keahlian" class="form-hint">Keahlian: {{ teknisiDipilih.keahlian }}</small>
+                  <div v-if="fn.id_kontak_teknisi === 'baru'" class="op-baru">
+                    <input v-model="fn.baru.nama" class="form-input" maxlength="150" placeholder="Nama teknisi *" />
+                    <input v-model="fn.baru.no_hp" class="form-input" maxlength="20" inputmode="tel" placeholder="No. HP / WA * (08…)" />
+                    <input v-model="fn.baru.asal_vendor" class="form-input" maxlength="150" placeholder="Asal vendor / tim (opsional)" />
+                    <small class="form-hint">Disimpan ke Master Kontak Teknisi.</small>
+                  </div>
                 </div>
                 <div class="grid-2">
                   <div class="form-group"><label class="form-label">Fee vendor</label><input v-model.number="fn.fee_vendor" type="number" min="0" class="form-input" :disabled="!bisaUbah('Network') || woSelesai" /></div>
@@ -425,8 +443,11 @@ const AKSI: Record<string, string> = {
                 <div class="grid-2">
                   <div class="form-group">
                     <label class="form-label">Ekspedisi</label>
-                    <input v-model="fn.nama_ekspedisi" list="op-ekspedisi" class="form-input" maxlength="100" :disabled="!bisaUbah('Network') || woSelesai" />
-                    <datalist id="op-ekspedisi"><option v-for="x in EKSPEDISI" :key="x" :value="x" /></datalist>
+                    <select v-model="fn.nama_ekspedisi" class="form-input" :disabled="!bisaUbah('Network') || woSelesai">
+                      <option value="">— pilih kurir —</option>
+                      <option v-if="fn.nama_ekspedisi && !kurir.some((x) => x.name === fn.nama_ekspedisi)" :value="fn.nama_ekspedisi">{{ fn.nama_ekspedisi }}</option>
+                      <option v-for="x in kurir" :key="x.code" :value="x.name">{{ x.name }}</option>
+                    </select>
                   </div>
                   <div class="form-group"><label class="form-label">No. resi</label><input v-model="fn.nomor_resi" class="form-input" maxlength="100" :disabled="!bisaUbah('Network') || woSelesai" /></div>
                 </div>
@@ -439,7 +460,8 @@ const AKSI: Record<string, string> = {
                 </div>
               </div>
               <div v-if="fn.metode && bisaUbah('Network') && !woSelesai" class="op-simpan">
-                <button class="btn btn-primary" :disabled="proses || (fn.metode === 'Kirim_Vendor' && !fn.id_vendor_ketiga)" @click="simpanNetwork">
+                <label v-if="fn.metode === 'Kirim_Vendor'" class="op-wa"><input v-model="fn.kirim_wa" type="checkbox" /> Kirim tugas + link lapangan ke WA teknisi</label>
+                <button class="btn btn-primary" :disabled="proses || (fn.metode === 'Kirim_Vendor' && !teknisiSiap)" @click="simpanNetwork">
                   {{ fn.metode === 'Visit_Internal' ? (net.wo ? 'Simpan' : 'Masukkan ke Jadwal Visit') : 'Simpan pengiriman & vendor' }}
                 </button>
               </div>
@@ -448,7 +470,8 @@ const AKSI: Record<string, string> = {
                 <div>
                   <b>{{ net.wo.nomor_wo }}</b> · <span class="badge" :class="woSelesai ? 'badge-green' : 'badge-blue'">{{ net.wo.status_wo }}</span>
                   <small class="muted">
-                    · {{ net.wo.tipe_eksekutor === 'Vendor_Ketiga' ? `Vendor ${net.wo.vendor?.nama_vendor ?? ''}` : (net.wo.teknisi?.nama_lengkap || 'belum ada teknisi') }}
+                    · {{ net.wo.tipe_eksekutor === 'Vendor_Ketiga' ? (net.wo.kontak_teknisi ? `${net.wo.kontak_teknisi.nama} (${net.wo.kontak_teknisi.no_hp})` : `Vendor ${net.wo.vendor?.nama_vendor ?? ''}`) : (net.wo.teknisi?.nama_lengkap || 'belum ada teknisi') }}
+                    <template v-if="net.wo.wa_teknisi_at"> · WA terkirim {{ fmtDateTime(net.wo.wa_teknisi_at) }}</template>
                     · {{ net.wo.tgl_jadwal ? fmtDate(net.wo.tgl_jadwal) : 'belum dijadwalkan' }}
                     <template v-if="net.wo.checkin_at"> · check-in {{ fmtDateTime(net.wo.checkin_at) }}</template>
                   </small>
@@ -457,7 +480,7 @@ const AKSI: Record<string, string> = {
                   <a v-if="net.wo.tipe_eksekutor === 'Internal_NEXT1'" class="btn btn-sm btn-ghost" :href="`/jadwal-visit?wo=${net.wo.id_wo}`">📅 Buka di Jadwal Visit</a>
                   <template v-if="net.wo.link_lapangan && net.wo.tipe_eksekutor === 'Vendor_Ketiga' && !woSelesai">
                     <button class="btn btn-sm btn-ghost" @click="salinLink">{{ tersalin ? '✓ Tersalin' : '🔗 Salin link lapangan' }}</button>
-                    <a class="btn btn-sm btn-ghost" :href="waVendor" target="_blank" rel="noopener">💬 Kirim ke vendor (WA)</a>
+                    <button v-if="bisaUbah('Network') && net.wo.kontak_teknisi" class="btn btn-sm btn-ghost" :disabled="proses" @click="kirimWa">💬 {{ net.wo.wa_teknisi_at ? 'Kirim ulang WA' : 'Kirim WA ke teknisi' }}</button>
                     <button v-if="bisaUbah('Network')" class="btn btn-sm btn-ghost" :disabled="proses" @click="selesaiVendor">Tandai selesai</button>
                   </template>
                 </div>
@@ -720,6 +743,8 @@ const AKSI: Record<string, string> = {
 .op-speed label { display: flex; align-items: center; gap: 4px; flex: 1; }
 .op-speed .form-input { min-width: 0; }
 .op-kosong { margin: 0; font-size: 13px; }
+.op-baru { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px; border: 1px dashed #93c5fd; border-radius: 8px; }
+.op-wa { display: flex; gap: 6px; align-items: center; font-size: 13px; margin-right: auto; }
 .op-perangkat { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; margin-bottom: 6px; }
 .op-perangkat > span { flex: 1 1 220px; }
 .op-metode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }

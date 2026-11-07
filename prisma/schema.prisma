@@ -268,6 +268,7 @@ model MasterKontakTeknisi {
 
   instalasi_orders  InstalasiOrder[]
   operation_tickets OperationTicket[]
+  work_orders       WorkOrder[]
 
   @@map("master_kontak_teknisi")
 }
@@ -762,6 +763,7 @@ model WorkOrder {
   tipe_eksekutor        String    @default("Internal_NEXT1") @db.VarChar(30)
   id_teknisi_internal   Int?
   id_vendor_ketiga      Int?
+  id_kontak_teknisi     Int? // teknisi pihak ketiga dari Master Kontak Teknisi (mis. pasang baru)
   fee_vendor            Decimal   @default(0) @db.Decimal(15, 2)
   status_pembayaran_fee String    @default("Belum_Dibayar") @db.VarChar(20)
   tgl_jadwal            DateTime? // null = masih di antrean Jadwal Visit
@@ -785,15 +787,16 @@ model WorkOrder {
   created_at            DateTime  @default(now())
   completed_at          DateTime?
 
-  project      ProjectDelivery?      @relation(fields: [id_project], references: [id_project])
-  ticket       OperationTicket?      @relation(fields: [id_ticket], references: [id_ticket])
-  site         SitePelanggan         @relation(fields: [id_site], references: [id_site])
-  teknisi      HrisKaryawan?         @relation("WoTeknisiInternal", fields: [id_teknisi_internal], references: [id_karyawan])
-  vendor       MasterVendorIsp?      @relation("WoVendorKetiga", fields: [id_vendor_ketiga], references: [id_vendor])
-  foto         WoFoto[]
-  berita_acara WoBeritaAcara[]
-  pengiriman   PengirimanPerangkat[]
-  mutasi       GudangMutasiAset[]
+  project        ProjectDelivery?      @relation(fields: [id_project], references: [id_project])
+  ticket         OperationTicket?      @relation(fields: [id_ticket], references: [id_ticket])
+  site           SitePelanggan         @relation(fields: [id_site], references: [id_site])
+  teknisi        HrisKaryawan?         @relation("WoTeknisiInternal", fields: [id_teknisi_internal], references: [id_karyawan])
+  vendor         MasterVendorIsp?      @relation("WoVendorKetiga", fields: [id_vendor_ketiga], references: [id_vendor])
+  kontak_teknisi MasterKontakTeknisi?  @relation(fields: [id_kontak_teknisi], references: [id_kontak])
+  foto           WoFoto[]
+  berita_acara   WoBeritaAcara[]
+  pengiriman     PengirimanPerangkat[]
+  mutasi         GudangMutasiAset[]
 
   @@index([status_wo, tgl_jadwal])
   @@index([id_pb])

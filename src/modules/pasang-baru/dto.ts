@@ -153,8 +153,17 @@ export class RequestPerangkatDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) estimasi_harga?: number;
   @IsOptional() @IsString() @MaxLength(500) link_marketplace?: string;
 }
+export class KontakTeknisiBaruDto {
+  @IsString() @MinLength(2) @MaxLength(150) nama: string;
+  @IsString() @MinLength(8) @MaxLength(20) no_hp: string;
+  @IsOptional() @IsString() @MaxLength(150) asal_vendor?: string;
+}
 export class NetworkDto {
   @IsIn(['Kirim_Vendor', 'Visit_Internal']) metode: string;
+  @IsOptional() @Type(() => Number) @IsInt() id_kontak_teknisi?: number | null;
+  // teknisi belum ada di kontak → dibuat sekalian
+  @IsOptional() @ValidateNested() @Type(() => KontakTeknisiBaruDto) kontak_baru?: KontakTeknisiBaruDto;
+  @IsOptional() @IsBoolean() kirim_wa?: boolean;
   @IsOptional() @Type(() => Number) @IsInt() id_vendor_ketiga?: number | null;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) fee_vendor?: number;
   @IsOptional() @IsDateString() tgl_jadwal?: string | null;
