@@ -6,7 +6,7 @@ import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UPLOAD_ROOT } from '../../common/upload/upload-root';
 import { buatWo } from '../visit/visit.service';
-import { CatatanDto, DokumenDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto } from './dto';
+import { CatatanDto, DokumenDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 
 export interface Pengguna { id_karyawan: number; roles: string[] }
 
@@ -122,11 +122,15 @@ export class PasangBaruService {
   }
 
   // ── Survey ───────────────────────────────────────────────────────────────────
+  // Draft (Sales) → OPS (vendor ISP, IKG, deposit, cover) → [Teknis → OPS] → Siap SPH / Hold → Lanjut SPH
+  private opsSurvey(u: Pengguna) { return this.boleh(u, 'OPS'); }
+  private teknisSurvey(u: Pengguna) { return u.roles.some((r) => [...SEMUA_TAHAP, 'Teknisi', 'Manager_Ops'].includes(r)); }
+
   async daftarSurvey(q: { status?: string; cari?: string }) {
     const kata = (q.cari || '').trim();
     const rows = await this.prisma.pbSurvey.findMany({
       where: {
-        ...(q.status ? { status: q.status } : {}),
+        ...(q.status === 'aktif' ? { status: { notIn: ['Batal', 'Lanjut SPH'] } } : q.status ? { status: q.status } : {}),
         ...(kata ? {
           OR: [
             { nomor_survey: { contains: kata } }, { nama_perusahaan: { contains: kata } }, { nama_pic: { contains: kata } },
@@ -134,7 +138,7 @@ export class PasangBaruService {
           ],
         } : {}),
       },
-      include: { _count: { select: { site: true } } },
+      include: { site: { select: { cover: true } } },
       orderBy: { updated_at: 'desc' },
       take: 300,
     });
@@ -142,18 +146,28 @@ export class PasangBaruService {
       this.namaKaryawan(rows.map((r) => r.id_sales)),
       this.prisma.pbSph.findMany({ where: { id_survey: { in: rows.map((r) => r.id_survey) } }, select: { id_survey: true, id_sph: true, nomor_sph: true } }),
     ]);
-    return rows.map(({ _count, ...r }) => ({
+    return rows.map(({ site, ...r }) => ({
       ...r,
-      jumlah_site: _count.site,
+      jumlah_site: site.length,
+      cover: site.filter((x) => x.cover === 'Cover').length,
+      tidak_cover: site.filter((x) => x.cover === 'Tidak cover').length,
       sales: r.id_sales ? nama.get(r.id_sales) ?? null : null,
       sph: sph.filter((x) => x.id_survey === r.id_survey).map(({ id_sph, nomor_sph }) => ({ id_sph, nomor_sph })),
     }));
   }
 
-  async detailSurvey(id_survey: number) {
+  async detailSurvey(id_survey: number, u?: Pengguna) {
     const s = await this.prisma.pbSurvey.findUnique({
       where: { id_survey },
-      include: { site: { include: { layanan: { select: { nama_layanan: true } } }, orderBy: [{ urutan: 'asc' }, { id_survey_site: 'asc' }] } },
+      include: {
+        site: {
+          include: {
+            layanan: { select: { nama_layanan: true } },
+            vendor: { include: { vendor: { select: { nama_vendor: true } } }, orderBy: { id_survey_vendor: 'asc' } },
+          },
+          orderBy: [{ urutan: 'asc' }, { id_survey_site: 'asc' }],
+        },
+      },
     });
     if (!s) throw new NotFoundException('Survey tidak ditemukan');
     const [riwayat, sph, pelanggan] = await Promise.all([
@@ -161,13 +175,15 @@ export class PasangBaruService {
       this.prisma.pbSph.findMany({ where: { id_survey }, select: { id_sph: true, nomor_sph: true, status: true }, orderBy: { id_sph: 'asc' } }),
       s.id_pelanggan ? this.prisma.pelanggan.findUnique({ where: { id_pelanggan: s.id_pelanggan }, select: { id_pelanggan: true, kode_pelanggan: true, nama_pelanggan: true } }) : null,
     ]);
-    const nama = await this.namaKaryawan([s.id_sales, ...riwayat.map((r) => r.id_karyawan)]);
+    const nama = await this.namaKaryawan([s.id_sales, s.id_ops, s.id_teknis, ...riwayat.map((r) => r.id_karyawan)]);
+    const n = (id: number | null) => (id ? nama.get(id) ?? null : null);
     return {
       ...s,
       pelanggan,
       sph,
-      sales: s.id_sales ? nama.get(s.id_sales) ?? null : null,
-      riwayat: riwayat.map((r) => ({ ...r, oleh: r.id_karyawan ? nama.get(r.id_karyawan) ?? null : null })),
+      sales: n(s.id_sales), ops: n(s.id_ops), teknis: n(s.id_teknis),
+      riwayat: riwayat.map((r) => ({ ...r, oleh: n(r.id_karyawan) })),
+      ...(u ? { hak: { sales: this.boleh(u, 'Draft'), ops: this.opsSurvey(u), teknis: this.teknisSurvey(u) } } : {}),
     };
   }
 
@@ -192,6 +208,18 @@ export class PasangBaruService {
     };
   }
 
+  private async surveyStatus(id_survey: number, boleh: string[]) {
+    const s = await this.prisma.pbSurvey.findUnique({ where: { id_survey }, include: { site: { include: { vendor: true } } } });
+    if (!s) throw new NotFoundException('Survey tidak ditemukan');
+    if (!boleh.includes(s.status)) throw new BadRequestException(`Survey berstatus ${s.status} — aksi ini untuk status ${boleh.join('/')}`);
+    return s;
+  }
+
+  private async gantiStatusSurvey(u: Pengguna, id_survey: number, ke: string, aksi: string, catatan?: string | null, data: Prisma.PbSurveyUpdateInput = {}) {
+    await this.prisma.pbSurvey.update({ where: { id_survey }, data: { ...data, status: ke, status_at: new Date() } });
+    await this.catat({ id_survey, id_karyawan: u.id_karyawan, aksi, ke_tahap: ke, catatan: catatan?.trim() || null });
+  }
+
   async buatSurvey(u: Pengguna, dto: SurveyDto) {
     this.wajib(u, 'Draft');
     const id_pelanggan = await this.cekPelangganSurvey(dto);
@@ -213,47 +241,153 @@ export class PasangBaruService {
     }
   }
 
+  /** Sales mengubah data survey (hanya Draft). Baris site lama diperbarui di tempat supaya hasil OPS tidak hilang. */
   async ubahSurvey(u: Pengguna, id_survey: number, dto: SurveyDto) {
     this.wajib(u, 'Draft');
-    const s = await this.prisma.pbSurvey.findUnique({ where: { id_survey } });
-    if (!s) throw new NotFoundException('Survey tidak ditemukan');
-    if (s.status !== 'Baru') throw new BadRequestException(`Survey sudah ${s.status} — tidak bisa diubah`);
+    const s = await this.surveyStatus(id_survey, ['Draft']);
     const id_pelanggan = await this.cekPelangganSurvey(dto);
+    const lama = new Set(s.site.map((x) => x.id_survey_site));
+    const dipakai = dto.site.filter((x) => x.id_survey_site && lama.has(x.id_survey_site)).map((x) => x.id_survey_site!);
     await this.prisma.$transaction([
-      this.prisma.pbSurveySite.deleteMany({ where: { id_survey } }),
-      this.prisma.pbSurvey.update({
-        where: { id_survey },
-        data: { ...this.dataSurvey(dto, id_pelanggan), site: { create: dto.site.map((x, i) => this.barisSurvey(x, i)) } },
-      }),
+      this.prisma.pbSurveySite.deleteMany({ where: { id_survey, id_survey_site: { notIn: dipakai } } }),
+      ...dto.site.map((x, i) => (x.id_survey_site && lama.has(x.id_survey_site)
+        ? this.prisma.pbSurveySite.update({ where: { id_survey_site: x.id_survey_site }, data: this.barisSurvey(x, i) })
+        : this.prisma.pbSurveySite.create({ data: { id_survey, ...this.barisSurvey(x, i) } }))),
+      this.prisma.pbSurvey.update({ where: { id_survey }, data: this.dataSurvey(dto, id_pelanggan) }),
     ]);
     await this.catat({ id_survey, id_karyawan: u.id_karyawan, aksi: 'ubah', catatan: `${dto.site.length} site` });
     return { data: await this.detailSurvey(id_survey), message: 'Survey disimpan' };
   }
 
+  /** Sales → OPS (dari Draft, atau ajukan ulang dari Hold) */
+  async ajukanSurvey(u: Pengguna, id_survey: number, dto: CatatanDto) {
+    this.wajib(u, 'Draft');
+    const s = await this.surveyStatus(id_survey, ['Draft', 'Hold']);
+    if (!s.site.length) throw new BadRequestException('Survey belum berisi site');
+    await this.gantiStatusSurvey(u, id_survey, 'OPS', 'ajukan', dto.catatan);
+    await this.beriTahuRole(['Manager_Ops'], {
+      tipe: 'pb_survey_ops', judul: s.status === 'Hold' ? 'Survey diajukan ulang' : 'Survey baru untuk OPS',
+      deskripsi: `${s.nomor_survey} · ${s.nama_perusahaan} · ${s.site.length} site`, url: `/pasang-baru/survey/${id_survey}`,
+    });
+    return { message: 'Survey diajukan ke OPS' };
+  }
+
+  /** OPS mengisi vendor ISP, IKG, deposit, dan cover/tidak cover per site */
+  async simpanOpsSurvey(u: Pengguna, id_survey: number, dto: SurveyOpsDto) {
+    if (!this.opsSurvey(u)) throw new ForbiddenException('Hasil survey diisi oleh OPS (Manager Ops)');
+    const s = await this.surveyStatus(id_survey, ['OPS']);
+    const milik = new Set(s.site.map((x) => x.id_survey_site));
+    for (const x of dto.site) if (!milik.has(x.id_survey_site)) throw new BadRequestException('Site tidak termasuk survey ini');
+    const ops: Prisma.PrismaPromise<unknown>[] = [];
+    for (const x of dto.site) {
+      ops.push(this.prisma.pbSurveySite.update({
+        where: { id_survey_site: x.id_survey_site },
+        data: {
+          cover: x.cover || null, ikg_nominal: x.ikg_nominal ?? 0, ikg_pengelola: x.ikg_pengelola?.trim() || null,
+          ikg_catatan: x.ikg_catatan?.trim() || null, catatan_ops: x.catatan_ops?.trim() || null,
+        },
+      }));
+      ops.push(this.prisma.pbSurveyVendor.deleteMany({ where: { id_survey_site: x.id_survey_site } }));
+      if (x.vendor.length) {
+        ops.push(this.prisma.pbSurveyVendor.createMany({
+          data: x.vendor.map((v) => ({
+            id_survey_site: x.id_survey_site, id_vendor_isp: v.id_vendor_isp, peruntukan_link: v.peruntukan_link || 'Main',
+            bandwidth_mbps: v.bandwidth_mbps?.trim() || null, biaya_mrc_vendor: v.biaya_mrc_vendor ?? 0, biaya_otc_vendor: v.biaya_otc_vendor ?? 0,
+            deposit_nominal: v.deposit_nominal ?? 0, deposit_jenis: (v.deposit_nominal ?? 0) > 0 ? v.deposit_jenis || null : null,
+            catatan: v.catatan?.trim() || null,
+          })),
+        }));
+      }
+    }
+    ops.push(this.prisma.pbSurvey.update({ where: { id_survey }, data: { catatan_ops: dto.catatan_ops?.trim() || null, id_ops: u.id_karyawan } }));
+    await this.prisma.$transaction(ops);
+    return { data: await this.detailSurvey(id_survey, u), message: 'Hasil survey OPS disimpan' };
+  }
+
+  /** OPS → Teknis (opsional): cek teknis, mis. M2M 5G cek sinyal */
+  async kirimTeknisSurvey(u: Pengguna, id_survey: number, dto: CatatanDto) {
+    if (!this.opsSurvey(u)) throw new ForbiddenException('Hanya OPS yang bisa mengirim ke teknis');
+    if (!dto.catatan?.trim()) throw new BadRequestException('Tulis apa yang perlu dicek teknis');
+    const s = await this.surveyStatus(id_survey, ['OPS']);
+    await this.gantiStatusSurvey(u, id_survey, 'Teknis', 'kirim_teknis', dto.catatan, { id_ops: u.id_karyawan });
+    await this.beriTahuRole(['Teknisi'], {
+      tipe: 'pb_survey_teknis', judul: 'Permintaan cek teknis survey',
+      deskripsi: `${s.nomor_survey} · ${s.nama_perusahaan}: ${dto.catatan.trim()}`, url: `/pasang-baru/survey/${id_survey}`,
+    });
+    return { message: 'Survey dikirim ke teknis' };
+  }
+
+  async simpanTeknisSurvey(u: Pengguna, id_survey: number, dto: SurveyTeknisDto) {
+    if (!this.teknisSurvey(u)) throw new ForbiddenException('Hasil cek teknis diisi oleh Teknisi');
+    const s = await this.surveyStatus(id_survey, ['Teknis']);
+    const milik = new Set(s.site.map((x) => x.id_survey_site));
+    for (const x of dto.site) if (!milik.has(x.id_survey_site)) throw new BadRequestException('Site tidak termasuk survey ini');
+    await this.prisma.$transaction([
+      ...dto.site.map((x) => this.prisma.pbSurveySite.update({ where: { id_survey_site: x.id_survey_site }, data: { hasil_teknis: x.hasil_teknis?.trim() || null } })),
+      this.prisma.pbSurvey.update({ where: { id_survey }, data: { catatan_teknis: dto.catatan_teknis?.trim() || null, id_teknis: u.id_karyawan } }),
+    ]);
+    return { data: await this.detailSurvey(id_survey, u), message: 'Hasil cek teknis disimpan' };
+  }
+
+  /** Teknis selesai → kembali ke OPS */
+  async selesaiTeknisSurvey(u: Pengguna, id_survey: number, dto: CatatanDto) {
+    if (!this.teknisSurvey(u)) throw new ForbiddenException('Hanya Teknisi yang bisa menyelesaikan cek teknis');
+    const s = await this.surveyStatus(id_survey, ['Teknis']);
+    if (!s.catatan_teknis && !s.site.some((x) => x.hasil_teknis)) throw new BadRequestException('Isi hasil cek teknis dulu');
+    await this.gantiStatusSurvey(u, id_survey, 'OPS', 'teknis_selesai', dto.catatan, { id_teknis: u.id_karyawan });
+    const ke = s.id_ops ? [s.id_ops] : [];
+    if (ke.length) await this.beriTahu(ke, { tipe: 'pb_survey_ops', judul: 'Cek teknis selesai', deskripsi: `${s.nomor_survey} · ${s.nama_perusahaan}`, url: `/pasang-baru/survey/${id_survey}` });
+    else await this.beriTahuRole(['Manager_Ops'], { tipe: 'pb_survey_ops', judul: 'Cek teknis selesai', deskripsi: `${s.nomor_survey} · ${s.nama_perusahaan}`, url: `/pasang-baru/survey/${id_survey}` });
+    return { message: 'Cek teknis selesai, kembali ke OPS' };
+  }
+
+  /** OPS selesai → kembali ke Sales: Siap SPH (ada site cover) atau Hold (semua tidak cover) */
+  async selesaiOpsSurvey(u: Pengguna, id_survey: number, dto: CatatanDto) {
+    if (!this.opsSurvey(u)) throw new ForbiddenException('Hanya OPS yang bisa menyelesaikan survey');
+    const s = await this.surveyStatus(id_survey, ['OPS']);
+    const belum = s.site.filter((x) => !x.cover);
+    if (belum.length) throw new BadRequestException(`Tentukan cover / tidak cover untuk: ${belum.map((x) => x.nama_site).join(', ')}`);
+    const tanpaVendor = s.site.filter((x) => x.cover === 'Cover' && !x.vendor.length);
+    if (tanpaVendor.length) throw new BadRequestException(`Site cover wajib punya minimal 1 vendor ISP: ${tanpaVendor.map((x) => x.nama_site).join(', ')}`);
+    const cover = s.site.filter((x) => x.cover === 'Cover').length;
+    const ke = cover ? 'Siap SPH' : 'Hold';
+    await this.gantiStatusSurvey(u, id_survey, ke, 'ops_selesai', dto.catatan || `${cover} cover · ${s.site.length - cover} tidak cover`, { id_ops: u.id_karyawan });
+    if (s.id_sales) {
+      await this.beriTahu([s.id_sales], {
+        tipe: 'pb_survey_selesai', judul: cover ? 'Survey selesai — siap dibuat SPH' : 'Survey hold — semua site tidak cover',
+        deskripsi: `${s.nomor_survey} · ${s.nama_perusahaan} · ${cover}/${s.site.length} site cover`, url: `/pasang-baru/survey/${id_survey}`,
+      });
+    }
+    return { message: cover ? `Survey selesai — ${cover} site cover, siap dibuat SPH` : 'Semua site tidak cover — survey di-hold' };
+  }
+
+  /** OPS mengembalikan ke Sales untuk perbaikan data */
+  async kembalikanSurvey(u: Pengguna, id_survey: number, dto: CatatanDto) {
+    if (!this.opsSurvey(u)) throw new ForbiddenException('Hanya OPS yang bisa mengembalikan survey');
+    if (!dto.catatan?.trim()) throw new BadRequestException('Tulis alasan / data yang perlu diperbaiki');
+    const s = await this.surveyStatus(id_survey, ['OPS']);
+    await this.gantiStatusSurvey(u, id_survey, 'Draft', 'kembalikan', dto.catatan);
+    if (s.id_sales) await this.beriTahu([s.id_sales], { tipe: 'pb_survey_kembali', judul: 'Survey dikembalikan OPS', deskripsi: `${s.nomor_survey}: ${dto.catatan.trim()}`, url: `/pasang-baru/survey/${id_survey}` });
+    return { message: 'Survey dikembalikan ke Sales' };
+  }
+
   async batalSurvey(u: Pengguna, id_survey: number, dto: CatatanDto) {
     this.wajib(u, 'Draft');
-    const s = await this.prisma.pbSurvey.findUnique({ where: { id_survey } });
-    if (!s) throw new NotFoundException('Survey tidak ditemukan');
-    if (s.status !== 'Baru') throw new BadRequestException(`Survey sudah ${s.status}`);
-    await this.prisma.pbSurvey.update({ where: { id_survey }, data: { status: 'Batal' } });
-    await this.catat({ id_survey, id_karyawan: u.id_karyawan, aksi: 'batal', catatan: dto.catatan?.trim() || null });
+    await this.surveyStatus(id_survey, ['Draft', 'Siap SPH', 'Hold']);
+    await this.gantiStatusSurvey(u, id_survey, 'Batal', 'batal', dto.catatan);
     return { message: 'Survey dibatalkan' };
   }
 
   async aktifkanSurvey(u: Pengguna, id_survey: number) {
     this.wajib(u, 'Draft');
-    const s = await this.prisma.pbSurvey.findUnique({ where: { id_survey } });
-    if (!s) throw new NotFoundException('Survey tidak ditemukan');
-    if (s.status !== 'Batal') throw new BadRequestException(`Survey berstatus ${s.status}`);
-    await this.prisma.pbSurvey.update({ where: { id_survey }, data: { status: 'Baru' } });
-    await this.catat({ id_survey, id_karyawan: u.id_karyawan, aksi: 'aktifkan' });
-    return { message: 'Survey dibuka kembali' };
+    await this.surveyStatus(id_survey, ['Batal']);
+    await this.gantiStatusSurvey(u, id_survey, 'Draft', 'aktifkan');
+    return { message: 'Survey dibuka kembali (Draft)' };
   }
 
   async hapusSurvey(u: Pengguna, id_survey: number) {
     this.wajib(u, 'Draft');
-    const s = await this.prisma.pbSurvey.findUnique({ where: { id_survey } });
-    if (!s) throw new NotFoundException('Survey tidak ditemukan');
+    const s = await this.surveyStatus(id_survey, ['Draft', 'Batal']);
     if (await this.prisma.pbSph.count({ where: { id_survey } })) throw new BadRequestException('Survey sudah dipakai SPH — tidak bisa dihapus');
     await this.prisma.$transaction([
       this.prisma.pbSurvey.delete({ where: { id_survey } }),
@@ -274,8 +408,15 @@ export class PasangBaruService {
     if (!s) throw new NotFoundException('SPH tidak ditemukan');
     const riwayat = await this.prisma.pbRiwayat.findMany({ where: { id_sph, id_pb: null }, orderBy: { created_at: 'desc' } });
     const nama = await this.namaKaryawan([s.id_sales, s.id_approver, ...riwayat.map((r) => r.id_karyawan)]);
+    const idSs = s.order.map((o) => o.id_survey_site).filter((x): x is number => !!x);
+    const [vendor, survey] = await Promise.all([
+      idSs.length ? this.prisma.pbSurveyVendor.findMany({ where: { id_survey_site: { in: idSs } }, include: { vendor: { select: { nama_vendor: true } } }, orderBy: { id_survey_vendor: 'asc' } }) : [],
+      s.id_survey ? this.prisma.pbSurvey.findUnique({ where: { id_survey: s.id_survey }, select: { id_survey: true, nomor_survey: true } }) : null,
+    ]);
     return {
       ...s,
+      survey,
+      order: s.order.map((o) => ({ ...o, vendor_survey: vendor.filter((v) => v.id_survey_site === o.id_survey_site) })),
       sales: s.id_sales ? nama.get(s.id_sales) ?? null : null,
       approver: s.id_approver ? nama.get(s.id_approver) ?? null : null,
       riwayat: riwayat.map((r) => ({ ...r, oleh: r.id_karyawan ? nama.get(r.id_karyawan) ?? null : null })),
@@ -286,7 +427,8 @@ export class PasangBaruService {
     this.wajib(u, 'Draft');
     const survey = dto.id_survey ? await this.prisma.pbSurvey.findUnique({ where: { id_survey: dto.id_survey } }) : null;
     if (dto.id_survey && !survey) throw new BadRequestException('Survey tidak ditemukan');
-    if (survey && survey.status === 'Batal') throw new BadRequestException('Survey sudah dibatalkan');
+    if (survey && !['Siap SPH', 'Lanjut SPH'].includes(survey.status)) throw new BadRequestException(`Survey berstatus ${survey.status} — SPH dibuat setelah OPS selesai (Siap SPH)`);
+    const ops = await this.opsSurveySite(dto, survey?.id_survey ?? null);
     const id_pelanggan = await this.pelangganDariDto(dto);
     for (let coba = 0; ; coba++) {
       const nomor_sph = await this.nomorSph();
@@ -296,12 +438,12 @@ export class PasangBaruService {
             nomor_sph, id_pelanggan, nama_pic: dto.nama_pic.trim(), telp_pic: dto.telp_pic?.trim() || null,
             email_pic: dto.email_pic?.trim() || null, durasi_bulan: dto.durasi_bulan, catatan: dto.catatan?.trim() || null,
             id_sales: u.id_karyawan, id_survey: survey?.id_survey ?? null,
-            order: { create: dto.site.map((x, i) => this.dataBaris(x, i)) },
+            order: { create: dto.site.map((x, i) => this.dataBaris(x, i, ops)) },
           },
         });
         await this.catat({ id_sph: s.id_sph, id_karyawan: u.id_karyawan, aksi: 'buat', catatan: `${dto.site.length} site${survey ? ` · dari ${survey.nomor_survey}` : ''}` });
         if (survey) {
-          await this.prisma.pbSurvey.update({ where: { id_survey: survey.id_survey }, data: { status: 'Lanjut SPH', ...(survey.id_pelanggan ? {} : { id_pelanggan }) } });
+          await this.prisma.pbSurvey.update({ where: { id_survey: survey.id_survey }, data: { status: 'Lanjut SPH', status_at: new Date(), ...(survey.id_pelanggan ? {} : { id_pelanggan }) } });
           await this.catat({ id_survey: survey.id_survey, id_karyawan: u.id_karyawan, aksi: 'sph', catatan: nomor_sph });
         }
         return { data: s, message: `SPH ${nomor_sph} dibuat` };
@@ -317,6 +459,7 @@ export class PasangBaruService {
     const s = await this.prisma.pbSph.findUnique({ where: { id_sph } });
     if (!s) throw new NotFoundException('SPH tidak ditemukan');
     if (!['Draft', 'Ditolak'].includes(s.status)) throw new BadRequestException(`SPH sudah ${s.status} — tidak bisa diubah`);
+    const ops = await this.opsSurveySite(dto, s.id_survey);
     const id_pelanggan = await this.pelangganDariDto(dto);
     await this.prisma.$transaction([
       this.prisma.pbOrder.deleteMany({ where: { id_sph } }),
@@ -325,7 +468,7 @@ export class PasangBaruService {
         data: {
           id_pelanggan, nama_pic: dto.nama_pic.trim(), telp_pic: dto.telp_pic?.trim() || null, email_pic: dto.email_pic?.trim() || null,
           durasi_bulan: dto.durasi_bulan, catatan: dto.catatan?.trim() || null, status: 'Draft',
-          order: { create: dto.site.map((x, i) => this.dataBaris(x, i)) },
+          order: { create: dto.site.map((x, i) => this.dataBaris(x, i, ops)) },
         },
       }),
     ]);
@@ -475,6 +618,20 @@ export class PasangBaruService {
             kota: o.kota, status_site: 'Prospek', catatan: `[Pasang Baru] ${s.nomor_sph}`,
           },
         });
+        // Vendor ISP hasil survey OPS → link "Rencana" di site
+        if (o.id_survey_site) {
+          const vendor = await tx.pbSurveyVendor.findMany({ where: { id_survey_site: o.id_survey_site }, orderBy: { id_survey_vendor: 'asc' } });
+          if (vendor.length) {
+            await tx.sumberInternetSite.createMany({
+              data: vendor.map((v) => ({
+                id_site: site.id_site, id_vendor_isp: v.id_vendor_isp, peruntukan_link: v.peruntukan_link, bandwidth_mbps: v.bandwidth_mbps,
+                biaya_mrc_vendor: v.biaya_mrc_vendor, deposit_nominal: v.deposit_nominal, deposit_jenis: v.deposit_jenis,
+                deposit_status: Number(v.deposit_nominal) > 0 ? 'Ditahan' : null, status_link: 'Rencana',
+                catatan: [Number(v.biaya_otc_vendor) > 0 ? `Biaya pasang vendor Rp ${Number(v.biaya_otc_vendor).toLocaleString('id-ID')}` : '', v.catatan ?? '', `Pasang Baru ${s.nomor_sph}`].filter(Boolean).join(' · '),
+              })),
+            });
+          }
+        }
         if (o.pic_store_nama) {
           await tx.picSite.create({ data: { id_site: site.id_site, nama_pic: o.pic_store_nama, no_kontak: o.pic_store_hp, jabatan: 'PIC Store', is_utama: true } });
         }
@@ -766,13 +923,31 @@ export class PasangBaruService {
       ...(d.sn_modem !== undefined ? { sn_modem: d.sn_modem.trim() || null } : {}),
       ...(d.deposit_nominal !== undefined ? { deposit_nominal: d.deposit_nominal } : {}),
       ...(d.deposit_tgl !== undefined ? { deposit_tgl: tgl(d.deposit_tgl) } : {}),
+      ...(d.deposit_jenis !== undefined ? { deposit_jenis: d.deposit_jenis || null } : {}),
       ...(d.deposit_status !== undefined ? { deposit_status: d.deposit_status || null } : {}),
       ...(d.catatan !== undefined ? { catatan: d.catatan.trim() || null } : {}),
     };
   }
 
-  private dataBaris(x: SphDto['site'][number], urutan: number) {
+  /** Baris site SPH yang berasal dari survey: cek milik survey & cover, ambil IKG hasil OPS */
+  private async opsSurveySite(dto: SphDto, id_survey: number | null) {
+    const ids = dto.site.map((x) => x.id_survey_site).filter((x): x is number => !!x);
+    if (!ids.length) return new Map<number, { ikg_nominal: Prisma.Decimal; ikg_pengelola: string | null; ikg_catatan: string | null }>();
+    if (!id_survey) throw new BadRequestException('Baris survey hanya untuk SPH yang dibuat dari survey');
+    const rows = await this.prisma.pbSurveySite.findMany({ where: { id_survey_site: { in: ids } } });
+    for (const id of ids) {
+      const x = rows.find((r) => r.id_survey_site === id);
+      if (!x || x.id_survey !== id_survey) throw new BadRequestException('Site survey tidak termasuk survey SPH ini');
+      if (x.cover !== 'Cover') throw new BadRequestException(`Site "${x.nama_site}" tidak cover (hold) — tidak bisa masuk SPH`);
+    }
+    return new Map(rows.map((x) => [x.id_survey_site, { ikg_nominal: x.ikg_nominal, ikg_pengelola: x.ikg_pengelola, ikg_catatan: x.ikg_catatan }]));
+  }
+
+  private dataBaris(x: SphDto['site'][number], urutan: number, ops?: Map<number, { ikg_nominal: Prisma.Decimal; ikg_pengelola: string | null; ikg_catatan: string | null }>) {
+    const o = x.id_survey_site ? ops?.get(x.id_survey_site) : undefined;
     return {
+      id_survey_site: o ? x.id_survey_site! : null,
+      ...(o ? { ikg_nominal: o.ikg_nominal, ikg_pengelola: o.ikg_pengelola, ikg_catatan: o.ikg_catatan } : {}),
       nama_site: x.nama_site.trim(), alamat: x.alamat.trim(), lantai_unit: x.lantai_unit?.trim() || null, kota: x.kota?.trim() || null,
       id_layanan: x.id_layanan, biaya_bulanan: x.biaya_bulanan, biaya_instalasi: x.biaya_instalasi,
       tgl_rfs: x.tgl_rfs ? new Date(x.tgl_rfs) : null, pic_store_nama: x.pic_store_nama?.trim() || null,
@@ -817,11 +992,11 @@ export class PasangBaruService {
     }
   }
 
-  /** SPH dari survey dihapus → survey kembali "Baru" bila tidak ada SPH lain */
+  /** SPH dari survey dihapus → survey kembali "Siap SPH" bila tidak ada SPH lain */
   private async bukaLagiSurvey(id_survey: number | null, u: Pengguna, nomor_sph: string) {
     if (!id_survey) return;
     if (await this.prisma.pbSph.count({ where: { id_survey } })) return;
-    await this.prisma.pbSurvey.updateMany({ where: { id_survey, status: 'Lanjut SPH' }, data: { status: 'Baru' } });
+    await this.prisma.pbSurvey.updateMany({ where: { id_survey, status: 'Lanjut SPH' }, data: { status: 'Siap SPH', status_at: new Date() } });
     await this.catat({ id_survey, id_karyawan: u.id_karyawan, aksi: 'sph_hapus', catatan: nomor_sph });
   }
 

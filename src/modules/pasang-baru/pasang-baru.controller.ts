@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { CatatanDto, DokumenDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto } from './dto';
+import { CatatanDto, DokumenDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 import { PasangBaruService, Pengguna } from './pasang-baru.service';
 
 // Akses modul: sales / operations / instalasi / finance (lihat ModulAksesGuard); hak ubah per tahap dicek di service
@@ -17,10 +17,31 @@ export class PasangBaruController {
 
   // Survey (tahap pertama, sebelum SPH)
   @Get('survey') daftarSurvey(@Query() q: { status?: string; cari?: string }) { return this.svc.daftarSurvey(q); }
-  @Get('survey/:id') detailSurvey(@Param('id', ParseIntPipe) id: number) { return this.svc.detailSurvey(id); }
+  @Get('survey/:id') detailSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.detailSurvey(id, u); }
   @Post('survey') buatSurvey(@CurrentUser() u: Pengguna, @Body() dto: SurveyDto) { return this.svc.buatSurvey(u, dto); }
   @Put('survey/:id') ubahSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: SurveyDto) {
     return this.svc.ubahSurvey(u, id, dto);
+  }
+  @Post('survey/:id/ajukan') ajukanSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
+    return this.svc.ajukanSurvey(u, id, dto);
+  }
+  @Put('survey/:id/ops') simpanOps(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: SurveyOpsDto) {
+    return this.svc.simpanOpsSurvey(u, id, dto);
+  }
+  @Post('survey/:id/kirim-teknis') kirimTeknis(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
+    return this.svc.kirimTeknisSurvey(u, id, dto);
+  }
+  @Put('survey/:id/teknis') simpanTeknis(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: SurveyTeknisDto) {
+    return this.svc.simpanTeknisSurvey(u, id, dto);
+  }
+  @Post('survey/:id/teknis-selesai') teknisSelesai(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
+    return this.svc.selesaiTeknisSurvey(u, id, dto);
+  }
+  @Post('survey/:id/ops-selesai') opsSelesai(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
+    return this.svc.selesaiOpsSurvey(u, id, dto);
+  }
+  @Post('survey/:id/kembalikan') kembalikanSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
+    return this.svc.kembalikanSurvey(u, id, dto);
   }
   @Post('survey/:id/batal') batalSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
     return this.svc.batalSurvey(u, id, dto);

@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDate, fmtDateTime, fmtRupiah } from '@/composables/useFormat'
 import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
-import { KELAS_TAHAP, TAHAP_ORDER, type Vendor } from './pb'
+import { DEPOSIT_JENIS, KELAS_TAHAP, TAHAP_ORDER, type Vendor } from './pb'
 
 const route = useRoute()
 const router = useRouter()
@@ -81,7 +81,7 @@ const simpanOps = () => jalankan(() => api.patch(`/pasang-baru/order/${id.value}
 const links = computed<any[]>(() => o.value?.site?.sumber_internet || [])
 const kosongLink = () => ({
   id_sumber: null as number | null, id_vendor_isp: '' as number | '', peruntukan_link: 'Main', nomor_pelanggan_isp: '', bandwidth_mbps: '',
-  biaya_mrc_vendor: 0, tgl_mulai: '', durasi_bulan: 12 as number | '', sn_modem: '', deposit_nominal: 0, deposit_tgl: '', deposit_status: '', catatan: '',
+  biaya_mrc_vendor: 0, tgl_mulai: '', durasi_bulan: 12 as number | '', sn_modem: '', deposit_nominal: 0, deposit_tgl: '', deposit_status: '', deposit_jenis: '', catatan: '',
 })
 const fl = reactive({ buka: false, ...kosongLink() })
 function bukaLink(l?: any) {
@@ -91,7 +91,7 @@ function bukaLink(l?: any) {
       id_sumber: l.id_sumber, id_vendor_isp: l.id_vendor_isp, peruntukan_link: l.peruntukan_link, nomor_pelanggan_isp: l.nomor_pelanggan_isp || '',
       bandwidth_mbps: l.bandwidth_mbps || '', biaya_mrc_vendor: Number(l.biaya_mrc_vendor), tgl_mulai: l.tgl_mulai ? l.tgl_mulai.slice(0, 10) : '',
       durasi_bulan: l.durasi_bulan || '', sn_modem: l.sn_modem || '', deposit_nominal: Number(l.deposit_nominal),
-      deposit_tgl: l.deposit_tgl ? l.deposit_tgl.slice(0, 10) : '', deposit_status: l.deposit_status || '', catatan: l.catatan || '',
+      deposit_tgl: l.deposit_tgl ? l.deposit_tgl.slice(0, 10) : '', deposit_status: l.deposit_status || '', deposit_jenis: l.deposit_jenis || '', catatan: l.catatan || '',
     })
   }
 }
@@ -242,7 +242,7 @@ const AKSI: Record<string, string> = {
                 <td>{{ l.tgl_mulai ? fmtDate(l.tgl_mulai) : '-' }}<br /><small v-if="l.durasi_bulan" class="muted">{{ l.durasi_bulan }} bln</small></td>
                 <td class="kanan">{{ fmtRupiah(l.biaya_mrc_vendor) }}</td>
                 <td>{{ l.sn_modem || '-' }}</td>
-                <td class="kanan">{{ Number(l.deposit_nominal) ? fmtRupiah(l.deposit_nominal) : '-' }}<br /><small v-if="l.deposit_status" class="muted">{{ l.deposit_status }}</small></td>
+                <td class="kanan">{{ Number(l.deposit_nominal) ? fmtRupiah(l.deposit_nominal) : '-' }}<br /><small v-if="l.deposit_status || l.deposit_jenis" class="muted">{{ [l.deposit_status, l.deposit_jenis].filter(Boolean).join(' · ') }}</small></td>
                 <td class="op-aksi">
                   <template v-if="bisaUbah('OPS')">
                     <button class="btn btn-sm btn-ghost" @click="bukaLink(l)">✏️</button>
@@ -374,7 +374,13 @@ const AKSI: Record<string, string> = {
             <div class="form-group"><label class="form-label">Lama berlangganan vendor (bulan)</label><input v-model.number="fl.durasi_bulan" type="number" min="1" max="120" class="form-input" /></div>
             <div class="form-group"><label class="form-label form-required">Biaya langganan vendor / bulan</label><input v-model.number="fl.biaya_mrc_vendor" type="number" min="0" class="form-input" /></div>
             <div class="form-group"><label class="form-label form-required">SN modem vendor</label><input v-model="fl.sn_modem" class="form-input" maxlength="100" /></div>
-            <div class="form-group"><label class="form-label">Deposit ke vendor</label><input v-model.number="fl.deposit_nominal" type="number" min="0" class="form-input" /></div>
+            <div class="grid-2">
+              <div class="form-group"><label class="form-label">Deposit ke vendor</label><input v-model.number="fl.deposit_nominal" type="number" min="0" class="form-input" /></div>
+              <div class="form-group">
+                <label class="form-label">Sifat deposit</label>
+                <select v-model="fl.deposit_jenis" class="form-input"><option value="">—</option><option v-for="d in DEPOSIT_JENIS" :key="d">{{ d }}</option></select>
+              </div>
+            </div>
             <div class="grid-2">
               <div class="form-group"><label class="form-label">Tgl bayar deposit</label><input v-model="fl.deposit_tgl" type="date" class="form-input" /></div>
               <div class="form-group">

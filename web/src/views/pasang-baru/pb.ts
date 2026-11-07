@@ -42,4 +42,10 @@ export function tanggal(s: string) {
   return ''
 }
 
-export const KELAS_SURVEY: Record<string, string> = { Baru: 'badge-blue', 'Lanjut SPH': 'badge-green', Batal: 'badge-red' }
+// Survey: Draft (Sales) → OPS → [Teknis] → Siap SPH / Hold → Lanjut SPH
+export const ALUR_SURVEY = ['Draft', 'OPS', 'Teknis', 'Siap SPH', 'Lanjut SPH'] as const
+export const KELAS_SURVEY: Record<string, string> = {
+  Draft: 'badge-gray', OPS: 'badge-purple', Teknis: 'badge-sky', 'Siap SPH': 'badge-green', Hold: 'badge-amber',
+  'Lanjut SPH': 'badge-blue', Batal: 'badge-red',
+}
+export const DEPOSIT_JENIS = ['Kembali setelah pasang', 'Ditahan sampai berhenti'] as const

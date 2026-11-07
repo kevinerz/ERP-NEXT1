@@ -12,7 +12,7 @@ interface Sph {
 }
 interface Survey {
   id_survey: number; nomor_survey: string; status: string; nama_perusahaan: string; nama_pic: string; telp_pic: string | null
-  id_pelanggan: number | null; sales: string | null; jumlah_site: number; updated_at: string; sph: { id_sph: number; nomor_sph: string }[]
+  id_pelanggan: number | null; sales: string | null; jumlah_site: number; cover: number; tidak_cover: number; status_at: string; updated_at: string; sph: { id_sph: number; nomor_sph: string }[]
 }
 interface Order {
   id_pb: number; nomor_pb: string | null; nama_site: string; kota: string | null; tahap: string; tahap_at: string
@@ -27,7 +27,7 @@ const TAB = ['Survey', 'SPH', ...TAHAP_ORDER, 'Batal'] as const
 const tab = ref<string>(TAB.includes(route.query.tab as any) ? (route.query.tab as string) : 'Survey')
 const cari = ref('')
 const statusSph = ref('')
-const statusSurvey = ref('Baru')
+const statusSurvey = ref('aktif')
 const ringkas = ref<{ tahap: Record<string, number>; sph: Record<string, number>; survey: Record<string, number> }>({ tahap: {}, sph: {}, survey: {} })
 const survey = ref<Survey[]>([])
 const sph = ref<Sph[]>([])
@@ -70,7 +70,7 @@ watch(cari, () => {
   timer = setTimeout(muat, 350)
 })
 
-const jumlah = (t: string) => (t === 'Survey' ? (ringkas.value.survey['Baru'] ?? 0) : t === 'SPH' ? (ringkas.value.sph['Menunggu Director'] ?? 0) : (ringkas.value.tahap[t] ?? 0))
+const jumlah = (t: string) => (t === 'Survey' ? ['OPS', 'Teknis', 'Siap SPH'].reduce((a, k) => a + (ringkas.value.survey[k] ?? 0), 0) : t === 'SPH' ? (ringkas.value.sph['Menunggu Director'] ?? 0) : (ringkas.value.tahap[t] ?? 0))
 </script>
 
 <template>
@@ -96,8 +96,9 @@ const jumlah = (t: string) => (t === 'Survey' ? (ringkas.value.survey['Baru'] ??
     <div class="filter-bar pb-filter">
       <input v-model="cari" class="form-input search-input" :placeholder="tab === 'Survey' ? 'Cari nomor survey / perusahaan / PIC / site / kota' : tab === 'SPH' ? 'Cari nomor SPH / pelanggan' : 'Cari site / pelanggan / no. PB / SPH'" />
       <select v-if="tab === 'Survey'" v-model="statusSurvey" class="form-input pb-status">
-        <option value="">Semua status</option>
-        <option>Baru</option><option>Lanjut SPH</option><option>Batal</option>
+        <option value="aktif">Sedang berjalan</option>
+        <option>Draft</option><option>OPS</option><option>Teknis</option><option>Siap SPH</option><option>Hold</option>
+        <option>Lanjut SPH</option><option>Batal</option><option value="">Semua status</option>
       </select>
       <select v-if="tab === 'SPH'" v-model="statusSph" class="form-input pb-status">
         <option value="">Semua status</option>
@@ -111,15 +112,16 @@ const jumlah = (t: string) => (t === 'Survey' ? (ringkas.value.survey['Baru'] ??
       <table v-if="tab === 'Survey'" class="data-table">
         <thead><tr><th>No. Survey</th><th>Perusahaan</th><th>PIC</th><th>Site</th><th>Sales</th><th>Status</th><th>Diperbarui</th></tr></thead>
         <tbody>
-          <tr v-if="!memuat && !survey.length"><td colspan="7" class="muted pusat">Belum ada survey<template v-if="statusSurvey"> berstatus {{ statusSurvey }}</template>.</td></tr>
+          <tr v-if="!memuat && !survey.length"><td colspan="7" class="muted pusat">Belum ada survey<template v-if="statusSurvey && statusSurvey !== 'aktif'"> berstatus {{ statusSurvey }}</template>.</td></tr>
           <tr v-for="s in survey" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
             <td><b>{{ s.nomor_survey }}</b></td>
             <td>{{ s.nama_perusahaan }}<br /><small class="muted">{{ s.id_pelanggan ? 'Pelanggan' : 'Calon pelanggan' }}</small></td>
             <td>{{ s.nama_pic }}<br /><small class="muted">{{ s.telp_pic }}</small></td>
-            <td>{{ s.jumlah_site }}</td>
+            <td>{{ s.jumlah_site }}<br /><small v-if="s.cover || s.tidak_cover" class="muted"><span class="pb-hijau">{{ s.cover }} cover</span><template v-if="s.tidak_cover"> · <span class="pb-oranye">{{ s.tidak_cover }} hold</span></template></small></td>
             <td>{{ s.sales || '-' }}</td>
             <td>
               <span class="badge" :class="KELAS_SURVEY[s.status]">{{ s.status }}</span>
+              <small v-if="['OPS', 'Teknis', 'Siap SPH', 'Hold'].includes(s.status)" class="muted"> {{ umur(s.status_at) }}</small>
               <small v-for="x in s.sph" :key="x.id_sph" class="muted pb-blok">{{ x.nomor_sph }}</small>
             </td>
             <td class="muted">{{ fmtDate(s.updated_at) }}</td>
@@ -174,6 +176,8 @@ const jumlah = (t: string) => (t === 'Survey' ? (ringkas.value.survey['Baru'] ??
 .klik { cursor: pointer; }
 .pb-buat { display: flex; gap: 6px; flex-wrap: wrap; }
 .pb-blok { display: block; }
+.pb-hijau { color: #16a34a; }
+.pb-oranye { color: #d97706; }
 .kanan { text-align: right; }
 .pusat { text-align: center; padding: 16px; }
 .muted { color: var(--text-3); }

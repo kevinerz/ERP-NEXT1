@@ -2,10 +2,10 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
-import { alertError } from '@/composables/useDialog'
+import { alertError, confirmDialog } from '@/composables/useDialog'
 import type { Layanan } from './pb'
 
-interface Baris { nama_site: string; alamat: string; lantai_unit: string; kota: string; id_layanan: number | '' }
+interface Baris { id_survey_site?: number; nama_site: string; alamat: string; lantai_unit: string; kota: string; id_layanan: number | '' }
 interface Pelanggan { id_pelanggan: number; kode_pelanggan: string; nama_pelanggan: string; nama_pic_utama: string | null; no_hp_pic_utama: string | null; email_billing: string | null }
 
 const route = useRoute()
@@ -30,7 +30,8 @@ onMounted(async () => {
         id_pelanggan: s.id_pelanggan, kode_pelanggan: s.pelanggan?.kode_pelanggan || '', nama_perusahaan: s.nama_perusahaan,
         nama_pic: s.nama_pic, telp_pic: s.telp_pic || '', email_pic: s.email_pic || '', catatan: s.catatan || '',
       })
-      site.value = s.site.map((o: any) => ({ nama_site: o.nama_site, alamat: o.alamat, lantai_unit: o.lantai_unit || '', kota: o.kota || '', id_layanan: o.id_layanan }))
+      if (s.status !== 'Draft') { alertError(new Error(`Survey berstatus ${s.status} — hanya Draft yang bisa diubah`)); router.replace(`/pasang-baru/survey/${s.id_survey}`); return }
+      site.value = s.site.map((o: any) => ({ id_survey_site: o.id_survey_site, nama_site: o.nama_site, alamat: o.alamat, lantai_unit: o.lantai_unit || '', kota: o.kota || '', id_layanan: o.id_layanan }))
     } else {
       site.value = [kosong()]
     }
@@ -70,7 +71,7 @@ function lepasP() {
 
 // ── Site ─────────────────────────────────────────────────────────────────────
 const barisKurang = (s: Baris) => s.nama_site.trim().length < 2 || s.alamat.trim().length < 5 || !s.id_layanan
-function salinBaris(i: number) { site.value.splice(i + 1, 0, { ...site.value[i]!, nama_site: '', alamat: '', lantai_unit: '' }) }
+function salinBaris(i: number) { site.value.splice(i + 1, 0, { ...site.value[i]!, id_survey_site: undefined, nama_site: '', alamat: '', lantai_unit: '' }) }
 
 // Tempel dari Excel: Nama Site | Alamat | Lantai/Unit | Kota | Layanan
 const KOLOM = ['Nama Site', 'Alamat', 'Lantai/Unit', 'Kota', 'Layanan']
@@ -96,8 +97,9 @@ const emailSalah = computed(() => !!f.email_pic.trim() && !/^[^\s@]+@[^\s@]+\.[^
 const siap = computed(() => f.nama_perusahaan.trim().length >= 2 && f.nama_pic.trim().length >= 2 && !emailSalah.value
   && site.value.length > 0 && !site.value.some(barisKurang))
 
-async function simpan() {
+async function simpan(ajukan: boolean) {
   if (!siap.value) return
+  if (ajukan && !(await confirmDialog({ title: 'Ajukan ke OPS', message: `Ajukan survey berisi ${site.value.length} site ke OPS untuk dicek vendor ISP, IKG, deposit, dan cover?`, confirmLabel: 'Ajukan' }))) return
   menyimpan.value = true
   try {
     const body = {
@@ -105,12 +107,14 @@ async function simpan() {
       nama_pic: f.nama_pic.trim(), telp_pic: f.telp_pic.trim() || undefined, email_pic: f.email_pic.trim() || undefined,
       catatan: f.catatan.trim() || undefined,
       site: site.value.map((s) => ({
-        nama_site: s.nama_site.trim(), alamat: s.alamat.trim(), lantai_unit: s.lantai_unit.trim() || undefined,
+        id_survey_site: s.id_survey_site, nama_site: s.nama_site.trim(), alamat: s.alamat.trim(), lantai_unit: s.lantai_unit.trim() || undefined,
         kota: s.kota.trim() || undefined, id_layanan: Number(s.id_layanan),
       })),
     }
     const { data } = idSurvey.value ? await api.put(`/pasang-baru/survey/${idSurvey.value}`, body) : await api.post('/pasang-baru/survey', body)
-    router.push(`/pasang-baru/survey/${idSurvey.value ?? data.data.id_survey}`)
+    const id = idSurvey.value ?? data.data.id_survey
+    if (ajukan) await api.post(`/pasang-baru/survey/${id}/ajukan`, {})
+    router.push(`/pasang-baru/survey/${id}`)
   } catch (e) {
     alertError(e, 'Gagal menyimpan survey')
   } finally {
@@ -203,7 +207,8 @@ async function simpan() {
 
       <div class="sv-tombol">
         <span v-if="!siap" class="muted">Lengkapi perusahaan, nama PIC, dan kolom bertanda * di tiap site.</span>
-        <button class="btn btn-primary" :disabled="!siap || menyimpan" @click="simpan">{{ menyimpan ? 'Menyimpan…' : 'Simpan survey' }}</button>
+        <button class="btn btn-ghost" :disabled="!siap || menyimpan" @click="simpan(false)">Simpan draft</button>
+        <button class="btn btn-primary" :disabled="!siap || menyimpan" @click="simpan(true)">{{ menyimpan ? 'Menyimpan…' : 'Simpan & ajukan ke OPS →' }}</button>
       </div>
     </template>
 

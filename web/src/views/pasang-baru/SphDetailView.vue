@@ -34,6 +34,11 @@ const director = computed(() => ['Director', 'Admin'].some((r) => auth.hasRole(r
 const admin = computed(() => auth.hasRole('Admin'))
 const bisaUbah = computed(() => sales.value && ['Draft', 'Ditolak'].includes(s.value?.status))
 const totalBulanan = computed(() => (s.value?.order || []).reduce((a: number, o: any) => a + Number(o.biaya_bulanan), 0))
+const modal = (o: any) => (o.vendor_survey || []).reduce((a: number, v: any) => a + Number(v.biaya_mrc_vendor), 0)
+const adaOps = computed(() => (s.value?.order || []).some((o: any) => o.id_survey_site))
+const totalModal = computed(() => (s.value?.order || []).reduce((a: number, o: any) => a + modal(o), 0))
+const totalIkg = computed(() => (s.value?.order || []).reduce((a: number, o: any) => a + Number(o.ikg_nominal || 0), 0))
+const totalDeposit = computed(() => (s.value?.order || []).reduce((a: number, o: any) => a + (o.vendor_survey || []).reduce((b: number, v: any) => b + Number(v.deposit_nominal), 0), 0))
 const totalInstalasi = computed(() => (s.value?.order || []).reduce((a: number, o: any) => a + Number(o.biaya_instalasi), 0))
 
 async function jalankan(fn: () => Promise<any>) {
@@ -92,7 +97,7 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
       <div class="page-header">
         <div>
           <h2 class="page-title">{{ s.nomor_sph }} <span class="badge" :class="KELAS_SPH[s.status]">{{ s.status }}</span></h2>
-          <p class="page-subtitle">{{ s.pelanggan.nama_pelanggan }} · {{ s.order.length }} site · {{ s.durasi_bulan }} bulan · Sales {{ s.sales || '-' }}<template v-if="s.id_survey"> · <a href="#" @click.prevent="router.push(`/pasang-baru/survey/${s.id_survey}`)">🔍 lihat survey</a></template></p>
+          <p class="page-subtitle">{{ s.pelanggan.nama_pelanggan }} · {{ s.order.length }} site · {{ s.durasi_bulan }} bulan · Sales {{ s.sales || '-' }}<template v-if="s.id_survey"> · <a href="#" @click.prevent="router.push(`/pasang-baru/survey/${s.id_survey}`)">🔍 {{ s.survey?.nomor_survey || 'lihat survey' }}</a></template></p>
         </div>
         <div class="sd-tombol">
           <button class="btn btn-ghost" @click="router.push('/pasang-baru')">← Daftar</button>
@@ -134,6 +139,12 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
           <div class="detail-section-body">
             <div class="info-row"><span class="info-label">Total bulanan</span><span class="info-value"><b>{{ fmtRupiah(totalBulanan) }}</b></span></div>
             <div class="info-row"><span class="info-label">Total instalasi</span><span class="info-value">{{ fmtRupiah(totalInstalasi) }}</span></div>
+            <template v-if="adaOps">
+              <div class="info-row"><span class="info-label">Modal vendor / bulan</span><span class="info-value">{{ fmtRupiah(totalModal) }}</span></div>
+              <div class="info-row"><span class="info-label">Margin / bulan</span><span class="info-value"><b :style="{ color: totalBulanan < totalModal ? '#dc2626' : '#16a34a' }">{{ fmtRupiah(totalBulanan - totalModal) }}</b></span></div>
+              <div class="info-row"><span class="info-label">IKG (biaya NEXT1)</span><span class="info-value">{{ fmtRupiah(totalIkg) }}</span></div>
+              <div class="info-row"><span class="info-label">Deposit vendor</span><span class="info-value">{{ fmtRupiah(totalDeposit) }}</span></div>
+            </template>
             <div class="info-row"><span class="info-label">Lama berlangganan</span><span class="info-value">{{ s.durasi_bulan }} bulan</span></div>
             <div v-if="s.catatan" class="info-row"><span class="info-label">Catatan</span><span class="info-value">{{ s.catatan }}</span></div>
           </div>
@@ -142,12 +153,14 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
 
       <div class="table-card">
         <table class="data-table">
-          <thead><tr><th>#</th><th>Site</th><th>Layanan</th><th class="kanan">Bulanan</th><th class="kanan">Instalasi</th><th>RFS</th><th>PIC store</th><th>Order</th></tr></thead>
+          <thead><tr><th>#</th><th>Site</th><th>Layanan</th><th v-if="adaOps">Vendor (OPS)</th><th v-if="adaOps" class="kanan">Modal · IKG</th><th class="kanan">Bulanan</th><th class="kanan">Instalasi</th><th>RFS</th><th>PIC store</th><th>Order</th></tr></thead>
           <tbody>
             <tr v-for="(o, i) in s.order" :key="o.id_pb" :class="{ klik: o.nomor_pb }" @click="o.nomor_pb && router.push(`/pasang-baru/order/${o.id_pb}`)">
               <td class="muted">{{ i + 1 }}</td>
               <td><b>{{ o.nama_site }}</b><br /><small class="muted">{{ o.alamat }}<template v-if="o.lantai_unit"> — {{ o.lantai_unit }}</template><template v-if="o.kota">, {{ o.kota }}</template></small></td>
               <td>{{ o.layanan.nama_layanan }}</td>
+              <td v-if="adaOps"><small v-for="v in o.vendor_survey" :key="v.id_survey_vendor" class="sd-blok">{{ v.vendor.nama_vendor }}<template v-if="v.bandwidth_mbps"> {{ v.bandwidth_mbps }}</template> · {{ v.peruntukan_link }}<template v-if="Number(v.deposit_nominal)"> · deposit {{ fmtRupiah(v.deposit_nominal) }} ({{ v.deposit_jenis || '-' }})</template></small></td>
+              <td v-if="adaOps" class="kanan">{{ fmtRupiah(modal(o)) }}<br /><small class="muted">IKG {{ fmtRupiah(o.ikg_nominal) }}</small></td>
               <td class="kanan">{{ fmtRupiah(o.biaya_bulanan) }}</td>
               <td class="kanan">{{ fmtRupiah(o.biaya_instalasi) }}</td>
               <td>{{ o.tgl_rfs ? fmtDate(o.tgl_rfs) : '-' }}</td>
@@ -178,6 +191,7 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
 .sd-info { margin: 12px 0; }
 .sd-riwayat { margin: 4px 0; font-size: 13px; }
 .klik { cursor: pointer; }
+.sd-blok { display: block; }
 .kanan { text-align: right; }
 .muted { color: var(--text-3); }
 </style>

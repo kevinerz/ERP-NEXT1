@@ -211,6 +211,7 @@ model MasterVendorIsp {
   created_at       DateTime @default(now())
 
   sumber_internet    SumberInternetSite[]
+  pb_survey_vendor   PbSurveyVendor[]
   work_orders_vendor WorkOrder[]           @relation("WoVendorKetiga")
   jurnal_ap          IntegrationJurnalAp[]
 
@@ -525,6 +526,7 @@ model SumberInternetSite {
   deposit_nominal     Decimal   @default(0) @db.Decimal(15, 2) // deposit NEXT1 ke vendor
   deposit_tgl         DateTime? @db.Date
   deposit_status      String?   @db.VarChar(20) // Ditahan | Dikembalikan
+  deposit_jenis       String?   @db.VarChar(30) // Kembali setelah pasang | Ditahan sampai berhenti
   created_at          DateTime  @default(now())
 
   site     SitePelanggan   @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
@@ -1885,6 +1887,7 @@ model PbOrder {
   id_pb           Int       @id @default(autoincrement())
   nomor_pb        String?   @unique @db.VarChar(30) // diberikan saat SPH disetujui
   id_sph          Int
+  id_survey_site  Int? // baris survey asal (data OPS: vendor, IKG, deposit)
   id_site         Int? // site dibuat (status Prospek) saat SPH disetujui
   nama_site       String    @db.VarChar(150)
   alamat          String    @db.Text
@@ -1926,8 +1929,14 @@ model PbSurvey {
   telp_pic        String?  @db.VarChar(30)
   email_pic       String?  @db.VarChar(150)
   catatan         String?  @db.Text
-  status          String   @default("Baru") @db.VarChar(30) // Baru | Lanjut SPH | Batal
+  // Draft (Sales) → OPS → [Teknis → OPS] → Siap SPH | Hold (semua site tidak cover) → Lanjut SPH; Batal
+  status          String   @default("Draft") @db.VarChar(30)
+  status_at       DateTime @default(now())
   id_sales        Int?
+  id_ops          Int?
+  catatan_ops     String?  @db.Text
+  catatan_teknis  String?  @db.Text // permintaan & hasil cek teknis (opsional, mis. M2M 5G cek sinyal)
+  id_teknis       Int?
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
@@ -1946,12 +1955,41 @@ model PbSurveySite {
   kota           String? @db.VarChar(100)
   id_layanan     Int
   urutan         Int     @default(0)
+  // Hasil OPS
+  cover          String? @db.VarChar(20) // Cover | Tidak cover (= hold)
+  ikg_nominal    Decimal @default(0) @db.Decimal(15, 2)
+  ikg_pengelola  String? @db.VarChar(150)
+  ikg_catatan    String? @db.VarChar(500)
+  catatan_ops    String? @db.Text
+  // Hasil teknis (opsional)
+  hasil_teknis   String? @db.Text
 
-  survey  PbSurvey      @relation(fields: [id_survey], references: [id_survey], onDelete: Cascade)
-  layanan MasterLayanan @relation(fields: [id_layanan], references: [id_layanan])
+  survey  PbSurvey         @relation(fields: [id_survey], references: [id_survey], onDelete: Cascade)
+  layanan MasterLayanan    @relation(fields: [id_layanan], references: [id_layanan])
+  vendor  PbSurveyVendor[]
 
   @@index([id_survey])
   @@map("pb_survey_site")
+}
+
+// Pilihan vendor ISP per site hasil survey OPS (dibawa jadi link "Rencana" saat SPH disetujui)
+model PbSurveyVendor {
+  id_survey_vendor Int     @id @default(autoincrement())
+  id_survey_site   Int
+  id_vendor_isp    Int
+  peruntukan_link  String  @default("Main") @db.VarChar(20) // Main | Backup
+  bandwidth_mbps   String? @db.VarChar(30)
+  biaya_mrc_vendor Decimal @default(0) @db.Decimal(15, 2)
+  biaya_otc_vendor Decimal @default(0) @db.Decimal(15, 2) // biaya pasang dari vendor
+  deposit_nominal  Decimal @default(0) @db.Decimal(15, 2)
+  deposit_jenis    String? @db.VarChar(30) // Kembali setelah pasang | Ditahan sampai berhenti
+  catatan          String? @db.VarChar(500)
+
+  site   PbSurveySite    @relation(fields: [id_survey_site], references: [id_survey_site], onDelete: Cascade)
+  vendor MasterVendorIsp @relation(fields: [id_vendor_isp], references: [id_vendor])
+
+  @@index([id_survey_site])
+  @@map("pb_survey_vendor")
 }
 
 model PbRiwayat {

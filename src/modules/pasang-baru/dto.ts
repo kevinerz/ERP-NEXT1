@@ -5,6 +5,7 @@ import {
 import { Type } from 'class-transformer';
 
 export class SiteSphDto {
+  @IsOptional() @Type(() => Number) @IsInt() id_survey_site?: number;
   @IsString() @MinLength(2) @MaxLength(150) nama_site: string;
   @IsString() @MinLength(5) @MaxLength(2000) alamat: string;
   @IsOptional() @IsString() @MaxLength(100) lantai_unit?: string;
@@ -19,6 +20,7 @@ export class SiteSphDto {
 
 /** Survey: tahap pertama — tanpa harga */
 export class SiteSurveyDto {
+  @IsOptional() @Type(() => Number) @IsInt() id_survey_site?: number;
   @IsString() @MinLength(2) @MaxLength(150) nama_site: string;
   @IsString() @MinLength(5) @MaxLength(2000) alamat: string;
   @IsOptional() @IsString() @MaxLength(100) lantai_unit?: string;
@@ -35,6 +37,46 @@ export class SurveyDto {
   @IsOptional() @IsEmail() @MaxLength(150) email_pic?: string;
   @IsOptional() @IsString() @MaxLength(5000) catatan?: string;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => SiteSurveyDto) site: SiteSurveyDto[];
+}
+
+export const DEPOSIT_JENIS = ['Kembali setelah pasang', 'Ditahan sampai berhenti'] as const;
+
+export class SurveyVendorDto {
+  @Type(() => Number) @IsInt() id_vendor_isp: number;
+  @IsOptional() @IsIn(['Main', 'Backup']) peruntukan_link?: string;
+  @IsOptional() @IsString() @MaxLength(30) bandwidth_mbps?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) biaya_mrc_vendor?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) biaya_otc_vendor?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) deposit_nominal?: number;
+  @IsOptional() @IsIn([...DEPOSIT_JENIS, '']) deposit_jenis?: string;
+  @IsOptional() @IsString() @MaxLength(500) catatan?: string;
+}
+
+export class SurveyOpsSiteDto {
+  @Type(() => Number) @IsInt() id_survey_site: number;
+  @IsOptional() @IsIn(['Cover', 'Tidak cover', '']) cover?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) ikg_nominal?: number;
+  @IsOptional() @IsString() @MaxLength(150) ikg_pengelola?: string;
+  @IsOptional() @IsString() @MaxLength(500) ikg_catatan?: string;
+  @IsOptional() @IsString() @MaxLength(5000) catatan_ops?: string;
+  @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => SurveyVendorDto) vendor: SurveyVendorDto[];
+}
+
+/** OPS mengisi hasil survey: vendor ISP, IKG, deposit, cover/tidak cover per site */
+export class SurveyOpsDto {
+  @IsOptional() @IsString() @MaxLength(5000) catatan_ops?: string;
+  @IsArray() @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => SurveyOpsSiteDto) site: SurveyOpsSiteDto[];
+}
+
+export class SurveyTeknisSiteDto {
+  @Type(() => Number) @IsInt() id_survey_site: number;
+  @IsOptional() @IsString() @MaxLength(5000) hasil_teknis?: string;
+}
+
+/** Hasil cek teknis (opsional, mis. M2M 5G cek sinyal) */
+export class SurveyTeknisDto {
+  @IsOptional() @IsString() @MaxLength(5000) catatan_teknis?: string;
+  @IsArray() @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => SurveyTeknisSiteDto) site: SurveyTeknisSiteDto[];
 }
 
 export class SphDto {
@@ -89,6 +131,7 @@ export class LinkDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) deposit_nominal?: number;
   @IsOptional() @IsDateString() deposit_tgl?: string | null;
   @IsOptional() @IsIn(['Ditahan', 'Dikembalikan']) deposit_status?: string;
+  @IsOptional() @IsIn([...DEPOSIT_JENIS, '']) deposit_jenis?: string;
   @IsOptional() @IsString() @MaxLength(2000) catatan?: string;
 }
 

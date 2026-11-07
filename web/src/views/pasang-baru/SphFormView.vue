@@ -6,7 +6,9 @@ import { fmtRupiah } from '@/composables/useFormat'
 import { alertError, confirmDialog } from '@/composables/useDialog'
 import { angka, tanggal, type Layanan } from './pb'
 
+interface Ops { vendor: string; modal: number; ikg: number; deposit: number }
 interface Baris {
+  id_survey_site?: number; ops?: Ops
   nama_site: string; alamat: string; lantai_unit: string; kota: string; id_layanan: number | ''
   biaya_bulanan: number; biaya_instalasi: number; tgl_rfs: string; pic_store_nama: string; pic_store_hp: string
 }
@@ -28,6 +30,15 @@ const site = ref<Baris[]>([])
 const memuat = ref(true)
 const menyimpan = ref(false)
 
+// Ringkas data OPS dari baris vendor survey
+function ringkasOps(vendor: any[], ikg: any): Ops {
+  return {
+    vendor: vendor.map((v) => `${v.vendor?.nama_vendor ?? ''}${v.bandwidth_mbps ? ` ${v.bandwidth_mbps}` : ''} (${v.peruntukan_link})`).join(', '),
+    modal: vendor.reduce((a, v) => a + Number(v.biaya_mrc_vendor), 0),
+    deposit: vendor.reduce((a, v) => a + Number(v.deposit_nominal), 0),
+    ikg: Number(ikg) || 0,
+  }
+}
 const kosong = (): Baris => ({ nama_site: '', alamat: '', lantai_unit: '', kota: '', id_layanan: '', biaya_bulanan: 0, biaya_instalasi: 0, tgl_rfs: '', pic_store_nama: '', pic_store_hp: '' })
 
 onMounted(async () => {
@@ -41,7 +52,9 @@ onMounted(async () => {
         id_pelanggan: s.id_pelanggan, nama_pelanggan: s.pelanggan.nama_pelanggan, nama_pic: s.nama_pic, telp_pic: s.telp_pic || '',
         email_pic: s.email_pic || '', durasi_bulan: s.durasi_bulan, catatan: s.catatan || '',
       })
+      if (s.survey) nomorSurvey.value = s.survey.nomor_survey
       site.value = s.order.map((o: any) => ({
+        id_survey_site: o.id_survey_site ?? undefined, ops: o.id_survey_site ? ringkasOps(o.vendor_survey, o.ikg_nominal) : undefined,
         nama_site: o.nama_site, alamat: o.alamat, lantai_unit: o.lantai_unit || '', kota: o.kota || '', id_layanan: o.id_layanan,
         biaya_bulanan: Number(o.biaya_bulanan), biaya_instalasi: Number(o.biaya_instalasi), tgl_rfs: o.tgl_rfs ? o.tgl_rfs.slice(0, 10) : '',
         pic_store_nama: o.pic_store_nama || '', pic_store_hp: o.pic_store_hp || '',
@@ -56,7 +69,13 @@ onMounted(async () => {
           ? { id_pelanggan: v.pelanggan.id_pelanggan, nama_pelanggan: v.pelanggan.nama_pelanggan }
           : { baru: true, pelanggan_baru: v.nama_perusahaan }),
       })
-      site.value = v.site.map((o: any) => ({ ...kosong(), nama_site: o.nama_site, alamat: o.alamat, lantai_unit: o.lantai_unit || '', kota: o.kota || '', id_layanan: o.id_layanan }))
+      if (!['Siap SPH', 'Lanjut SPH'].includes(v.status)) {
+        alertError(new Error(`Survey ${v.nomor_survey} berstatus ${v.status} — SPH dibuat setelah OPS selesai`))
+        router.replace(`/pasang-baru/survey/${v.id_survey}`)
+        return
+      }
+      site.value = v.site.filter((o: any) => o.cover === 'Cover').map((o: any) => ({
+        ...kosong(), id_survey_site: o.id_survey_site, ops: ringkasOps(o.vendor, o.ikg_nominal), nama_site: o.nama_site, alamat: o.alamat, lantai_unit: o.lantai_unit || '', kota: o.kota || '', id_layanan: o.id_layanan }))
     } else {
       site.value = [kosong()]
     }
@@ -99,9 +118,11 @@ function pelangganBaru() {
 
 // ── Baris site ───────────────────────────────────────────────────────────────
 const totalBulanan = computed(() => site.value.reduce((a, s) => a + (Number(s.biaya_bulanan) || 0), 0))
+const adaOps = computed(() => site.value.some((s) => s.ops))
+const totalModal = computed(() => site.value.reduce((a, s) => a + (s.ops?.modal ?? 0), 0))
 const totalInstalasi = computed(() => site.value.reduce((a, s) => a + (Number(s.biaya_instalasi) || 0), 0))
 function hapusBaris(i: number) { site.value.splice(i, 1) }
-function salinBaris(i: number) { site.value.splice(i + 1, 0, { ...site.value[i]!, nama_site: '', alamat: '', lantai_unit: '', pic_store_nama: '', pic_store_hp: '' }) }
+function salinBaris(i: number) { site.value.splice(i + 1, 0, { ...site.value[i]!, id_survey_site: undefined, ops: undefined, nama_site: '', alamat: '', lantai_unit: '', pic_store_nama: '', pic_store_hp: '' }) }
 const barisKurang = (s: Baris) => !s.nama_site.trim() || s.alamat.trim().length < 5 || !s.id_layanan
 
 // ── Tempel dari Excel ────────────────────────────────────────────────────────
@@ -143,7 +164,7 @@ async function simpan(ajukan: boolean) {
       ...(f.baru ? { pelanggan_baru: f.pelanggan_baru.trim() } : { id_pelanggan: f.id_pelanggan }),
       nama_pic: f.nama_pic, telp_pic: f.telp_pic || undefined, email_pic: f.email_pic || undefined,
       durasi_bulan: Number(f.durasi_bulan), catatan: f.catatan || undefined,
-      site: site.value.map((s) => ({
+      site: site.value.map(({ ops, ...s }) => ({
         ...s, id_layanan: Number(s.id_layanan), biaya_bulanan: Number(s.biaya_bulanan) || 0, biaya_instalasi: Number(s.biaya_instalasi) || 0,
         tgl_rfs: s.tgl_rfs || undefined, lantai_unit: s.lantai_unit || undefined, kota: s.kota || undefined,
         pic_store_nama: s.pic_store_nama || undefined, pic_store_hp: s.pic_store_hp || undefined,
@@ -166,7 +187,7 @@ async function simpan(ajukan: boolean) {
     <div class="page-header">
       <div>
         <h2 class="page-title">{{ idSph ? 'Ubah SPH' : 'SPH Baru' }}</h2>
-        <p class="page-subtitle">Satu penawaran untuk satu pelanggan, berisi satu atau banyak site<template v-if="nomorSurvey"> · dari survey <b>{{ nomorSurvey }}</b> — tinggal isi harga</template></p>
+        <p class="page-subtitle">Satu penawaran untuk satu pelanggan, berisi satu atau banyak site<template v-if="nomorSurvey"> · dari survey <b>{{ nomorSurvey }}</b> (site cover saja; vendor, IKG &amp; deposit hasil OPS ikut terbawa)</template></p>
       </div>
       <button class="btn btn-ghost" @click="router.back()">← Kembali</button>
     </div>
@@ -220,7 +241,7 @@ async function simpan(ajukan: boolean) {
             <thead>
               <tr>
                 <th>#</th><th>Nama site *</th><th>Alamat *</th><th>Lantai/Unit</th><th>Kota</th><th>Layanan *</th>
-                <th>Bulanan</th><th>Instalasi</th><th>RFS</th><th>PIC store</th><th>HP PIC</th><th></th>
+                <th v-if="adaOps">Data OPS</th><th>Bulanan</th><th>Instalasi</th><th>RFS</th><th>PIC store</th><th>HP PIC</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -236,7 +257,19 @@ async function simpan(ajukan: boolean) {
                     <option v-for="l in layanan" :key="l.id_layanan" :value="l.id_layanan">{{ l.nama_layanan }}</option>
                   </select>
                 </td>
-                <td><input v-model.number="s.biaya_bulanan" type="number" min="0" class="form-input sf-uang" /></td>
+                <td v-if="adaOps" class="sf-ops">
+                  <template v-if="s.ops">
+                    <small :title="s.ops.vendor">{{ s.ops.vendor || 'tanpa vendor' }}</small>
+                    <span>Modal {{ fmtRupiah(s.ops.modal) }}</span>
+                    <span v-if="s.ops.ikg">IKG {{ fmtRupiah(s.ops.ikg) }}</span>
+                    <span v-if="s.ops.deposit">Deposit {{ fmtRupiah(s.ops.deposit) }}</span>
+                  </template>
+                  <small v-else class="muted">—</small>
+                </td>
+                <td>
+                  <input v-model.number="s.biaya_bulanan" type="number" min="0" class="form-input sf-uang" />
+                  <small v-if="s.ops && s.biaya_bulanan" class="sf-margin" :class="{ rugi: s.biaya_bulanan < s.ops.modal }">margin {{ fmtRupiah(s.biaya_bulanan - s.ops.modal) }}</small>
+                </td>
                 <td><input v-model.number="s.biaya_instalasi" type="number" min="0" class="form-input sf-uang" /></td>
                 <td><input v-model="s.tgl_rfs" type="date" class="form-input" /></td>
                 <td><input v-model="s.pic_store_nama" class="form-input sf-kecil" maxlength="150" /></td>
@@ -248,7 +281,7 @@ async function simpan(ajukan: boolean) {
               </tr>
             </tbody>
             <tfoot>
-              <tr><td colspan="6" class="kanan"><b>Total</b></td><td><b>{{ fmtRupiah(totalBulanan) }}</b></td><td><b>{{ fmtRupiah(totalInstalasi) }}</b></td><td colspan="4"></td></tr>
+              <tr><td colspan="6" class="kanan"><b>Total</b></td><td v-if="adaOps"><b>Modal {{ fmtRupiah(totalModal) }}</b></td><td><b>{{ fmtRupiah(totalBulanan) }}</b><small v-if="adaOps" class="sf-margin" :class="{ rugi: totalBulanan < totalModal }">margin {{ fmtRupiah(totalBulanan - totalModal) }}</small></td><td><b>{{ fmtRupiah(totalInstalasi) }}</b></td><td colspan="4"></td></tr>
             </tfoot>
           </table>
         </div>
@@ -312,6 +345,11 @@ async function simpan(ajukan: boolean) {
 .sf-kecil { width: 120px; }
 .sf-uang { width: 120px; }
 .sf-aksi { white-space: nowrap; }
+.sf-ops { min-width: 170px; font-size: 12px; }
+.sf-ops > * { display: block; }
+.sf-ops small { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
+.sf-margin { display: block; font-size: 11.5px; color: #16a34a; margin-top: 2px; }
+.sf-margin.rugi { color: #dc2626; }
 tr.kurang td:first-child { border-left: 3px solid #f59e0b; }
 .sf-tombol { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 16px; }
 .sf-kolom { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; font-weight: 600; }
