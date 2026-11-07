@@ -132,7 +132,14 @@ export class LinkDto {
   @IsOptional() @IsDateString() deposit_tgl?: string | null;
   @IsOptional() @IsIn(['Ditahan', 'Dikembalikan']) deposit_status?: string;
   @IsOptional() @IsIn([...DEPOSIT_JENIS, '']) deposit_jenis?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) speedtest_down?: number | null;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) speedtest_up?: number | null;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) speedtest_ping?: number | null;
   @IsOptional() @IsString() @MaxLength(2000) catatan?: string;
+}
+
+export class FotoLinkDto {
+  @IsIn(['modem', 'speedtest']) jenis: string;
 }
 
 export const JENIS_DOKUMEN = ['FAB', 'BA', 'TOPOLOGI', 'LAIN'] as const;

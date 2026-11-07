@@ -6,20 +6,18 @@ import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UPLOAD_ROOT } from '../../common/upload/upload-root';
 import { buatWo } from '../visit/visit.service';
-import { CatatanDto, DokumenDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
+import { CatatanDto, DokumenDto, FotoLinkDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 
 export interface Pengguna { id_karyawan: number; roles: string[] }
 
 // Urutan tahap order PB. Draft = SPH belum disetujui Director.
-export const TAHAP = ['Draft', 'Sales', 'OPS', 'Instalasi', 'NOC', 'Finance', 'Aktif'] as const;
+// Sementara: SPH disetujui → OPS (pasang vendor ISP: modem, speedtest) → Terpasang. Tahap setelahnya ditata menyusul.
+export const TAHAP = ['Draft', 'OPS', 'Terpasang'] as const;
 // Role yang memegang tiap tahap (Admin & Director selalu boleh)
 const PEMEGANG: Record<string, string[]> = {
   Draft: ['Sales'],
-  Sales: ['Sales'],
   OPS: ['OPS', 'Manager_Ops'],
-  Instalasi: ['Manager_Ops', 'Teknisi'],
-  NOC: ['Helpdesk', 'Manager_Ops'],
-  Finance: ['Finance'],
+  Terpasang: ['OPS', 'Manager_Ops'],
 };
 const SEMUA_TAHAP = ['Admin', 'Director'];
 const EXT_DOKUMEN: Record<string, string> = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' };
@@ -564,6 +562,7 @@ export class PasangBaruService {
     const dokumen = await this.prisma.siteDokumen.findMany({
       where: { OR: [{ id_pb: { in: idPb } }, { id_site: { in: siteHapus } }] }, select: { url_file: true },
     });
+    const fotoLink = await this.prisma.sumberInternetSite.findMany({ where: { id_site: { in: siteHapus } }, select: { foto_modem: true, foto_speedtest: true } });
 
     await this.prisma.$transaction([
       this.prisma.notification.deleteMany({
@@ -583,6 +582,7 @@ export class PasangBaruService {
         await fsp.rm(join(UPLOAD_ROOT, d.url_file.slice('/uploads/'.length)), { force: true }).catch(() => undefined);
       }
     }
+    await this.hapusFileUnggah(...fotoLink.flatMap((f) => [f.foto_modem, f.foto_speedtest]));
     for (const id_pb of idPb) await fsp.rmdir(join(UPLOAD_ROOT, 'pasang-baru', String(id_pb))).catch(() => undefined);
     await this.bukaLagiSurvey(s.id_survey, u, s.nomor_sph);
 
@@ -674,7 +674,7 @@ export class PasangBaruService {
         }
         await tx.pbOrder.update({
           where: { id_pb: o.id_pb },
-          data: { id_site: site.id_site, nomor_pb: `PB-${yy}-${String(++urutPb).padStart(4, '0')}`, tahap: 'Sales', tahap_at: sekarang },
+          data: { id_site: site.id_site, nomor_pb: `PB-${yy}-${String(++urutPb).padStart(4, '0')}`, tahap: 'OPS', tahap_at: sekarang },
         });
       }
       await tx.pbSph.update({
@@ -684,14 +684,18 @@ export class PasangBaruService {
     });
     await this.catat({ id_sph, id_karyawan: u.id_karyawan, aksi: 'setujui', catatan: dto.catatan?.trim() || null });
     await this.prisma.pbRiwayat.createMany({
-      data: s.order.map((o) => ({ id_sph, id_pb: o.id_pb, id_karyawan: u.id_karyawan, aksi: 'setujui', dari_tahap: 'Draft', ke_tahap: 'Sales', catatan: 'SPH disetujui Director' })),
+      data: s.order.map((o) => ({ id_sph, id_pb: o.id_pb, id_karyawan: u.id_karyawan, aksi: 'setujui', dari_tahap: 'Draft', ke_tahap: 'OPS', catatan: 'SPH disetujui Director' })),
     });
     if (s.id_sales) {
       await this.beriTahu([s.id_sales], {
         tipe: 'pb_sph_disetujui', judul: 'SPH disetujui Director',
-        deskripsi: `${s.nomor_sph} · ${s.order.length} site — lengkapi FAB tiap site`, url: `/pasang-baru/sph/${id_sph}`,
+        deskripsi: `${s.nomor_sph} · ${s.order.length} site — order masuk OPS untuk pemasangan vendor ISP`, url: `/pasang-baru/sph/${id_sph}`,
       });
     }
+    await this.beriTahuRole(PEMEGANG.OPS, {
+      tipe: 'pb_masuk', judul: 'Pasang baru masuk OPS',
+      deskripsi: `${s.nomor_sph} · ${s.pelanggan.nama_pelanggan} · ${s.order.length} site — pasang vendor ISP`, url: `/pasang-baru/sph/${id_sph}`,
+    });
     return { message: `SPH disetujui — ${s.order.length} order pasang baru dibuat` };
   }
 
@@ -782,8 +786,32 @@ export class PasangBaruService {
     const { o, l } = await this.linkOrder(u, id_sumber);
     if (l.status_link !== 'Rencana') throw new BadRequestException('Link yang sudah aktif tidak bisa dihapus dari sini');
     await this.prisma.sumberInternetSite.delete({ where: { id_sumber } });
+    await this.hapusFileUnggah(l.foto_modem, l.foto_speedtest);
     await this.catat({ id_sph: o.id_sph, id_pb: o.id_pb, id_karyawan: u.id_karyawan, aksi: 'ubah', catatan: 'Hapus link vendor' });
     return { message: 'Link vendor dihapus' };
+  }
+
+  /** Foto modem / screenshot speedtest per link vendor (tahap OPS) */
+  async unggahFotoLink(u: Pengguna, id_sumber: number, dto: FotoLinkDto, file: any) {
+    if (!file) throw new BadRequestException('File wajib diunggah');
+    const { o, l } = await this.linkOrder(u, id_sumber);
+    const ext = EXT_DOKUMEN[file.mimetype];
+    if (!ext || ext === 'pdf') throw new BadRequestException('Foto harus JPG atau PNG');
+    const rel = join('pasang-baru', String(o.id_pb), `${randomBytes(16).toString('hex')}.${ext}`);
+    await fsp.mkdir(join(UPLOAD_ROOT, 'pasang-baru', String(o.id_pb)), { recursive: true });
+    await fsp.writeFile(join(UPLOAD_ROOT, rel), file.buffer);
+    const url = `/uploads/${rel}`;
+    const kolom = dto.jenis === 'modem' ? 'foto_modem' : 'foto_speedtest';
+    await this.prisma.sumberInternetSite.update({ where: { id_sumber }, data: { [kolom]: url } });
+    await this.hapusFileUnggah(l[kolom]);
+    await this.catat({ id_sph: o.id_sph, id_pb: o.id_pb, id_karyawan: u.id_karyawan, aksi: 'dokumen', catatan: dto.jenis === 'modem' ? 'Foto modem' : 'Screenshot speedtest' });
+    return { data: { url }, message: dto.jenis === 'modem' ? 'Foto modem diunggah' : 'Screenshot speedtest diunggah' };
+  }
+
+  private async hapusFileUnggah(...url: (string | null | undefined)[]) {
+    for (const x of url) {
+      if (x?.startsWith('/uploads/pasang-baru/')) await fsp.rm(join(UPLOAD_ROOT, x.slice('/uploads/'.length)), { force: true }).catch(() => undefined);
+    }
   }
 
   async unggahDokumen(u: Pengguna, id_pb: number, dto: DokumenDto, file: any) {
@@ -792,7 +820,7 @@ export class PasangBaruService {
     if (!o) throw new NotFoundException('Order tidak ditemukan');
     if (!o.id_site) throw new BadRequestException('Order belum disetujui Director');
     // Dokumen diunggah oleh pemegang tahap yang sedang berjalan (FAB oleh Sales, BA oleh Instalasi, dst)
-    this.wajib(u, o.tahap === 'Aktif' || o.tahap === 'Batal' ? 'Finance' : o.tahap);
+    this.wajib(u, o.tahap === 'Batal' ? 'OPS' : o.tahap);
     // Ekstensi dari mimetype (whitelist), bukan dari nama file klien; nama file acak supaya URL tidak bisa ditebak
     const ext = EXT_DOKUMEN[file.mimetype];
     if (!ext) throw new BadRequestException('Format file harus PDF, JPG, atau PNG');
@@ -828,20 +856,25 @@ export class PasangBaruService {
   async serahkan(u: Pengguna, id_pb: number, dto: CatatanDto) {
     const o = await this.prisma.pbOrder.findUnique({ where: { id_pb }, include: { sph: { include: { pelanggan: true } } } });
     if (!o) throw new NotFoundException('Order tidak ditemukan');
-    if (o.tahap === 'Finance') throw new BadRequestException('Aktivasi oleh Finance menyusul di tahap berikutnya');
     const i = TAHAP.indexOf(o.tahap as any);
-    if (i < 1 || i >= TAHAP.indexOf('Finance')) throw new BadRequestException(`Order berstatus ${o.tahap}`);
+    if (i < 1 || i >= TAHAP.length - 1) throw new BadRequestException(o.tahap === 'Terpasang' ? 'Order sudah terpasang — tahap berikutnya menyusul' : `Order berstatus ${o.tahap}`);
     this.wajib(u, o.tahap);
     const kurang = (await this.syarat(o)).filter((s) => !s.ok);
     if (kurang.length) throw new BadRequestException(`Belum lengkap: ${kurang.map((s) => s.label).join(', ')}`);
     const ke = TAHAP[i + 1];
     await this.pindah(o, ke, u, 'serahkan', dto.catatan);
-    if (ke === 'Instalasi') await this.antreVisit(o, u);
-    await this.beriTahuRole(PEMEGANG[ke] ?? [], {
-      tipe: 'pb_masuk', judul: `Pasang baru masuk ${ke}`,
-      deskripsi: `${o.nomor_pb} · ${o.nama_site} · ${o.sph.pelanggan.nama_pelanggan}`, url: `/pasang-baru/order/${id_pb}`,
-    });
-    return { message: `Diserahkan ke ${ke}` };
+    if (ke === 'Terpasang') {
+      if (o.sph.id_sales) await this.beriTahu([o.sph.id_sales], {
+        tipe: 'pb_terpasang', judul: 'Vendor ISP terpasang',
+        deskripsi: `${o.nomor_pb} · ${o.nama_site} · ${o.sph.pelanggan.nama_pelanggan}`, url: `/pasang-baru/order/${id_pb}`,
+      });
+    } else {
+      await this.beriTahuRole(PEMEGANG[ke] ?? [], {
+        tipe: 'pb_masuk', judul: `Pasang baru masuk ${ke}`,
+        deskripsi: `${o.nomor_pb} · ${o.nama_site} · ${o.sph.pelanggan.nama_pelanggan}`, url: `/pasang-baru/order/${id_pb}`,
+      });
+    }
+    return { message: ke === 'Terpasang' ? 'Order ditandai terpasang' : `Diserahkan ke ${ke}` };
   }
 
   /** Order masuk tahap Instalasi → otomatis masuk antrean Jadwal Visit (sekali per order) */
@@ -864,7 +897,7 @@ export class PasangBaruService {
     const o = await this.prisma.pbOrder.findUnique({ where: { id_pb } });
     if (!o) throw new NotFoundException('Order tidak ditemukan');
     const i = TAHAP.indexOf(o.tahap as any);
-    if (i < 2 || o.tahap === 'Aktif') throw new BadRequestException('Order ini tidak bisa dikembalikan');
+    if (i < 2) throw new BadRequestException('Order ini tidak bisa dikembalikan');
     this.wajib(u, o.tahap);
     if (!dto.catatan?.trim()) throw new BadRequestException('Isi alasan pengembalian');
     const ke = TAHAP[i - 1];
@@ -879,8 +912,8 @@ export class PasangBaruService {
   async batal(u: Pengguna, id_pb: number, dto: CatatanDto) {
     const o = await this.prisma.pbOrder.findUnique({ where: { id_pb } });
     if (!o) throw new NotFoundException('Order tidak ditemukan');
-    if (!this.boleh(u, 'Sales')) throw new ForbiddenException('Pembatalan oleh Sales atau Director');
-    if (['Draft', 'Aktif', 'Batal'].includes(o.tahap)) throw new BadRequestException(`Order berstatus ${o.tahap}`);
+    if (!this.boleh(u, 'Draft')) throw new ForbiddenException('Pembatalan oleh Sales atau Director');
+    if (['Draft', 'Terpasang', 'Batal'].includes(o.tahap)) throw new BadRequestException(`Order berstatus ${o.tahap}`);
     if (!dto.catatan?.trim()) throw new BadRequestException('Isi alasan pembatalan');
     await this.pindah(o, 'Batal', u, 'batal', dto.catatan.trim());
     if (o.id_site) {
@@ -895,25 +928,19 @@ export class PasangBaruService {
 
   // ── Pembantu ─────────────────────────────────────────────────────────────────
   /** Syarat untuk menyerahkan order dari tahapnya sekarang */
-  private async syarat(o: { id_pb: number; id_site: number | null; tahap: string; pic_store_nama: string | null; pic_store_hp: string | null }) {
-    const dok = o.id_site ? await this.prisma.siteDokumen.findMany({ where: { id_pb: o.id_pb }, select: { jenis: true } }) : [];
-    const ada = (j: string) => dok.some((d) => d.jenis === j);
-    if (o.tahap === 'Sales') {
-      return [
-        { label: 'FAB (Formulir Aktivasi Berlangganan)', ok: ada('FAB') },
-        { label: 'Kontak PIC store', ok: !!(o.pic_store_nama && o.pic_store_hp) },
-      ];
-    }
+  private async syarat(o: { id_pb: number; id_site: number | null; tahap: string }) {
     if (o.tahap === 'OPS') {
       const link = o.id_site ? await this.prisma.sumberInternetSite.findMany({ where: { id_site: o.id_site } }) : [];
-      const lengkap = link.filter((l) => l.nomor_pelanggan_isp && l.tgl_mulai && Number(l.biaya_mrc_vendor) > 0 && l.sn_modem);
+      const cek = (f: (l: (typeof link)[number]) => unknown) => link.length > 0 && link.every((l) => !!f(l));
       return [
         { label: 'Link vendor ISP', ok: link.length > 0 },
-        { label: 'ID pelanggan, tgl aktivasi, biaya & SN modem vendor', ok: link.length > 0 && lengkap.length === link.length },
+        { label: 'ID pelanggan vendor', ok: cek((l) => l.nomor_pelanggan_isp) },
+        { label: 'Tanggal modem terpasang', ok: cek((l) => l.tgl_mulai) },
+        { label: 'SN modem', ok: cek((l) => l.sn_modem) },
+        { label: 'Foto modem', ok: cek((l) => l.foto_modem) },
+        { label: 'Hasil speedtest (download, upload & screenshot)', ok: cek((l) => Number(l.speedtest_down) > 0 && Number(l.speedtest_up) > 0 && l.foto_speedtest) },
       ];
     }
-    if (o.tahap === 'Instalasi') return [{ label: 'Berita Acara (BA) aktivasi', ok: ada('BA') }];
-    if (o.tahap === 'NOC') return [{ label: 'Topologi', ok: ada('TOPOLOGI') }];
     return [];
   }
 
@@ -961,6 +988,9 @@ export class PasangBaruService {
       ...(d.deposit_nominal !== undefined ? { deposit_nominal: d.deposit_nominal } : {}),
       ...(d.deposit_tgl !== undefined ? { deposit_tgl: tgl(d.deposit_tgl) } : {}),
       ...(d.deposit_jenis !== undefined ? { deposit_jenis: d.deposit_jenis || null } : {}),
+      ...(d.speedtest_down !== undefined ? { speedtest_down: d.speedtest_down || null } : {}),
+      ...(d.speedtest_up !== undefined ? { speedtest_up: d.speedtest_up || null } : {}),
+      ...(d.speedtest_ping !== undefined ? { speedtest_ping: d.speedtest_ping ?? null } : {}),
       ...(d.deposit_status !== undefined ? { deposit_status: d.deposit_status || null } : {}),
       ...(d.catatan !== undefined ? { catatan: d.catatan.trim() || null } : {}),
     };

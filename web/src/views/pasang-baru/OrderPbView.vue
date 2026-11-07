@@ -11,7 +11,7 @@ const router = useRouter()
 const id = computed(() => Number(route.params.id))
 const o = ref<any>(null)
 const vendor = ref<Vendor[]>([])
-const tab = ref('Sales')
+const tab = ref('OPS')
 const proses = ref(false)
 
 async function muat(gantiTab = false) {
@@ -19,7 +19,7 @@ async function muat(gantiTab = false) {
     const { data } = await api.get(`/pasang-baru/order/${id.value}`)
     o.value = data.data
     isiForm()
-    if (gantiTab) tab.value = TAB.includes(o.value.tahap) ? o.value.tahap : 'Sales'
+    if (gantiTab) tab.value = 'OPS'
   } catch (e) {
     alertError(e, 'Gagal memuat order')
   }
@@ -29,24 +29,22 @@ onMounted(async () => {
   await muat(true)
 })
 
-const TAB = ['Sales', 'OPS', 'Instalasi', 'NOC', 'Finance', 'Dokumen', 'Riwayat']
+const TAB = ['OPS', 'Info order', 'Dokumen', 'Riwayat']
 const bolehTahap = (t: string) => !!o.value?.hak.tahap.includes(t)
 const bisaUbah = (t: string) => o.value?.tahap === t && bolehTahap(t)
 const idxTahap = computed(() => TAHAP_ORDER.indexOf(o.value?.tahap))
-const bisaSerahkan = computed(() => ['Sales', 'OPS', 'Instalasi', 'NOC'].includes(o.value?.tahap) && bolehTahap(o.value.tahap))
-const bisaKembalikan = computed(() => ['OPS', 'Instalasi', 'NOC', 'Finance'].includes(o.value?.tahap) && bolehTahap(o.value.tahap))
-const bisaBatal = computed(() => !['Aktif', 'Batal', 'Draft'].includes(o.value?.tahap) && bolehTahap('Sales'))
+const bisaSerahkan = computed(() => o.value?.tahap === 'OPS' && bolehTahap('OPS'))
+const bisaKembalikan = computed(() => o.value?.tahap === 'Terpasang' && bolehTahap('Terpasang'))
+const bisaBatal = computed(() => o.value?.tahap === 'OPS' && bolehTahap('Draft'))
 const lengkap = computed(() => (o.value?.syarat || []).every((x: any) => x.ok))
-const BERIKUT: Record<string, string> = { Sales: 'OPS', OPS: 'Instalasi', Instalasi: 'NOC', NOC: 'Finance' }
-const SEBELUM: Record<string, string> = { OPS: 'Sales', Instalasi: 'OPS', NOC: 'Instalasi', Finance: 'NOC' }
+const SEBELUM: Record<string, string> = { Terpasang: 'OPS' }
 
 async function jalankan(fn: () => Promise<any>, gantiTab = false) {
   proses.value = true
   try { await fn(); await muat(gantiTab) } catch (e) { alertError(e) } finally { proses.value = false }
 }
 async function serahkan() {
-  const ke = BERIKUT[o.value.tahap]
-  const catatan = await promptDialog({ title: `Serahkan ke ${ke}`, label: 'Catatan untuk divisi berikutnya (opsional)', confirmLabel: 'Serahkan' })
+  const catatan = await promptDialog({ title: 'Tandai terpasang', message: 'Modem vendor sudah terpasang dan speedtest sudah dicek. Sales akan diberi tahu.', label: 'Catatan (opsional)', confirmLabel: '✓ Terpasang' })
   if (catatan === null) return
   jalankan(() => api.post(`/pasang-baru/order/${id.value}/serahkan`, { catatan: catatan || undefined }), true)
 }
@@ -62,19 +60,12 @@ async function batalkan() {
   jalankan(() => api.post(`/pasang-baru/order/${id.value}/batal`, { catatan }))
 }
 
-// ── Tab Sales ────────────────────────────────────────────────────────────────
-const fs = reactive({ nama_site: '', alamat: '', lantai_unit: '', kota: '', tgl_rfs: '', pic_store_nama: '', pic_store_hp: '' })
 // ── Tab OPS (IKG) ────────────────────────────────────────────────────────────
 const fo = reactive({ ikg_nominal: 0, ikg_pengelola: '', ikg_catatan: '' })
 function isiForm() {
   const x = o.value
-  Object.assign(fs, {
-    nama_site: x.nama_site, alamat: x.alamat, lantai_unit: x.lantai_unit || '', kota: x.kota || '',
-    tgl_rfs: x.tgl_rfs ? x.tgl_rfs.slice(0, 10) : '', pic_store_nama: x.pic_store_nama || '', pic_store_hp: x.pic_store_hp || '',
-  })
   Object.assign(fo, { ikg_nominal: Number(x.ikg_nominal), ikg_pengelola: x.ikg_pengelola || '', ikg_catatan: x.ikg_catatan || '' })
 }
-const simpanSales = () => jalankan(() => api.patch(`/pasang-baru/order/${id.value}/sales`, { ...fs, tgl_rfs: fs.tgl_rfs || null }))
 const simpanOps = () => jalankan(() => api.patch(`/pasang-baru/order/${id.value}/ops`, { ...fo, ikg_nominal: Number(fo.ikg_nominal) || 0 }))
 
 // ── Link vendor ISP ──────────────────────────────────────────────────────────
@@ -82,6 +73,7 @@ const links = computed<any[]>(() => o.value?.site?.sumber_internet || [])
 const kosongLink = () => ({
   id_sumber: null as number | null, id_vendor_isp: '' as number | '', peruntukan_link: 'Main', nomor_pelanggan_isp: '', bandwidth_mbps: '',
   biaya_mrc_vendor: 0, tgl_mulai: '', durasi_bulan: 12 as number | '', sn_modem: '', deposit_nominal: 0, deposit_tgl: '', deposit_status: '', deposit_jenis: '', catatan: '',
+  speedtest_down: '' as number | '', speedtest_up: '' as number | '', speedtest_ping: '' as number | '',
 })
 const fl = reactive({ buka: false, ...kosongLink() })
 function bukaLink(l?: any) {
@@ -92,6 +84,8 @@ function bukaLink(l?: any) {
       bandwidth_mbps: l.bandwidth_mbps || '', biaya_mrc_vendor: Number(l.biaya_mrc_vendor), tgl_mulai: l.tgl_mulai ? l.tgl_mulai.slice(0, 10) : '',
       durasi_bulan: l.durasi_bulan || '', sn_modem: l.sn_modem || '', deposit_nominal: Number(l.deposit_nominal),
       deposit_tgl: l.deposit_tgl ? l.deposit_tgl.slice(0, 10) : '', deposit_status: l.deposit_status || '', deposit_jenis: l.deposit_jenis || '', catatan: l.catatan || '',
+      speedtest_down: l.speedtest_down != null ? Number(l.speedtest_down) : '', speedtest_up: l.speedtest_up != null ? Number(l.speedtest_up) : '',
+      speedtest_ping: l.speedtest_ping != null ? Number(l.speedtest_ping) : '',
     })
   }
 }
@@ -102,6 +96,9 @@ async function simpanLink() {
     ...isi, id_vendor_isp: Number(isi.id_vendor_isp), biaya_mrc_vendor: Number(isi.biaya_mrc_vendor) || 0, deposit_nominal: Number(isi.deposit_nominal) || 0,
     durasi_bulan: isi.durasi_bulan ? Number(isi.durasi_bulan) : null, tgl_mulai: isi.tgl_mulai || null, deposit_tgl: isi.deposit_tgl || null,
     deposit_status: isi.deposit_status || undefined,
+    speedtest_down: isi.speedtest_down === '' ? null : Number(isi.speedtest_down),
+    speedtest_up: isi.speedtest_up === '' ? null : Number(isi.speedtest_up),
+    speedtest_ping: isi.speedtest_ping === '' ? null : Number(isi.speedtest_ping),
   }
   await jalankan(() => (id_sumber ? api.patch(`/pasang-baru/link/${id_sumber}`, body) : api.post(`/pasang-baru/order/${id.value}/link`, body)))
   fl.buka = false
@@ -110,6 +107,30 @@ async function hapusLink(l: any) {
   if (!(await confirmDialog({ title: 'Hapus link', message: `Hapus link ${l.vendor.nama_vendor}?`, variant: 'danger', confirmLabel: 'Hapus' }))) return
   jalankan(() => api.delete(`/pasang-baru/link/${l.id_sumber}`))
 }
+
+// Foto modem / screenshot speedtest per link
+const inputFoto = ref<HTMLInputElement | null>(null)
+let fotoTujuan: { id: number; jenis: 'modem' | 'speedtest' } | null = null
+function pilihFoto(l: any, jenis: 'modem' | 'speedtest') {
+  fotoTujuan = { id: l.id_sumber, jenis }
+  inputFoto.value?.click()
+}
+async function unggahFoto(ev: Event) {
+  const el = ev.target as HTMLInputElement
+  const file = el.files?.[0]
+  el.value = ''
+  if (!file || !fotoTujuan) return
+  const { id: idl, jenis } = fotoTujuan
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('jenis', jenis)
+  jalankan(() => api.post(`/pasang-baru/link/${idl}/foto`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }))
+}
+const lihat = ref('')
+const kurangLink = (l: any) => [
+  !l.nomor_pelanggan_isp && 'ID pelanggan', !l.tgl_mulai && 'tgl terpasang', !l.sn_modem && 'SN modem', !l.foto_modem && 'foto modem',
+  !(Number(l.speedtest_down) > 0 && Number(l.speedtest_up) > 0) && 'angka speedtest', !l.foto_speedtest && 'screenshot speedtest',
+].filter(Boolean) as string[]
 
 // ── Dokumen ──────────────────────────────────────────────────────────────────
 const dokumen = computed<any[]>(() => (o.value?.site?.dokumen || []).filter((d: any) => d.id_pb === o.value.id_pb || !d.id_pb))
@@ -135,7 +156,7 @@ async function hapusDok(d: any) {
   if (!(await confirmDialog({ title: 'Hapus dokumen', message: `Hapus ${d.nama_file}?`, variant: 'danger', confirmLabel: 'Hapus' }))) return
   jalankan(() => api.delete(`/pasang-baru/dokumen/${d.id_dokumen}`))
 }
-const bisaUnggah = computed(() => o.value && !['Draft', 'Batal'].includes(o.value.tahap) && bolehTahap(o.value.tahap === 'Aktif' ? 'Finance' : o.value.tahap))
+const bisaUnggah = computed(() => o.value && !['Draft', 'Batal'].includes(o.value.tahap) && bolehTahap(o.value.tahap))
 
 // ── Finance (ringkasan) ──────────────────────────────────────────────────────
 const biayaVendor = computed(() => links.value.reduce((a, l) => a + Number(l.biaya_mrc_vendor), 0))
@@ -163,10 +184,10 @@ const AKSI: Record<string, string> = {
           </p>
         </div>
         <div class="op-tombol">
-          <button class="btn btn-ghost" @click="router.push('/pasang-baru?tab=' + (o.tahap === 'Draft' ? 'SPH' : o.tahap))">← Daftar</button>
+          <button class="btn btn-ghost" @click="router.push('/pasang-baru')">← Daftar</button>
           <button v-if="bisaBatal" class="btn btn-ghost" :disabled="proses" @click="batalkan">Batalkan</button>
           <button v-if="bisaKembalikan" class="btn btn-ghost" :disabled="proses" @click="kembalikan">↩ Kembalikan ke {{ SEBELUM[o.tahap] }}</button>
-          <button v-if="bisaSerahkan" class="btn btn-primary" :disabled="proses || !lengkap" @click="serahkan">Serahkan ke {{ BERIKUT[o.tahap] }} ➜</button>
+          <button v-if="bisaSerahkan" class="btn btn-primary" :disabled="proses || !lengkap" :title="lengkap ? '' : 'Lengkapi syarat dulu'" @click="serahkan">✓ Tandai terpasang</button>
         </div>
       </div>
 
@@ -180,10 +201,11 @@ const AKSI: Record<string, string> = {
         </template>
       </div>
       <div v-if="o.tahap === 'Batal'" class="alert alert-danger">Order dibatalkan.</div>
+      <div v-else-if="o.tahap === 'Terpasang'" class="alert alert-success">Vendor ISP sudah terpasang. Tahap berikutnya (instalasi perangkat, NOC, aktivasi) akan ditata menyusul.</div>
 
       <!-- Syarat tahap sekarang -->
       <div v-if="o.syarat.length" class="op-syarat" :class="{ ok: lengkap }">
-        <b>Syarat diserahkan ke {{ BERIKUT[o.tahap] }}:</b>
+        <b>Syarat terpasang:</b>
         <span v-for="x in o.syarat" :key="x.label" :class="x.ok ? 'hijau' : 'merah'">{{ x.ok ? '✓' : '✗' }} {{ x.label }}</span>
       </div>
 
@@ -191,135 +213,93 @@ const AKSI: Record<string, string> = {
         <button v-for="t in TAB" :key="t" :class="{ aktif: tab === t, kini: t === o.tahap }" @click="tab = t">{{ t }}</button>
       </div>
 
-      <!-- SALES -->
-      <div v-if="tab === 'Sales'" class="detail-section">
-        <div class="detail-section-body">
-          <div class="grid-2">
-            <div class="form-group"><label class="form-label">Nama site</label><input v-model="fs.nama_site" class="form-input" :disabled="!bisaUbah('Sales')" /></div>
-            <div class="form-group"><label class="form-label">Layanan</label><input :value="o.layanan.nama_layanan" class="form-input" disabled /></div>
-            <div class="form-group"><label class="form-label">Alamat pemasangan</label><textarea v-model="fs.alamat" rows="2" class="form-textarea" :disabled="!bisaUbah('Sales')"></textarea></div>
-            <div class="grid-2">
-              <div class="form-group"><label class="form-label">Lantai / unit</label><input v-model="fs.lantai_unit" class="form-input" :disabled="!bisaUbah('Sales')" /></div>
-              <div class="form-group"><label class="form-label">Kota</label><input v-model="fs.kota" class="form-input" :disabled="!bisaUbah('Sales')" /></div>
-            </div>
-            <div class="form-group"><label class="form-label">RFS / tanggal aktivasi diminta</label><input v-model="fs.tgl_rfs" type="date" class="form-input" :disabled="!bisaUbah('Sales')" /></div>
-            <div class="grid-2">
-              <div class="form-group"><label class="form-label">PIC store</label><input v-model="fs.pic_store_nama" class="form-input" :disabled="!bisaUbah('Sales')" /></div>
-              <div class="form-group"><label class="form-label">HP PIC store</label><input v-model="fs.pic_store_hp" class="form-input" :disabled="!bisaUbah('Sales')" /></div>
-            </div>
+      <!-- OPS: pasang vendor ISP -->
+      <template v-if="tab === 'OPS'">
+        <div class="detail-section">
+          <div class="detail-section-header op-head">
+            <b>Link vendor ISP</b>
+            <button v-if="bisaUbah('OPS')" class="btn btn-sm btn-ghost" @click="bukaLink()">+ Tambah link</button>
           </div>
-          <div class="op-angka">
-            <span>Biaya bulanan <b>{{ fmtRupiah(o.biaya_bulanan) }}</b></span>
-            <span>Biaya instalasi <b>{{ fmtRupiah(o.biaya_instalasi) }}</b></span>
-            <span>Lama berlangganan <b>{{ o.sph.durasi_bulan }} bulan</b></span>
-            <span>PIC pelanggan <b>{{ o.sph.nama_pic }}</b> {{ o.sph.telp_pic }} {{ o.sph.email_pic }}</span>
-          </div>
-          <div class="op-dok">
-            <b>FAB</b>
-            <a v-for="d in dok('FAB')" :key="d.id_dokumen" :href="d.url_file" target="_blank" rel="noopener">📄 {{ d.nama_file }}</a>
-            <span v-if="!dok('FAB').length" class="merah">belum ada</span>
-            <button v-if="bisaUbah('Sales')" class="btn btn-sm btn-ghost" @click="pilihDok('FAB')">⬆ Unggah FAB</button>
-          </div>
-          <div v-if="bisaUbah('Sales')" class="op-simpan"><button class="btn btn-primary" :disabled="proses" @click="simpanSales">Simpan</button></div>
-        </div>
-      </div>
-
-      <!-- OPS -->
-      <div v-if="tab === 'OPS'" class="detail-section">
-        <div class="detail-section-header op-head">
-          <b>Link vendor ISP</b>
-          <button v-if="bisaUbah('OPS')" class="btn btn-sm btn-primary" @click="bukaLink()">+ Tambah link</button>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Vendor</th><th>ID pelanggan vendor</th><th>Layanan</th><th>Aktivasi vendor</th><th class="kanan">Biaya/bln</th><th>SN modem</th><th class="kanan">Deposit</th><th></th></tr></thead>
-            <tbody>
-              <tr v-if="!links.length"><td colspan="8" class="muted pusat">Belum ada link vendor.</td></tr>
-              <tr v-for="l in links" :key="l.id_sumber">
-                <td><b>{{ l.vendor.nama_vendor }}</b><br /><small class="muted">{{ l.peruntukan_link }} · {{ l.status_link }}</small></td>
-                <td>{{ l.nomor_pelanggan_isp || '-' }}</td>
-                <td>{{ l.bandwidth_mbps || '-' }}</td>
-                <td>{{ l.tgl_mulai ? fmtDate(l.tgl_mulai) : '-' }}<br /><small v-if="l.durasi_bulan" class="muted">{{ l.durasi_bulan }} bln</small></td>
-                <td class="kanan">{{ fmtRupiah(l.biaya_mrc_vendor) }}</td>
-                <td>{{ l.sn_modem || '-' }}</td>
-                <td class="kanan">{{ Number(l.deposit_nominal) ? fmtRupiah(l.deposit_nominal) : '-' }}<br /><small v-if="l.deposit_status || l.deposit_jenis" class="muted">{{ [l.deposit_status, l.deposit_jenis].filter(Boolean).join(' · ') }}</small></td>
-                <td class="op-aksi">
+          <div class="detail-section-body">
+            <p v-if="!links.length" class="muted pusat">Belum ada link vendor.</p>
+            <div v-for="l in links" :key="l.id_sumber" class="op-link" :class="{ beres: !kurangLink(l).length }">
+              <div class="op-link-atas">
+                <div>
+                  <b>{{ l.vendor.nama_vendor }}</b> <span class="badge" :class="l.peruntukan_link === 'Main' ? 'badge-blue' : 'badge-gray'">{{ l.peruntukan_link }}</span>
+                  <small class="muted"> · {{ l.bandwidth_mbps || '-' }} · {{ fmtRupiah(l.biaya_mrc_vendor) }}/bln</small>
+                  <template v-if="Number(l.deposit_nominal)"><small class="muted"> · deposit {{ fmtRupiah(l.deposit_nominal) }} ({{ [l.deposit_jenis, l.deposit_status].filter(Boolean).join(' · ') || '-' }})</small></template>
+                </div>
+                <div class="op-aksi">
+                  <span v-if="!kurangLink(l).length" class="hijau"><b>✓ Lengkap</b></span>
                   <template v-if="bisaUbah('OPS')">
-                    <button class="btn btn-sm btn-ghost" @click="bukaLink(l)">✏️</button>
-                    <button v-if="l.status_link === 'Rencana'" class="btn btn-sm btn-ghost" @click="hapusLink(l)">✕</button>
+                    <button class="btn btn-sm btn-primary" @click="bukaLink(l)">✏️ Isi data pemasangan</button>
+                    <button v-if="l.status_link === 'Rencana'" class="btn btn-sm btn-ghost" title="Hapus link" @click="hapusLink(l)">✕</button>
                   </template>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="detail-section-body">
-          <b>IKG — instalasi ke dalam gedung</b> <small class="muted">(dibayar NEXT1 ke pengelola gedung, tidak ditagihkan ke pelanggan)</small>
-          <div class="grid-3 op-ikg">
-            <div class="form-group"><label class="form-label">Nominal</label><input v-model.number="fo.ikg_nominal" type="number" min="0" class="form-input" :disabled="!bisaUbah('OPS')" /></div>
-            <div class="form-group"><label class="form-label">Pengelola gedung</label><input v-model="fo.ikg_pengelola" class="form-input" maxlength="150" :disabled="!bisaUbah('OPS')" /></div>
-            <div class="form-group"><label class="form-label">Catatan</label><input v-model="fo.ikg_catatan" class="form-input" maxlength="500" :disabled="!bisaUbah('OPS')" /></div>
+                </div>
+              </div>
+              <div class="op-link-isi">
+                <div class="op-data">
+                  <span><small>ID pelanggan vendor</small><b>{{ l.nomor_pelanggan_isp || '—' }}</b></span>
+                  <span><small>Modem terpasang</small><b>{{ l.tgl_mulai ? fmtDate(l.tgl_mulai) : '—' }}</b></span>
+                  <span><small>SN modem</small><b>{{ l.sn_modem || '—' }}</b></span>
+                  <span><small>Speedtest</small><b v-if="Number(l.speedtest_down)">↓ {{ Number(l.speedtest_down) }} · ↑ {{ Number(l.speedtest_up) }} Mbps<template v-if="l.speedtest_ping != null"> · {{ Number(l.speedtest_ping) }} ms</template></b><b v-else>—</b></span>
+                </div>
+                <div class="op-foto">
+                  <div v-for="j in (['modem', 'speedtest'] as const)" :key="j" class="op-foto-slot">
+                    <small>{{ j === 'modem' ? 'Foto modem' : 'Screenshot speedtest' }}</small>
+                    <img v-if="l[`foto_${j}`]" :src="l[`foto_${j}`]" :alt="j" @click="lihat = l[`foto_${j}`]" />
+                    <div v-else class="op-foto-kosong">belum ada</div>
+                    <button v-if="bisaUbah('OPS')" class="btn btn-sm btn-ghost" @click="pilihFoto(l, j)">📷 {{ l[`foto_${j}`] ? 'Ganti' : 'Unggah' }}</button>
+                  </div>
+                </div>
+              </div>
+              <p v-if="kurangLink(l).length" class="op-kurang">Belum: {{ kurangLink(l).join(', ') }}</p>
+            </div>
           </div>
-          <div v-if="bisaUbah('OPS')" class="op-simpan"><button class="btn btn-primary" :disabled="proses" @click="simpanOps">Simpan IKG</button></div>
         </div>
-      </div>
+        <div class="detail-section">
+          <div class="detail-section-body">
+            <b>IKG — instalasi ke dalam gedung</b> <small class="muted">(dibayar NEXT1 ke pengelola gedung, tidak ditagihkan ke pelanggan)</small>
+            <div class="grid-3 op-ikg">
+              <div class="form-group"><label class="form-label">Nominal</label><input v-model.number="fo.ikg_nominal" type="number" min="0" class="form-input" :disabled="!bisaUbah('OPS')" /></div>
+              <div class="form-group"><label class="form-label">Pengelola gedung</label><input v-model="fo.ikg_pengelola" class="form-input" maxlength="150" :disabled="!bisaUbah('OPS')" /></div>
+              <div class="form-group"><label class="form-label">Catatan</label><input v-model="fo.ikg_catatan" class="form-input" maxlength="500" :disabled="!bisaUbah('OPS')" /></div>
+            </div>
+            <div v-if="bisaUbah('OPS')" class="op-simpan"><button class="btn btn-ghost" :disabled="proses" @click="simpanOps">Simpan IKG</button></div>
+          </div>
+        </div>
+      </template>
 
-      <!-- INSTALASI & NOC (tahap 2 akan disambungkan ke modul Pemasangan, perangkat & PRTG) -->
-      <div v-if="tab === 'Instalasi' || tab === 'NOC'" class="detail-section">
-        <div class="detail-section-body">
-          <div class="alert alert-info">
-            {{ tab === 'Instalasi'
-              ? 'Penjadwalan teknisi (NEXT1 / vendor pihak 3), foto, perangkat dari gudang, dan BA tanda tangan di HP menyusul di tahap 2. Untuk sementara unggah BA aktivasi di sini.'
-              : 'Data perangkat (SN, IP, MAC) dan sensor PRTG menyusul di tahap 2. Untuk sementara unggah topologi di sini.' }}
-          </div>
-          <div class="op-dok">
-            <b>{{ tab === 'Instalasi' ? 'BA aktivasi' : 'Topologi' }}</b>
-            <a v-for="d in dok(tab === 'Instalasi' ? 'BA' : 'TOPOLOGI')" :key="d.id_dokumen" :href="d.url_file" target="_blank" rel="noopener">📄 {{ d.nama_file }}</a>
-            <span v-if="!dok(tab === 'Instalasi' ? 'BA' : 'TOPOLOGI').length" class="merah">belum ada</span>
-            <button v-if="bisaUbah(tab)" class="btn btn-sm btn-ghost" @click="pilihDok(tab === 'Instalasi' ? 'BA' : 'TOPOLOGI')">⬆ Unggah</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- FINANCE -->
-      <div v-if="tab === 'Finance'" class="detail-section">
+      <!-- INFO ORDER -->
+      <div v-if="tab === 'Info order'" class="detail-section">
         <div class="detail-section-body">
           <div class="grid-2">
-            <table class="data-table">
-              <thead><tr><th colspan="2">Pendapatan</th></tr></thead>
-              <tbody>
-                <tr><td>Biaya bulanan</td><td class="kanan">{{ fmtRupiah(o.biaya_bulanan) }}</td></tr>
-                <tr><td>Biaya instalasi</td><td class="kanan">{{ fmtRupiah(o.biaya_instalasi) }}</td></tr>
-              </tbody>
-            </table>
-            <table class="data-table">
-              <thead><tr><th colspan="2">Biaya</th></tr></thead>
-              <tbody>
-                <tr><td>Vendor ISP / bulan</td><td class="kanan">{{ fmtRupiah(biayaVendor) }}</td></tr>
-                <tr><td>IKG (sekali)</td><td class="kanan">{{ fmtRupiah(o.ikg_nominal) }}</td></tr>
-                <tr><td>Deposit vendor <small class="muted">(dicatat, bukan biaya)</small></td><td class="kanan">{{ fmtRupiah(deposit) }}</td></tr>
-              </tbody>
-            </table>
+            <div>
+              <div class="info-row"><span class="info-label">Site</span><span class="info-value"><b>{{ o.nama_site }}</b></span></div>
+              <div class="info-row"><span class="info-label">Alamat</span><span class="info-value">{{ o.alamat }}<template v-if="o.lantai_unit"> — {{ o.lantai_unit }}</template><template v-if="o.kota">, {{ o.kota }}</template></span></div>
+              <div class="info-row"><span class="info-label">Layanan</span><span class="info-value">{{ o.layanan.nama_layanan }}</span></div>
+              <div class="info-row"><span class="info-label">RFS diminta</span><span class="info-value">{{ o.tgl_rfs ? fmtDate(o.tgl_rfs) : '-' }}</span></div>
+              <div class="info-row"><span class="info-label">PIC store</span><span class="info-value">{{ o.pic_store_nama || '-' }} {{ o.pic_store_hp || '' }}</span></div>
+              <div class="info-row"><span class="info-label">PIC pelanggan</span><span class="info-value">{{ o.sph.nama_pic }} {{ o.sph.telp_pic || '' }} {{ o.sph.email_pic || '' }}</span></div>
+              <div class="info-row"><span class="info-label">Sales</span><span class="info-value">{{ o.sales || '-' }}</span></div>
+            </div>
+            <div>
+              <div class="info-row"><span class="info-label">Biaya bulanan</span><span class="info-value"><b>{{ fmtRupiah(o.biaya_bulanan) }}</b></span></div>
+              <div class="info-row"><span class="info-label">Biaya instalasi</span><span class="info-value">{{ fmtRupiah(o.biaya_instalasi) }}</span></div>
+              <div class="info-row"><span class="info-label">Lama berlangganan</span><span class="info-value">{{ o.sph.durasi_bulan }} bulan</span></div>
+              <div class="info-row"><span class="info-label">Modal vendor / bulan</span><span class="info-value">{{ fmtRupiah(biayaVendor) }}</span></div>
+              <div class="info-row"><span class="info-label">Margin / bulan</span><span class="info-value"><b :class="margin < 0 ? 'merah' : 'hijau'">{{ fmtRupiah(margin) }}</b><template v-if="Number(o.biaya_bulanan)"> ({{ Math.round((margin / Number(o.biaya_bulanan)) * 100) }}%)</template></span></div>
+              <div class="info-row"><span class="info-label">IKG (sekali)</span><span class="info-value">{{ fmtRupiah(o.ikg_nominal) }}<template v-if="balikModal"> · balik modal ± {{ balikModal }} bln</template></span></div>
+              <div class="info-row"><span class="info-label">Deposit vendor</span><span class="info-value">{{ fmtRupiah(deposit) }}</span></div>
+            </div>
           </div>
-          <div class="op-angka">
-            <span>Margin bulanan <b :class="margin < 0 ? 'merah' : 'hijau'">{{ fmtRupiah(margin) }}</b>
-              <template v-if="Number(o.biaya_bulanan)"> ({{ Math.round((margin / Number(o.biaya_bulanan)) * 100) }}%)</template></span>
-            <span v-if="balikModal">Balik modal IKG ± <b>{{ balikModal }} bulan</b></span>
-          </div>
-          <div class="op-dok">
-            <b>Dokumen</b>
-            <span :class="dok('FAB').length ? 'hijau' : 'merah'">FAB {{ dok('FAB').length ? '✓' : '✗' }}</span>
-            <span :class="dok('BA').length ? 'hijau' : 'merah'">BA {{ dok('BA').length ? '✓' : '✗' }}</span>
-            <span :class="dok('TOPOLOGI').length ? 'hijau' : 'merah'">Topologi {{ dok('TOPOLOGI').length ? '✓' : '✗' }}</span>
-          </div>
-          <div class="alert alert-info">Aktivasi (kontrak, site aktif, invoice pertama, kirim BA ke pelanggan) menyusul di tahap 3.</div>
         </div>
       </div>
 
       <!-- DOKUMEN -->
       <div v-if="tab === 'Dokumen'" class="detail-section">
         <div class="detail-section-body">
-          <div v-for="j in ['FAB', 'BA', 'TOPOLOGI', 'LAIN']" :key="j" class="op-dok">
+          <div v-for="j in ['LAIN', 'FAB', 'BA', 'TOPOLOGI'].filter((x) => x === 'LAIN' || dok(x).length)" :key="j" class="op-dok">
             <b>{{ NAMA_DOK[j] }}</b>
             <span v-for="d in dok(j)" :key="d.id_dokumen" class="op-file">
               <a :href="d.url_file" target="_blank" rel="noopener">📄 {{ d.nama_file }}</a>
@@ -346,6 +326,8 @@ const AKSI: Record<string, string> = {
       </div>
 
       <input ref="inputDok" type="file" accept=".pdf,.jpg,.jpeg,.png" hidden @change="unggah" />
+      <input ref="inputFoto" type="file" accept="image/jpeg,image/png" hidden @change="unggahFoto" />
+      <div v-if="lihat" class="modal-overlay" @click="lihat = ''"><img :src="lihat" class="op-besar" alt="foto" /></div>
     </template>
 
     <!-- Form link vendor -->
@@ -370,10 +352,19 @@ const AKSI: Record<string, string> = {
             </div>
             <div class="form-group"><label class="form-label form-required">ID pelanggan vendor</label><input v-model="fl.nomor_pelanggan_isp" class="form-input" maxlength="100" /></div>
             <div class="form-group"><label class="form-label">Layanan / bandwidth vendor</label><input v-model="fl.bandwidth_mbps" class="form-input" maxlength="30" placeholder="mis. 50 Mbps" /></div>
-            <div class="form-group"><label class="form-label form-required">Tanggal aktivasi vendor</label><input v-model="fl.tgl_mulai" type="date" class="form-input" /></div>
+            <div class="form-group"><label class="form-label form-required">Tanggal modem terpasang</label><input v-model="fl.tgl_mulai" type="date" class="form-input" /></div>
             <div class="form-group"><label class="form-label">Lama berlangganan vendor (bulan)</label><input v-model.number="fl.durasi_bulan" type="number" min="1" max="120" class="form-input" /></div>
             <div class="form-group"><label class="form-label form-required">Biaya langganan vendor / bulan</label><input v-model.number="fl.biaya_mrc_vendor" type="number" min="0" class="form-input" /></div>
-            <div class="form-group"><label class="form-label form-required">SN modem vendor</label><input v-model="fl.sn_modem" class="form-input" maxlength="100" /></div>
+            <div class="form-group"><label class="form-label form-required">SN modem</label><input v-model="fl.sn_modem" class="form-input" maxlength="100" /></div>
+            <div class="form-group">
+              <label class="form-label form-required">Hasil speedtest</label>
+              <div class="op-speed">
+                <label>↓ <input v-model.number="fl.speedtest_down" type="number" min="0" step="0.01" class="form-input" placeholder="Download" /></label>
+                <label>↑ <input v-model.number="fl.speedtest_up" type="number" min="0" step="0.01" class="form-input" placeholder="Upload" /></label>
+                <label>⏱ <input v-model.number="fl.speedtest_ping" type="number" min="0" step="0.1" class="form-input" placeholder="Ping ms" /></label>
+              </div>
+              <small class="form-hint">Mbps · foto modem & screenshot speedtest diunggah di kartu link setelah disimpan</small>
+            </div>
             <div class="grid-2">
               <div class="form-group"><label class="form-label">Deposit ke vendor</label><input v-model.number="fl.deposit_nominal" type="number" min="0" class="form-input" /></div>
               <div class="form-group">
@@ -427,6 +418,22 @@ const AKSI: Record<string, string> = {
 .op-ikg { margin-top: 8px; }
 .op-aksi { white-space: nowrap; }
 .op-riwayat { margin: 4px 0; font-size: 13px; }
+.op-link { border: 1px solid var(--border, #e2e8f0); border-left: 4px solid #f59e0b; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.op-link.beres { border-left-color: #16a34a; }
+.op-link-atas { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
+.op-link-isi { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
+.op-data { flex: 1 1 260px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.op-data span { display: flex; flex-direction: column; font-size: 13px; }
+.op-data small, .op-foto-slot small { color: var(--text-3); font-size: 11.5px; }
+.op-foto { display: flex; gap: 10px; flex-wrap: wrap; }
+.op-foto-slot { display: flex; flex-direction: column; gap: 4px; width: 140px; }
+.op-foto-slot img { width: 140px; height: 100px; object-fit: cover; border-radius: 6px; cursor: zoom-in; border: 1px solid var(--border, #e2e8f0); }
+.op-foto-kosong { width: 140px; height: 100px; border: 1px dashed #cbd5e1; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--text-3); font-size: 12px; }
+.op-kurang { margin: 8px 0 0; font-size: 12.5px; color: #b45309; }
+.op-speed { display: flex; gap: 6px; }
+.op-speed label { display: flex; align-items: center; gap: 4px; flex: 1; }
+.op-speed .form-input { min-width: 0; }
+.op-besar { max-width: 92vw; max-height: 88vh; border-radius: 8px; margin: auto; display: block; }
 .hijau { color: #15803d; }
 .merah { color: #dc2626; }
 .kanan { text-align: right; }

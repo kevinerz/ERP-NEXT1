@@ -43,7 +43,7 @@ async function muat() {
     const [a, b, c] = await Promise.all([
       api.get('/pasang-baru/survey', { params: { ...p, status: 'aktif' } }),
       api.get('/pasang-baru/sph', { params: p }),
-      api.get('/pasang-baru/order', { params: { ...p, tahap: 'Sales,OPS,Instalasi,NOC,Finance' } }),
+      api.get('/pasang-baru/order', { params: { ...p, tahap: 'OPS,Terpasang' } }),
     ])
     survey.value = a.data.data
     sph.value = b.data.data
@@ -72,9 +72,6 @@ const tugas = computed<Tugas[]>(() => {
   for (const x of sph.value) {
     if (x.status === 'Ditolak') t.push({ kunci: `p${x.id_sph}`, ikon: '✕', warna: 'merah', judul: `SPH ${x.pelanggan.nama_pelanggan} ditolak Director`, ket: x.catatan_approval || x.nomor_sph, url: `/pasang-baru/sph/${x.id_sph}`, tombol: 'Revisi', waktu: x.updated_at })
     else if (x.status === 'Draft') t.push({ kunci: `p${x.id_sph}`, ikon: '📝', warna: 'abu', judul: `SPH ${x.pelanggan.nama_pelanggan} belum diajukan`, ket: `${x.nomor_sph} · ${fmtRupiah(x.total_bulanan)}/bln`, url: `/pasang-baru/sph/${x.id_sph}`, tombol: 'Ajukan', waktu: x.updated_at })
-  }
-  for (const o of order.value) {
-    if (o.tahap === 'Sales') t.push({ kunci: `o${o.id_pb}`, ikon: '📎', warna: 'biru', judul: `${o.nama_site} — lengkapi FAB`, ket: `${o.nomor_pb} · ${o.sph.pelanggan.nama_pelanggan} · lalu serahkan ke OPS`, url: `/pasang-baru/order/${o.id_pb}`, tombol: 'Buka', waktu: o.tahap_at })
   }
   return t.sort((a, b) => a.waktu.localeCompare(b.waktu))
 })

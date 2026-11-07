@@ -36,7 +36,7 @@ const bisaBuat = computed(() => punya('Sales', 'Director', 'Admin'))
 const SUB: Record<string, string> = {
   sales: 'Survey → OPS → SPH → Director. Fokus pada survey & SPH Anda.',
   ops: 'Antrian kerja OPS: cek survey (vendor ISP, IKG, deposit, cover) dan order tahap OPS.',
-  semua: 'Survey → OPS → SPH → Director → Sales (FAB) → OPS → Instalasi → NOC → Finance',
+  semua: 'Survey → OPS → SPH → Director → OPS pasang vendor ISP → Terpasang',
 }
 </script>
 

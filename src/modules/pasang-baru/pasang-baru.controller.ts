@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { CatatanDto, DokumenDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
+import { CatatanDto, DokumenDto, FotoLinkDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 import { PasangBaruService, Pengguna } from './pasang-baru.service';
 
 // Akses modul: sales / operations / instalasi / finance (lihat ModulAksesGuard); hak ubah per tahap dicek di service
@@ -81,6 +81,11 @@ export class PasangBaruController {
   }
   @Patch('link/:id') ubahLink(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: LinkDto) {
     return this.svc.ubahLink(u, id, dto);
+  }
+  @Post('link/:id/foto')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
+  unggahFotoLink(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: FotoLinkDto, @UploadedFile() file: any) {
+    return this.svc.unggahFotoLink(u, id, dto, file);
   }
   @Delete('link/:id') hapusLink(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.hapusLink(u, id); }
 

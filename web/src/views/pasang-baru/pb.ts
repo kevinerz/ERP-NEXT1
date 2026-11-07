@@ -1,9 +1,9 @@
 // Bersama untuk halaman Pasang Baru
-export const TAHAP_ORDER = ['Sales', 'OPS', 'Instalasi', 'NOC', 'Finance', 'Aktif'] as const
+// Tahap order setelah SPH disetujui. Sementara: OPS (pasang vendor ISP) → Terpasang; tahap berikutnya ditata menyusul.
+export const TAHAP_ORDER = ['OPS', 'Terpasang'] as const
 
 export const KELAS_TAHAP: Record<string, string> = {
-  Draft: 'badge-gray', Sales: 'badge-blue', OPS: 'badge-purple', Instalasi: 'badge-amber',
-  NOC: 'badge-sky', Finance: 'badge-amber', Aktif: 'badge-green', Batal: 'badge-red',
+  Draft: 'badge-gray', OPS: 'badge-purple', Terpasang: 'badge-green', Batal: 'badge-red',
 }
 export const KELAS_SPH: Record<string, string> = {
   Draft: 'badge-gray', 'Menunggu Director': 'badge-amber', Disetujui: 'badge-green', Ditolak: 'badge-red',
@@ -11,8 +11,7 @@ export const KELAS_SPH: Record<string, string> = {
 
 // Role yang memegang tahap (Admin & Director selalu boleh) — cermin dari backend
 export const PEMEGANG: Record<string, string[]> = {
-  Draft: ['Sales'], Sales: ['Sales'], OPS: ['OPS', 'Manager_Ops'], Instalasi: ['Manager_Ops', 'Teknisi'],
-  NOC: ['Helpdesk', 'Manager_Ops'], Finance: ['Finance'],
+  Draft: ['Sales'], OPS: ['OPS', 'Manager_Ops'], Terpasang: ['OPS', 'Manager_Ops'],
 }
 
 export interface Layanan { id_layanan: number; nama_layanan: string }

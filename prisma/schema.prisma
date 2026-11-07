@@ -527,6 +527,12 @@ model SumberInternetSite {
   deposit_tgl         DateTime? @db.Date
   deposit_status      String?   @db.VarChar(20) // Ditahan | Dikembalikan
   deposit_jenis       String?   @db.VarChar(30) // Kembali setelah pasang | Ditahan sampai berhenti
+  // Bukti pemasangan modem vendor (Pasang Baru tahap OPS)
+  foto_modem          String?   @db.VarChar(255)
+  speedtest_down      Decimal?  @db.Decimal(10, 2) // Mbps
+  speedtest_up        Decimal?  @db.Decimal(10, 2) // Mbps
+  speedtest_ping      Decimal?  @db.Decimal(10, 2) // ms
+  foto_speedtest      String?   @db.VarChar(255)
   created_at          DateTime  @default(now())
 
   site     SitePelanggan   @relation(fields: [id_site], references: [id_site], onDelete: Cascade)

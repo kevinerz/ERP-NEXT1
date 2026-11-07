@@ -120,7 +120,7 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
       </div>
       <div v-else-if="s.status === 'Disetujui'" class="alert alert-success">
         Disetujui oleh {{ s.approver || 'Director' }} ({{ fmtDateTime(s.tgl_approval) }})<template v-if="s.catatan_approval">: {{ s.catatan_approval }}</template>.
-        Langkah berikutnya: unggah FAB di tiap order lalu serahkan ke OPS.
+        Order tiap site sudah masuk OPS untuk pemasangan vendor ISP.
       </div>
       <div v-else-if="s.status === 'Menunggu Director'" class="alert alert-warning">Menunggu persetujuan Director.</div>
 
