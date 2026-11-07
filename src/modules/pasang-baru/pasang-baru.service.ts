@@ -16,7 +16,7 @@ export const TAHAP = ['Draft', 'Sales', 'OPS', 'Instalasi', 'NOC', 'Finance', 'A
 const PEMEGANG: Record<string, string[]> = {
   Draft: ['Sales'],
   Sales: ['Sales'],
-  OPS: ['Manager_Ops'],
+  OPS: ['OPS', 'Manager_Ops'],
   Instalasi: ['Manager_Ops', 'Teknisi'],
   NOC: ['Helpdesk', 'Manager_Ops'],
   Finance: ['Finance'],
@@ -265,7 +265,7 @@ export class PasangBaruService {
     const s = await this.surveyStatus(id_survey, ['Draft', 'Hold']);
     if (!s.site.length) throw new BadRequestException('Survey belum berisi site');
     await this.gantiStatusSurvey(u, id_survey, 'OPS', 'ajukan', dto.catatan);
-    await this.beriTahuRole(['Manager_Ops'], {
+    await this.beriTahuRole(['OPS', 'Manager_Ops'], {
       tipe: 'pb_survey_ops', judul: s.status === 'Hold' ? 'Survey diajukan ulang' : 'Survey baru untuk OPS',
       deskripsi: `${s.nomor_survey} · ${s.nama_perusahaan} · ${s.site.length} site`, url: `/pasang-baru/survey/${id_survey}`,
     });
@@ -274,7 +274,7 @@ export class PasangBaruService {
 
   /** OPS mengisi vendor ISP, IKG, deposit, dan cover/tidak cover per site */
   async simpanOpsSurvey(u: Pengguna, id_survey: number, dto: SurveyOpsDto) {
-    if (!this.opsSurvey(u)) throw new ForbiddenException('Hasil survey diisi oleh OPS (Manager Ops)');
+    if (!this.opsSurvey(u)) throw new ForbiddenException('Hasil survey diisi oleh tim OPS');
     const s = await this.surveyStatus(id_survey, ['OPS']);
     const milik = new Set(s.site.map((x) => x.id_survey_site));
     for (const x of dto.site) if (!milik.has(x.id_survey_site)) throw new BadRequestException('Site tidak termasuk survey ini');
@@ -337,7 +337,7 @@ export class PasangBaruService {
     await this.gantiStatusSurvey(u, id_survey, 'OPS', 'teknis_selesai', dto.catatan, { id_teknis: u.id_karyawan });
     const ke = s.id_ops ? [s.id_ops] : [];
     if (ke.length) await this.beriTahu(ke, { tipe: 'pb_survey_ops', judul: 'Cek teknis selesai', deskripsi: `${s.nomor_survey} · ${s.nama_perusahaan}`, url: `/pasang-baru/survey/${id_survey}` });
-    else await this.beriTahuRole(['Manager_Ops'], { tipe: 'pb_survey_ops', judul: 'Cek teknis selesai', deskripsi: `${s.nomor_survey} · ${s.nama_perusahaan}`, url: `/pasang-baru/survey/${id_survey}` });
+    else await this.beriTahuRole(['OPS', 'Manager_Ops'], { tipe: 'pb_survey_ops', judul: 'Cek teknis selesai', deskripsi: `${s.nomor_survey} · ${s.nama_perusahaan}`, url: `/pasang-baru/survey/${id_survey}` });
     return { message: 'Cek teknis selesai, kembali ke OPS' };
   }
 

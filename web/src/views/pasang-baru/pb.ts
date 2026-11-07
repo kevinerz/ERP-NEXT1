@@ -11,7 +11,7 @@ export const KELAS_SPH: Record<string, string> = {
 
 // Role yang memegang tahap (Admin & Director selalu boleh) — cermin dari backend
 export const PEMEGANG: Record<string, string[]> = {
-  Draft: ['Sales'], Sales: ['Sales'], OPS: ['Manager_Ops'], Instalasi: ['Manager_Ops', 'Teknisi'],
+  Draft: ['Sales'], Sales: ['Sales'], OPS: ['OPS', 'Manager_Ops'], Instalasi: ['Manager_Ops', 'Teknisi'],
   NOC: ['Helpdesk', 'Manager_Ops'], Finance: ['Finance'],
 }
 
