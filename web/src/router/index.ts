@@ -415,6 +415,21 @@ const router = createRouter({
           component: () => import('@/views/pasang-baru/PasangBaruView.vue'),
         },
         {
+          path: 'pasang-baru/survey/baru',
+          name: 'pb-survey-baru',
+          component: () => import('@/views/pasang-baru/SurveyFormView.vue'),
+        },
+        {
+          path: 'pasang-baru/survey/:id/ubah',
+          name: 'pb-survey-ubah',
+          component: () => import('@/views/pasang-baru/SurveyFormView.vue'),
+        },
+        {
+          path: 'pasang-baru/survey/:id',
+          name: 'pb-survey',
+          component: () => import('@/views/pasang-baru/SurveyDetailView.vue'),
+        },
+        {
           path: 'pasang-baru/sph/baru',
           name: 'pb-sph-baru',
           component: () => import('@/views/pasang-baru/SphFormView.vue'),

@@ -4,11 +4,15 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { fmtRupiah, fmtDate } from '@/composables/useFormat'
-import { KELAS_SPH, KELAS_TAHAP, TAHAP_ORDER, umur } from './pb'
+import { KELAS_SPH, KELAS_SURVEY, KELAS_TAHAP, TAHAP_ORDER, umur } from './pb'
 
 interface Sph {
   id_sph: number; nomor_sph: string; status: string; pelanggan: { nama_pelanggan: string }
   sales: string | null; jumlah_site: number; total_bulanan: number; updated_at: string
+}
+interface Survey {
+  id_survey: number; nomor_survey: string; status: string; nama_perusahaan: string; nama_pic: string; telp_pic: string | null
+  id_pelanggan: number | null; sales: string | null; jumlah_site: number; updated_at: string; sph: { id_sph: number; nomor_sph: string }[]
 }
 interface Order {
   id_pb: number; nomor_pb: string | null; nama_site: string; kota: string | null; tahap: string; tahap_at: string
@@ -19,11 +23,13 @@ interface Order {
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const TAB = ['SPH', ...TAHAP_ORDER, 'Batal'] as const
-const tab = ref<string>(TAB.includes(route.query.tab as any) ? (route.query.tab as string) : 'SPH')
+const TAB = ['Survey', 'SPH', ...TAHAP_ORDER, 'Batal'] as const
+const tab = ref<string>(TAB.includes(route.query.tab as any) ? (route.query.tab as string) : 'Survey')
 const cari = ref('')
 const statusSph = ref('')
-const ringkas = ref<{ tahap: Record<string, number>; sph: Record<string, number> }>({ tahap: {}, sph: {} })
+const statusSurvey = ref('Baru')
+const ringkas = ref<{ tahap: Record<string, number>; sph: Record<string, number>; survey: Record<string, number> }>({ tahap: {}, sph: {}, survey: {} })
+const survey = ref<Survey[]>([])
 const sph = ref<Sph[]>([])
 const order = ref<Order[]>([])
 const memuat = ref(false)
@@ -37,12 +43,15 @@ async function muat() {
   try {
     const [r, d] = await Promise.all([
       api.get('/pasang-baru/ringkas'),
-      tab.value === 'SPH'
+      tab.value === 'Survey'
+        ? api.get('/pasang-baru/survey', { params: { status: statusSurvey.value || undefined, cari: cari.value || undefined } })
+        : tab.value === 'SPH'
         ? api.get('/pasang-baru/sph', { params: { status: statusSph.value || undefined, cari: cari.value || undefined } })
         : api.get('/pasang-baru/order', { params: { tahap: tab.value, cari: cari.value || undefined } }),
     ])
     ringkas.value = r.data.data
-    if (tab.value === 'SPH') sph.value = d.data.data
+    if (tab.value === 'Survey') survey.value = d.data.data
+    else if (tab.value === 'SPH') sph.value = d.data.data
     else order.value = d.data.data
   } catch (e: any) {
     error.value = e?.response?.data?.message || 'Gagal memuat data'
@@ -51,7 +60,7 @@ async function muat() {
   }
 }
 onMounted(muat)
-watch([tab, statusSph], () => {
+watch([tab, statusSph, statusSurvey], () => {
   router.replace({ query: { ...route.query, tab: tab.value } })
   muat()
 })
@@ -61,7 +70,7 @@ watch(cari, () => {
   timer = setTimeout(muat, 350)
 })
 
-const jumlah = (t: string) => (t === 'SPH' ? (ringkas.value.sph['Menunggu Director'] ?? 0) : (ringkas.value.tahap[t] ?? 0))
+const jumlah = (t: string) => (t === 'Survey' ? (ringkas.value.survey['Baru'] ?? 0) : t === 'SPH' ? (ringkas.value.sph['Menunggu Director'] ?? 0) : (ringkas.value.tahap[t] ?? 0))
 </script>
 
 <template>
@@ -69,20 +78,27 @@ const jumlah = (t: string) => (t === 'SPH' ? (ringkas.value.sph['Menunggu Direct
     <div class="page-header">
       <div>
         <h2 class="page-title">🆕 Pasang Baru</h2>
-        <p class="page-subtitle">SPH → Director → Sales (FAB) → OPS → Instalasi → NOC → Finance</p>
+        <p class="page-subtitle">Survey → SPH → Director → Sales (FAB) → OPS → Instalasi → NOC → Finance</p>
       </div>
-      <button v-if="bisaBuat" class="btn btn-primary" @click="router.push('/pasang-baru/sph/baru')">+ SPH Baru</button>
+      <div v-if="bisaBuat" class="pb-buat">
+        <button class="btn btn-ghost" title="SPH tanpa survey" @click="router.push('/pasang-baru/sph/baru')">+ SPH langsung</button>
+        <button class="btn btn-primary" @click="router.push('/pasang-baru/survey/baru')">+ Survey Baru</button>
+      </div>
     </div>
 
     <div class="pb-tab">
       <button v-for="t in TAB" :key="t" :class="{ aktif: tab === t }" @click="tab = t">
-        {{ t === 'SPH' ? '📄 SPH' : t }}
-        <span v-if="jumlah(t)" class="pb-jml" :class="{ kuning: t === 'SPH' }">{{ jumlah(t) }}</span>
+        {{ t === 'Survey' ? '🔍 Survey' : t === 'SPH' ? '📄 SPH' : t }}
+        <span v-if="jumlah(t)" class="pb-jml" :class="{ kuning: t === 'SPH' || t === 'Survey' }">{{ jumlah(t) }}</span>
       </button>
     </div>
 
     <div class="filter-bar pb-filter">
-      <input v-model="cari" class="form-input search-input" :placeholder="tab === 'SPH' ? 'Cari nomor SPH / pelanggan' : 'Cari site / pelanggan / no. PB / SPH'" />
+      <input v-model="cari" class="form-input search-input" :placeholder="tab === 'Survey' ? 'Cari nomor survey / perusahaan / PIC / site / kota' : tab === 'SPH' ? 'Cari nomor SPH / pelanggan' : 'Cari site / pelanggan / no. PB / SPH'" />
+      <select v-if="tab === 'Survey'" v-model="statusSurvey" class="form-input pb-status">
+        <option value="">Semua status</option>
+        <option>Baru</option><option>Lanjut SPH</option><option>Batal</option>
+      </select>
       <select v-if="tab === 'SPH'" v-model="statusSph" class="form-input pb-status">
         <option value="">Semua status</option>
         <option>Draft</option><option>Menunggu Director</option><option>Ditolak</option><option>Disetujui</option>
@@ -92,7 +108,26 @@ const jumlah = (t: string) => (t === 'SPH' ? (ringkas.value.sph['Menunggu Direct
     <div v-if="error" class="alert alert-danger">{{ error }}</div>
 
     <div class="table-card">
-      <table v-if="tab === 'SPH'" class="data-table">
+      <table v-if="tab === 'Survey'" class="data-table">
+        <thead><tr><th>No. Survey</th><th>Perusahaan</th><th>PIC</th><th>Site</th><th>Sales</th><th>Status</th><th>Diperbarui</th></tr></thead>
+        <tbody>
+          <tr v-if="!memuat && !survey.length"><td colspan="7" class="muted pusat">Belum ada survey<template v-if="statusSurvey"> berstatus {{ statusSurvey }}</template>.</td></tr>
+          <tr v-for="s in survey" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
+            <td><b>{{ s.nomor_survey }}</b></td>
+            <td>{{ s.nama_perusahaan }}<br /><small class="muted">{{ s.id_pelanggan ? 'Pelanggan' : 'Calon pelanggan' }}</small></td>
+            <td>{{ s.nama_pic }}<br /><small class="muted">{{ s.telp_pic }}</small></td>
+            <td>{{ s.jumlah_site }}</td>
+            <td>{{ s.sales || '-' }}</td>
+            <td>
+              <span class="badge" :class="KELAS_SURVEY[s.status]">{{ s.status }}</span>
+              <small v-for="x in s.sph" :key="x.id_sph" class="muted pb-blok">{{ x.nomor_sph }}</small>
+            </td>
+            <td class="muted">{{ fmtDate(s.updated_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table v-else-if="tab === 'SPH'" class="data-table">
         <thead><tr><th>No. SPH</th><th>Pelanggan</th><th>Site</th><th class="kanan">Total bulanan</th><th>Sales</th><th>Status</th><th>Diperbarui</th></tr></thead>
         <tbody>
           <tr v-if="!memuat && !sph.length"><td colspan="7" class="muted pusat">Belum ada SPH.</td></tr>
@@ -137,6 +172,8 @@ const jumlah = (t: string) => (t === 'SPH' ? (ringkas.value.sph['Menunggu Direct
 .pb-filter { display: flex; gap: 8px; margin-bottom: 12px; }
 .pb-status { max-width: 200px; }
 .klik { cursor: pointer; }
+.pb-buat { display: flex; gap: 6px; flex-wrap: wrap; }
+.pb-blok { display: block; }
 .kanan { text-align: right; }
 .pusat { text-align: center; padding: 16px; }
 .muted { color: var(--text-3); }

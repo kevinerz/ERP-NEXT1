@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { CatatanDto, DokumenDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto } from './dto';
+import { CatatanDto, DokumenDto, LinkDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto } from './dto';
 import { PasangBaruService, Pengguna } from './pasang-baru.service';
 
 // Akses modul: sales / operations / instalasi / finance (lihat ModulAksesGuard); hak ubah per tahap dicek di service
@@ -14,6 +14,21 @@ export class PasangBaruController {
   @Get('referensi') referensi() { return this.svc.referensi(); }
   @Get('pelanggan') cariPelanggan(@Query('q') q: string) { return this.svc.cariPelanggan(q); }
   @Get('ringkas') ringkas() { return this.svc.ringkas(); }
+
+  // Survey (tahap pertama, sebelum SPH)
+  @Get('survey') daftarSurvey(@Query() q: { status?: string; cari?: string }) { return this.svc.daftarSurvey(q); }
+  @Get('survey/:id') detailSurvey(@Param('id', ParseIntPipe) id: number) { return this.svc.detailSurvey(id); }
+  @Post('survey') buatSurvey(@CurrentUser() u: Pengguna, @Body() dto: SurveyDto) { return this.svc.buatSurvey(u, dto); }
+  @Put('survey/:id') ubahSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: SurveyDto) {
+    return this.svc.ubahSurvey(u, id, dto);
+  }
+  @Post('survey/:id/batal') batalSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
+    return this.svc.batalSurvey(u, id, dto);
+  }
+  @Post('survey/:id/aktifkan') aktifkanSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) {
+    return this.svc.aktifkanSurvey(u, id);
+  }
+  @Delete('survey/:id') hapusSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.hapusSurvey(u, id); }
 
   // SPH
   @Get('sph') daftarSph(@Query() q: { status?: string; cari?: string }) { return this.svc.daftarSph(q); }

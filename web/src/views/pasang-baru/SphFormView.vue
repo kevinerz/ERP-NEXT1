@@ -15,6 +15,9 @@ interface Pelanggan { id_pelanggan: number; kode_pelanggan: string; nama_pelangg
 const route = useRoute()
 const router = useRouter()
 const idSph = computed(() => (route.params.id ? Number(route.params.id) : null))
+// SPH dibuat dari survey: /pasang-baru/sph/baru?survey=ID
+const idSurvey = computed(() => (!idSph.value && route.query.survey ? Number(route.query.survey) : null))
+const nomorSurvey = ref('')
 
 const layanan = ref<Layanan[]>([])
 const f = reactive({
@@ -43,6 +46,17 @@ onMounted(async () => {
         biaya_bulanan: Number(o.biaya_bulanan), biaya_instalasi: Number(o.biaya_instalasi), tgl_rfs: o.tgl_rfs ? o.tgl_rfs.slice(0, 10) : '',
         pic_store_nama: o.pic_store_nama || '', pic_store_hp: o.pic_store_hp || '',
       }))
+    } else if (idSurvey.value) {
+      const { data: d } = await api.get(`/pasang-baru/survey/${idSurvey.value}`)
+      const v = d.data
+      nomorSurvey.value = v.nomor_survey
+      Object.assign(f, {
+        nama_pic: v.nama_pic, telp_pic: v.telp_pic || '', email_pic: v.email_pic || '', catatan: v.catatan || '',
+        ...(v.pelanggan
+          ? { id_pelanggan: v.pelanggan.id_pelanggan, nama_pelanggan: v.pelanggan.nama_pelanggan }
+          : { baru: true, pelanggan_baru: v.nama_perusahaan }),
+      })
+      site.value = v.site.map((o: any) => ({ ...kosong(), nama_site: o.nama_site, alamat: o.alamat, lantai_unit: o.lantai_unit || '', kota: o.kota || '', id_layanan: o.id_layanan }))
     } else {
       site.value = [kosong()]
     }
@@ -125,6 +139,7 @@ async function simpan(ajukan: boolean) {
   menyimpan.value = true
   try {
     const body = {
+      ...(idSurvey.value ? { id_survey: idSurvey.value } : {}),
       ...(f.baru ? { pelanggan_baru: f.pelanggan_baru.trim() } : { id_pelanggan: f.id_pelanggan }),
       nama_pic: f.nama_pic, telp_pic: f.telp_pic || undefined, email_pic: f.email_pic || undefined,
       durasi_bulan: Number(f.durasi_bulan), catatan: f.catatan || undefined,
@@ -151,7 +166,7 @@ async function simpan(ajukan: boolean) {
     <div class="page-header">
       <div>
         <h2 class="page-title">{{ idSph ? 'Ubah SPH' : 'SPH Baru' }}</h2>
-        <p class="page-subtitle">Satu penawaran untuk satu pelanggan, berisi satu atau banyak site</p>
+        <p class="page-subtitle">Satu penawaran untuk satu pelanggan, berisi satu atau banyak site<template v-if="nomorSurvey"> · dari survey <b>{{ nomorSurvey }}</b> — tinggal isi harga</template></p>
       </div>
       <button class="btn btn-ghost" @click="router.back()">← Kembali</button>
     </div>

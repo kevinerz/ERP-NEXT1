@@ -92,7 +92,7 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
       <div class="page-header">
         <div>
           <h2 class="page-title">{{ s.nomor_sph }} <span class="badge" :class="KELAS_SPH[s.status]">{{ s.status }}</span></h2>
-          <p class="page-subtitle">{{ s.pelanggan.nama_pelanggan }} · {{ s.order.length }} site · {{ s.durasi_bulan }} bulan · Sales {{ s.sales || '-' }}</p>
+          <p class="page-subtitle">{{ s.pelanggan.nama_pelanggan }} · {{ s.order.length }} site · {{ s.durasi_bulan }} bulan · Sales {{ s.sales || '-' }}<template v-if="s.id_survey"> · <a href="#" @click.prevent="router.push(`/pasang-baru/survey/${s.id_survey}`)">🔍 lihat survey</a></template></p>
         </div>
         <div class="sd-tombol">
           <button class="btn btn-ghost" @click="router.push('/pasang-baru')">← Daftar</button>

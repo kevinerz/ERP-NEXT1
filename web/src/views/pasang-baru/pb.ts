@@ -41,3 +41,5 @@ export function tanggal(s: string) {
   if (m) return `${m[3]}-${m[2]!.padStart(2, '0')}-${m[1]!.padStart(2, '0')}`
   return ''
 }
+
+export const KELAS_SURVEY: Record<string, string> = { Baru: 'badge-blue', 'Lanjut SPH': 'badge-green', Batal: 'badge-red' }

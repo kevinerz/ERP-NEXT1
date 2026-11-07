@@ -99,14 +99,14 @@ model HrisInvitation {
 }
 
 model GrupPelanggan {
-  id_grup    Int       @id @default(autoincrement())
-  kode_grup  String    @unique @db.VarChar(10)
-  nama_grup  String    @db.VarChar(100)
-  deskripsi  String?   @db.VarChar(255)
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
+  id_grup    Int      @id @default(autoincrement())
+  kode_grup  String   @unique @db.VarChar(10)
+  nama_grup  String   @db.VarChar(100)
+  deskripsi  String?  @db.VarChar(255)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
-  pelanggan  Pelanggan[]
+  pelanggan Pelanggan[]
 
   @@map("grup_pelanggan")
 }
@@ -129,27 +129,27 @@ model Pelanggan {
   created_at          DateTime @default(now())
 
   // Informasi Perusahaan
-  jenis_usaha         String?  @db.VarChar(100)
-  kota                String?  @db.VarChar(100)
-  nama_pemilik        String?  @db.VarChar(150)
-  jabatan_pemilik     String?  @db.VarChar(100)
-  no_ktp_pemilik      String?  @db.VarChar(30)
-  no_ponsel_pemilik   String?  @db.VarChar(30)
+  jenis_usaha       String? @db.VarChar(100)
+  kota              String? @db.VarChar(100)
+  nama_pemilik      String? @db.VarChar(150)
+  jabatan_pemilik   String? @db.VarChar(100)
+  no_ktp_pemilik    String? @db.VarChar(30)
+  no_ponsel_pemilik String? @db.VarChar(30)
 
   // Penanggung Jawab Teknis
-  nama_pic_teknis     String?  @db.VarChar(150)
-  jabatan_pic_teknis  String?  @db.VarChar(100)
-  no_telp_pic_teknis  String?  @db.VarChar(30)
+  nama_pic_teknis      String? @db.VarChar(150)
+  jabatan_pic_teknis   String? @db.VarChar(100)
+  no_telp_pic_teknis   String? @db.VarChar(30)
   no_ponsel_pic_teknis String? @db.VarChar(30)
-  email_pic_teknis    String?  @db.VarChar(150)
+  email_pic_teknis     String? @db.VarChar(150)
 
   // Penanggung Jawab Keuangan
-  nama_pic_keuangan     String?  @db.VarChar(150)
-  jabatan_pic_keuangan  String?  @db.VarChar(100)
-  no_telp_pic_keuangan  String?  @db.VarChar(30)
+  nama_pic_keuangan      String? @db.VarChar(150)
+  jabatan_pic_keuangan   String? @db.VarChar(100)
+  no_telp_pic_keuangan   String? @db.VarChar(30)
   no_ponsel_pic_keuangan String? @db.VarChar(30)
-  email_pic_keuangan    String?  @db.VarChar(150)
-  alamat_penagihan      String?  @db.Text
+  email_pic_keuangan     String? @db.VarChar(150)
+  alamat_penagihan       String? @db.Text
 
   grup           GrupPelanggan?  @relation(fields: [id_grup], references: [id_grup])
   sites          SitePelanggan[]
@@ -190,6 +190,7 @@ model MasterLayanan {
   instalasi_orders InstalasiOrder[]
   surveys_presales PresalesSurvey[]   @relation("SurveyLayanan")
   pb_order         PbOrder[]
+  pb_survey_site   PbSurveySite[]
 
   @@map("master_layanan")
 }
@@ -261,8 +262,8 @@ model MasterKontakTeknisi {
   created_at       DateTime @default(now())
 
   // Login untuk akses mobile (opsional — hanya diisi jika teknisi perlu login)
-  username         String?  @unique @db.VarChar(80)
-  pin_hash         String?  @db.VarChar(255)
+  username String? @unique @db.VarChar(80)
+  pin_hash String? @db.VarChar(255)
 
   instalasi_orders  InstalasiOrder[]
   operation_tickets OperationTicket[]
@@ -284,7 +285,7 @@ model CoreUser {
   last_login    DateTime?
   created_at    DateTime  @default(now())
 
-  fcm_token           String?              @db.VarChar(255)
+  fcm_token String? @db.VarChar(255)
 
   karyawan            HrisKaryawan         @relation(fields: [id_karyawan], references: [id_karyawan])
   user_roles          CoreUserRole[]
@@ -345,7 +346,7 @@ model TeknisiLokasi {
   akurasi     Float?
   updated_at  DateTime @default(now()) @updatedAt
 
-  karyawan    HrisKaryawan @relation(fields: [id_karyawan], references: [id_karyawan], onDelete: Cascade)
+  karyawan HrisKaryawan @relation(fields: [id_karyawan], references: [id_karyawan], onDelete: Cascade)
 
   @@unique([id_karyawan])
   @@map("teknisi_lokasi")
@@ -372,20 +373,20 @@ model SitePelanggan {
   created_at     DateTime  @default(now())
   updated_at     DateTime  @updatedAt
 
-  pelanggan       Pelanggan                @relation(fields: [id_pelanggan], references: [id_pelanggan])
-  layanan         MasterLayanan            @relation(fields: [id_layanan], references: [id_layanan])
-  aset            GudangAset[]
-  perangkat       PerangkatSite[]
-  pic             PicSite[]
-  sumber_internet SumberInternetSite[]
-  projects        ProjectDelivery[]
-  tickets         OperationTicket[]
-  work_orders     WorkOrder[]
-  kontrak         KontrakLayanan[]
-  topup           SimTopup[]
-  jurnal_ar       IntegrationJurnalAr[]
-  invoices        Invoice[]
-  ip_alokasi      IpAlokasi[]
+  pelanggan          Pelanggan                      @relation(fields: [id_pelanggan], references: [id_pelanggan])
+  layanan            MasterLayanan                  @relation(fields: [id_layanan], references: [id_layanan])
+  aset               GudangAset[]
+  perangkat          PerangkatSite[]
+  pic                PicSite[]
+  sumber_internet    SumberInternetSite[]
+  projects           ProjectDelivery[]
+  tickets            OperationTicket[]
+  work_orders        WorkOrder[]
+  kontrak            KontrakLayanan[]
+  topup              SimTopup[]
+  jurnal_ar          IntegrationJurnalAr[]
+  invoices           Invoice[]
+  ip_alokasi         IpAlokasi[]
   prtg_mapping       IntegrationPrtgMapping[]
   nocaas_router      NocaasRouter[]
   uptimekuma_mapping IntegrationUptimeKumaMapping[]
@@ -397,16 +398,16 @@ model SitePelanggan {
 }
 
 model SiteDokumen {
-  id_dokumen   Int      @id @default(autoincrement())
-  id_site      Int
-  nama_file    String   @db.VarChar(255)
-  url_file     String   @db.Text
-  tipe_file    String   @db.VarChar(10)
-  keterangan   String?  @db.VarChar(500)
-  ukuran_byte  Int?
-  jenis        String?  @db.VarChar(30) // FAB | BA | TOPOLOGI | SPH | LAIN
-  id_pb        Int?     // diunggah dari order Pasang Baru
-  created_at   DateTime @default(now())
+  id_dokumen  Int      @id @default(autoincrement())
+  id_site     Int
+  nama_file   String   @db.VarChar(255)
+  url_file    String   @db.Text
+  tipe_file   String   @db.VarChar(10)
+  keterangan  String?  @db.VarChar(500)
+  ukuran_byte Int?
+  jenis       String?  @db.VarChar(30) // FAB | BA | TOPOLOGI | SPH | LAIN
+  id_pb       Int? // diunggah dari order Pasang Baru
+  created_at  DateTime @default(now())
 
   site SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
 
@@ -448,15 +449,15 @@ model GudangAset {
 }
 
 model PerangkatSite {
-  id_perangkat     Int       @id @default(autoincrement())
-  id_site          Int
-  id_aset          Int?
-  jenis_perangkat  String    @db.VarChar(30)
-  merk             String?   @db.VarChar(100)
-  tipe_model       String?   @db.VarChar(100)
-  serial_number    String?   @db.VarChar(100)
-  ip_address       String?   @db.VarChar(45)
-  mac_address      String?   @db.VarChar(20)
+  id_perangkat    Int     @id @default(autoincrement())
+  id_site         Int
+  id_aset         Int?
+  jenis_perangkat String  @db.VarChar(30)
+  merk            String? @db.VarChar(100)
+  tipe_model      String? @db.VarChar(100)
+  serial_number   String? @db.VarChar(100)
+  ip_address      String? @db.VarChar(45)
+  mac_address     String? @db.VarChar(20)
 
   tgl_pasang       DateTime? @db.Date
   status_perangkat String    @default("Aktif") @db.VarChar(20)
@@ -486,7 +487,7 @@ model PicSite {
   tgl_update_data        DateTime?
   created_at             DateTime  @default(now())
 
-  site    SitePelanggan  @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
+  site    SitePelanggan @relation(fields: [id_site], references: [id_site], onDelete: Cascade)
   history CrmPicLog[]
 
   @@map("pic_site")
@@ -602,26 +603,26 @@ model SalesActivity {
 }
 
 model PresalesSurvey {
-  id_survey            Int       @id @default(autoincrement())
-  id_opportunity       Int?
+  id_survey      Int  @id @default(autoincrement())
+  id_opportunity Int?
 
   // Identitas prospek (bisa tanpa opportunity)
-  nama_prospek         String?   @db.VarChar(200)
-  alamat_survey        String?   @db.Text
-  kota                 String?   @db.VarChar(100)
-  koordinat_gps        String?   @db.VarChar(50)
+  nama_prospek  String? @db.VarChar(200)
+  alamat_survey String? @db.Text
+  kota          String? @db.VarChar(100)
+  koordinat_gps String? @db.VarChar(50)
 
   // Survey FO
-  tanggal_survey       DateTime? @db.Date
-  nama_odp             String?   @db.VarChar(100)
-  status_odp           String    @default("Belum_Survey") @db.VarChar(30)
+  tanggal_survey DateTime? @db.Date
+  nama_odp       String?   @db.VarChar(100)
+  status_odp     String    @default("Belum_Survey") @db.VarChar(30)
 
   // Vendor & Order
-  id_layanan           Int?
-  vendor               String?   @db.VarChar(50)
-  nomor_order_vendor   String?   @db.VarChar(100)
-  sn_modem             String?   @db.VarChar(100)
-  status_order         String    @default("Belum_Order") @db.VarChar(30)
+  id_layanan         Int?
+  vendor             String? @db.VarChar(50)
+  nomor_order_vendor String? @db.VarChar(100)
+  sn_modem           String? @db.VarChar(100)
+  status_order       String  @default("Belum_Order") @db.VarChar(30)
 
   // Timeline order
   tgl_order            DateTime? @db.Date
@@ -629,13 +630,13 @@ model PresalesSurvey {
   tgl_selesai          DateTime? @db.Date
 
   // Meta
-  catatan              String?   @db.Text
-  file_foto_survey     String?   @db.VarChar(255)
-  id_presales_pic      Int?
-  status_presales      String    @default("Draft") @db.VarChar(30)
+  catatan          String? @db.Text
+  file_foto_survey String? @db.VarChar(255)
+  id_presales_pic  Int?
+  status_presales  String  @default("Draft") @db.VarChar(30)
 
-  created_at           DateTime  @default(now())
-  updated_at           DateTime  @updatedAt
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   opportunity  SalesOpportunity? @relation(fields: [id_opportunity], references: [id_opportunity], onDelete: SetNull)
   layanan      MasterLayanan?    @relation("SurveyLayanan", fields: [id_layanan], references: [id_layanan], onDelete: SetNull)
@@ -701,40 +702,40 @@ model ProjectDelivery {
 }
 
 model OperationTicket {
-  id_ticket                  Int       @id @default(autoincrement())
-  nomor_tiket                String    @unique @db.VarChar(100)
-  id_site                    Int
-  id_perangkat               Int?
-  id_teknisi_pic             Int?
-  id_kontak_teknisi          Int?
-  sumber_tiket               String    @default("Internal") @db.VarChar(30)
+  id_ticket         Int    @id @default(autoincrement())
+  nomor_tiket       String @unique @db.VarChar(100)
+  id_site           Int
+  id_perangkat      Int?
+  id_teknisi_pic    Int?
+  id_kontak_teknisi Int?
+  sumber_tiket      String @default("Internal") @db.VarChar(30)
 
-  judul_tiket                String    @db.VarChar(255)
-  deskripsi_masalah          String?   @db.Text
-  prioritas                  String    @default("Medium") @db.VarChar(20)
-  status_tiket               String    @default("Open") @db.VarChar(30)
-  tgl_open                   DateTime  @default(now())
-  tgl_resolved               DateTime?
-  tgl_closed                 DateTime?
-  sla_due                    DateTime?
-  sla_breached               Boolean   @default(false)
-  tgl_sensor_down            DateTime? // Waktu sensor PRTG pertama DOWN (sebelum grace period)
-  tgl_berangkat              DateTime?
-  tgl_sampai                 DateTime?
-  jenis_gangguan             String?   @db.VarChar(50)
-  root_cause                 String?   @db.Text
-  created_at                 DateTime  @default(now())
-  updated_at                 DateTime  @updatedAt
+  judul_tiket       String    @db.VarChar(255)
+  deskripsi_masalah String?   @db.Text
+  prioritas         String    @default("Medium") @db.VarChar(20)
+  status_tiket      String    @default("Open") @db.VarChar(30)
+  tgl_open          DateTime  @default(now())
+  tgl_resolved      DateTime?
+  tgl_closed        DateTime?
+  sla_due           DateTime?
+  sla_breached      Boolean   @default(false)
+  tgl_sensor_down   DateTime? // Waktu sensor PRTG pertama DOWN (sebelum grace period)
+  tgl_berangkat     DateTime?
+  tgl_sampai        DateTime?
+  jenis_gangguan    String?   @db.VarChar(50)
+  root_cause        String?   @db.Text
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
 
-  site              SitePelanggan              @relation(fields: [id_site], references: [id_site])
-  perangkat         PerangkatSite?             @relation(fields: [id_perangkat], references: [id_perangkat])
-  teknisi           HrisKaryawan?              @relation(fields: [id_teknisi_pic], references: [id_karyawan])
-  kontak_teknisi    MasterKontakTeknisi?       @relation(fields: [id_kontak_teknisi], references: [id_kontak])
-  work_orders       WorkOrder[]
-  logs              OperationTicketLog[]
-  rca               OperationRca?
-  photos            OperationTicketPhoto[]
-  prtg_webhooks     IntegrationPrtgWebhook[]
+  site                SitePelanggan                  @relation(fields: [id_site], references: [id_site])
+  perangkat           PerangkatSite?                 @relation(fields: [id_perangkat], references: [id_perangkat])
+  teknisi             HrisKaryawan?                  @relation(fields: [id_teknisi_pic], references: [id_karyawan])
+  kontak_teknisi      MasterKontakTeknisi?           @relation(fields: [id_kontak_teknisi], references: [id_kontak])
+  work_orders         WorkOrder[]
+  logs                OperationTicketLog[]
+  rca                 OperationRca?
+  photos              OperationTicketPhoto[]
+  prtg_webhooks       IntegrationPrtgWebhook[]
   uptimekuma_webhooks IntegrationUptimeKumaWebhook[]
 
   @@index([status_tiket])
@@ -1029,8 +1030,8 @@ model PengajuanAset {
   jumlah           Int       @default(1)
   alasan           String    @db.Text
   estimasi_harga   Decimal   @default(0) @db.Decimal(15, 2)
-  id_gudang_tujuan  Int?
-  link_marketplace  String?   @db.VarChar(500)
+  id_gudang_tujuan Int?
+  link_marketplace String?   @db.VarChar(500)
   status_pengajuan String    @default("Diajukan") @db.VarChar(20)
   id_pemohon       Int
   id_approver      Int?
@@ -1208,9 +1209,9 @@ model IntegrationPrtgConfig {
   base_url                String?  @db.VarChar(255)
   username                String?  @db.VarChar(100)
   passhash                String?  @db.VarChar(100)
-  is_aktif                Boolean  @default(true)  // false = polling dijeda (hemat resource)
-  durasi_konfirmasi_menit Int      @default(10)    // menit Down sebelum tiket + WA dibuat (anti false alarm)
-  cooldown_flapping_menit Int      @default(60)    // menit setelah resolve sebelum boleh buat tiket baru (anti flapping)
+  is_aktif                Boolean  @default(true) // false = polling dijeda (hemat resource)
+  durasi_konfirmasi_menit Int      @default(10) // menit Down sebelum tiket + WA dibuat (anti false alarm)
+  cooldown_flapping_menit Int      @default(60) // menit setelah resolve sebelum boleh buat tiket baru (anti flapping)
   updated_at              DateTime @default(now()) @updatedAt
 
   @@map("integration_prtg_config")
@@ -1235,34 +1236,34 @@ model IntegrationPrtgMapping {
 // tunnel NS-/UN- digabung). id_site dicocokkan otomatis (IP tunnel di perangkat site / host PRTG / nama)
 // atau manual (sumber_map 'manual' tidak pernah ditimpa sinkronisasi).
 model NocaasRouter {
-  site_key      String    @id @db.VarChar(150)
-  nama_utama    String?   @db.VarChar(160) // nama device NOCaaS (dengan prefix NS-/UN-), dipakai untuk riwayat kejadian
-  jenis         String    @default("mikrotik") @db.VarChar(20) // mikrotik | rcms (Robustel) | ruijie
-  konflik_id_site Int?    // site yang memegang IP router ini di ERP, tapi namanya tidak nyambung (sumber_map 'konflik_ip')
-  model         String?   @db.VarChar(40)
-  id_site       Int?
-  sumber_map    String?   @db.VarChar(20) // ip_perangkat | prtg_host | nama | manual
-  status        String    @db.VarChar(20) // online | partial | internet_ok | offline
-  ns_ip         String?   @db.VarChar(45)
-  un_ip         String?   @db.VarChar(45)
-  ns_online     Boolean?
-  un_online     Boolean?
-  offline_since DateTime?
-  status_sejak  DateTime  @default(now()) // kapan status di atas mulai berlaku (dicatat ERP)
-  hb_at         DateTime?
-  public_ip     String?   @db.VarChar(45)
-  access_isp    String?   @db.VarChar(100)
-  brand         String?   @db.VarChar(20)
-  downs7        Int       @default(0)
-  flaps24       Int       @default(0)
+  site_key        String    @id @db.VarChar(150)
+  nama_utama      String?   @db.VarChar(160) // nama device NOCaaS (dengan prefix NS-/UN-), dipakai untuk riwayat kejadian
+  jenis           String    @default("mikrotik") @db.VarChar(20) // mikrotik | rcms (Robustel) | ruijie
+  konflik_id_site Int? // site yang memegang IP router ini di ERP, tapi namanya tidak nyambung (sumber_map 'konflik_ip')
+  model           String?   @db.VarChar(40)
+  id_site         Int?
+  sumber_map      String?   @db.VarChar(20) // ip_perangkat | prtg_host | nama | manual
+  status          String    @db.VarChar(20) // online | partial | internet_ok | offline
+  ns_ip           String?   @db.VarChar(45)
+  un_ip           String?   @db.VarChar(45)
+  ns_online       Boolean?
+  un_online       Boolean?
+  offline_since   DateTime?
+  status_sejak    DateTime  @default(now()) // kapan status di atas mulai berlaku (dicatat ERP)
+  hb_at           DateTime?
+  public_ip       String?   @db.VarChar(45)
+  access_isp      String?   @db.VarChar(100)
+  brand           String?   @db.VarChar(20)
+  downs7          Int       @default(0)
+  flaps24         Int       @default(0)
   // Ping tunnel dari server ERP (fping tiap menit) — sesi VPN ada belum tentu data lewat
-  ns_ping_ok    Boolean?
-  un_ping_ok    Boolean?
-  macet_sejak   DateTime? // semua tunnel bersesi tidak menjawab ping sejak
-  macet_lama    Boolean   @default(false) // sudah macet saat pertama dicek → bukan gangguan baru (tidak ditiketkan)
-  wan_status    Json?     // { iface: { running, pernah_hidup, sejak } } dari snapshot config router (live_config)
-  live_at       DateTime? // waktu snapshot config router terakhir
-  updated_at    DateTime  @updatedAt
+  ns_ping_ok      Boolean?
+  un_ping_ok      Boolean?
+  macet_sejak     DateTime? // semua tunnel bersesi tidak menjawab ping sejak
+  macet_lama      Boolean   @default(false) // sudah macet saat pertama dicek → bukan gangguan baru (tidak ditiketkan)
+  wan_status      Json? // { iface: { running, pernah_hidup, sejak } } dari snapshot config router (live_config)
+  live_at         DateTime? // waktu snapshot config router terakhir
+  updated_at      DateTime  @updatedAt
 
   site SitePelanggan? @relation(fields: [id_site], references: [id_site], onDelete: SetNull)
 
@@ -1281,7 +1282,7 @@ model NocaasConfig {
   cooldown_menit          Int       @default(60) // tiket yang resolve < sekian menit lalu dibuka ulang (flapping)
   maks_tiket_per_putaran  Int       @default(30) // lebih dari ini sekaligus = dicurigai gangguan pusat → tidak buat tiket
   wa_pic_aktif            Boolean   @default(false) // kirim WA (akun helpdesk) ke PIC site saat tiket NOCaaS dibuka & pulih
-  kategori                Json?     // aktif & ambang per kategori gangguan lain (jalur, port, sering putus) — lihat KATEGORI_BAWAAN
+  kategori                Json? // aktif & ambang per kategori gangguan lain (jalur, port, sering putus) — lihat KATEGORI_BAWAAN
   terakhir_sinkron        DateTime? // sinkron NOCaaS terakhir yang BERHASIL (dipakai PRTG untuk tahu NOCaaS sehat)
   updated_at              DateTime  @default(now()) @updatedAt
 
@@ -1292,16 +1293,16 @@ model NocaasConfig {
 // sering putus. Satu baris = satu kondisi (site_key + kategori + detail) dari mulai sampai selesai; dipakai untuk
 // tiket otomatis dan laporan gangguan.
 model NocaasGangguan {
-  id           Int       @id @default(autoincrement())
-  site_key     String    @db.VarChar(150)
-  id_site      Int?
-  kategori     String    @db.VarChar(30) // jalur | port_wan_down | port_wan_flap | port_lan_flap | sering_putus
-  detail       String    @default("") @db.VarChar(60) // jalur NS/UN, nama port
-  nilai        Int?      // jumlah putus / naik-turun per jam terakhir (terbesar)
-  mulai_at     DateTime
-  terakhir_at  DateTime  // terakhir kondisi terlihat
-  selesai_at   DateTime?
-  id_ticket    Int?
+  id          Int       @id @default(autoincrement())
+  site_key    String    @db.VarChar(150)
+  id_site     Int?
+  kategori    String    @db.VarChar(30) // jalur | port_wan_down | port_wan_flap | port_lan_flap | sering_putus
+  detail      String    @default("") @db.VarChar(60) // jalur NS/UN, nama port
+  nilai       Int? // jumlah putus / naik-turun per jam terakhir (terbesar)
+  mulai_at    DateTime
+  terakhir_at DateTime // terakhir kondisi terlihat
+  selesai_at  DateTime?
+  id_ticket   Int?
 
   @@index([selesai_at])
   @@index([id_site, kategori])
@@ -1542,13 +1543,13 @@ model InstalasiOrder {
   created_at          DateTime  @default(now())
   updated_at          DateTime  @updatedAt
 
-  site              SitePelanggan        @relation(fields: [id_site], references: [id_site])
-  layanan           MasterLayanan?       @relation(fields: [id_layanan], references: [id_layanan])
-  teknisi_internal  HrisKaryawan?        @relation("InstalasiTeknisiInternal", fields: [id_teknisi_internal], references: [id_karyawan])
-  kontak_teknisi    MasterKontakTeknisi? @relation(fields: [id_kontak_teknisi], references: [id_kontak])
-  photos            InstalasiPhoto[]
-  logs              InstalasiLog[]
-  bast              InstalasiBASTSign?
+  site             SitePelanggan        @relation(fields: [id_site], references: [id_site])
+  layanan          MasterLayanan?       @relation(fields: [id_layanan], references: [id_layanan])
+  teknisi_internal HrisKaryawan?        @relation("InstalasiTeknisiInternal", fields: [id_teknisi_internal], references: [id_karyawan])
+  kontak_teknisi   MasterKontakTeknisi? @relation(fields: [id_kontak_teknisi], references: [id_kontak])
+  photos           InstalasiPhoto[]
+  logs             InstalasiLog[]
+  bast             InstalasiBASTSign?
 
   @@index([status_instalasi])
   @@map("instalasi_orders")
@@ -1870,6 +1871,8 @@ model PbSph {
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 
+  id_survey Int? // SPH dibuat dari survey ini
+
   pelanggan Pelanggan @relation(fields: [id_pelanggan], references: [id_pelanggan])
   order     PbOrder[]
 
@@ -1913,8 +1916,47 @@ model PbOrder {
   @@map("pb_order")
 }
 
+// Survey: tahap pertama pasang baru (sebelum SPH) — perusahaan + PIC + daftar site, tanpa harga
+model PbSurvey {
+  id_survey       Int      @id @default(autoincrement())
+  nomor_survey    String   @unique @db.VarChar(40)
+  id_pelanggan    Int? // pelanggan lama; kosong = calon pelanggan baru (belum dibuat di master)
+  nama_perusahaan String   @db.VarChar(200)
+  nama_pic        String   @db.VarChar(150)
+  telp_pic        String?  @db.VarChar(30)
+  email_pic       String?  @db.VarChar(150)
+  catatan         String?  @db.Text
+  status          String   @default("Baru") @db.VarChar(30) // Baru | Lanjut SPH | Batal
+  id_sales        Int?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  site PbSurveySite[]
+
+  @@index([status])
+  @@map("pb_survey")
+}
+
+model PbSurveySite {
+  id_survey_site Int     @id @default(autoincrement())
+  id_survey      Int
+  nama_site      String  @db.VarChar(150)
+  alamat         String  @db.Text
+  lantai_unit    String? @db.VarChar(100)
+  kota           String? @db.VarChar(100)
+  id_layanan     Int
+  urutan         Int     @default(0)
+
+  survey  PbSurvey      @relation(fields: [id_survey], references: [id_survey], onDelete: Cascade)
+  layanan MasterLayanan @relation(fields: [id_layanan], references: [id_layanan])
+
+  @@index([id_survey])
+  @@map("pb_survey_site")
+}
+
 model PbRiwayat {
   id_riwayat  Int      @id @default(autoincrement())
+  id_survey   Int?
   id_sph      Int?
   id_pb       Int?
   id_karyawan Int?
@@ -1924,6 +1966,7 @@ model PbRiwayat {
   catatan     String?  @db.Text
   created_at  DateTime @default(now())
 
+  @@index([id_survey])
   @@index([id_sph])
   @@index([id_pb])
   @@map("pb_riwayat")
@@ -1931,19 +1974,19 @@ model PbRiwayat {
 
 // ── QC / evaluasi ERP: daftar modul + catatan revisi / bug / upgrade ─────────────
 model QcModul {
-  id          Int       @id @default(autoincrement())
-  kode        String    @unique @db.VarChar(60)
-  grup        String    @db.VarChar(40)
-  nama        String    @db.VarChar(100)
-  path        String?   @db.VarChar(120)
-  deskripsi   String?   @db.Text
-  status      String    @default("Belum dievaluasi") @db.VarChar(30) // Baik | Perlu revisi | Kritis | Belum dipakai | Belum dievaluasi
-  skor        Int?      // 1–5
-  pic         String?   @db.VarChar(100)
-  urutan      Int       @default(0)
-  diubah_oleh String?   @db.VarChar(100)
-  updated_at  DateTime  @updatedAt
-  created_at  DateTime  @default(now())
+  id          Int      @id @default(autoincrement())
+  kode        String   @unique @db.VarChar(60)
+  grup        String   @db.VarChar(40)
+  nama        String   @db.VarChar(100)
+  path        String?  @db.VarChar(120)
+  deskripsi   String?  @db.Text
+  status      String   @default("Belum dievaluasi") @db.VarChar(30) // Baik | Perlu revisi | Kritis | Belum dipakai | Belum dievaluasi
+  skor        Int? // 1–5
+  pic         String?  @db.VarChar(100)
+  urutan      Int      @default(0)
+  diubah_oleh String?  @db.VarChar(100)
+  updated_at  DateTime @updatedAt
+  created_at  DateTime @default(now())
 
   catatan QcCatatan[]
 
@@ -1970,4 +2013,3 @@ model QcCatatan {
   @@index([status])
   @@map("qc_catatan")
 }
-
