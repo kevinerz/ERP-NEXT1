@@ -898,6 +898,7 @@ model PengirimanPerangkat {
   tgl_terima              DateTime?
   nama_penerima_di_lokasi String?   @db.VarChar(150)
   catatan                 String?   @db.Text
+  tujuan_kirim            String?   @db.VarChar(20) // Store (lokasi pelanggan) | Teknisi (alamat teknisi vendor)
   // Order kurir lewat api.co.id (resi bisa dilacak otomatis)
   kurir_order_id          String?   @db.VarChar(50)
   kurir_kode              String?   @db.VarChar(30)

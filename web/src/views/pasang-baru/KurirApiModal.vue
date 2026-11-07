@@ -31,6 +31,25 @@ const tujuan = reactive({ province_code: '', city_code: '', district_code: '' })
 const kotaTujuan = ref<Lokasi[]>([])
 const kecTujuan = ref<Lokasi[]>([])
 
+// Tujuan kirim: langsung ke store (PIC) atau ke teknisi vendor (dibawa saat pasang)
+const kirimAwal = props.order.network?.wo?.pengiriman?.[0]
+const teknisi = props.order.network?.wo?.kontak_teknisi ?? null
+const tujuanKirim = ref<'Store' | 'Teknisi'>(kirimAwal?.tujuan_kirim === 'Teknisi' && teknisi ? 'Teknisi' : 'Store')
+function isiPenerima() {
+  const o = props.order
+  if (tujuanKirim.value === 'Teknisi' && teknisi) {
+    Object.assign(penerima, {
+      recipient_name: teknisi.nama.slice(0, 30), recipient_phone: teknisi.no_hp,
+      recipient_address: (teknisi.alamat || '').slice(0, 500),
+    })
+  } else {
+    Object.assign(penerima, {
+      recipient_name: (o.pic_store_nama || o.sph?.nama_pic || '').slice(0, 30),
+      recipient_phone: o.pic_store_hp || o.sph?.telp_pic || '',
+      recipient_address: `${o.nama_site}, ${o.alamat}${o.lantai_unit ? ' — ' + o.lantai_unit : ''}${o.kota ? ', ' + o.kota : ''}`.slice(0, 500),
+    })
+  }
+}
 const paket = reactive({ weight: 1000, item_value: 0, insurance: false, sender_type: 'picked up' })
 const tarif = ref<{ quote_id: string; rates: Tarif[] } | null>(null)
 const dipilih = ref<Tarif | null>(null)
@@ -58,10 +77,8 @@ onMounted(async () => {
     // Isi otomatis dari order
     const o = props.order
     const perangkat = (o.network?.perangkat || []).filter((x: any) => x.aset).map((x: any) => x.aset.nama_perangkat)
+    isiPenerima()
     Object.assign(penerima, {
-      recipient_name: (o.pic_store_nama || o.sph?.nama_pic || '').slice(0, 30),
-      recipient_phone: o.pic_store_hp || o.sph?.telp_pic || '',
-      recipient_address: `${o.nama_site}, ${o.alamat}${o.lantai_unit ? ' — ' + o.lantai_unit : ''}${o.kota ? ', ' + o.kota : ''}`.slice(0, 500),
       product_name: (perangkat.join(', ') || 'Perangkat jaringan').slice(0, 100),
       product_price: 1000000, note: `Pasang baru ${o.nomor_pb}`,
     })
@@ -69,7 +86,7 @@ onMounted(async () => {
     // jemput besok 09:00 WIB
     const b = new Date(Date.now() + 86400_000)
     penerima.picked_up_time = `${b.getFullYear()}-${String(b.getMonth() + 1).padStart(2, '0')}-${String(b.getDate()).padStart(2, '0')}T09:00`
-    tebakTujuan()
+    tebakTujuan(tujuanKirim.value === 'Teknisi' ? teknisi?.alamat ?? '' : props.order.kota)
   } catch (e) {
     alertError(e, 'Gagal memuat data kurir')
   } finally {
@@ -77,16 +94,18 @@ onMounted(async () => {
   }
 })
 
-// Tebak provinsi/kota tujuan dari nama kota site
-async function tebakTujuan() {
-  const kota = String(props.order.kota || '').toLowerCase().replace(/^(kota|kab\.?|kabupaten)\s+/, '').trim()
-  if (!kota) return
+// Tebak provinsi/kota tujuan dari nama kota site / teks alamat teknisi
+async function tebakTujuan(teks: string | null | undefined) {
+  const cari = String(teks || '').toLowerCase().replace(/^(kota|kab\.?|kabupaten)\s+/, '').trim()
+  if (!cari) return
+  const norm = (n: string) => n.toLowerCase().replace(/^(kota|kab\.?|kabupaten)\s+/, '').replace(/\s*\(.*\)$/, '').trim()
   for (const p of provinsi.value) {
     const ks = await ambil<Lokasi[]>('/pasang-baru/kurir-api/kota', { province: p.code }).catch(() => [])
-    const cocok = ks.find((k) => k.name.toLowerCase().replace(/^(kota|kab\.?|kabupaten)\s+/, '').includes(kota))
+    // kota site: nama kota mengandung teks; alamat teknisi: teks alamat mengandung nama kota
+    const cocok = ks.find((k) => norm(k.name).includes(cari) || (norm(k.name).length > 3 && cari.includes(norm(k.name))))
     if (cocok) {
-      tujuan.province_code = p.code
       kotaTujuan.value = ks
+      tujuan.province_code = p.code
       tujuan.city_code = cocok.code
       return
     }
@@ -113,6 +132,14 @@ watch(() => baru.city_code, async (v) => {
 // Ubah data paket/tujuan → tarif lama tidak berlaku
 watch([() => tujuan.district_code, pengirim, () => ({ ...paket })], () => { tarif.value = null; dipilih.value = null }, { deep: true })
 
+function gantiTujuan(t: 'Store' | 'Teknisi') {
+  if (tujuanKirim.value === t) return
+  tujuanKirim.value = t
+  isiPenerima()
+  Object.assign(tujuan, { province_code: '', city_code: '', district_code: '' })
+  kotaTujuan.value = []; kecTujuan.value = []
+  tebakTujuan(t === 'Teknisi' ? teknisi?.alamat ?? '' : props.order.kota)
+}
 const baruSiap = computed(() => baru.label.trim() && baru.contact_name.trim() && baru.contact_phone.trim() && baru.district_code && baru.address_line.trim())
 async function simpanAlamat() {
   memuat.value = true
@@ -149,7 +176,7 @@ async function pesan() {
   try {
     await api.post(`/pasang-baru/order/${props.order.id_pb}/kurir-api/pesan`, {
       quote_id: tarif.value!.quote_id, courier_code: t.courier_code, service_code: t.service_code, ...penerima,
-      quantity: 1, insurance: paket.insurance,
+      quantity: 1, insurance: paket.insurance, tujuan_kirim: tujuanKirim.value,
       picked_up_time: paket.sender_type === 'dropped' ? undefined : new Date(penerima.picked_up_time).toISOString(),
     })
     emit('selesai')
@@ -195,7 +222,12 @@ async function pesan() {
 
           <!-- Tujuan -->
           <section>
-            <h4>2 · Tujuan — {{ order.nama_site }}</h4>
+            <h4>2 · Tujuan</h4>
+            <div class="ka-tujuan">
+              <button :class="{ aktif: tujuanKirim === 'Store' }" @click="gantiTujuan('Store')">🏪 Store — {{ order.nama_site }}</button>
+              <button :class="{ aktif: tujuanKirim === 'Teknisi' }" :disabled="!teknisi" :title="teknisi ? '' : 'Belum ada teknisi vendor di pemasangan'" @click="gantiTujuan('Teknisi')">👷 Teknisi — {{ teknisi?.nama ?? '-' }}</button>
+            </div>
+            <p v-if="tujuanKirim === 'Teknisi' && !teknisi?.alamat" class="ka-peringatan">Alamat teknisi belum ada di Master Kontak Teknisi — isi alamat penerima di bawah.</p>
             <select v-model="tujuan.province_code" class="form-input"><option value="">Provinsi…</option><option v-for="p in provinsi" :key="p.code" :value="p.code">{{ p.name }}</option></select>
             <div class="grid-2">
               <select v-model="tujuan.city_code" class="form-input" :disabled="!kotaTujuan.length"><option value="">Kota…</option><option v-for="k in kotaTujuan" :key="k.code" :value="k.code">{{ k.name }}</option></select>
@@ -264,6 +296,11 @@ async function pesan() {
 .ka-saldo { margin-left: auto; margin-right: 12px; font-size: 13px; font-weight: 600; color: #15803d; }
 .ka-saldo.merah { color: #dc2626; }
 .ka-grid { gap: 16px; }
+.ka-tujuan { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.ka-tujuan button { flex: 1 1 160px; border: 1.5px solid var(--border, #e2e8f0); background: var(--surface, #fff); border-radius: 8px; padding: 7px 10px; cursor: pointer; text-align: left; font-size: 13px; color: inherit; }
+.ka-tujuan button.aktif { border-color: #2563eb; background: rgba(37, 99, 235, .06); font-weight: 600; }
+.ka-tujuan button:disabled { opacity: .5; cursor: default; }
+.ka-peringatan { font-size: 12.5px; color: #b45309; margin: 0 0 8px; }
 section h4 { margin: 4px 0 8px; font-size: 14px; }
 section > .form-input, section > select, section > .grid-2, section > .btn { margin-bottom: 8px; }
 .ka-baru { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px dashed #93c5fd; border-radius: 8px; }

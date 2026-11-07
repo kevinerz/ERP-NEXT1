@@ -924,7 +924,7 @@ export function printBaAktivasi(o: any) {
     : `<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:10px">—</td></tr>`
   const wo = o.network?.wo
   const pelaksana = o.network_metode === 'Kirim_Vendor'
-    ? `Teknisi vendor ${e(wo?.kontak_teknisi?.nama || wo?.vendor?.nama_vendor || '-')}${wo?.kontak_teknisi?.asal_vendor ? ' (' + e(wo.kontak_teknisi.asal_vendor) + ')' : ''}${wo?.pengiriman?.[0]?.nama_ekspedisi ? ` · perangkat dikirim via ${e(wo.pengiriman[0].nama_ekspedisi)}${wo.pengiriman[0].nomor_resi ? ' (resi ' + e(wo.pengiriman[0].nomor_resi) + ')' : ''}` : ''}`
+    ? `Teknisi vendor ${e(wo?.kontak_teknisi?.nama || wo?.vendor?.nama_vendor || '-')}${wo?.kontak_teknisi?.asal_vendor ? ' (' + e(wo.kontak_teknisi.asal_vendor) + ')' : ''}${wo?.pengiriman?.[0]?.nama_ekspedisi ? ` · perangkat dikirim ${wo.pengiriman[0].tujuan_kirim === 'Teknisi' ? 'ke teknisi' : 'ke store'} via ${e(wo.pengiriman[0].nama_ekspedisi)}${wo.pengiriman[0].nomor_resi ? ' (resi ' + e(wo.pengiriman[0].nomor_resi) + ')' : ''}` : ''}`
     : `Teknisi internal ${e(wo?.teknisi?.nama_lengkap || '-')}`
   const ttd = (src: string | null) => src ? `<img src="${abs(src)}" style="height:70px;max-width:200px;object-fit:contain;display:block;margin:0 auto 4px">` : '<div style="height:74px"></div>'
 

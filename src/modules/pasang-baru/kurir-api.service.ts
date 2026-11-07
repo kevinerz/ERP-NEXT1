@@ -150,10 +150,11 @@ export class KurirApiService {
         kurir_status: r.status ?? 'processing', kurir_biaya: r.charged_amount ?? null, nomor_resi: r.resi || k.nomor_resi,
         nama_ekspedisi: kurir?.name ?? r.courier_code, status_pengiriman: STATUS_KIRIM[r.status] ?? 'Packing', tgl_kirim: new Date(),
         nama_penerima_di_lokasi: body.recipient_name, kurir_riwayat: null, kurir_cek_at: new Date(),
+        ...(dto.tujuan_kirim === 'Teknisi' || dto.tujuan_kirim === 'Store' ? { tujuan_kirim: dto.tujuan_kirim } : {}),
       },
     });
     await this.prisma.pbRiwayat.create({
-      data: { id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'kurir', catatan: `Order kurir ${kurir?.name ?? r.courier_code} · resi ${r.resi ?? '-'} · Rp ${Number(r.charged_amount ?? 0).toLocaleString('id-ID')}` },
+      data: { id_sph: o.id_sph, id_pb, id_karyawan: u.id_karyawan, aksi: 'kurir', catatan: `Order kurir ke ${dto.tujuan_kirim === 'Teknisi' ? 'teknisi' : 'store'} · ${kurir?.name ?? r.courier_code} · resi ${r.resi ?? '-'} · Rp ${Number(r.charged_amount ?? 0).toLocaleString('id-ID')}` },
     });
     return { data: r, message: `Kurir dipesan — resi ${r.resi ?? '(menunggu)'}` };
   }

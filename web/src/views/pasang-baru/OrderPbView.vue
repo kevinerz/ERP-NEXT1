@@ -174,12 +174,12 @@ async function lepas(p: any) {
 const pakai = (p: any) => jalankan(() => api.post(`/pasang-baru/perangkat/${p.id_pb_perangkat}/pakai`))
 
 // ── Tab Network: pemasangan ──────────────────────────────────────────────────
-const fn = reactive({ metode: '' as '' | 'Kirim_Vendor' | 'Visit_Internal', id_kontak_teknisi: '' as number | '' | 'baru', baru: { nama: '', no_hp: '', asal_vendor: '' }, kirim_wa: true, fee_vendor: 0, tgl_jadwal: '', nama_ekspedisi: '', nomor_resi: '', tgl_kirim: '', status_pengiriman: 'Packing', catatan: '' })
+const fn = reactive({ metode: '' as '' | 'Kirim_Vendor' | 'Visit_Internal', id_kontak_teknisi: '' as number | '' | 'baru', baru: { nama: '', no_hp: '', asal_vendor: '' }, kirim_wa: true, tujuan_kirim: 'Store' as 'Store' | 'Teknisi', fee_vendor: 0, tgl_jadwal: '', nama_ekspedisi: '', nomor_resi: '', tgl_kirim: '', status_pengiriman: 'Packing', catatan: '' })
 function isiNetwork() {
   const w = net.value.wo, k = w?.pengiriman?.[0]
   Object.assign(fn, {
     metode: o.value.network_metode || '', id_kontak_teknisi: w?.id_kontak_teknisi || '', baru: { nama: '', no_hp: '', asal_vendor: '' },
-    kirim_wa: !w?.wa_teknisi_at, fee_vendor: Number(w?.fee_vendor || 0),
+    kirim_wa: !w?.wa_teknisi_at, tujuan_kirim: k?.tujuan_kirim === 'Teknisi' ? 'Teknisi' : 'Store', fee_vendor: Number(w?.fee_vendor || 0),
     tgl_jadwal: w?.tgl_jadwal ? w.tgl_jadwal.slice(0, 10) : '', nama_ekspedisi: k?.nama_ekspedisi || '', nomor_resi: k?.nomor_resi || '',
     tgl_kirim: k?.tgl_kirim ? k.tgl_kirim.slice(0, 10) : '', status_pengiriman: k?.status_pengiriman || 'Packing', catatan: '',
   })
@@ -191,7 +191,7 @@ const simpanNetwork = () => jalankan(() => api.put(`/pasang-baru/order/${id.valu
     ...(fn.id_kontak_teknisi === 'baru'
       ? { kontak_baru: { nama: fn.baru.nama.trim(), no_hp: fn.baru.no_hp.trim(), asal_vendor: fn.baru.asal_vendor.trim() || undefined } }
       : { id_kontak_teknisi: Number(fn.id_kontak_teknisi) || null }),
-    kirim_wa: fn.kirim_wa, fee_vendor: Number(fn.fee_vendor) || 0, tgl_jadwal: fn.tgl_jadwal || null,
+    kirim_wa: fn.kirim_wa, tujuan_kirim: fn.tujuan_kirim, fee_vendor: Number(fn.fee_vendor) || 0, tgl_jadwal: fn.tgl_jadwal || null,
     nama_ekspedisi: fn.nama_ekspedisi || undefined, nomor_resi: fn.nomor_resi || undefined, tgl_kirim: fn.tgl_kirim || null, status_pengiriman: fn.status_pengiriman,
   } : {}),
 }).then(() => { kontakTeknisi.value = []; muatReferensiNetwork() }))
@@ -459,6 +459,13 @@ const AKSI: Record<string, string> = {
                   <div class="form-group"><label class="form-label">Fee vendor</label><input v-model.number="fn.fee_vendor" type="number" min="0" class="form-input" :disabled="!bisaUbah('Network') || woSelesai" /></div>
                   <div class="form-group"><label class="form-label">Jadwal pasang</label><input v-model="fn.tgl_jadwal" type="date" class="form-input" :disabled="!bisaUbah('Network') || woSelesai" /></div>
                 </div>
+                <div class="form-group op-tujuan">
+                  <label class="form-label">Kirim perangkat ke</label>
+                  <div class="op-pilih">
+                    <button :class="{ aktif: fn.tujuan_kirim === 'Store' }" :disabled="!bisaUbah('Network') || woSelesai" @click="fn.tujuan_kirim = 'Store'">🏪 <b>Store</b><small>langsung ke lokasi pelanggan, diterima PIC store</small></button>
+                    <button :class="{ aktif: fn.tujuan_kirim === 'Teknisi' }" :disabled="!bisaUbah('Network') || woSelesai" @click="fn.tujuan_kirim = 'Teknisi'">👷 <b>Teknisi vendor</b><small>ke alamat teknisi, dibawa saat pasang</small></button>
+                  </div>
+                </div>
                 <div class="grid-2">
                   <div class="form-group">
                     <label class="form-label">Ekspedisi</label>
@@ -496,6 +503,7 @@ const AKSI: Record<string, string> = {
                 </div>
                 <template v-if="adaLacak">
                   <p class="op-kurir-info">
+                    <span class="badge badge-gray">ke {{ kirim.tujuan_kirim === 'Teknisi' ? 'teknisi' : 'store' }}</span>
                     <b>{{ kirim.nama_ekspedisi }}</b> {{ kirim.kurir_layanan }} · resi <b>{{ kirim.nomor_resi || '(menunggu)' }}</b> ·
                     <span class="badge" :class="['delivered', 'completed'].includes(kirim.kurir_status) ? 'badge-green' : kirim.kurir_status === 'problem' ? 'badge-red' : 'badge-blue'">{{ STATUS_KURIR[kirim.kurir_status] || kirim.kurir_status }}</span>
                     <template v-if="kirim.kurir_biaya"> · ongkir {{ fmtRupiah(kirim.kurir_biaya) }}</template>
@@ -799,6 +807,12 @@ const AKSI: Record<string, string> = {
 .op-kurir { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; }
 .op-kurir-info { margin: 6px 0; font-size: 13.5px; }
 .op-lacak { margin: 6px 0; padding-left: 18px; font-size: 13px; }
+.op-tujuan { grid-column: 1 / -1; }
+.op-pilih { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.op-pilih button { text-align: left; border: 1.5px solid var(--border, #e2e8f0); background: var(--surface, #fff); border-radius: 8px; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; color: inherit; }
+.op-pilih button small { color: var(--text-3); font-size: 12px; }
+.op-pilih button.aktif { border-color: #2563eb; background: rgba(37, 99, 235, .06); }
+@media (max-width: 700px) { .op-pilih { grid-template-columns: 1fr; } }
 .op-langkah { background: #eff6ff; border-radius: 6px; padding: 6px 8px; }
 .op-lacak li:first-child { font-weight: 600; }
 .op-baru { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px; border: 1px dashed #93c5fd; border-radius: 8px; }

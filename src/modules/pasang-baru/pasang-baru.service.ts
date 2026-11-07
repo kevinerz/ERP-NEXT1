@@ -965,7 +965,7 @@ export class PasangBaruService {
         where: { id_wo: o.id_wo },
         include: {
           teknisi: { select: { nama_lengkap: true, no_hp: true } }, vendor: { select: { nama_vendor: true, no_telp: true } },
-          kontak_teknisi: { select: { id_kontak: true, nama: true, no_hp: true, asal_vendor: true } },
+          kontak_teknisi: { select: { id_kontak: true, nama: true, no_hp: true, asal_vendor: true, alamat: true } },
           pengiriman: { orderBy: { id_pengiriman: 'desc' }, take: 1 }, foto: { select: { id_foto: true, jenis_foto: true, file_path: true } },
         },
       }) : null,
@@ -1161,7 +1161,7 @@ export class PasangBaruService {
     if (vendor) {
       const kirim = await this.prisma.pengirimanPerangkat.findFirst({ where: { id_wo: wo.id_wo } });
       const dataKirim = {
-        jenis_pengiriman: 'Ekspedisi', nama_ekspedisi: dto.nama_ekspedisi?.trim() || null, nomor_resi: dto.nomor_resi?.trim() || null,
+        jenis_pengiriman: 'Ekspedisi', tujuan_kirim: dto.tujuan_kirim || 'Store', nama_ekspedisi: dto.nama_ekspedisi?.trim() || null, nomor_resi: dto.nomor_resi?.trim() || null,
         tgl_kirim: dto.tgl_kirim ? new Date(dto.tgl_kirim) : null, status_pengiriman: dto.status_pengiriman || 'Packing',
         ...(dto.status_pengiriman === 'Diterima' ? { tgl_terima: new Date() } : {}),
       };
@@ -1215,7 +1215,9 @@ export class PasangBaruService {
       `${o.alamat}${o.lantai_unit ? ` — ${o.lantai_unit}` : ''}${o.kota ? `, ${o.kota}` : ''}`,
       pic ? `👤 PIC: ${pic}` : '',
       `🖧 Perangkat: ${perangkat.map((p) => p.nama_item).join(', ') || '-'}`,
-      k?.nama_ekspedisi || k?.nomor_resi ? `🚚 Dikirim via ${k?.nama_ekspedisi ?? '-'}${k?.nomor_resi ? ` · resi ${k.nomor_resi}` : ''}` : '',
+      k?.nama_ekspedisi || k?.nomor_resi || k?.tujuan_kirim
+        ? `🚚 Perangkat dikirim ${k?.tujuan_kirim === 'Teknisi' ? '*ke alamat Anda* — bawa ke lokasi' : '*langsung ke store*'}${k?.nama_ekspedisi ? ` via ${k.nama_ekspedisi}` : ''}${k?.nomor_resi ? ` · resi ${k.nomor_resi}` : ''}`
+        : '',
       wo.tgl_jadwal ? `📅 Jadwal: ${fmt(wo.tgl_jadwal)}` : '',
       '',
       `Saat di lokasi, lapor check-in, foto, dan minta tanda tangan BA ke PIC lewat link ini:`,
