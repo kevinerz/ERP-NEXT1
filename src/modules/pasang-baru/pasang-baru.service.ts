@@ -60,11 +60,13 @@ export class PasangBaruService {
   }
 
   // ── Ringkasan & daftar ───────────────────────────────────────────────────────
-  async ringkas() {
+  /** Ringkasan jumlah per status; saya=1 → hanya milik sales yang login */
+  async ringkas(u?: Pengguna, q: { saya?: string } = {}) {
+    const saya = q.saya === '1' && u ? u.id_karyawan : null;
     const [tahap, sph, survey] = await Promise.all([
-      this.prisma.pbOrder.groupBy({ by: ['tahap'], _count: { _all: true } }),
-      this.prisma.pbSph.groupBy({ by: ['status'], _count: { _all: true } }),
-      this.prisma.pbSurvey.groupBy({ by: ['status'], _count: { _all: true } }),
+      this.prisma.pbOrder.groupBy({ by: ['tahap'], where: saya ? { sph: { id_sales: saya } } : {}, _count: { _all: true } }),
+      this.prisma.pbSph.groupBy({ by: ['status'], where: saya ? { id_sales: saya } : {}, _count: { _all: true } }),
+      this.prisma.pbSurvey.groupBy({ by: ['status'], where: saya ? { id_sales: saya } : {}, _count: { _all: true } }),
     ]);
     return {
       tahap: Object.fromEntries(tahap.map((t) => [t.tahap, t._count._all])),
@@ -73,10 +75,12 @@ export class PasangBaruService {
     };
   }
 
-  async daftarOrder(q: { tahap?: string; cari?: string; id_sph?: string }) {
+  async daftarOrder(q: { tahap?: string; cari?: string; id_sph?: string; saya?: string }, u?: Pengguna) {
     const kata = (q.cari || '').trim();
+    const tahap = (q.tahap || '').split(',').map((x) => x.trim()).filter(Boolean);
     const where: Prisma.PbOrderWhereInput = {
-      ...(q.tahap ? { tahap: q.tahap } : { tahap: { notIn: ['Draft', 'Batal'] } }),
+      ...(tahap.length ? { tahap: { in: tahap } } : { tahap: { notIn: ['Draft', 'Batal'] } }),
+      ...(q.saya === '1' && u ? { sph: { id_sales: u.id_karyawan } } : {}),
       ...(q.id_sph ? { id_sph: Number(q.id_sph) } : {}),
       ...(kata ? {
         OR: [
@@ -88,21 +92,35 @@ export class PasangBaruService {
     const rows = await this.prisma.pbOrder.findMany({
       where,
       include: {
-        sph: { select: { nomor_sph: true, pelanggan: { select: { nama_pelanggan: true } } } },
+        sph: { select: { nomor_sph: true, id_sales: true, pelanggan: { select: { nama_pelanggan: true } } } },
         layanan: { select: { nama_layanan: true } },
-        site: { select: { kode_site: true } },
+        site: {
+          select: {
+            kode_site: true,
+            sumber_internet: { select: { biaya_mrc_vendor: true, peruntukan_link: true, vendor: { select: { nama_vendor: true } } } },
+            _count: { select: { dokumen: true } },
+          },
+        },
       },
       orderBy: [{ tahap_at: 'asc' }],
       take: 500,
     });
-    return rows;
+    const nama = await this.namaKaryawan(rows.map((r) => r.sph.id_sales));
+    return rows.map((r) => ({
+      ...r,
+      sales: r.sph.id_sales ? nama.get(r.sph.id_sales) ?? null : null,
+      modal_vendor: (r.site?.sumber_internet ?? []).reduce((a, l) => a + Number(l.biaya_mrc_vendor), 0),
+      vendor: (r.site?.sumber_internet ?? []).map((l) => `${l.vendor.nama_vendor} (${l.peruntukan_link})`),
+    }));
   }
 
-  async daftarSph(q: { status?: string; cari?: string }) {
+  async daftarSph(q: { status?: string; cari?: string; saya?: string }, u?: Pengguna) {
     const kata = (q.cari || '').trim();
+    const status = (q.status || '').split(',').map((x) => x.trim()).filter(Boolean);
     const rows = await this.prisma.pbSph.findMany({
       where: {
-        ...(q.status ? { status: q.status } : {}),
+        ...(status.length ? { status: { in: status } } : {}),
+        ...(q.saya === '1' && u ? { id_sales: u.id_karyawan } : {}),
         ...(kata ? { OR: [{ nomor_sph: { contains: kata } }, { pelanggan: { nama_pelanggan: { contains: kata } } }] } : {}),
       },
       include: {
@@ -126,11 +144,13 @@ export class PasangBaruService {
   private opsSurvey(u: Pengguna) { return this.boleh(u, 'OPS'); }
   private teknisSurvey(u: Pengguna) { return u.roles.some((r) => [...SEMUA_TAHAP, 'Teknisi', 'Manager_Ops'].includes(r)); }
 
-  async daftarSurvey(q: { status?: string; cari?: string }) {
+  async daftarSurvey(q: { status?: string; cari?: string; saya?: string }, u?: Pengguna) {
     const kata = (q.cari || '').trim();
+    const status = (q.status || '').split(',').map((x) => x.trim()).filter(Boolean);
     const rows = await this.prisma.pbSurvey.findMany({
       where: {
-        ...(q.status === 'aktif' ? { status: { notIn: ['Batal', 'Lanjut SPH'] } } : q.status ? { status: q.status } : {}),
+        ...(q.status === 'aktif' ? { status: { notIn: ['Batal', 'Lanjut SPH'] } } : status.length ? { status: { in: status } } : {}),
+        ...(q.saya === '1' && u ? { id_sales: u.id_karyawan } : {}),
         ...(kata ? {
           OR: [
             { nomor_survey: { contains: kata } }, { nama_perusahaan: { contains: kata } }, { nama_pic: { contains: kata } },
@@ -138,19 +158,36 @@ export class PasangBaruService {
           ],
         } : {}),
       },
-      include: { site: { select: { cover: true } } },
+      include: {
+        site: {
+          select: {
+            cover: true, kota: true, ikg_nominal: true, layanan: { select: { nama_layanan: true } },
+            vendor: { select: { biaya_mrc_vendor: true, deposit_nominal: true } },
+          },
+        },
+      },
       orderBy: { updated_at: 'desc' },
       take: 300,
     });
-    const [nama, sph] = await Promise.all([
-      this.namaKaryawan(rows.map((r) => r.id_sales)),
-      this.prisma.pbSph.findMany({ where: { id_survey: { in: rows.map((r) => r.id_survey) } }, select: { id_survey: true, id_sph: true, nomor_sph: true } }),
+    const ids = rows.map((r) => r.id_survey);
+    const [nama, sph, riwayat] = await Promise.all([
+      this.namaKaryawan(rows.flatMap((r) => [r.id_sales, r.id_ops])),
+      this.prisma.pbSph.findMany({ where: { id_survey: { in: ids } }, select: { id_survey: true, id_sph: true, nomor_sph: true } }),
+      // catatan terakhir per survey (mis. alasan dikembalikan OPS / permintaan cek teknis)
+      ids.length ? this.prisma.pbRiwayat.findMany({ where: { id_survey: { in: ids } }, orderBy: { created_at: 'desc' }, select: { id_survey: true, aksi: true, catatan: true } }) : [],
     ]);
+    const unik = (a: (string | null | undefined)[]) => [...new Set(a.filter((x): x is string => !!x))];
     return rows.map(({ site, ...r }) => ({
       ...r,
       jumlah_site: site.length,
       cover: site.filter((x) => x.cover === 'Cover').length,
       tidak_cover: site.filter((x) => x.cover === 'Tidak cover').length,
+      kota: unik(site.map((x) => x.kota)),
+      layanan: unik(site.map((x) => x.layanan.nama_layanan)),
+      modal_vendor: site.filter((x) => x.cover !== 'Tidak cover').flatMap((x) => x.vendor).reduce((a, v) => a + Number(v.biaya_mrc_vendor), 0),
+      ikg: site.filter((x) => x.cover !== 'Tidak cover').reduce((a, x) => a + Number(x.ikg_nominal), 0),
+      terakhir: (() => { const x = riwayat.find((h) => h.id_survey === r.id_survey); return x ? { aksi: x.aksi, catatan: x.catatan } : null; })(),
+      ops: r.id_ops ? nama.get(r.id_ops) ?? null : null,
       sales: r.id_sales ? nama.get(r.id_sales) ?? null : null,
       sph: sph.filter((x) => x.id_survey === r.id_survey).map(({ id_sph, nomor_sph }) => ({ id_sph, nomor_sph })),
     }));

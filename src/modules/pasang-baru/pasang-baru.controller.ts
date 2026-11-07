@@ -13,10 +13,10 @@ export class PasangBaruController {
 
   @Get('referensi') referensi() { return this.svc.referensi(); }
   @Get('pelanggan') cariPelanggan(@Query('q') q: string) { return this.svc.cariPelanggan(q); }
-  @Get('ringkas') ringkas() { return this.svc.ringkas(); }
+  @Get('ringkas') ringkas(@CurrentUser() u: Pengguna, @Query() q: { saya?: string }) { return this.svc.ringkas(u, q); }
 
   // Survey (tahap pertama, sebelum SPH)
-  @Get('survey') daftarSurvey(@Query() q: { status?: string; cari?: string }) { return this.svc.daftarSurvey(q); }
+  @Get('survey') daftarSurvey(@CurrentUser() u: Pengguna, @Query() q: { status?: string; cari?: string; saya?: string }) { return this.svc.daftarSurvey(q, u); }
   @Get('survey/:id') detailSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.detailSurvey(id, u); }
   @Post('survey') buatSurvey(@CurrentUser() u: Pengguna, @Body() dto: SurveyDto) { return this.svc.buatSurvey(u, dto); }
   @Put('survey/:id') ubahSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: SurveyDto) {
@@ -52,7 +52,7 @@ export class PasangBaruController {
   @Delete('survey/:id') hapusSurvey(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.hapusSurvey(u, id); }
 
   // SPH
-  @Get('sph') daftarSph(@Query() q: { status?: string; cari?: string }) { return this.svc.daftarSph(q); }
+  @Get('sph') daftarSph(@CurrentUser() u: Pengguna, @Query() q: { status?: string; cari?: string; saya?: string }) { return this.svc.daftarSph(q, u); }
   @Get('sph/:id') detailSph(@Param('id', ParseIntPipe) id: number) { return this.svc.detailSph(id); }
   @Post('sph') buatSph(@CurrentUser() u: Pengguna, @Body() dto: SphDto) { return this.svc.buatSph(u, dto); }
   @Put('sph/:id') ubahSph(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: SphDto) {
@@ -68,7 +68,7 @@ export class PasangBaruController {
   }
 
   // Order PB
-  @Get('order') daftarOrder(@Query() q: { tahap?: string; cari?: string; id_sph?: string }) { return this.svc.daftarOrder(q); }
+  @Get('order') daftarOrder(@CurrentUser() u: Pengguna, @Query() q: { tahap?: string; cari?: string; id_sph?: string; saya?: string }) { return this.svc.daftarOrder(q, u); }
   @Get('order/:id') detailOrder(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.detailOrder(u, id); }
   @Patch('order/:id/sales') ubahSales(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: OrderSalesDto) {
     return this.svc.ubahSales(u, id, dto);
