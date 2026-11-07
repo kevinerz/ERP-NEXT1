@@ -170,7 +170,7 @@ export class NetworkDto {
   @IsOptional() @IsString() @MaxLength(100) nama_ekspedisi?: string;
   @IsOptional() @IsString() @MaxLength(100) nomor_resi?: string;
   @IsOptional() @IsDateString() tgl_kirim?: string | null;
-  @IsOptional() @IsIn(['Packing', 'Dikirim', 'Diterima']) status_pengiriman?: string;
+  @IsOptional() @IsIn(['Packing', 'Dikirim', 'Diterima', 'Dikembalikan']) status_pengiriman?: string;
   @IsOptional() @IsString() @MaxLength(2000) catatan?: string;
 }
 export class BaDto {

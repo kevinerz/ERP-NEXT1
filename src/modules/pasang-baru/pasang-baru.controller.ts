@@ -5,11 +5,12 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { BaDto, CatatanDto, DokumenDto, FotoLinkDto, LinkDto, NetworkDto, PerangkatDto, RequestPerangkatDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 import { PasangBaruService, Pengguna } from './pasang-baru.service';
+import { KurirApiService } from './kurir-api.service';
 
 // Akses modul: sales / operations / instalasi / finance (lihat ModulAksesGuard); hak ubah per tahap dicek di service
 @Controller('pasang-baru')
 export class PasangBaruController {
-  constructor(private readonly svc: PasangBaruService) {}
+  constructor(private readonly svc: PasangBaruService, private readonly kurirApi: KurirApiService) {}
 
   @Get('referensi') referensi() { return this.svc.referensi(); }
   @Get('pelanggan') cariPelanggan(@Query('q') q: string) { return this.svc.cariPelanggan(q); }
@@ -111,6 +112,21 @@ export class PasangBaruController {
   }
   @Get('kontak-teknisi') kontakTeknisi() { return this.svc.daftarKontakTeknisi(); }
   @Get('kurir') kurir() { return this.svc.daftarKurir(); }
+  // Kurir api.co.id: referensi gratis, cek ongkir Rp 5, order memotong saldo, lacak gratis
+  @Get('kurir-api/saldo') kurirSaldo() { return this.kurirApi.saldo(); }
+  @Get('kurir-api/provinsi') kurirProvinsi() { return this.kurirApi.provinsi(); }
+  @Get('kurir-api/kota') kurirKota(@Query('province') p: string) { return this.kurirApi.kota(p); }
+  @Get('kurir-api/kecamatan') kurirKecamatan(@Query('city') c: string) { return this.kurirApi.kecamatan(c); }
+  @Get('kurir-api/alamat') kurirAlamat() { return this.kurirApi.alamat(); }
+  @Post('kurir-api/alamat') kurirBuatAlamat(@CurrentUser() u: Pengguna, @Body() dto: Record<string, unknown>) { return this.kurirApi.buatAlamat(u, dto); }
+  @Get('order/:id/kurir-api/ongkir') kurirOngkir(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Query() q: Record<string, unknown>) {
+    return this.kurirApi.ongkir(u, id, q);
+  }
+  @Post('order/:id/kurir-api/pesan') kurirPesan(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: Record<string, unknown>) {
+    return this.kurirApi.pesan(u, id, dto);
+  }
+  @Post('order/:id/kurir-api/lacak') kurirLacak(@Param('id', ParseIntPipe) id: number) { return this.kurirApi.lacak(id); }
+  @Post('order/:id/kurir-api/batal') kurirBatal(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.kurirApi.batal(u, id); }
   @Post('order/:id/wa-teknisi') waTeknisi(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.svc.kirimWaTeknisi(u, id); }
   @Post('order/:id/pemasangan-selesai') pemasanganSelesai(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: CatatanDto) {
     return this.svc.selesaiPemasangan(u, id, dto);

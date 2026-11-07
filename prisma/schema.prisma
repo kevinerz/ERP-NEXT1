@@ -898,6 +898,14 @@ model PengirimanPerangkat {
   tgl_terima              DateTime?
   nama_penerima_di_lokasi String?   @db.VarChar(150)
   catatan                 String?   @db.Text
+  // Order kurir lewat api.co.id (resi bisa dilacak otomatis)
+  kurir_order_id          String?   @db.VarChar(50)
+  kurir_kode              String?   @db.VarChar(30)
+  kurir_layanan           String?   @db.VarChar(50)
+  kurir_status            String?   @db.VarChar(30)
+  kurir_biaya             Decimal?  @db.Decimal(15, 2)
+  kurir_riwayat           String?   @db.Text // JSON history dari endpoint lacak
+  kurir_cek_at            DateTime?
   created_at              DateTime  @default(now())
 
   wo    WorkOrder        @relation(fields: [id_wo], references: [id_wo], onDelete: Cascade)

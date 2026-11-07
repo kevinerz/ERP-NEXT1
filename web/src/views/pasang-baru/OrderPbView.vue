@@ -6,6 +6,7 @@ import { fmtDate, fmtDateTime, fmtRupiah } from '@/composables/useFormat'
 import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
 import { DEPOSIT_JENIS, KELAS_TAHAP, TAHAP_ORDER, type Vendor } from './pb'
 import { printBaAktivasi } from '@/composables/usePrint'
+import KurirApiModal from './KurirApiModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -201,6 +202,20 @@ async function kirimWa() {
   if (!(await confirmDialog({ title: 'Kirim WA ke teknisi', message: `Kirim tugas pemasangan + link lapangan ke ${k?.nama} (${k?.no_hp}) lewat WhatsApp helpdesk?`, confirmLabel: 'Kirim' }))) return
   jalankan(() => api.post(`/pasang-baru/order/${id.value}/wa-teknisi`))
 }
+// Kurir api.co.id
+const kirim = computed<any>(() => net.value.wo?.pengiriman?.[0] ?? null)
+const kurirAktif = computed(() => !!kirim.value?.kurir_order_id && !['cancelled', 'failed'].includes(kirim.value?.kurir_status))
+const riwayatKurir = computed<{ status: string; message: string; occurred_at: string }[]>(() => {
+  try { return JSON.parse(kirim.value?.kurir_riwayat || '[]').slice().reverse() } catch { return [] }
+})
+const bukaKurir = ref(false)
+const lacakKurir = () => jalankan(() => api.post(`/pasang-baru/order/${id.value}/kurir-api/lacak`))
+async function batalKurir() {
+  if (!(await confirmDialog({ title: 'Batalkan order kurir', message: 'Hanya bisa sebelum paket dijemput. Ongkir dikembalikan ke saldo bila memenuhi syarat.', confirmLabel: 'Batalkan', variant: 'danger' }))) return
+  jalankan(() => api.post(`/pasang-baru/order/${id.value}/kurir-api/batal`))
+}
+const STATUS_KURIR: Record<string, string> = { processing: 'Diproses', waiting: 'Menunggu jemput', shipping: 'Dalam pengiriman', delivered: 'Diterima', completed: 'Diterima', problem: 'Bermasalah', returned: 'Dikembalikan', cancelled: 'Dibatalkan', failed: 'Gagal' }
+
 async function selesaiVendor() {
   const catatan = await promptDialog({ title: 'Pemasangan vendor selesai', message: 'Pakai ini bila vendor tidak melapor lewat link lapangan.', label: 'Catatan hasil (opsional)', confirmLabel: 'Selesai' })
   if (catatan === null) return
@@ -455,7 +470,7 @@ const AKSI: Record<string, string> = {
                   <div class="form-group"><label class="form-label">Tgl kirim</label><input v-model="fn.tgl_kirim" type="date" class="form-input" :disabled="!bisaUbah('Network') || woSelesai" /></div>
                   <div class="form-group">
                     <label class="form-label">Status kiriman</label>
-                    <select v-model="fn.status_pengiriman" class="form-input" :disabled="!bisaUbah('Network') || woSelesai"><option>Packing</option><option>Dikirim</option><option>Diterima</option></select>
+                    <select v-model="fn.status_pengiriman" class="form-input" :disabled="!bisaUbah('Network') || woSelesai"><option>Packing</option><option>Dikirim</option><option>Diterima</option><option>Dikembalikan</option></select>
                   </div>
                 </div>
               </div>
@@ -464,6 +479,30 @@ const AKSI: Record<string, string> = {
                 <button class="btn btn-primary" :disabled="proses || (fn.metode === 'Kirim_Vendor' && !teknisiSiap)" @click="simpanNetwork">
                   {{ fn.metode === 'Visit_Internal' ? (net.wo ? 'Simpan' : 'Masukkan ke Jadwal Visit') : 'Simpan pengiriman & vendor' }}
                 </button>
+              </div>
+
+              <div v-if="net.wo && fn.metode === 'Kirim_Vendor' && net.wo.tipe_eksekutor === 'Vendor_Ketiga'" class="op-kurir">
+                <div class="op-head">
+                  <b>📦 Kurir</b>
+                  <span class="op-wo-aksi">
+                    <button v-if="kurirAktif" class="btn btn-sm btn-ghost" :disabled="proses" @click="lacakKurir">🔄 Lacak</button>
+                    <button v-if="kurirAktif && ['processing', 'waiting'].includes(kirim.kurir_status) && bisaUbah('Network')" class="btn btn-sm btn-ghost" :disabled="proses" @click="batalKurir">Batalkan order kurir</button>
+                    <button v-if="!kurirAktif && bisaUbah('Network') && !woSelesai" class="btn btn-sm btn-primary" @click="bukaKurir = true">Pesan kurir via api.co.id</button>
+                  </span>
+                </div>
+                <template v-if="kurirAktif">
+                  <p class="op-kurir-info">
+                    <b>{{ kirim.nama_ekspedisi }}</b> {{ kirim.kurir_layanan }} · resi <b>{{ kirim.nomor_resi || '(menunggu)' }}</b> ·
+                    <span class="badge" :class="['delivered', 'completed'].includes(kirim.kurir_status) ? 'badge-green' : kirim.kurir_status === 'problem' ? 'badge-red' : 'badge-blue'">{{ STATUS_KURIR[kirim.kurir_status] || kirim.kurir_status }}</span>
+                    <template v-if="kirim.kurir_biaya"> · ongkir {{ fmtRupiah(kirim.kurir_biaya) }}</template>
+                    <small v-if="kirim.kurir_cek_at" class="muted"> · dicek {{ fmtDateTime(kirim.kurir_cek_at) }}</small>
+                  </p>
+                  <ol v-if="riwayatKurir.length" class="op-lacak">
+                    <li v-for="(h, i) in riwayatKurir" :key="i"><small class="muted">{{ fmtDateTime(h.occurred_at) }}</small> · {{ h.message }}</li>
+                  </ol>
+                  <p class="form-hint">Dilacak otomatis tiap 2 jam; status kiriman ikut diperbarui (Diterima saat paket sampai).</p>
+                </template>
+                <p v-else class="form-hint">Pesan lewat api.co.id agar resi terisi otomatis dan bisa dilacak. Bila dikirim sendiri di loket kurir, isi kurir & resi di atas (tidak bisa dilacak otomatis).</p>
               </div>
 
               <div v-if="net.wo" class="op-wo">
@@ -575,6 +614,8 @@ const AKSI: Record<string, string> = {
       <input ref="inputFoto" type="file" accept="image/jpeg,image/png" hidden @change="unggahFoto" />
       <div v-if="lihat" class="modal-overlay" @click="lihat = ''"><img :src="lihat" class="op-besar" alt="foto" /></div>
     </template>
+
+    <KurirApiModal v-if="bukaKurir && o" :order="o" @tutup="bukaKurir = false" @selesai="bukaKurir = false; muat()" />
 
     <!-- Pilih perangkat dari stok -->
     <div v-if="stok.buka" class="modal-overlay" @click.self="stok.buka = false">
@@ -743,6 +784,10 @@ const AKSI: Record<string, string> = {
 .op-speed label { display: flex; align-items: center; gap: 4px; flex: 1; }
 .op-speed .form-input { min-width: 0; }
 .op-kosong { margin: 0; font-size: 13px; }
+.op-kurir { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; }
+.op-kurir-info { margin: 6px 0; font-size: 13.5px; }
+.op-lacak { margin: 6px 0; padding-left: 18px; font-size: 13px; }
+.op-lacak li:first-child { font-weight: 600; }
 .op-baru { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; padding: 8px; border: 1px dashed #93c5fd; border-radius: 8px; }
 .op-wa { display: flex; gap: 6px; align-items: center; font-size: 13px; margin-right: auto; }
 .op-perangkat { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; margin-bottom: 6px; }
