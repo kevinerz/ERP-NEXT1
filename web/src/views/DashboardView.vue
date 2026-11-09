@@ -28,13 +28,13 @@ onMounted(() => { muat(); timer = setInterval(() => muat(true), 60_000) })
 onUnmounted(() => { if (timer) clearInterval(timer) })
 
 // Urutan bagian per divisi — divisi sendiri di atas, sisanya menyusul.
-// Bagian yang tidak tercantum tidak ditampilkan (mis. status router untuk Sales/Finance).
+// Bagian yang tidak tercantum tidak ditampilkan (mis. tiket & status router untuk Sales).
 type Bagian = 'helpdesk' | 'wa' | 'noc' | 'tugas' | 'pasang_baru' | 'sales' | 'keuangan' | 'eksekutif'
 const URUTAN: Record<string, Bagian[]> = {
   Helpdesk:   ['helpdesk', 'wa', 'tugas', 'noc', 'pasang_baru', 'sales', 'keuangan', 'eksekutif'],
   NOC:        ['noc', 'helpdesk', 'tugas', 'wa', 'pasang_baru', 'sales', 'keuangan', 'eksekutif'],
   Teknisi:    ['tugas', 'helpdesk', 'noc', 'wa', 'pasang_baru', 'sales', 'keuangan', 'eksekutif'],
-  Sales:      ['sales', 'pasang_baru', 'tugas', 'helpdesk', 'wa', 'keuangan', 'eksekutif'],
+  Sales:      ['sales', 'pasang_baru', 'tugas', 'wa', 'keuangan', 'eksekutif'],
   'Pre Sales':['pasang_baru', 'sales', 'tugas', 'helpdesk', 'noc', 'wa', 'keuangan', 'eksekutif'],
   Finance:    ['keuangan', 'pasang_baru', 'sales', 'tugas', 'helpdesk', 'wa', 'eksekutif'],
 }
