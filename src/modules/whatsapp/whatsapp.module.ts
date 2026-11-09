@@ -11,6 +11,6 @@ import { WaStatistikService } from './wa-statistik.service';
   // Webhook didaftarkan lebih dulu supaya rute statis wa/webhook tidak tertangkap rute lain
   controllers: [WaWebhookController, WaController],
   providers: [WaService, WaGatewayClient, WaRealtimeService, WaStatistikService],
-  exports: [WaService],
+  exports: [WaService, WaStatistikService],
 })
 export class WhatsappModule {}
