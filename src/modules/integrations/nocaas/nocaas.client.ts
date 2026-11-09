@@ -2,8 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /**
- * Klien HTTP ke NOCaaS. Sejak NOCaaS wajib login (sesi cookie), ERP masuk memakai akun layanan
- * NOCAAS_USERNAME / NOCAAS_PASSWORD, menyimpan cookie sesi, dan login ulang otomatis saat dapat 401.
+ * Klien HTTP ke NOCaaS (wajib autentikasi). Utama: API key NOCAAS_API_KEY (header X-API-Key).
+ * Cadangan bila key kosong: akun layanan NOCAAS_USERNAME / NOCAAS_PASSWORD dengan sesi cookie,
+ * login ulang otomatis saat dapat 401.
  */
 @Injectable()
 export class NocaasClient {
@@ -15,10 +16,15 @@ export class NocaasClient {
   constructor(private config: ConfigService) {}
 
   get base() {
-    return (this.config.get<string>('NOCAAS_API_URL') || 'http://180.214.165.166:3000').replace(/\/$/, '');
+    return (this.config.get<string>('NOCAAS_API_URL') || 'https://noc.nextone.id').replace(/\/$/, '');
+  }
+
+  private get apiKey() {
+    return this.config.get<string>('NOCAAS_API_KEY') || '';
   }
 
   private get kredensial() {
+    if (this.apiKey) return null;
     const username = this.config.get<string>('NOCAAS_USERNAME') || '';
     const password = this.config.get<string>('NOCAAS_PASSWORD') || '';
     return username && password ? { username, password } : null;
@@ -52,7 +58,7 @@ export class NocaasClient {
 
   private kirim(path: string, timeout: number) {
     return fetch(`${this.base}${path}`, {
-      headers: this.cookie ? { Cookie: this.cookie } : {},
+      headers: this.apiKey ? { 'X-API-Key': this.apiKey } : this.cookie ? { Cookie: this.cookie } : {},
       signal: AbortSignal.timeout(timeout),
     });
   }
@@ -66,7 +72,8 @@ export class NocaasClient {
       await this.pastikanLogin();
       res = await this.kirim(path, timeout);
     }
-    if (res.status === 401 && !this.kredensial) throw new Error('NOCaaS 401 — isi NOCAAS_USERNAME & NOCAAS_PASSWORD di .env');
+    if (res.status === 401 && this.apiKey) throw new Error('NOCaaS 401 — NOCAAS_API_KEY ditolak');
+    if (res.status === 401 && !this.kredensial) throw new Error('NOCaaS 401 — isi NOCAAS_API_KEY di .env');
     if (!res.ok) throw new Error(`NOCaaS ${res.status} ${path}`);
     return res.json() as Promise<T>;
   }
