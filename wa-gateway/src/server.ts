@@ -49,6 +49,18 @@ export function buatServer(sesi: Map<string, Sesi>) {
     await ambil(req).reaksi(keJid(jid), target, String(emoji ?? ''));
     res.json({ data: true });
   });
+  app.post('/akun/:akun/tarik', async (req, res) => {
+    const { jid, id } = req.body ?? {};
+    if (!jid || !id) throw Object.assign(new Error('jid & id wajib'), { status: 400 });
+    await ambil(req).tarik(keJid(jid), String(id));
+    res.json({ data: true });
+  });
+  app.post('/akun/:akun/edit', async (req, res) => {
+    const { jid, id, teks } = req.body ?? {};
+    if (!jid || !id || !String(teks ?? '').trim()) throw Object.assign(new Error('jid, id & teks wajib'), { status: 400 });
+    await ambil(req).edit(keJid(jid), String(id), String(teks));
+    res.json({ data: true });
+  });
   app.post('/akun/:akun/media/ulang', async (req, res) => {
     const id = String(req.body?.id ?? '');
     if (!id) throw Object.assign(new Error('id wajib'), { status: 400 });

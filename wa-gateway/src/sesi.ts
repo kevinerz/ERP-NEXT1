@@ -10,6 +10,7 @@ import makeWASocket, {
   downloadMediaMessage,
   fetchLatestWaWebVersion,
   isJidGroup,
+  isJidStatusBroadcast,
   isLidUser,
   isPnUser,
   jidNormalizedUser,
@@ -125,10 +126,24 @@ export class Sesi {
       // Jangan tampil "online" terus — notifikasi di HP helpdesk tetap berbunyi
       markOnlineOnConnect: false,
       getMessage: async (key) => (key.id ? this.pesanTerbaru.get(key.id) : undefined),
+      // Status/story tidak dipakai helpdesk — abaikan bila datang sebagai node <message>
+      shouldIgnoreJid: (jid) => isJidStatusBroadcast(jid),
     });
     this.sock = sock;
 
     sock.ev.on('creds.update', saveCreds);
+    // WhatsApp kini mengirim story sebagai node <status from="status@broadcast">. Baileys 7.0.0-rc14 tidak
+    // menanganinya sehingga tidak pernah di-ack: server berhenti mengirim pesan offline berikutnya dan
+    // ±50 menit kemudian memutus stream ("Stream Errored (ack)") — pesan helpdesk tertahan berhari-hari.
+    // Story tidak dipakai, cukup di-ack lalu dibuang.
+    sock.ws.on('CB:status', (node: any) => {
+      const a = node?.attrs ?? {};
+      if (!a.id || !a.from) return;
+      const attrs: Record<string, string> = { id: a.id, to: a.from, class: 'status' };
+      if (a.type) attrs.type = a.type;
+      if (a.participant) attrs.participant = a.participant;
+      sock.sendNode({ tag: 'ack', attrs }).catch((e: any) => log.warn({ err: e?.message, id: a.id }, 'Gagal ack status'));
+    });
     sock.ev.on('connection.update', (u) => void this.onKoneksi(sock, u));
     sock.ev.on('messages.upsert', ({ messages, type }) => void this.onPesan(messages, type === 'notify' || type === 'append'));
     sock.ev.on('messaging-history.set', (h) => void this.onRiwayat(h));
@@ -425,6 +440,18 @@ export class Sesi {
     await sock.sendMessage(jid, {
       react: { text: emoji, key: { remoteJid: jid, id: target.id, fromMe: target.dari_saya, participant: isJidGroup(jid) ? target.pengirim_jid ?? undefined : undefined } },
     });
+  }
+
+  /** Tarik (hapus untuk semua) pesan milik sendiri */
+  async tarik(jid: string, id: string) {
+    const sock = this.pastikanTerhubung();
+    await sock.sendMessage(jid, { delete: { remoteJid: jid, id, fromMe: true } });
+  }
+
+  /** Edit teks pesan milik sendiri (WhatsApp membatasi ±15 menit setelah dikirim) */
+  async edit(jid: string, id: string, teks: string) {
+    const sock = this.pastikanTerhubung();
+    await sock.sendMessage(jid, { text: teks, edit: { remoteJid: jid, id, fromMe: true } });
   }
 
   /** Cek nomor terdaftar di WhatsApp + status pembatasan chat baru dari WhatsApp (akun bisnis) */
