@@ -7,6 +7,7 @@ import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog
 import { DEPOSIT_JENIS, KELAS_TAHAP, TAHAP_ORDER, type Vendor } from './pb'
 import { printBaAktivasi } from '@/composables/usePrint'
 import KurirApiModal from './KurirApiModal.vue'
+import VpnPrtgPanel from './VpnPrtgPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -460,6 +461,9 @@ const AKSI: Record<string, string> = {
               </div>
             </div>
           </div>
+
+          <!-- VPN NOCaaS & PRTG (sebelum perangkat dikirim/dipasang) -->
+          <VpnPrtgPanel :id-pb="o.id_pb" :bisa-ubah="bisaUbah('Network')" @berubah="muat()" />
 
           <!-- 2. Pemasangan -->
           <div class="detail-section">

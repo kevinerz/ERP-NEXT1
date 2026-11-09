@@ -128,6 +128,40 @@ export class PrtgClient {
     if (!res.ok) throw new Error(`PRTG pause error ${res.status}`);
   }
 
+  /** Satu object PRTG (device/grup) + jumlah sensornya — untuk cek device template */
+  async getObject(objid: number): Promise<{ objid: number; name: string; host: string; group: string; type: string; sensors: number } | null> {
+    const url = await this.authedUrl(`/api/table.json?content=devices&columns=objid,device,host,group,totalsens&filter_objid=${objid}&count=1`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
+    const d = ((await res.json()) as any).devices?.[0];
+    return d ? { objid: d.objid, name: d.device, host: d.host, group: d.group, type: 'device', sensors: Number(d.totalsens_raw ?? d.totalsens) || 0 } : null;
+  }
+
+  /** Semua grup PRTG (untuk memilih grup pelanggan tempat device baru) */
+  async getGroups(): Promise<{ objid: number; name: string; parent: string; devices: number }[]> {
+    const url = await this.authedUrl(`/api/table.json?content=groups&columns=objid,group,parentid,probe,totaldevices&count=${PrtgClient.MAX_COUNT}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error(`PRTG API error ${res.status}`);
+    const g = ((await res.json()) as any).groups ?? [];
+    return g.map((x: any) => ({ objid: x.objid, name: x.group, parent: x.probe ?? '', devices: Number(x.totaldevices_raw ?? x.totaldevices) || 0 }));
+  }
+
+  /**
+   * Duplikasi device (beserta sensornya) ke grup lain dengan nama & host baru, lalu aktifkan.
+   * PRTG membuat salinan dalam keadaan pause dan mengembalikan id baru lewat redirect Location.
+   */
+  async duplicateDevice(templateId: number, nama: string, host: string, targetGroupId: number): Promise<number> {
+    const url = await this.authedUrl(`/api/duplicateobject.htm?id=${templateId}&name=${encodeURIComponent(nama)}&host=${encodeURIComponent(host)}&targetid=${targetGroupId}`);
+    const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
+    const lokasi = res.headers.get('location') ?? '';
+    const id = Number(lokasi.match(/[?&]id=(\d+)/)?.[1] ?? NaN);
+    if (!(res.status >= 300 && res.status < 400) || !Number.isFinite(id) || id === templateId) {
+      throw new Error(`PRTG duplikasi device gagal (HTTP ${res.status})`);
+    }
+    await this.pauseObject(id, false).catch((e) => this.logger.warn(`Device PRTG ${id} dibuat tapi gagal diaktifkan: ${e.message}`));
+    return id;
+  }
+
   // Semua sensor tanpa filter status — buat halaman audit/daftar device
   async getAllSensors(): Promise<PrtgSensor[]> {
     const url = await this.authedUrl(`/api/table.json?content=sensors&columns=objid,sensor,device,status,message&count=${PrtgClient.MAX_COUNT}`);

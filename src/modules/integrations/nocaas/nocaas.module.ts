@@ -11,5 +11,6 @@ import { NocaasClient } from './nocaas.client';
   imports: [PrtgModule, StarsenderModule, WhatsappModule],
   controllers: [NocaasController],
   providers: [NocaasClient, NocaasService, NocaasLaporanService],
+  exports: [NocaasClient],
 })
 export class NocaasModule {}

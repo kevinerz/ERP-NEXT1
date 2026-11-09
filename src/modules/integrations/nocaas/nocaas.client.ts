@@ -56,25 +56,40 @@ export class NocaasClient {
     return this.sedangLogin;
   }
 
-  private kirim(path: string, timeout: number) {
+  private kirim(path: string, timeout: number, body?: unknown) {
+    const auth: Record<string, string> = this.apiKey ? { 'X-API-Key': this.apiKey } : this.cookie ? { Cookie: this.cookie } : {};
     return fetch(`${this.base}${path}`, {
-      headers: this.apiKey ? { 'X-API-Key': this.apiKey } : this.cookie ? { Cookie: this.cookie } : {},
+      method: body === undefined ? 'GET' : 'POST',
+      headers: body === undefined ? auth : { ...auth, 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(timeout),
     });
   }
 
   /** GET JSON; lempar error bila gagal */
   async ambil<T = any>(path: string, timeout = 30_000): Promise<T> {
+    return this.minta<T>(path, timeout);
+  }
+
+  /** POST JSON; pesan error NOCaaS (field detail) diteruskan */
+  async kirimJson<T = any>(path: string, body: unknown, timeout = 60_000): Promise<T> {
+    return this.minta<T>(path, timeout, body ?? {});
+  }
+
+  private async minta<T>(path: string, timeout: number, body?: unknown): Promise<T> {
     if (!this.cookie && this.kredensial) await this.pastikanLogin();
-    let res = await this.kirim(path, timeout);
+    let res = await this.kirim(path, timeout, body);
     if (res.status === 401 && this.kredensial) {
       this.cookie = null;
       await this.pastikanLogin();
-      res = await this.kirim(path, timeout);
+      res = await this.kirim(path, timeout, body);
     }
     if (res.status === 401 && this.apiKey) throw new Error('NOCaaS 401 — NOCAAS_API_KEY ditolak');
     if (res.status === 401 && !this.kredensial) throw new Error('NOCaaS 401 — isi NOCAAS_API_KEY di .env');
-    if (!res.ok) throw new Error(`NOCaaS ${res.status} ${path}`);
+    if (!res.ok) {
+      const detail = await res.json().then((j: any) => (typeof j?.detail === 'string' ? j.detail : j?.detail ? JSON.stringify(j.detail) : '')).catch(() => '');
+      throw new Error(`NOCaaS ${res.status} ${path}${detail ? ` — ${detail}` : ''}`);
+    }
     return res.json() as Promise<T>;
   }
 }

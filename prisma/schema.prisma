@@ -1936,6 +1936,14 @@ model PbOrder {
   ba_sumber       String?   @db.VarChar(20) // Lapangan | ERP | Basah (scan BA tanda tangan basah)
   ba_scan         String?   @db.VarChar(255) // file scan BA tanda tangan basah
   ba_data         String?   @db.Text // JSON: penanggung_jawab, ip, bandwidth, lain, catatan (isi BA format NextOne)
+  // Akun VPN NOCaaS (NS-<nama> & UN-<nama>, password sama, terenkripsi) + device PRTG per jalur
+  vpn_nama        String?   @db.VarChar(80)
+  vpn_ns_ip       String?   @db.VarChar(45)
+  vpn_un_ip       String?   @db.VarChar(45)
+  vpn_password    String?   @db.VarChar(255)
+  vpn_at          DateTime?
+  prtg_ns_objid   Int?
+  prtg_un_objid   Int?
   created_at      DateTime  @default(now())
   updated_at      DateTime  @updatedAt
 

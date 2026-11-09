@@ -6,11 +6,12 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { BaDataDto, BaDto, BaScanDto, CatatanDto, DokumenDto, FotoLinkDto, LinkDto, NetworkDto, PerangkatDto, RequestPerangkatDto, OrderOpsDto, OrderSalesDto, PutusanDto, SphDto, SurveyDto, SurveyOpsDto, SurveyTeknisDto } from './dto';
 import { PasangBaruService, Pengguna } from './pasang-baru.service';
 import { KurirApiService } from './kurir-api.service';
+import { PbVpnService } from './pb-vpn.service';
 
 // Akses modul: sales / operations / instalasi / finance (lihat ModulAksesGuard); hak ubah per tahap dicek di service
 @Controller('pasang-baru')
 export class PasangBaruController {
-  constructor(private readonly svc: PasangBaruService, private readonly kurirApi: KurirApiService) {}
+  constructor(private readonly svc: PasangBaruService, private readonly kurirApi: KurirApiService, private readonly vpn: PbVpnService) {}
 
   @Get('referensi') referensi() { return this.svc.referensi(); }
   @Get('pelanggan') cariPelanggan(@Query('q') q: string) { return this.svc.cariPelanggan(q); }
@@ -110,6 +111,14 @@ export class PasangBaruController {
   @Put('order/:id/network') simpanNetwork(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: NetworkDto) {
     return this.svc.simpanNetwork(u, id, dto);
   }
+  // VPN NOCaaS (NS & UN) + device PRTG dari template
+  @Get('order/:id/vpn') vpnStatus(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number) { return this.vpn.status(u, id); }
+  @Post('order/:id/vpn') vpnBuat(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body() dto: { nama?: string }) { return this.vpn.buatVpn(u, id, dto ?? {}); }
+  @Get('order/:id/prtg-grup') prtgGrup(@Param('id', ParseIntPipe) id: number) { return this.vpn.grupPrtg(id); }
+  @Post('order/:id/prtg') prtgBuat(@CurrentUser() u: Pengguna, @Param('id', ParseIntPipe) id: number, @Body('id_grup', ParseIntPipe) id_grup: number) {
+    return this.vpn.buatPrtg(u, id, { id_grup });
+  }
+  @Put('prtg-template') prtgTemplate(@CurrentUser() u: Pengguna, @Body('objid', ParseIntPipe) objid: number) { return this.vpn.setTemplate(u, objid); }
   @Get('kontak-teknisi') kontakTeknisi() { return this.svc.daftarKontakTeknisi(); }
   @Get('kurir') kurir() { return this.svc.daftarKurir(); }
   // Kurir api.co.id: referensi gratis, cek ongkir Rp 5, order memotong saldo, lacak gratis
