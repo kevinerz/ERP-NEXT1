@@ -5,10 +5,11 @@ import { WhatsappModule } from '../../whatsapp/whatsapp.module';
 import { NocaasController } from './nocaas.controller';
 import { NocaasService } from './nocaas.service';
 import { NocaasLaporanService } from './nocaas-laporan.service';
+import { NocaasClient } from './nocaas.client';
 
 @Module({
   imports: [PrtgModule, StarsenderModule, WhatsappModule],
   controllers: [NocaasController],
-  providers: [NocaasService, NocaasLaporanService],
+  providers: [NocaasClient, NocaasService, NocaasLaporanService],
 })
 export class NocaasModule {}

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { LABEL_KATEGORI } from './nocaas.service';
+import { NocaasClient } from './nocaas.client';
 
 const HARI = 86400_000;
 const tglWib = (s: string) => new Date(`${s}T00:00:00+07:00`);
@@ -19,13 +20,11 @@ const median = (a: number[]) => {
 @Injectable()
 export class NocaasLaporanService {
   private readonly logger = new Logger('LaporanGangguan');
-  constructor(private prisma: PrismaService, private config: ConfigService) {}
+  constructor(private prisma: PrismaService, private config: ConfigService, private klien: NocaasClient) {}
 
   private async nocaas<T>(path: string): Promise<T | null> {
-    const base = (this.config.get<string>('NOCAAS_API_URL') || 'http://180.214.165.166:8000').replace(/\/$/, '');
     try {
-      const r = await fetch(`${base}${path}`, { signal: AbortSignal.timeout(30_000) });
-      return r.ok ? ((await r.json()) as T) : null;
+      return await this.klien.ambil<T>(path);
     } catch (e: any) {
       this.logger.warn(`NOCaaS ${path}: ${e?.message}`);
       return null;

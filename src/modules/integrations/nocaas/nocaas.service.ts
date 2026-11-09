@@ -11,6 +11,7 @@ import { StarsenderService } from '../starsender/starsender.service';
 import { WaService } from '../../whatsapp/wa.service';
 import { SLA_JAM } from '../../operations/operations.service';
 import { withNextTicketNumber } from '../../../common/utils/ticket-number';
+import { NocaasClient } from './nocaas.client';
 
 // online = semua tunnel VPN tersambung · partial = salah satu tunnel putus ·
 // internet_ok = internet lokasi hidup tapi VPN putus (heartbeat syslog masih masuk) · offline = mati total
@@ -88,16 +89,15 @@ export class NocaasService {
     private notif: NotificationsService,
     private wa: StarsenderService,
     private waHelpdesk: WaService,
+    private klien: NocaasClient,
   ) {}
 
   private get base() {
-    return (this.config.get<string>('NOCAAS_API_URL') || 'http://180.214.165.166:8000').replace(/\/$/, '');
+    return this.klien.base;
   }
 
-  private async ambil<T = any>(path: string, timeout = 30_000): Promise<T> {
-    const res = await fetch(`${this.base}${path}`, { signal: AbortSignal.timeout(timeout) });
-    if (!res.ok) throw new Error(`NOCaaS ${res.status} ${path}`);
-    return res.json() as Promise<T>;
+  private ambil<T = any>(path: string, timeout = 30_000): Promise<T> {
+    return this.klien.ambil<T>(path, timeout);
   }
 
   static hitungStatus(x: Paired): StatusRouter {
