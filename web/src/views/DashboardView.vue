@@ -13,6 +13,7 @@ import GrafikDonat from '@/components/grafik/GrafikDonat.vue'
 import CincinProgres from '@/components/grafik/CincinProgres.vue'
 import BatangMendatar from '@/components/grafik/BatangMendatar.vue'
 import AngkaNaik from '@/components/grafik/AngkaNaik.vue'
+import CariGlobal from '@/components/CariGlobal.vue'
 import { SERI, STATUS } from '@/components/grafik/warna'
 
 const router = useRouter()
@@ -239,6 +240,9 @@ const funnelSales = computed(() => {
         </button>
       </nav>
     </header>
+
+    <!-- Pencarian global — menempel di bawah banner -->
+    <CariGlobal class="dsb-cari" />
 
     <div v-if="memuat" class="dsb-muat"><span class="muat-bola" /><span class="muat-bola" /><span class="muat-bola" /> Menyiapkan dashboard…</div>
     <div v-else-if="error" class="dsb-error">😵 {{ error }} <button type="button" class="aksi aksi-merah" @click="muat()">Coba lagi</button></div>
@@ -472,7 +476,7 @@ const funnelSales = computed(() => {
 /* ── Banner ─────────────────────────────────────────────────────── */
 .hero {
   position: relative; overflow: hidden; display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap;
-  padding: 22px 24px; margin-bottom: 22px; border-radius: 22px; color: #fff;
+  padding: 22px 24px 50px; margin-bottom: 0; border-radius: 22px; color: #fff;
   background: linear-gradient(120deg, #2a78d6, #6250d6 35%, #e87ba4 70%, #eb6834);
   background-size: 260% 260%; animation: hero-geser 16s ease-in-out infinite;
   box-shadow: 0 14px 34px rgba(98, 80, 214, .25);
@@ -506,6 +510,10 @@ const funnelSales = computed(() => {
 .aksi-kuning { box-shadow: inset 0 -3px 0 #eda100, 0 4px 12px rgba(0, 0, 0, .12); }
 .aksi-toska { box-shadow: inset 0 -3px 0 #0e9fb3, 0 4px 12px rgba(0, 0, 0, .12); }
 .aksi-merah { background: #d03b3b; color: #fff; }
+
+/* ── Pencarian ── */
+.dsb-cari { margin: -30px 24px 24px; }
+@media (max-width: 640px) { .dsb-cari { margin: -26px 8px 18px; } }
 
 /* ── Status muat ───────────────────────────────────────────────── */
 .dsb-muat, .dsb-kosong { padding: 48px; text-align: center; color: #6b6a65; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }

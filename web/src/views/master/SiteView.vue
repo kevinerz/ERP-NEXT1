@@ -23,7 +23,7 @@ const filterStatus = ref('')
 const filterGrup = ref(0)
 // Filter & halaman disimpan di URL — tetap sama setelah kembali dari halaman detail
 useFilterUrl({ q: search, pelanggan: filterPelanggan, layanan: filterLayanan, status: filterStatus, grup: filterGrup, page })
-const viewMode = ref<'list' | 'grup'>('grup')
+const viewMode = ref<'list' | 'grup'>('list') // tampilan per grup dihapus — grup jadi filter
 
 // ─── Grup view state ─────────────────────────────────────────
 const expandedGrup = ref<Set<number>>(new Set())
@@ -62,6 +62,9 @@ onMounted(async () => {
   fetchData()
   master.fetchSiteAll()
 })
+// Cari otomatis saat mengetik (tanpa tombol "Cari")
+let tundaCari: ReturnType<typeof setTimeout> | undefined
+watch(search, () => { clearTimeout(tundaCari); tundaCari = setTimeout(doSearch, 350) })
 
 // ─── List view ───────────────────────────────────────────────
 function fetchData() {
@@ -416,374 +419,104 @@ function highlight(text: string, q: string) {
 </script>
 
 <template>
-  <div class="page">
-    <!-- ─── Header ─── -->
-    <div class="page-header">
+  <div class="page st">
+    <!-- ─── Kepala ─── -->
+    <div class="st-kepala">
       <div>
-        <h2>Site Pelanggan</h2>
-        <p class="sub">{{ totalSiteAll.toLocaleString('id') }} total site · Lokasi instalasi layanan</p>
+        <h2>📍 Site Pelanggan</h2>
+        <p class="sub">Lokasi pemasangan layanan. Klik baris untuk melihat detail, perangkat, PIC, dan tiket site.</p>
       </div>
-      <div class="header-actions">
-        <div class="view-toggle">
-          <button :class="['toggle-btn', viewMode === 'grup' && 'active']" @click="switchView('grup')">
-            ▦ Per Grup
-          </button>
-          <button :class="['toggle-btn', viewMode === 'list' && 'active']" @click="switchView('list')">
-            ≡ Daftar
-          </button>
-        </div>
-        <button type="button" class="btn btn-primary" @click="openAdd">+ Tambah Site</button>
-      </div>
+      <button type="button" class="btn btn-primary" @click="openAdd">+ Tambah Site</button>
     </div>
 
-    <!-- ─── Status chips ─── -->
-    <div class="status-bar">
-      <div class="status-chips">
-        <span v-baris
-          v-for="st in STATUS_SITE" :key="st"
-          class="chip"
-          :class="{ active: filterStatus === st }"
-          :style="{
-            background: filterStatus === st ? STATUS_COLOR[st]?.color : STATUS_COLOR[st]?.bg,
-            color: filterStatus === st ? '#fff' : STATUS_COLOR[st]?.color,
-            borderColor: STATUS_COLOR[st]?.color + '55'
-          }"
-          @click="filterStatus = filterStatus === st ? '' : st; viewMode === 'list' && doSearch()"
-        >
-          {{ st }} <b>{{ statusSummary[st] ?? 0 }}</b>
-        </span>
-      </div>
+    <!-- ─── Pencarian besar ─── -->
+    <div class="st-cari">
+      <span aria-hidden="true">🔎</span>
+      <input v-model="search" type="search" placeholder="Ketik nama site, kode, kota, atau nama pelanggan…" aria-label="Cari site"
+        @keydown.escape="search = ''" />
+      <button v-if="search" type="button" class="st-x" aria-label="Hapus pencarian" @click="search = ''">✕</button>
+    </div>
+
+    <!-- ─── Status (tab) ─── -->
+    <div class="st-tab" role="tablist" aria-label="Status site">
+      <button type="button" role="tab" :aria-selected="!filterStatus" :class="{ on: !filterStatus }" @click="filterStatus = ''; doSearch()">
+        Semua <b>{{ Object.values(statusSummary).reduce((a, b) => a + (b || 0), 0).toLocaleString('id') }}</b>
+      </button>
+      <button v-for="st in ['Aktif', 'Prospek', 'Suspend', 'Dismantle']" :key="st" type="button" role="tab"
+        :aria-selected="filterStatus === st" :class="['st-' + st.toLowerCase(), { on: filterStatus === st }]"
+        @click="filterStatus = st; doSearch()">
+        <i class="titik" /> {{ st }} <b>{{ (statusSummary[st] ?? 0).toLocaleString('id') }}</b>
+      </button>
+    </div>
+
+    <!-- ─── Filter tambahan (opsional) ─── -->
+    <div class="st-filter">
+      <label>Grup
+        <select v-model="filterGrup" @change="doSearch">
+          <option :value="0">Semua grup</option>
+          <option v-for="g in master.grupList" :key="g.id_grup" :value="g.id_grup">{{ g.nama_grup }}</option>
+          <option :value="-1">Tanpa grup</option>
+        </select>
+      </label>
+      <label>Pelanggan
+        <select v-model="filterPelanggan" @change="doSearch">
+          <option :value="0">Semua pelanggan</option>
+          <option v-for="p in availablePelangganList" :key="p.id_pelanggan" :value="p.id_pelanggan">{{ p.nama_pelanggan }}</option>
+        </select>
+      </label>
+      <label>Layanan
+        <select v-model="filterLayanan" @change="doSearch">
+          <option :value="0">Semua layanan</option>
+          <option v-for="l in availableLayananList" :key="l.id_layanan" :value="l.id_layanan">{{ l.nama_layanan }}</option>
+        </select>
+      </label>
+      <button v-if="hasActiveFilters" type="button" class="st-reset" @click="resetFilters">✕ Hapus semua filter</button>
+      <span class="st-total"><b>{{ (master.siteMeta.total ?? 0).toLocaleString('id') }}</b> site{{ hasActiveFilters ? ' cocok' : '' }}</span>
     </div>
 
     <div v-if="successMsg" class="alert alert-success">✓ {{ successMsg }}</div>
-    <div v-if="master.error" class="alert alert-danger">{{ master.error }}</div>
+    <div v-if="master.error" class="alert alert-danger">{{ master.error }} <button type="button" class="st-link" @click="fetchData">Coba lagi</button></div>
 
-    <!-- ═══════════════════ GRUP VIEW ═══════════════════ -->
-    <template v-if="viewMode === 'grup'">
-      <!-- Toolbar -->
-      <div class="toolbar">
-        <div class="search-wrap">
-          <span class="search-icon">⌕</span>
-          <input
-            v-model="grupSearch"
-            placeholder="Cari kode, nama site, kota, pelanggan, layanan..."
-            class="search-input"
-            @keydown.escape="grupSearch = ''"
-          />
-          <button v-if="grupSearch" class="clear-btn" @click="grupSearch = ''">✕</button>
-        </div>
-        <select v-model="filterLayanan" class="filter-select">
-          <option :value="0">Semua Layanan ({{ availableLayananGrup.length }})</option>
-          <option v-for="l in availableLayananGrup" :key="l.id_layanan" :value="l.id_layanan">
-            {{ l.nama_layanan }}
-          </option>
-        </select>
-        <span class="result-badge">
-          {{ filteredSiteAll.length.toLocaleString('id') }} site
-          <span v-if="grupSearch || filterLayanan || filterStatus"> (difilter)</span>
-        </span>
-        <button v-if="master.siteAllLoading" class="btn-refresh spin" title="Memuat...">↻</button>
-        <button v-else class="btn-refresh" @click="master.fetchSiteAll()" title="Refresh data">↻</button>
+    <!-- ─── Daftar ─── -->
+    <div class="st-daftar">
+      <div v-if="master.siteLoading && !master.siteList.length" class="st-kosong">Memuat site…</div>
+      <div v-else-if="!master.siteList.length" class="st-kosong">
+        <span class="st-maskot">📍</span>
+        <b>Tidak ada site yang cocok</b>
+        <small>Coba kata lain atau hapus filter.</small>
+        <button v-if="hasActiveFilters" type="button" class="btn btn-ghost" @click="resetFilters">Hapus semua filter</button>
       </div>
-
-      <div v-if="master.siteAllLoading" class="loading-state">
-        <span class="loading-spinner">↻</span> Memuat data site...
-      </div>
-      <template v-else>
-        <!-- Grup cards -->
-        <div
-          v-for="(grp, idx) in master.grupList"
-          :key="grp.id_grup"
-          class="grup-card"
-          v-show="grupSiteCount(grp) > 0 || (!filterStatus && !filterLayanan && !grupSearch)"
-        >
-          <div v-baris class="grup-header" :style="{ borderLeftColor: grupColor(idx) }" @click="toggleGrup(grp.id_grup)">
-            <div class="grup-left">
-              <span class="grup-kode" :style="{ color: grupColor(idx) }">{{ grp.kode_grup }}</span>
-              <span class="grup-nama">{{ grp.nama_grup }}</span>
-              <span v-if="grp.deskripsi" class="grup-desc">{{ grp.deskripsi }}</span>
-            </div>
-            <div class="grup-right">
-              <span class="grup-stat"><b>{{ grp.pelanggan?.length ?? 0 }}</b> PT</span>
-              <span class="grup-stat" :class="{ 'stat-filtered': grupSearch || filterLayanan || filterStatus }">
-                <b>{{ grupSiteCount(grp) }}</b> site
-              </span>
-              <span class="chevron" :class="{ open: expandedGrup.has(grp.id_grup) }">▾</span>
-            </div>
-          </div>
-
-          <div v-if="expandedGrup.has(grp.id_grup)" class="grup-body">
-            <template v-for="pt in grp.pelanggan" :key="pt.id_pelanggan">
-              <div v-baris
-                class="pt-row"
-                v-show="(siteByPelanggan.get(pt.id_pelanggan)?.length ?? 0) > 0 || (!filterStatus && !filterLayanan && !grupSearch)"
-                @click="togglePt(pt.id_pelanggan)"
-              >
-                <div class="pt-left">
-                  <span class="pt-chevron" :class="{ open: expandedPt.has(pt.id_pelanggan) }">▸</span>
-                  <span class="pt-kode">{{ pt.kode_pelanggan }}</span>
-                  <span class="pt-nama" v-html="highlight(pt.nama_pelanggan, grupSearch)"></span>
-                  <span v-if="pt.kota" class="pt-kota">{{ pt.kota }}</span>
-                </div>
-                <div class="pt-right">
-                  <span class="site-count-sm" :class="{ 'count-filtered': grupSearch || filterLayanan || filterStatus }">
-                    {{ siteByPelanggan.get(pt.id_pelanggan)?.length ?? 0 }} site
-                  </span>
-                </div>
-              </div>
-
-              <div v-if="expandedPt.has(pt.id_pelanggan)" class="site-table-wrap">
-                <table class="site-table">
-                  <thead>
-                    <tr>
-                      <th>Kode Site</th>
-                      <th>Nama Site</th>
-                      <th>Kota</th>
-                      <th>Layanan</th>
-                      <th>Status</th>
-                      <th>Tgl Aktif</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-baris
-                      v-for="s in (siteByPelanggan.get(pt.id_pelanggan) ?? [])"
-                      :key="s.id_site"
-                      class="site-row"
-                      @click="router.push('/master/site/' + s.id_site)"
-                    >
-                      <td>
-                        <span
-                          class="kode-cell"
-                          :class="{ copied: copiedKode === s.kode_site }"
-                          :title="copiedKode === s.kode_site ? 'Tersalin!' : 'Klik untuk salin'"
-                          @click.stop="copyKode(s.kode_site, $event)"
-                        >{{ s.kode_site }}</span>
-                      </td>
-                      <td class="nama-cell" v-html="highlight(s.nama_site, grupSearch)"></td>
-                      <td class="text-muted" v-html="highlight(s.kota || '—', grupSearch)"></td>
-                      <td>
-                        <span class="lay-badge" :title="s.layanan?.nama_layanan">
-                          {{ s.layanan?.nama_layanan || '—' }}
-                        </span>
-                      </td>
-                      <td>
-                        <span class="status-badge" :style="{ background: STATUS_COLOR[s.status_site]?.bg, color: STATUS_COLOR[s.status_site]?.color }">
-                          {{ s.status_site }}
-                        </span>
-                      </td>
-                      <td class="text-muted text-sm">{{ fmtDate(s.tgl_aktif) }}</td>
-                      <td>
-                        <div class="row-actions">
-                          <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
-                          <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari lokasi di HERE Maps">🗺</button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </template>
+      <div v-for="s in master.siteList" :key="s.id_site" v-baris class="st-baris" :class="{ redup: master.siteLoading }"
+        @click="router.push('/master/site/' + s.id_site)">
+        <span :class="['st-status', 'st-' + s.status_site.toLowerCase()]" :title="s.status_site" />
+        <div class="st-utama">
+          <div class="st-nama"><span v-html="highlight(s.nama_site, search)" /></div>
+          <div class="st-info">
+            <span class="kode" :class="{ copied: copiedKode === s.kode_site }" :title="copiedKode === s.kode_site ? 'Tersalin!' : 'Klik untuk menyalin kode'"
+              @click.stop="copyKode(s.kode_site, $event)">{{ copiedKode === s.kode_site ? '✓ tersalin' : s.kode_site }}</span>
+            <span v-if="s.kota">📍 {{ s.kota }}</span>
+            <span v-if="s.layanan?.nama_layanan" class="lay">{{ s.layanan.nama_layanan }}</span>
           </div>
         </div>
-
-        <!-- Standalone -->
-        <div class="grup-card standalone" v-if="standalonePtWithSites.length">
-          <div v-baris class="grup-header" style="border-left-color:#94a3b8" @click="toggleGrup(0)">
-            <div class="grup-left">
-              <span class="grup-kode" style="color:#94a3b8">—</span>
-              <span class="grup-nama" style="color:#64748b">Lainnya</span>
-              <span class="grup-desc">Pelanggan tanpa grup</span>
-            </div>
-            <div class="grup-right">
-              <span class="grup-stat"><b>{{ standalonePtWithSites.length }}</b> PT</span>
-              <span class="grup-stat">
-                <b>{{ standalonePtWithSites.reduce((s, p) => s + (siteByPelanggan.get(p.id_pelanggan)?.length ?? 0), 0) }}</b> site
-              </span>
-              <span class="chevron" :class="{ open: expandedGrup.has(0) }">▾</span>
-            </div>
-          </div>
-          <div v-if="expandedGrup.has(0)" class="grup-body">
-            <template v-for="pt in standalonePtWithSites" :key="pt.id_pelanggan">
-              <div v-baris class="pt-row" @click="togglePt(pt.id_pelanggan)">
-                <div class="pt-left">
-                  <span class="pt-chevron" :class="{ open: expandedPt.has(pt.id_pelanggan) }">▸</span>
-                  <span class="pt-kode">{{ pt.kode_pelanggan }}</span>
-                  <span class="pt-nama" v-html="highlight(pt.nama_pelanggan, grupSearch)"></span>
-                </div>
-                <div class="pt-right">
-                  <span class="site-count-sm">{{ siteByPelanggan.get(pt.id_pelanggan)?.length ?? 0 }} site</span>
-                </div>
-              </div>
-              <div v-if="expandedPt.has(pt.id_pelanggan)" class="site-table-wrap">
-                <table class="site-table">
-                  <thead>
-                    <tr><th>Kode Site</th><th>Nama Site</th><th>Kota</th><th>Layanan</th><th>Status</th><th>Tgl Aktif</th><th></th></tr>
-                  </thead>
-                  <tbody>
-                    <tr v-baris v-for="s in (siteByPelanggan.get(pt.id_pelanggan) ?? [])" :key="s.id_site"
-                      class="site-row" @click="router.push('/master/site/' + s.id_site)">
-                      <td>
-                        <span class="kode-cell" :class="{ copied: copiedKode === s.kode_site }"
-                          :title="copiedKode === s.kode_site ? 'Tersalin!' : 'Klik untuk salin'"
-                          @click.stop="copyKode(s.kode_site, $event)">{{ s.kode_site }}</span>
-                      </td>
-                      <td class="nama-cell" v-html="highlight(s.nama_site, grupSearch)"></td>
-                      <td class="text-muted">{{ s.kota || '—' }}</td>
-                      <td><span class="lay-badge" :title="s.layanan?.nama_layanan">{{ s.layanan?.nama_layanan || '—' }}</span></td>
-                      <td><span class="status-badge" :style="{ background: STATUS_COLOR[s.status_site]?.bg, color: STATUS_COLOR[s.status_site]?.color }">{{ s.status_site }}</span></td>
-                      <td class="text-muted text-sm">{{ fmtDate(s.tgl_aktif) }}</td>
-                      <td>
-                        <div class="row-actions">
-                          <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
-                          <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari lokasi di HERE Maps">🗺</button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </template>
-          </div>
+        <div class="st-pel">
+          <span class="pt" v-html="highlight(s.pelanggan?.nama_pelanggan || '—', search)" />
+          <span v-if="s.pelanggan?.grup" class="grup">{{ s.pelanggan.grup.nama_grup }}</span>
         </div>
-
-        <div v-if="!master.grupList.length && !standalonePtWithSites.length" class="empty-state">
-          <div class="empty-icon">📍</div>
-          <div class="empty-title">Belum ada site</div>
+        <span :class="['st-lencana', 'st-' + s.status_site.toLowerCase()]">{{ s.status_site }}</span>
+        <div class="st-aksi" @click.stop>
+          <button type="button" title="Edit site" aria-label="Edit site" @click="openEdit(s)">✏️</button>
+          <button type="button" title="Cari lokasi di peta" aria-label="Cari lokasi di peta" @click="openSync(s)">🗺️</button>
+          <button type="button" class="hapus" title="Hapus site" aria-label="Hapus site" @click="hapusSite(s)">🗑️</button>
         </div>
-        <div v-else-if="(grupSearch || filterLayanan || filterStatus) && !filteredSiteAll.length" class="empty-state">
-          <div class="empty-icon">📍</div>
-          <div class="empty-title">Tidak ada site ditemukan</div>
-          <div class="empty-desc">Coba ubah kata kunci atau filter</div>
-        </div>
-      </template>
-    </template>
-
-    <!-- ═══════════════════ LIST VIEW ═══════════════════ -->
-    <template v-if="viewMode === 'list'">
-      <!-- Filter bar -->
-      <div class="filter-bar">
-        <div class="search-wrap">
-          <span class="search-icon">⌕</span>
-          <input
-            v-model="search"
-            placeholder="Cari kode, nama site, kota, pelanggan..."
-            class="search-input"
-            @keyup.enter="doSearch"
-            @keydown.escape="search = ''"
-          />
-          <button v-if="search" class="clear-btn" @click="search = ''; doSearch()">✕</button>
-        </div>
-        <select v-model="filterGrup" @change="doSearch" class="filter-select">
-          <option :value="0">Semua Grup</option>
-          <option v-for="g in master.grupList" :key="g.id_grup" :value="g.id_grup">{{ g.nama_grup }}</option>
-          <option :value="-1">— Lainnya (Non Grup)</option>
-        </select>
-        <select v-model="filterPelanggan" @change="doSearch" class="filter-select">
-          <option :value="0">Semua Pelanggan ({{ availablePelangganList.length }})</option>
-          <option v-for="p in availablePelangganList" :key="p.id_pelanggan" :value="p.id_pelanggan">
-            {{ p.nama_pelanggan }}
-          </option>
-        </select>
-        <select v-model="filterLayanan" @change="doSearch" class="filter-select">
-          <option :value="0">Semua Layanan ({{ availableLayananList.length }})</option>
-          <option v-for="l in availableLayananList" :key="l.id_layanan" :value="l.id_layanan">{{ l.nama_layanan }}</option>
-        </select>
-        <button class="btn-search" @click="doSearch">Cari</button>
-        <button v-if="hasActiveFilters" class="btn-reset" @click="resetFilters" title="Reset semua filter">✕ Reset</button>
+        <span class="st-panah" aria-hidden="true">›</span>
       </div>
-
-      <!-- Page size + total -->
-      <div class="list-meta">
-        <span class="total-label">
-          Total <b>{{ (master.siteMeta.total ?? 0).toLocaleString('id') }}</b> site
-          <span v-if="hasActiveFilters"> (difilter)</span>
-        </span>
-        <div class="page-size-wrap">
-          Tampil:
-          <select v-model="pageSize" class="size-select">
-            <option :value="25">25</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
-            <option :value="200">200</option>
-          </select>
-          per halaman
-        </div>
-      </div>
-
-      <div class="table-card">
-        <div v-if="master.siteLoading" class="loading-state">
-          <span class="loading-spinner">↻</span> Memuat data site...
-        </div>
-        <table v-else>
-          <thead>
-            <tr>
-              <th style="width:120px">Kode Site</th>
-              <th>Nama Site</th>
-              <th>Pelanggan / Grup</th>
-              <th>Layanan</th>
-              <th style="width:110px">Kota</th>
-              <th style="width:90px">Status</th>
-              <th style="width:95px">Tgl Aktif</th>
-              <th style="width:90px"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!master.siteList.length">
-              <td colspan="8">
-                <div class="empty-state">
-                  <div class="empty-icon">📍</div>
-                  <div class="empty-title">Tidak ada site ditemukan</div>
-                  <div class="empty-desc">Coba ubah filter pencarian</div>
-                  <button v-if="hasActiveFilters" class="btn-reset-lg" @click="resetFilters">Reset Filter</button>
-                </div>
-              </td>
-            </tr>
-            <tr v-baris v-for="s in master.siteList" :key="s.id_site" class="table-row clickable-row"
-              @click="router.push('/master/site/' + s.id_site)">
-              <td>
-                <span
-                  class="kode-cell"
-                  :class="{ copied: copiedKode === s.kode_site }"
-                  :title="copiedKode === s.kode_site ? 'Tersalin!' : 'Klik untuk salin kode'"
-                  @click.stop="copyKode(s.kode_site, $event)"
-                >{{ s.kode_site }}</span>
-              </td>
-              <td class="fw600">{{ s.nama_site }}</td>
-              <td>
-                <div class="pt-stack">
-                  <span class="pt-nama-sm">{{ s.pelanggan?.nama_pelanggan }}</span>
-                  <span v-if="s.pelanggan?.grup" class="grup-badge-sm">{{ s.pelanggan.grup.nama_grup }}</span>
-                </div>
-              </td>
-              <td>
-                <span class="lay-badge" :title="s.layanan?.nama_layanan">{{ s.layanan?.nama_layanan || '—' }}</span>
-              </td>
-              <td class="text-gray">{{ s.kota || '—' }}</td>
-              <td>
-                <span class="status-badge" :style="{ background: STATUS_COLOR[s.status_site]?.bg, color: STATUS_COLOR[s.status_site]?.color }">
-                  {{ s.status_site }}
-                </span>
-              </td>
-              <td class="text-gray text-sm">{{ fmtDate(s.tgl_aktif) }}</td>
-              <td>
-                <div class="row-actions">
-                  <button class="btn-sync-sm" @click.stop="openSync(s)" title="Cari lokasi di HERE Maps">🗺</button>
-                  <button class="btn-edit-sm" @click.stop="openEdit(s)">Edit</button>
-                  <button class="btn-hapus-sm" @click.stop="hapusSite(s)">Hapus</button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="table-footer-bar">
-          <BasePagination :page="page" :total-pages="master.siteMeta.total_pages" @change="goPage" />
-          <span class="page-info">
-            Hal {{ page }} / {{ master.siteMeta.total_pages || 1 }} · {{ (master.siteMeta.total ?? 0).toLocaleString('id') }} site
-          </span>
-        </div>
-      </div>
-    </template>
+    </div>
+    <div class="st-kaki">
+      <BasePagination :page="page" :total-pages="master.siteMeta.total_pages" @change="goPage" />
+      <label class="st-ukuran">Per halaman
+        <select v-model="pageSize"><option :value="25">25</option><option :value="50">50</option><option :value="100">100</option></select>
+      </label>
+    </div>
 
     <!-- ─── Modal Form Site ─── -->
     <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
@@ -885,6 +618,65 @@ function highlight(text: string, q: string) {
 </template>
 
 <style scoped>
+/* ── Tata letak baru: kepala · cari · status · filter · daftar ── */
+.st-kepala { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.st-kepala h2 { margin: 0; font-size: 22px; font-weight: 800; color: #0f172a; }
+.st-kepala .sub { margin: 4px 0 0; font-size: 13px; color: #64748b; }
+.st-cari { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 16px; border-radius: 14px; background: #fff; border: 2px solid #e2e8f0; margin-bottom: 12px; transition: border-color .15s, box-shadow .15s; }
+.st-cari:focus-within { border-color: #2a78d6; box-shadow: 0 0 0 4px #dbeafe; }
+.st-cari input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font: inherit; font-size: 15px; }
+.st-x { border: 0; background: #f1f5f9; border-radius: 99px; width: 26px; height: 26px; cursor: pointer; color: #64748b; }
+.st-tab { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.st-tab button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 99px; border: 1px solid #e2e8f0; background: #fff; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer; transition: all .15s; }
+.st-tab button b { font-variant-numeric: tabular-nums; color: #0f172a; }
+.st-tab button.on { background: #0f172a; border-color: #0f172a; color: #fff; }
+.st-tab button.on b { color: #fff; }
+.titik { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; display: inline-block; }
+.st-aktif .titik, .st-status.st-aktif { background: #0ca30c; }
+.st-prospek .titik, .st-status.st-prospek { background: #2a78d6; }
+.st-suspend .titik, .st-status.st-suspend { background: #eda100; }
+.st-dismantle .titik, .st-status.st-dismantle { background: #d03b3b; }
+.st-filter { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 12px; border-radius: 14px; background: #f8fafc; border: 1px solid #eef2f7; }
+.st-filter label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+.st-filter select { min-width: 170px; max-width: 240px; padding: 7px 10px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; color: #0f172a; }
+.st-reset { border: 0; background: none; color: #b91c1c; font-weight: 700; font-size: 12.5px; cursor: pointer; padding: 8px 4px; }
+.st-total { margin-left: auto; font-size: 13px; color: #64748b; padding-bottom: 7px; }
+.st-total b { color: #0f172a; }
+.st-link { border: 0; background: none; color: #1d4ed8; font-weight: 700; cursor: pointer; }
+.st-daftar { display: flex; flex-direction: column; gap: 6px; }
+.st-baris { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 14px; background: #fff; border: 1px solid #eef0f3; cursor: pointer; transition: transform .12s, box-shadow .12s, border-color .12s; }
+.st-baris:hover { border-color: #c7dbf7; box-shadow: 0 6px 18px rgba(15, 23, 42, .06); transform: translateY(-1px); }
+.st-baris.redup { opacity: .55; }
+.st-status { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: #94a3b8; }
+.st-utama { flex: 1.4; min-width: 0; }
+.st-nama { font-size: 14.5px; font-weight: 700; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-nama :deep(mark), .st-pel :deep(mark) { background: #fef08a; border-radius: 3px; padding: 0 1px; }
+.st-info { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 3px; font-size: 12px; color: #64748b; }
+.st-info .kode { font-family: ui-monospace, monospace; font-size: 11.5px; padding: 1px 7px; border-radius: 6px; background: #f1f5f9; color: #334155; cursor: copy; }
+.st-info .kode.copied { background: #dcfce7; color: #15803d; }
+.st-info .lay { padding: 1px 8px; border-radius: 99px; background: #eef5ff; color: #1c4f9c; font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-pel { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.st-pel .pt { font-size: 13px; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-pel .grup { align-self: flex-start; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: #f3effd; color: #4b3cb8; }
+.st-lencana { flex-shrink: 0; width: 86px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 99px; background: #f1f5f9; color: #475569; }
+.st-lencana.st-aktif { background: #dcfce7; color: #15803d; }
+.st-lencana.st-prospek { background: #dbeafe; color: #1d4ed8; }
+.st-lencana.st-suspend { background: #fef3c7; color: #92400e; }
+.st-lencana.st-dismantle { background: #fee2e2; color: #b91c1c; }
+.st-aksi { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+.st-baris:hover .st-aksi, .st-baris:focus-within .st-aksi { opacity: 1; }
+.st-aksi button { width: 32px; height: 32px; border: 0; border-radius: 9px; background: none; cursor: pointer; font-size: 14px; }
+.st-aksi button:hover { background: #f1f5f9; }
+.st-aksi button.hapus:hover { background: #fee2e2; }
+.st-panah { font-size: 22px; color: #cbd5e1; }
+.st-kosong { padding: 40px 16px; text-align: center; color: #64748b; display: flex; flex-direction: column; align-items: center; gap: 6px; background: #fff; border-radius: 14px; border: 1px dashed #e2e8f0; }
+.st-maskot { font-size: 34px; }
+.st-kaki { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.st-ukuran { font-size: 12.5px; color: #64748b; display: flex; align-items: center; gap: 6px; }
+.st-ukuran select { padding: 4px 8px; border-radius: 8px; border: 1px solid #e2e8f0; }
+@media (max-width: 900px) { .st-pel { display: none; } .st-aksi { opacity: 1; } }
+@media (max-width: 640px) { .st-lencana { display: none; } .st-aksi { display: none; } .st-filter select { min-width: 0; width: 100%; max-width: none; } .st-filter label { flex: 1 1 140px; } .st-total { margin-left: 0; } }
+
 .page-header { align-items: center; margin-bottom: 16px; }
 .page-header h2 { margin: 0 0 3px; font-size: 20px; color: var(--text-1); font-weight: 700; }
 .sub { margin: 0; font-size: 13px; color: var(--text-3); }

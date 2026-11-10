@@ -8,7 +8,7 @@ import BasePagination from '@/components/BasePagination.vue'
 const master = useMasterStore()
 const page = ref(1)
 const search = ref('')
-const viewMode = ref<'list' | 'grup'>('grup')
+const viewMode = ref<'list' | 'grup'>('list') // default daftar pelanggan; grup/holding di tab sendiri
 const expandedGrup = ref<Set<number>>(new Set())
 
 // ─── Grup Modal ───────────────────────────────────────────
@@ -262,28 +262,42 @@ async function doHapusPelanggan() {
 // Warna per grup
 const grupColors = ['#1d4ed8', '#0891b2', '#7c3aed', '#0f766e', '#b45309', '#be185d', '#047857', '#c2410c']
 function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
+
+// Cari otomatis saat mengetik
+let tundaCari: ReturnType<typeof setTimeout> | undefined
+watch(search, () => { if (viewMode.value !== 'list') return; clearTimeout(tundaCari); tundaCari = setTimeout(doSearch, 350) })
+const WARNA_AV = ['#2a78d6', '#eb6834', '#1baf7a', '#6250d6', '#e87ba4', '#0e9fb3', '#eda100', '#e34948']
+function warnaAvatar(n: string) { let h = 0; for (const c of n || '') h = (h * 31 + c.charCodeAt(0)) >>> 0; return WARNA_AV[h % WARNA_AV.length] }
+function inisial(n: string) {
+  const k = (n || '?').replace(/^(PT|CV|UD)\.?\s+/i, '').split(/\s+/).filter(Boolean)
+  return ((k[0]?.[0] ?? '?') + (k[1]?.[0] ?? '')).toUpperCase()
+}
 </script>
 
 <template>
   <div class="page">
     <div class="page-header">
       <div>
-        <h2>Pelanggan</h2>
-        <p class="sub">Manajemen data perusahaan pelanggan</p>
+        <h2>🏢 Pelanggan</h2>
       </div>
       <div class="header-actions">
-        <div class="view-toggle">
-          <button type="button" :class="['toggle-btn', viewMode === 'grup' && 'active']" @click="viewMode = 'grup'">
-            Per Grup
-          </button>
-          <button type="button" :class="['toggle-btn', viewMode === 'list' && 'active']" @click="viewMode = 'list'">
-            Daftar
-          </button>
-        </div>
-        <button type="button" class="btn btn-outline" @click="openAddGrup">+ Tambah Grup</button>
-        <button type="button" class="btn btn-primary" @click="openAdd">+ Tambah Pelanggan</button>
+        <button v-if="viewMode === 'grup'" type="button" class="btn btn-primary" @click="openAddGrup">+ Tambah Grup</button>
+        <button v-else type="button" class="btn btn-primary" @click="openAdd">+ Tambah Pelanggan</button>
       </div>
     </div>
+
+    <!-- Dua tab yang jelas: daftar perusahaan pelanggan & pengelompokan holding -->
+    <div class="pl-tab" role="tablist">
+      <button type="button" role="tab" :aria-selected="viewMode === 'list'" :class="{ on: viewMode === 'list' }" @click="viewMode = 'list'">
+        🏢 Pelanggan <b>{{ (master.pelangganMeta.total ?? master.pelangganList.length).toLocaleString('id') }}</b>
+      </button>
+      <button type="button" role="tab" :aria-selected="viewMode === 'grup'" :class="{ on: viewMode === 'grup' }" @click="viewMode = 'grup'">
+        🏷️ Grup / Holding <b>{{ master.grupList.length }}</b>
+      </button>
+    </div>
+    <p class="pl-bantu">{{ viewMode === 'list'
+      ? 'Perusahaan yang berlangganan. Klik “Lihat site” untuk melihat lokasi-lokasinya.'
+      : 'Grup menyatukan beberapa perusahaan (PT) milik satu holding, mis. Kawan Lama Group.' }}</p>
 
     <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
     <div v-if="master.error" class="alert alert-danger">{{ master.error }}</div>
@@ -420,57 +434,40 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
 
     <!-- ═══════════════ LIST VIEW ═══════════════ -->
     <template v-if="viewMode === 'list'">
-      <div class="toolbar">
-        <input v-model="search" @keyup.enter="doSearch" placeholder="Cari nama / kode..." class="search-input" />
-        <button type="button" class="btn btn-secondary" @click="doSearch">Cari</button>
+      <div class="pl-cari">
+        <span aria-hidden="true">🔎</span>
+        <input v-model="search" type="search" placeholder="Ketik nama perusahaan, kode, atau nama PIC…" aria-label="Cari pelanggan" @keydown.escape="search = ''" />
+        <button v-if="search" type="button" class="pl-x" aria-label="Hapus pencarian" @click="search = ''">✕</button>
       </div>
 
-      <div class="table-card">
-        <div v-if="master.pelangganLoading" class="loading-state">Memuat data...</div>
-        <table v-else class="data-table">
-          <thead>
-            <tr>
-              <th>Kode</th>
-              <th>Nama Perusahaan</th>
-              <th>Grup / Holding</th>
-              <th>Kota</th>
-              <th>PJ Teknis</th>
-              <th>PJ Keuangan</th>
-              <th>Site</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!master.pelangganList.length">
-              <td colspan="8" class="empty">Belum ada pelanggan</td>
-            </tr>
-            <tr v-for="p in master.pelangganList" :key="p.id_pelanggan">
-              <td class="kode-cell">{{ p.kode_pelanggan }}</td>
-              <td>
-                <div class="nama-perusahaan">{{ p.nama_pelanggan }}</div>
-                <div v-if="p.npwp" class="meta-text">NPWP: {{ p.npwp }}</div>
-              </td>
-              <td>
-                <span v-if="p.grup" class="grup-badge">{{ p.grup.nama_grup }}</span>
-                <span v-else class="text-muted">—</span>
-              </td>
-              <td class="text-muted">{{ p.kota || '—' }}</td>
-              <td class="text-muted">{{ p.nama_pic_teknis || p.nama_pic_utama || '—' }}</td>
-              <td class="text-muted">{{ p.nama_pic_keuangan || '—' }}</td>
-              <td class="center-cell">{{ p._count?.sites ?? 0 }}</td>
-              <td>
-                <div class="action-btns">
-                  <button class="btn-edit-sm" @click="openEdit(p)">Edit</button>
-                  <!-- <button class="btn-hapus" @click="hapusPelanggan(p.id_pelanggan, p.nama_pelanggan)">Hapus</button> -->
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <BasePagination :page="page" :total-pages="master.pelangganMeta.total_pages" @change="goPage" />
-        <div class="table-footer" v-if="master.pelangganMeta.total">
-          Total: {{ master.pelangganMeta.total }} pelanggan
+      <div v-if="master.pelangganLoading && !master.pelangganList.length" class="pl-kosong">Memuat pelanggan…</div>
+      <div v-else-if="!master.pelangganList.length" class="pl-kosong">
+        <span class="pl-maskot">🏢</span><b>{{ search ? `Tidak ada pelanggan yang cocok dengan “${search}”` : 'Belum ada pelanggan' }}</b>
+      </div>
+      <div v-else class="pl-daftar" :class="{ redup: master.pelangganLoading }">
+        <div v-for="p in master.pelangganList" :key="p.id_pelanggan" class="pl-kartu">
+          <span class="pl-av" :style="{ background: warnaAvatar(p.nama_pelanggan) }" aria-hidden="true">{{ inisial(p.nama_pelanggan) }}</span>
+          <div class="pl-utama">
+            <div class="pl-nama">{{ p.nama_pelanggan }}</div>
+            <div class="pl-info">
+              <span class="kode">{{ p.kode_pelanggan }}</span>
+              <span v-if="p.kota">📍 {{ p.kota }}</span>
+              <span v-if="p.grup" class="grup">🏷️ {{ p.grup.nama_grup }}</span>
+            </div>
+            <div v-if="p.nama_pic_teknis || p.nama_pic_utama || p.nama_pic_keuangan" class="pl-pic">
+              <span v-if="p.nama_pic_teknis || p.nama_pic_utama">🛠️ {{ p.nama_pic_teknis || p.nama_pic_utama }}</span>
+              <span v-if="p.nama_pic_keuangan">💰 {{ p.nama_pic_keuangan }}</span>
+            </div>
+          </div>
+          <RouterLink :to="`/master/site?pelanggan=${p.id_pelanggan}`" class="pl-site" :class="{ nol: !(p._count?.sites) }">
+            <b>{{ p._count?.sites ?? 0 }}</b><span>site</span><small>Lihat site →</small>
+          </RouterLink>
+          <button type="button" class="pl-edit" @click="openEdit(p)">✏️ Edit</button>
         </div>
+      </div>
+      <div class="pl-kaki">
+        <BasePagination :page="page" :total-pages="master.pelangganMeta.total_pages" @change="goPage" />
+        <span v-if="master.pelangganMeta.total" class="pl-total">{{ master.pelangganMeta.total }} pelanggan</span>
       </div>
     </template>
 
@@ -678,6 +675,40 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
 </template>
 
 <style scoped>
+.pl-tab { display: flex; gap: 8px; margin: 4px 0 6px; flex-wrap: wrap; }
+.pl-tab button { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 12px; border: 1px solid #e2e8f0; background: #fff; font-weight: 700; font-size: 14px; color: #334155; cursor: pointer; }
+.pl-tab button b { padding: 0 8px; border-radius: 99px; background: #f1f5f9; font-size: 12px; }
+.pl-tab button.on { background: #0f172a; border-color: #0f172a; color: #fff; }
+.pl-tab button.on b { background: rgba(255, 255, 255, .18); }
+.pl-bantu { margin: 0 0 12px; font-size: 13px; color: #64748b; }
+.pl-cari { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 16px; border-radius: 14px; background: #fff; border: 2px solid #e2e8f0; margin-bottom: 12px; }
+.pl-cari:focus-within { border-color: #2a78d6; box-shadow: 0 0 0 4px #dbeafe; }
+.pl-cari input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font: inherit; font-size: 15px; }
+.pl-x { border: 0; background: #f1f5f9; border-radius: 99px; width: 26px; height: 26px; cursor: pointer; color: #64748b; }
+.pl-daftar { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 10px; }
+.pl-daftar.redup { opacity: .55; }
+.pl-kartu { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 16px; background: #fff; border: 1px solid #eef0f3; transition: box-shadow .15s, border-color .15s; }
+.pl-kartu:hover { border-color: #c7dbf7; box-shadow: 0 6px 18px rgba(15, 23, 42, .06); }
+.pl-av { width: 44px; height: 44px; flex-shrink: 0; border-radius: 14px; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 15px; }
+.pl-utama { flex: 1; min-width: 0; }
+.pl-nama { font-size: 14.5px; font-weight: 800; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-info, .pl-pic { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 3px; font-size: 12px; color: #64748b; }
+.pl-info .kode { font-family: ui-monospace, monospace; padding: 0 6px; border-radius: 6px; background: #f1f5f9; color: #334155; }
+.pl-info .grup { color: #4b3cb8; font-weight: 700; }
+.pl-site { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; min-width: 78px; padding: 6px 8px; border-radius: 12px; background: #eef5ff; color: #1c4f9c; text-decoration: none; line-height: 1.1; }
+.pl-site b { font-size: 18px; }
+.pl-site span { font-size: 11px; }
+.pl-site small { font-size: 10.5px; font-weight: 700; margin-top: 3px; }
+.pl-site:hover { background: #dbeafe; }
+.pl-site.nol { background: #f8fafc; color: #94a3b8; }
+.pl-edit { flex-shrink: 0; border: 1px solid #e2e8f0; background: #fff; border-radius: 10px; padding: 7px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.pl-edit:hover { background: #f8fafc; }
+.pl-kosong { padding: 40px 16px; text-align: center; color: #64748b; display: flex; flex-direction: column; align-items: center; gap: 6px; background: #fff; border-radius: 14px; border: 1px dashed #e2e8f0; }
+.pl-maskot { font-size: 34px; }
+.pl-kaki { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.pl-total { font-size: 12.5px; color: #64748b; }
+@media (max-width: 640px) { .pl-daftar { grid-template-columns: 1fr; } .pl-edit { display: none; } }
+
 .page-header { margin-bottom: 20px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); font-weight: 700; }
 .sub { margin: 0; font-size: 13px; color: var(--text-3); }
