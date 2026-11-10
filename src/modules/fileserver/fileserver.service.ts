@@ -1,10 +1,13 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { promises as fs } from 'fs';
+import * as path from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SecretCryptoService } from '../../common/crypto/secret-crypto.service';
 import { KredensialSmb, SmbClient } from './smb.client';
 
 const KUNCI = 'fileserver';
+// Folder PRIVAT salinan dokumen site (bukan /uploads yang publik) — dibuka hanya lewat endpoint ber-login
+export const DIR_DOKUMEN_SITE = process.env.SITE_DOKUMEN_DIR || path.join(process.cwd(), 'storage', 'site-dokumen');
 const PENGELOLA = ['Admin', 'Director'];
 type User = { id_user: number; nama_lengkap?: string; roles?: string[] };
 interface Konfig { host: string; domain?: string; username: string; password_enc?: string; share_izin?: string[] }
@@ -215,8 +218,9 @@ export class FileServerService {
       };
     });
     for (let i = 0; i < data.length; i += 500) await this.prisma.siteDokumen.createMany({ data: data.slice(i, i + 500) });
-    this.logger.log(`Impor BA oleh user ${u.id_user}: ${data.length} tautan dokumen dibuat`);
-    return { message: `${data.length} BA ditautkan ke ${new Set(data.map((d) => d.id_site)).size} site`, data: { dibuat: data.length, dilewati: items.length - data.length } };
+    this.logger.log(`Impor BA oleh user ${u.id_user}: ${data.length} dokumen dicatat, mulai disalin ke server`);
+    if (data.length) await this.mulaiSalin();
+    return { message: `${data.length} BA dimasukkan ke ${new Set(data.map((d) => d.id_site)).size} site — berkas sedang disalin ke server ERP`, data: { dibuat: data.length, dilewati: items.length - data.length } };
   }
 
   /** Ambil berkas dokumen site yang tersimpan di file server (url smb://share/path) */
@@ -224,5 +228,71 @@ export class FileServerService {
     const m = url.match(/^smb:\/\/([^/]+)\/(.+)$/);
     if (!m) throw new BadRequestException('Bukan dokumen file server');
     return { lokal: await this.smb.unduh(await this.kredensial(), m[1]!, m[2]!), nama: m[2]!.split('/').pop()! };
+  }
+
+  // ─── Salin BA dari file server ke disk server ERP ──────────────────────────────
+  // Dokumen ber-url smb:// disalin ke DIR_DOKUMEN_SITE/<id_site>/<id_dokumen>.<ext> lalu url_file
+  // diganti "lokal://<id_site>/<id_dokumen>.<ext>". Asal berkas tetap tercatat di keterangan.
+  private salin = { berjalan: false, total: 0, selesai: 0, gagal: 0, byte: 0, mulai: null as Date | null, galat: [] as string[] };
+
+  statusSalin() { return { data: { ...this.salin, galat: this.salin.galat.slice(-10) } }; }
+
+  /** Mulai penyalinan di latar belakang (tidak menunggu selesai) */
+  async mulaiSalin(u?: User) {
+    if (u && !this.kelola(u)) throw new ForbiddenException('Hanya Admin / Director');
+    if (this.salin.berjalan) return { message: 'Penyalinan sedang berjalan', ...this.statusSalin() };
+    const total = await this.prisma.siteDokumen.count({ where: { url_file: { startsWith: 'smb://' } } });
+    this.salin = { berjalan: true, total, selesai: 0, gagal: 0, byte: 0, mulai: new Date(), galat: [] };
+    void this.jalankanSalin().catch((e) => { this.logger.error(`Salin BA berhenti: ${e?.message}`); this.salin.berjalan = false; });
+    return { message: total ? `Menyalin ${total} dokumen ke server ERP di latar belakang` : 'Tidak ada dokumen yang perlu disalin', ...this.statusSalin() };
+  }
+
+  private async jalankanSalin() {
+    const k = await this.kredensial();
+    const sudahGagal = new Set<number>();
+    try {
+      for (;;) {
+        const batch = await this.prisma.siteDokumen.findMany({
+          where: { url_file: { startsWith: 'smb://' }, id_dokumen: { notIn: [...sudahGagal] } },
+          take: 30, orderBy: { id_dokumen: 'asc' },
+        });
+        if (!batch.length) break;
+        // 3 berkas sekaligus — cukup cepat tanpa membebani file server
+        for (let i = 0; i < batch.length; i += 3) {
+          await Promise.all(batch.slice(i, i + 3).map(async (d) => {
+            const m = d.url_file.match(/^smb:\/\/([^/]+)\/(.+)$/);
+            try {
+              if (!m) throw new Error('url tidak valid');
+              const tmp = await this.smb.unduh(k, m[1]!, m[2]!);
+              const ext = (d.nama_file.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'bin';
+              const rel = `${d.id_site}/${d.id_dokumen}.${ext}`;
+              const tujuan = path.join(DIR_DOKUMEN_SITE, rel);
+              await fs.mkdir(path.dirname(tujuan), { recursive: true });
+              await fs.copyFile(tmp, tujuan); await fs.rm(tmp, { force: true });
+              const st = await fs.stat(tujuan);
+              await this.prisma.siteDokumen.update({ where: { id_dokumen: d.id_dokumen }, data: {
+                url_file: `lokal://${rel}`, ukuran_byte: Math.min(st.size, 2_147_483_647),
+                keterangan: (d.keterangan?.startsWith('File server:') ? d.keterangan : `File server: ${m[1]}/${m[2]}`).slice(0, 500),
+              } });
+              this.salin.selesai++; this.salin.byte += st.size;
+            } catch (e: any) {
+              sudahGagal.add(d.id_dokumen); this.salin.gagal++;
+              this.salin.galat.push(`${d.nama_file}: ${e?.message ?? e}`);
+            }
+          }));
+        }
+      }
+    } finally {
+      this.salin.berjalan = false;
+      this.logger.log(`Salin BA selesai: ${this.salin.selesai} ok, ${this.salin.gagal} gagal, ${(this.salin.byte / 1048576).toFixed(0)} MB`);
+    }
+  }
+
+  /** Path absolut salinan lokal dari url "lokal://<id_site>/<file>" — dijaga agar tidak keluar folder */
+  static pathLokal(url: string) {
+    const rel = url.replace(/^lokal:\/\//, '');
+    const abs = path.resolve(DIR_DOKUMEN_SITE, rel);
+    if (!abs.startsWith(path.resolve(DIR_DOKUMEN_SITE) + path.sep)) throw new BadRequestException('Path dokumen tidak valid');
+    return abs;
   }
 }

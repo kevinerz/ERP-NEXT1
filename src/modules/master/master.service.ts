@@ -8,6 +8,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { FileServerService } from '../fileserver/fileserver.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UploadService } from '../../common/upload/upload.service';
 import { VendorLoginDto } from './dto/kontak-teknisi.dto';
@@ -989,6 +990,10 @@ export class MasterService {
     const doc = await (this.prisma as any).siteDokumen.findUnique({ where: { id_dokumen } });
     if (!doc) throw new NotFoundException('Dokumen tidak ditemukan');
     await (this.prisma as any).siteDokumen.delete({ where: { id_dokumen } });
+    // Salinan BA di disk server ikut dihapus (berkas asli di file server tidak disentuh)
+    if (String(doc.url_file).startsWith('lokal://')) {
+      await import('fs').then((f) => f.promises.rm(FileServerService.pathLokal(doc.url_file), { force: true })).catch(() => undefined);
+    }
     return { message: `Dokumen ${doc.nama_file} dihapus` };
   }
 }

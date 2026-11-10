@@ -215,10 +215,17 @@ export class MasterController {
   @Get('site/dokumen/:id_dokumen/berkas')
   async berkasDokumenSite(@Param('id_dokumen', ParseIntPipe) id: number, @Res() res: Response) {
     const doc = await this.masterService.getDokumenById(id);
-    if (!doc.url_file.startsWith('smb://')) return res.redirect(doc.url_file);
-    const { lokal, nama } = await this.fileServer.unduhDokumenSite(doc.url_file);
+    const nama = doc.nama_file;
     const ext = nama.split('.').pop()?.toLowerCase() ?? '';
     const tipe: Record<string, string> = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
+    // Salinan di disk server ERP (folder privat)
+    if (doc.url_file.startsWith('lokal://')) {
+      res.setHeader('Content-Disposition', `${tipe[ext] ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(nama)}`);
+      if (tipe[ext]) res.type(tipe[ext]);
+      return res.sendFile(FileServerService.pathLokal(doc.url_file));
+    }
+    if (!doc.url_file.startsWith('smb://')) return res.redirect(doc.url_file);
+    const { lokal } = await this.fileServer.unduhDokumenSite(doc.url_file);
     // PDF & gambar dibuka langsung di browser; dokumen Word diunduh
     res.setHeader('Content-Disposition', `${tipe[ext] ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(nama)}`);
     if (tipe[ext]) res.type(tipe[ext]);

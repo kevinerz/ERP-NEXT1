@@ -748,7 +748,7 @@ async function bukaDokumenFs(doc: any) {
               <span v-else>🖼️</span>
             </div>
             <div class="dok-info">
-              <div class="dok-nama">{{ doc.nama_file }} <span v-if="doc.url_file?.startsWith('smb://')" class="dok-fs" title="Tersimpan di file server kantor">🗃️ file server</span></div>
+              <div class="dok-nama">{{ doc.nama_file }} <span v-if="doc.url_file?.startsWith('lokal://')" class="dok-fs" :title="doc.keterangan || 'Tersimpan di server ERP'">💾 server ERP</span><span v-else-if="doc.url_file?.startsWith('smb://')" class="dok-fs" title="Masih dibaca dari file server kantor (sedang / belum disalin)">🗃️ file server</span></div>
               <div class="dok-meta">
                 <span v-if="doc.keterangan" class="dok-ket">{{ doc.keterangan }}</span>
                 <span class="dok-size">{{ fmtBytes(doc.ukuran_byte) }}</span>
@@ -756,7 +756,7 @@ async function bukaDokumenFs(doc: any) {
               </div>
             </div>
             <div class="dok-actions">
-              <button v-if="doc.url_file?.startsWith('smb://')" type="button" class="btn-view" :disabled="bukaDok === doc.id_dokumen" @click="bukaDokumenFs(doc)">{{ bukaDok === doc.id_dokumen ? 'Membuka…' : 'Buka' }}</button>
+              <button v-if="/^(smb|lokal):\/\//.test(doc.url_file || '')" type="button" class="btn-view" :disabled="bukaDok === doc.id_dokumen" @click="bukaDokumenFs(doc)">{{ bukaDok === doc.id_dokumen ? 'Membuka…' : 'Buka' }}</button>
               <a v-else :href="doc.url_file" target="_blank" rel="noopener" class="btn-view">Buka</a>
               <button type="button" class="btn-icon red" @click="deleteDokumen(doc)" title="Hapus">🗑️</button>
             </div>

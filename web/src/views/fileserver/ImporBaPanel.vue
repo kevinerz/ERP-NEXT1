@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Impor BA: pindai folder file server (termasuk sub-folder), cocokkan nama berkas ke site, tinjau & koreksi,
 // lalu simpan sebagai tautan di tab Dokumen site (berkas tetap di file server, tidak disalin).
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import api from '@/services/api'
 import { confirmDialog, toast } from '@/composables/useDialog'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
@@ -58,14 +58,26 @@ function centangSemua() {
 const folderDari = (p: string) => p.split('/').slice(0, -1).join(' / ')
 const ukuran = (n: number) => (n < 1024 ** 2 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 ** 2).toFixed(1)} MB`)
 
+// Progres penyalinan berkas ke server ERP (berjalan di latar belakang)
+const salin = ref<{ berjalan: boolean; total: number; selesai: number; gagal: number; byte: number } | null>(null)
+let timerSalin: ReturnType<typeof setInterval> | null = null
+async function pantauSalin() {
+  try { salin.value = (await api.get('/fileserver/impor-ba/salin')).data.data } catch { /* abaikan */ }
+  if (salin.value && !salin.value.berjalan && timerSalin) { clearInterval(timerSalin); timerSalin = null }
+}
+function mulaiPantau() { pantauSalin(); if (!timerSalin) timerSalin = setInterval(pantauSalin, 2000) }
+onMounted(pantauSalin)
+onBeforeUnmount(() => { if (timerSalin) clearInterval(timerSalin) })
+
 async function simpan() {
   const items = terpilih.value.map((b) => ({ path: b.path, id_site: b.pilih, nama: b.nama, ukuran: b.ukuran }))
   const jmlSite = new Set(items.map((i) => i.id_site)).size
-  if (!(await confirmDialog({ title: `Tautkan ${items.length} BA ke ${jmlSite} site?`, message: 'Berkas tetap di file server — ERP hanya menyimpan tautannya di tab Dokumen masing-masing site.', confirmLabel: 'Tautkan' }))) return
+  if (!(await confirmDialog({ title: `Tautkan ${items.length} BA ke ${jmlSite} site?`, message: 'Berkas disalin ke server ERP dan muncul di tab Dokumen masing-masing site. Berkas asli di file server tidak diubah.', confirmLabel: 'Simpan' }))) return
   menyimpan.value = true
   try {
     const r = await api.post('/fileserver/impor-ba/terapkan', { share: props.share, items }, { timeout: 5 * 60_000 })
     toast(r.data.message)
+    mulaiPantau()
     await pindai()
   } catch (e: any) { toast(e.response?.data?.message || 'Gagal menyimpan', 'danger') }
   finally { menyimpan.value = false }
@@ -125,11 +137,16 @@ async function simpan() {
           <div v-if="daftar.length > 400" class="ib-kosong">Menampilkan 400 dari {{ daftar.length }} — persempit dengan kotak cari.</div>
         </div>
 
+        <div v-if="salin && (salin.berjalan || salin.total)" class="ib-salin">
+          <span v-if="salin.berjalan" class="putar" /> {{ salin.berjalan ? 'Menyalin berkas ke server ERP…' : 'Penyalinan terakhir selesai:' }}
+          <b>{{ salin.selesai }}/{{ salin.total }}</b> berkas · {{ (salin.byte / 1048576).toFixed(0) }} MB<template v-if="salin.gagal"> · <span class="merah">{{ salin.gagal }} gagal</span></template>
+          <div class="ib-bar"><i :style="{ width: `${salin.total ? Math.round(((salin.selesai + salin.gagal) / salin.total) * 100) : 0}%` }" /></div>
+        </div>
         <div class="ib-kaki">
           <span><b>{{ terpilih.length }}</b> berkas akan ditautkan ke <b>{{ new Set(terpilih.map((b) => b.pilih)).size }}</b> site</span>
           <span class="spasi" />
           <button type="button" class="btn btn-ghost" @click="emit('tutup')">Tutup</button>
-          <button type="button" class="btn btn-primary" :disabled="menyimpan || !terpilih.length" @click="simpan">{{ menyimpan ? 'Menyimpan…' : '🔗 Tautkan ke site' }}</button>
+          <button type="button" class="btn btn-primary" :disabled="menyimpan || !terpilih.length" @click="simpan">{{ menyimpan ? 'Menyimpan…' : '💾 Simpan ke site' }}</button>
         </div>
       </template>
     </div>
@@ -172,6 +189,10 @@ async function simpan() {
 .ib-redup { color: #94a3b8; }
 .ib-kaki { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-top: 1px solid #e2e8f0; background: #fbfcfe; flex-wrap: wrap; font-size: 13px; }
 .spasi { flex: 1; }
+.ib-salin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 18px; background: #eef5ff; color: #1c4f9c; font-size: 13px; border-top: 1px solid #dbeafe; }
+.ib-salin .merah { color: #b91c1c; }
+.ib-bar { flex-basis: 100%; height: 6px; border-radius: 99px; background: #dbeafe; overflow: hidden; }
+.ib-bar i { display: block; height: 100%; background: #2a78d6; transition: width .4s; }
 @keyframes putar { to { transform: rotate(360deg); } }
 @media (max-width: 760px) { .ib-baris { grid-template-columns: 22px 1fr; } .ib-site { grid-column: 2; } .ib-cari { min-width: 0; width: 100%; margin-left: 0; } }
 </style>
