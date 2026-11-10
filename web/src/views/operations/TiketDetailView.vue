@@ -927,6 +927,10 @@ function tombol(e: KeyboardEvent) {
             <label><span class="form-label">Catatan tambahan (opsional)</span>
               <textarea v-model="tutup.catatan" class="form-textarea" rows="2" placeholder="Masuk ke log aktivitas" />
             </label>
+            <p v-if="noc && ['offline', 'macet'].includes(noc.kesimpulan.status)" class="td-info td-peringatan">
+              ⚠️ Menurut NOCaaS router site ini <b>masih {{ noc.kesimpulan.label.toLowerCase() }}</b>. Tiket tetap bisa ditutup — sistem <b>tidak</b> akan membuka ulang
+              atau membuat tiket baru untuk gangguan yang sama. Tiket baru hanya muncul bila router sempat hidup lalu mati lagi.
+            </p>
             <p class="td-info">📱 Pelanggan akan menerima notifikasi WhatsApp bahwa gangguan telah {{ tutup.status === 'Closed' ? 'ditutup' : 'diselesaikan' }}.</p>
           </div>
           <div class="modal-footer">
@@ -1278,6 +1282,7 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 4px
 .td-form { display: flex; flex-direction: column; gap: 12px; }
 .td-form label, .td-field { display: flex; flex-direction: column; gap: 5px; }
 .td-info { margin: 0; font-size: 12px; color: #64748b; background: #f8fafc; border-radius: 10px; padding: 8px 10px; }
+.td-peringatan { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
 .td-prio-pilih { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .td-prio-pilih button { --pw: #64748b; border: 2px solid #e2e8f0; background: #fff; border-radius: 13px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: all .15s; }
 .td-prio-pilih button span { font-size: 19px; }

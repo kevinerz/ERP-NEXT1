@@ -862,7 +862,45 @@ export class NocaasService {
         })
       : [];
     const tiketAktif = new Map(aktif.map((t) => [t.id_site, t]));
-    const perluBaru = [...perSite.keys()].filter((id) => !tiketAktif.has(id));
+    let perluBaru = [...perSite.keys()].filter((id) => !tiketAktif.has(id));
+
+    // Satu gangguan = satu tiket: bila tiket site ini sudah DITUTUP saat router masih mati (episode yang sama —
+    // router belum pernah hidup sejak mati), jangan buka ulang / buat tiket baru. Tiket baru hanya bila router
+    // sempat hidup lalu mati lagi (status_sejak berganti → episode baru).
+    if (perluBaru.length) {
+      // Acuan = router yang PALING BARU mati di site itu: ada router lain mati setelah tiket ditutup → gangguan baru
+      const matiTerbaru = new Map(perluBaru.map((id) => [id, new Date(Math.max(...perSite.get(id)!.map((r) => r.sejak.getTime())))]));
+      const batasAwal = new Date(Math.min(...[...matiTerbaru.values()].map((d) => d.getTime())));
+      const sudahDitutup = await this.prisma.operationTicket.findMany({
+        where: {
+          id_site: { in: perluBaru }, status_tiket: { in: ['Resolved', 'Closed'] },
+          // Ditutup langsung ke Closed hanya mengisi tgl_closed
+          OR: [{ tgl_resolved: { gte: batasAwal } }, { tgl_closed: { gte: batasAwal } }],
+        },
+        select: { id_ticket: true, id_site: true, status_tiket: true, tgl_resolved: true, tgl_closed: true },
+      });
+      const waktuTutup = (x: { tgl_resolved: Date | null; tgl_closed: Date | null }) => Math.max(x.tgl_resolved?.getTime() ?? 0, x.tgl_closed?.getTime() ?? 0);
+      const ditahan = new Set<number>();
+      for (const id_site of perluBaru) {
+        const mulai = matiTerbaru.get(id_site)!;
+        const t = sudahDitutup.filter((x) => x.id_site === id_site && waktuTutup(x) >= mulai.getTime()).sort((a, b) => waktuTutup(b) - waktuTutup(a))[0];
+        if (!t) continue;
+        ditahan.add(id_site);
+        // Catat sekali di tiket yang ditutup, supaya helpdesk tahu router memang masih mati
+        const kunciLog = 'NOCaaS: router masih mati setelah tiket ditutup';
+        const sudah = await this.prisma.operationTicketLog.count({ where: { id_ticket: t.id_ticket, catatan: { startsWith: kunciLog }, created_at: { gte: new Date(waktuTutup(t)) } } });
+        if (!sudah) {
+          const rs = perSite.get(id_site)!;
+          await this.prisma.operationTicketLog.create({
+            data: {
+              id_ticket: t.id_ticket, status_ke: t.status_tiket,
+              catatan: `${kunciLog} — ${rs.map((r) => `${r.site_key} mati sejak ${this.waktuWib(r.sejak)}`).join(', ')}. Tiket tidak dibuka ulang; tiket baru dibuat otomatis hanya bila router sempat hidup lalu mati lagi.`,
+            },
+          });
+        }
+      }
+      if (ditahan.size) perluBaru = perluBaru.filter((id) => !ditahan.has(id));
+    }
 
     // Pengaman: terlalu banyak sekaligus = kemungkinan gangguan pusat / NOCaaS → jangan buat tiket massal
     if (perluBaru.length > cfg.maks_tiket_per_putaran) {
