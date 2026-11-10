@@ -15,6 +15,13 @@ const TIKET_AKTIF = ['Open', 'In_Progress', 'Pending'];
 const WO_SELESAI = ['Completed', 'Cancelled'];
 const TAHAP_PB = ['Draft', 'Sales', 'OPS', 'Network', 'Instalasi', 'NOC', 'Finance'];
 
+/** Deret tanggal WIB (YYYY-MM-DD) n hari terakhir, termasuk hari ini */
+function deretHari(n: number): string[] {
+  const s = Date.now() + WIB
+  return Array.from({ length: n }, (_, i) => new Date(s - (n - 1 - i) * 86_400_000).toISOString().slice(0, 10))
+}
+const angka = (v: unknown) => Number(v ?? 0)
+
 /** Awal hari & awal bulan WIB (dalam UTC) */
 function batasWaktu() {
   const s = new Date(Date.now() + WIB);
@@ -86,7 +93,27 @@ export class DashboardService {
       }),
     ]);
     const n = (s: string) => perStatus.find((r) => r.status_tiket === s)?._count._all ?? 0;
+    // Tren 14 hari (dibuka vs selesai per hari WIB) + komposisi tiket aktif — untuk grafik dashboard
+    const dari = new Date(w.hari.getTime() - 13 * 86_400_000);
+    const [dibuka14, selesai14, perPrioritas, perSumber] = await Promise.all([
+      this.prisma.$queryRaw<{ t: string; n: bigint }[]>`
+        SELECT DATE_FORMAT(DATE_ADD(tgl_open, INTERVAL 7 HOUR), '%Y-%m-%d') t, COUNT(*) n
+        FROM operation_tickets WHERE tgl_open >= ${dari} GROUP BY t`,
+      this.prisma.$queryRaw<{ t: string; n: bigint }[]>`
+        SELECT DATE_FORMAT(DATE_ADD(tgl_resolved, INTERVAL 7 HOUR), '%Y-%m-%d') t, COUNT(*) n
+        FROM operation_tickets WHERE tgl_resolved >= ${dari} GROUP BY t`,
+      t.groupBy({ by: ['prioritas'], where: { status_tiket: { in: TIKET_AKTIF } }, _count: { _all: true } }),
+      t.groupBy({ by: ['sumber_tiket'], where: { tgl_open: { gte: w.bulan } }, _count: { _all: true } }),
+    ]);
+    const tren = deretHari(14).map((tgl) => ({
+      tgl,
+      dibuka: angka(dibuka14.find((r) => r.t === tgl)?.n),
+      selesai: angka(selesai14.find((r) => r.t === tgl)?.n),
+    }));
     return {
+      tren,
+      per_prioritas: perPrioritas.map((r) => ({ k: r.prioritas, n: r._count._all })),
+      per_sumber: perSumber.map((r) => ({ k: r.sumber_tiket, n: r._count._all })).sort((a, b) => b.n - a.n),
       open: n('Open'), in_progress: n('In_Progress'), pending: n('Pending'),
       dibuka_hari_ini: dibukaHariIni, selesai_hari_ini: selesaiHariIni, saya: punyaSaya,
       tiket_bulan_ini: bulanIni, sla_breach: breach,
@@ -101,16 +128,26 @@ export class DashboardService {
       this.cacheWa = { t: Date.now(), data: await this.waStat.ringkasan({ dari: tgl, sampai: tgl } as any) };
     }
     const r = this.cacheWa.data;
-    const [picSaya, belumDibaca] = await Promise.all([
+    const awalHari = new Date(Date.parse(`${tgl}T00:00:00Z`) - WIB);
+    const [picSaya, belumDibaca, jam] = await Promise.all([
       this.prisma.waChat.count({ where: { id_karyawan_pic: idk, status: 'Terbuka' } }),
       this.prisma.waChat.count({ where: { status: 'Terbuka', belum_dibaca: { gt: 0 } } }),
+      // Pesan per jam hari ini (WIB) — grafik "detak" inbox
+      this.prisma.$queryRaw<{ j: number; dari_saya: number; n: bigint }[]>`
+        SELECT HOUR(DATE_ADD(waktu, INTERVAL 7 HOUR)) j, dari_saya, COUNT(*) n
+        FROM wa_pesan WHERE waktu >= ${awalHari} GROUP BY j, dari_saya`,
     ]);
+    const per_jam = Array.from({ length: 24 }, (_, h) => ({
+      jam: h,
+      masuk: angka(jam.find((r) => Number(r.j) === h && !Number(r.dari_saya))?.n),
+      keluar: angka(jam.find((r) => Number(r.j) === h && Number(r.dari_saya))?.n),
+    }));
     const saya = (r.staf as any[]).find((s) => s.nama === nama) ?? null;
     return {
       masuk: r.kpi.masuk, keluar: r.kpi.keluar, chat_aktif: r.kpi.chat_aktif,
       dibalas: r.kpi.dibalas, tidak_dibalas: r.kpi.tidak_dibalas, respon_median: r.kpi.respon_median,
       pct_15menit: r.kpi.pct_15menit, antrean: r.kpi.antrean, belum_dibaca: belumDibaca,
-      pic_saya: picSaya,
+      pic_saya: picSaya, per_jam,
       saya: saya ? { pesan: saya.pesan, chat: saya.chat, respon_median: saya.respon_median } : null,
       daftar_antrean: (r.antrean as any[]).slice(0, 6),
     };
@@ -131,7 +168,12 @@ export class DashboardService {
       }),
     ]);
     const r = (s: string) => router.find((x) => x.status === s)?._count._all ?? 0;
+    const dari7 = new Date(w.hari.getTime() - 6 * 86_400_000);
+    const g7 = await this.prisma.$queryRaw<{ t: string; n: bigint }[]>`
+      SELECT DATE_FORMAT(DATE_ADD(mulai_at, INTERVAL 7 HOUR), '%Y-%m-%d') t, COUNT(*) n
+      FROM nocaas_gangguan WHERE mulai_at >= ${dari7} GROUP BY t`;
     return {
+      gangguan_7hari: deretHari(7).map((tgl) => ({ tgl, n: angka(g7.find((x) => x.t === tgl)?.n) })),
       online: r('online'), partial: r('partial') + r('internet_ok'), offline: r('offline'),
       gangguan: gangguan.map((g) => ({ kategori: g.kategori, n: g._count._all })),
       wo_aktif: woAktif, visit_hari_ini: visitHariIni, antre_visit: antreVisit,
