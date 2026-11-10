@@ -72,6 +72,7 @@ import { PresalesModule } from './modules/presales/presales.module';
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
       exclude: ['/api/{*splat}', '/webhook/{*splat}'],
+      serveStaticOptions: { redirect: false }, // /assets = rute SPA menu Aset, bukan folder
     }),
 
     // Prisma

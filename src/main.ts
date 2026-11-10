@@ -59,7 +59,9 @@ async function bootstrap() {
   app.useGlobalGuards(new JwtAuthGuard(reflector, tokenBlacklist), new RolesGuard(reflector), new ModulAksesGuard(reflector));
 
   // Serve Vue 3 SPA dari folder public/
-  app.useStaticAssets(join(__dirname, '..', 'public'));
+  // redirect:false — folder build bernama "assets" bentrok dengan rute SPA /assets (menu Aset):
+  // tanpa ini express mengalihkan /assets → /assets/ (dan nginx menambah port internal :8443) saat dibuka langsung.
+  app.useStaticAssets(join(__dirname, '..', 'public'), { redirect: false });
   app.setBaseViewsDir(join(__dirname, '..', 'public'));
 
   // Serve upload files (foto tiket, dll)
