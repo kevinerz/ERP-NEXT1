@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsInt, IsDateString, IsIn, IsNotEmpty, MaxLength, Allow, ValidateIf } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsDateString, IsIn, IsNotEmpty, MaxLength, Allow, ValidateIf, IsArray, ArrayMaxSize, ArrayMinSize } from 'class-validator';
 
 const STATUS_TIKET = ['Open', 'In_Progress', 'Pending_Customer', 'Resolved', 'Closed'] as const;
 const PRIORITAS    = ['Critical', 'High', 'Medium', 'Low'] as const;
@@ -32,4 +32,10 @@ export class AddLogDto {
   @IsInt() id_ticket: number;
   @IsOptional() @IsIn(STATUS_TIKET) status_ke?: string;
   @IsOptional() @IsString() @MaxLength(2000) catatan?: string;
+}
+
+export class MassalDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @IsInt({ each: true }) ids: number[];
+  @IsIn(['assign', 'status', 'prioritas', 'jenis']) aksi: string;
+  @IsOptional() @Allow() nilai?: any;
 }

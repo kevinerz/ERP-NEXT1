@@ -80,41 +80,188 @@ export class OperationsService {
 
   // ─── TIKET ────────────────────────────────────────────────────
 
-  async findAll(query: {
-    search?: string;
-    status_tiket?: string;
-    prioritas?: string;
-    id_teknisi?: string;
-    page?: number;
-    limit?: number;
-  }) {
-    const page = Number(query.page) || 1;
-    const limit = Number(query.limit) || 20;
-    const skip = (page - 1) * limit;
-    const where: any = {};
-
-    if (query.search) {
-      where.OR = [
-        { nomor_tiket: { contains: query.search } },
-        { judul_tiket: { contains: query.search } },
-        { site: { nama_site: { contains: query.search } } },
-        { site: { pelanggan: { nama_pelanggan: { contains: query.search } } } },
-      ];
+  /** Bangun filter daftar tiket — dipakai daftar, kanban & ekspor */
+  private whereDaftar(query: Record<string, any>) {
+    const where: any = { AND: [] as any[] };
+    const q = String(query.search ?? '').trim();
+    if (q) {
+      where.AND.push({ OR: [
+        { nomor_tiket: { contains: q } },
+        { judul_tiket: { contains: q } },
+        { site: { nama_site: { contains: q } } },
+        { site: { kode_site: { contains: q } } },
+        { site: { pelanggan: { nama_pelanggan: { contains: q } } } },
+      ] });
     }
-    if (query.status_tiket) where.status_tiket = query.status_tiket;
-    if (query.prioritas) where.prioritas = query.prioritas;
-    if (query.id_teknisi) where.id_teknisi_pic = Number(query.id_teknisi);
-    if ((query as any).sumber_tiket) where.sumber_tiket = (query as any).sumber_tiket;
+    const daftar = (v: any) => String(v ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+    const st = daftar(query.status_tiket);
+    if (st.length) where.status_tiket = { in: st };
+    const pr = daftar(query.prioritas);
+    if (pr.length) where.prioritas = { in: pr };
+    const sb = daftar(query.sumber_tiket);
+    if (sb.length) where.sumber_tiket = { in: sb };
+    if (query.id_teknisi === 'none') where.id_teknisi_pic = null;
+    else if (query.id_teknisi) where.id_teknisi_pic = Number(query.id_teknisi);
+    if (query.jenis_gangguan === 'none') where.jenis_gangguan = null;
+    else if (query.jenis_gangguan) where.jenis_gangguan = String(query.jenis_gangguan);
+    if (query.id_site) where.id_site = Number(query.id_site);
+    const dari = query.dari ? new Date(`${query.dari}T00:00:00+07:00`) : null;
+    const sampai = query.sampai ? new Date(`${query.sampai}T23:59:59.999+07:00`) : null;
+    if ((dari && !isNaN(+dari)) || (sampai && !isNaN(+sampai))) {
+      where.tgl_open = { ...(dari && !isNaN(+dari) ? { gte: dari } : {}), ...(sampai && !isNaN(+sampai) ? { lte: sampai } : {}) };
+    }
+    // Tampilan cepat
+    const AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
+    switch (query.tampilan) {
+      case 'aktif': where.status_tiket = st.length ? { in: st.filter((x) => AKTIF.includes(x)) } : { in: AKTIF }; break;
+      case 'tanpa_pic': where.status_tiket = { in: AKTIF }; where.id_teknisi_pic = null; where.id_kontak_teknisi = null; break;
+      case 'lewat_sla': where.status_tiket = { in: AKTIF }; where.sla_due = { lt: new Date() }; break;
+      case 'selesai_hari_ini': where.status_tiket = { in: ['Resolved', 'Closed'] }; where.tgl_resolved = { gte: wibStartOfDay() }; break;
+    }
+    if (!where.AND.length) delete where.AND;
+    return where;
+  }
 
+  async findAll(query: Record<string, any>) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(500, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+    const where = this.whereDaftar(query);
+    const URUT: Record<string, any> = {
+      terbaru: [{ tgl_open: 'desc' }],
+      terlama: [{ tgl_open: 'asc' }],
+      sla: [{ sla_due: 'asc' }, { tgl_open: 'asc' }],
+      update: [{ updated_at: 'desc' }],
+    };
     const [data, total] = await Promise.all([
       this.prisma.operationTicket.findMany({
         where, skip, take: limit,
-        orderBy: { tgl_open: 'desc' },
+        orderBy: URUT[String(query.urut)] ?? URUT.terbaru,
         include: TICKET_INCLUDE,
       }),
       this.prisma.operationTicket.count({ where }),
     ]);
     return { data, meta: { total, page, limit, total_pages: Math.ceil(total / limit) } };
+  }
+
+  /** Ringkasan pusat gangguan: KPI, tren harian, sebaran sumber/jenis, site berulang, beban teknisi */
+  async insight(hariQ?: string) {
+    const hari = Math.min(30, Math.max(3, Number(hariQ) || 7));
+    const AKTIF = ['Open', 'In_Progress', 'Pending_Customer'];
+    const now = new Date();
+    const awalHari = wibStartOfDay();
+    const awal = new Date(awalHari.getTime() - (hari - 1) * 86400_000);
+
+    const [aktif, selesaiHariIni, periode] = await Promise.all([
+      this.prisma.operationTicket.findMany({
+        where: { status_tiket: { in: AKTIF } },
+        select: { prioritas: true, status_tiket: true, sla_due: true, id_teknisi_pic: true, id_kontak_teknisi: true, tgl_open: true,
+          teknisi: { select: { id_karyawan: true, nama_lengkap: true } } },
+      }),
+      this.prisma.operationTicket.findMany({
+        where: { tgl_resolved: { gte: awalHari } },
+        select: { tgl_open: true, tgl_resolved: true, tgl_sensor_down: true },
+      }),
+      this.prisma.operationTicket.findMany({
+        where: { tgl_open: { gte: awal } },
+        select: { tgl_open: true, tgl_resolved: true, sumber_tiket: true, jenis_gangguan: true, sla_breached: true, status_tiket: true, prioritas: true,
+          id_site: true, site: { select: { nama_site: true, kode_site: true } } },
+      }),
+    ]);
+    const selesaiPeriode = await this.prisma.operationTicket.findMany({
+      where: { tgl_resolved: { gte: awal } }, select: { tgl_resolved: true, tgl_open: true, sla_breached: true },
+    });
+
+    const menit = (a: Date, b: Date) => Math.max(0, (+b - +a) / 60000);
+    const mttr = (rows: { tgl_open: Date; tgl_resolved: Date | null }[]) => {
+      const r = rows.filter((x) => x.tgl_resolved);
+      return r.length ? Math.round(r.reduce((s, x) => s + menit(x.tgl_open, x.tgl_resolved!), 0) / r.length) : null;
+    };
+    const kunciHari = (d: Date) => new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+    const label: string[] = [];
+    for (let i = 0; i < hari; i++) label.push(kunciHari(new Date(awal.getTime() + i * 86400_000)));
+    const masuk = Object.fromEntries(label.map((l) => [l, 0]));
+    const selesai = Object.fromEntries(label.map((l) => [l, 0]));
+    for (const t of periode) { const k = kunciHari(t.tgl_open); if (k in masuk) masuk[k]!++; }
+    for (const t of selesaiPeriode) { const k = kunciHari(t.tgl_resolved!); if (k in selesai) selesai[k]!++; }
+
+    // Jam rawan (WIB) dalam periode
+    const perJam = Array.from({ length: 24 }, () => 0);
+    for (const t of periode) perJam[new Date(t.tgl_open.getTime() + 7 * 3600_000).getUTCHours()]!++;
+
+    const hitung = <T>(rows: T[], f: (r: T) => string) => {
+      const m = new Map<string, number>();
+      for (const r of rows) m.set(f(r), (m.get(f(r)) ?? 0) + 1);
+      return [...m.entries()].map(([nama, n]) => ({ nama, n })).sort((a, b) => b.n - a.n);
+    };
+    const siteMap = new Map<number, { id_site: number; nama: string; kode: string; n: number; aktif: number }>();
+    for (const t of periode) {
+      const x = siteMap.get(t.id_site) ?? { id_site: t.id_site, nama: t.site?.nama_site ?? `#${t.id_site}`, kode: t.site?.kode_site ?? '', n: 0, aktif: 0 };
+      x.n++; if (AKTIF.includes(t.status_tiket)) x.aktif++;
+      siteMap.set(t.id_site, x);
+    }
+    const bebanMap = new Map<string, { id: number | null; nama: string; n: number; kritis: number }>();
+    for (const t of aktif) {
+      const nama = t.teknisi?.nama_lengkap?.trim() || (t.id_kontak_teknisi ? 'Vendor / mitra' : 'Belum ada PIC');
+      const x = bebanMap.get(nama) ?? { id: t.teknisi?.id_karyawan ?? null, nama, n: 0, kritis: 0 };
+      x.n++; if (t.prioritas === 'Critical') x.kritis++;
+      bebanMap.set(nama, x);
+    }
+    const tepat = selesaiPeriode.filter((t) => !t.sla_breached).length;
+
+    return { data: {
+      hari,
+      kpi: {
+        aktif: aktif.length,
+        open: aktif.filter((t) => t.status_tiket === 'Open').length,
+        proses: aktif.filter((t) => t.status_tiket === 'In_Progress').length,
+        pending: aktif.filter((t) => t.status_tiket === 'Pending_Customer').length,
+        kritis: aktif.filter((t) => t.prioritas === 'Critical').length,
+        lewat_sla: aktif.filter((t) => t.sla_due && t.sla_due < now).length,
+        tanpa_pic: aktif.filter((t) => !t.id_teknisi_pic && !t.id_kontak_teknisi).length,
+        tertua_menit: aktif.length ? Math.round(Math.max(...aktif.map((t) => menit(t.tgl_open, now)))) : 0,
+        selesai_hari_ini: selesaiHariIni.length,
+        masuk_hari_ini: periode.filter((t) => t.tgl_open >= awalHari).length,
+        mttr_hari_ini: mttr(selesaiHariIni),
+        mttr_periode: mttr(selesaiPeriode),
+        sla_persen: selesaiPeriode.length ? Math.round((tepat / selesaiPeriode.length) * 1000) / 10 : null,
+        total_periode: periode.length,
+      },
+      tren: { label, masuk: label.map((l) => masuk[l]), selesai: label.map((l) => selesai[l]) },
+      per_jam: perJam,
+      per_sumber: hitung(periode, (t) => t.sumber_tiket || 'Lainnya'),
+      per_jenis: hitung(periode, (t) => t.jenis_gangguan || 'Belum diisi').slice(0, 8),
+      per_prioritas: hitung(periode, (t) => t.prioritas),
+      site_berulang: [...siteMap.values()].filter((x) => x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 10),
+      beban_teknisi: [...bebanMap.values()].sort((a, b) => b.n - a.n).slice(0, 10),
+      jenis_list: (await this.prisma.operationTicket.groupBy({ by: ['jenis_gangguan'], where: { jenis_gangguan: { not: null } }, _count: { _all: true } }))
+        .map((x) => x.jenis_gangguan!).sort(),
+    } };
+  }
+
+  /** Aksi massal — tiap tiket lewat update() agar log, notifikasi & SLA tetap konsisten */
+  async massal(dto: { ids: number[]; aksi: string; nilai?: any }, userId?: number) {
+    const ids = [...new Set((dto.ids || []).map(Number).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 100);
+    if (!ids.length) throw new BadRequestException('Pilih minimal satu tiket');
+    let patch: UpdateTicketDto;
+    if (dto.aksi === 'assign') patch = { id_teknisi_pic: dto.nilai ? Number(dto.nilai) : null } as any;
+    else if (dto.aksi === 'status') {
+      if (!['Open', 'In_Progress', 'Pending_Customer', 'Resolved', 'Closed'].includes(dto.nilai)) throw new BadRequestException('Status tidak valid');
+      patch = { status_tiket: dto.nilai };
+    } else if (dto.aksi === 'prioritas') {
+      if (!['Critical', 'High', 'Medium', 'Low'].includes(dto.nilai)) throw new BadRequestException('Prioritas tidak valid');
+      patch = { prioritas: dto.nilai };
+    } else if (dto.aksi === 'jenis') {
+      const j = String(dto.nilai ?? '').trim().slice(0, 100);
+      if (!j) throw new BadRequestException('Jenis gangguan wajib diisi');
+      patch = { jenis_gangguan: j };
+    } else throw new BadRequestException('Aksi tidak dikenal');
+    let berhasil = 0; const gagal: { id: number; pesan: string }[] = [];
+    for (const id of ids) {
+      try { await this.update(id, { ...patch }, userId); berhasil++; }
+      catch (e: any) { gagal.push({ id, pesan: e?.message ?? 'gagal' }); }
+    }
+    return { data: { berhasil, gagal }, message: `${berhasil} tiket diperbarui${gagal.length ? `, ${gagal.length} gagal` : ''}` };
   }
 
   async findOne(id: number) {

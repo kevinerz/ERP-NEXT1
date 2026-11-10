@@ -14,6 +14,10 @@ export interface Ticket {
   tgl_closed?: string
   tgl_berangkat?: string
   tgl_sampai?: string
+  jenis_gangguan?: string | null
+  sla_due?: string | null
+  sla_breached?: boolean
+  root_cause?: string | null
   created_at: string
   site?: {
     id_site: number; kode_site: string; nama_site: string; kota?: string; alamat_lengkap?: string
