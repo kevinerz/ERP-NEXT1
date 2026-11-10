@@ -560,7 +560,7 @@ onBeforeUnmount(() => {
             <div v-if="pickerSite === s.id_site" class="rs-picker">
               <input v-model="pickQ" placeholder="Cari nama / IP device PRTG… (kosong = usulan termirip)" autofocus />
               <ul>
-                <li v-for="h in hasilPicker" :key="h.d.objid" @click="pasangkan(s, h.d)">
+                <li v-baris v-for="h in hasilPicker" :key="h.d.objid" @click="pasangkan(s, h.d)">
                   <b>{{ h.d.device_name }}</b>
                   <small>
                     #{{ h.d.objid }} · {{ h.d.ip_address || 'tanpa IP' }} · {{ h.d.prtg_status }}

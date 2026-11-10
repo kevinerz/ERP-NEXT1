@@ -41,15 +41,25 @@ onMounted(async () => {
   finally { loaded.value = true }
 })
 
+// cegah klik ganda selama request berjalan
+const togglingStatus = ref(false)
 async function handleToggleStatus() {
+  const aktif = !!hris.current?.status_aktif
+  if (aktif && !(await confirmDialog({
+    title: 'Nonaktifkan karyawan?',
+    message: `${hris.current?.nama_lengkap ?? 'Karyawan ini'} akan ditandai nonaktif.`,
+    variant: 'warning',
+    confirmLabel: 'Ya, Nonaktifkan',
+  }))) return
   actionError.value = ''
+  togglingStatus.value = true
   try {
     await hris.toggleStatus(id)
     await hris.fetchOne(id)
     setSuccess('Status karyawan diperbarui')
   } catch (e: any) {
     actionError.value = e.response?.data?.message || 'Gagal'
-  }
+  } finally { togglingStatus.value = false }
 }
 
 const deleting = ref(false)
@@ -194,15 +204,24 @@ async function handleEditModul() {
   }
 }
 
+const togglingUser = ref(false)
 async function handleToggleUserStatus() {
+  const aktif = !!hris.current?.user?.is_aktif
+  if (aktif && !(await confirmDialog({
+    title: 'Nonaktifkan akun?',
+    message: 'Pengguna tidak akan bisa login ke ERP sampai akunnya diaktifkan lagi.',
+    variant: 'warning',
+    confirmLabel: 'Ya, Nonaktifkan',
+  }))) return
   actionError.value = ''
+  togglingUser.value = true
   try {
     await hris.toggleUserStatus(id)
     await hris.fetchOne(id)
     setSuccess('Status akun diperbarui')
   } catch (e: any) {
     actionError.value = e.response?.data?.message || 'Gagal'
-  }
+  } finally { togglingUser.value = false }
 }
 </script>
 
@@ -215,9 +234,10 @@ async function handleToggleUserStatus() {
         <button class="btn-secondary" @click="router.push(`/hris/karyawan/${id}/edit`)">Edit</button>
         <button
           :class="hris.current.status_aktif ? 'btn-danger' : 'btn-success'"
+          :disabled="togglingStatus"
           @click="handleToggleStatus"
         >
-          {{ hris.current.status_aktif ? 'Nonaktifkan' : 'Aktifkan' }}
+          {{ togglingStatus ? 'Memproses...' : hris.current.status_aktif ? 'Nonaktifkan' : 'Aktifkan' }}
         </button>
         <button class="btn-danger" :disabled="deleting" @click="handleDelete">
           {{ deleting ? 'Menghapus...' : 'Hapus Karyawan' }}
@@ -401,9 +421,10 @@ async function handleToggleUserStatus() {
           <button class="btn-secondary" @click="showResetPw = true">Reset Password</button>
           <button
             :class="hris.current.user.is_aktif ? 'btn-danger' : 'btn-success'"
+            :disabled="togglingUser"
             @click="handleToggleUserStatus"
           >
-            {{ hris.current.user.is_aktif ? 'Nonaktifkan Akun' : 'Aktifkan Akun' }}
+            {{ togglingUser ? 'Memproses...' : hris.current.user.is_aktif ? 'Nonaktifkan Akun' : 'Aktifkan Akun' }}
           </button>
         </div>
       </div>

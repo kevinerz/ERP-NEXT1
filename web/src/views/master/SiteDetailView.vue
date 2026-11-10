@@ -87,39 +87,48 @@ async function loadSite() {
   finally { loading.value = false }
 }
 
+// status gagal muat dropdown/dokumen — ditampilkan sebagai hint, bukan daftar kosong
+const vendorLoadError = ref(false)
+const asetSimLoadError = ref(false)
+const asetLoadError = ref(false)
+const dokumenLoadError = ref('')
+
 async function loadVendors() {
+  vendorLoadError.value = false
   try {
     const r = await api.get('/master/vendor-dropdown')
     vendorList.value = r.data.data
-  } catch {}
+  } catch { vendorLoadError.value = true }
 }
 
 async function loadAsetSim() {
+  asetSimLoadError.value = false
   try {
     const r = await api.get('/assets', { params: { limit: 500 } })
     // filter modem/GSM dari semua aset
     asetSimList.value = (r.data.data || []).filter((a: any) =>
       ['Modem GSM', 'SIM Card', 'Modem', 'Modem FO'].includes(a.kategori)
     )
-  } catch {}
+  } catch { asetSimLoadError.value = true }
 }
 
 async function loadAset() {
+  asetLoadError.value = false
   try {
     // Semua aset yang tersedia (Di_Gudang) atau sudah Terpasang (bisa pindah)
     const r = await api.get('/assets', { params: { limit: 500 } })
     asetList.value = r.data.data || []
-  } catch {}
+  } catch { asetLoadError.value = true }
 }
 
 // ─── Dokumen Site ─────────────────────────────────────────────
 
 async function loadDokumen() {
-  dokumenLoading.value = true
+  dokumenLoading.value = true; dokumenLoadError.value = ''
   try {
     const r = await api.get(`/master/site/${id}/dokumen`)
     dokumenList.value = r.data.data || []
-  } catch {}
+  } catch (e: any) { dokumenLoadError.value = e?.response?.data?.message || 'Gagal memuat dokumen' }
   finally { dokumenLoading.value = false }
 }
 
@@ -336,7 +345,7 @@ const isGsm = computed(() => {
 <template>
   <div class="page">
     <div class="breadcrumb">
-      <span class="link" @click="router.push('/master/site')">Site Pelanggan</span>
+      <span v-baris class="link" @click="router.push('/master/site')">Site Pelanggan</span>
       <span class="sep">›</span>
       <span>{{ site?.kode_site || '...' }}</span>
     </div>
@@ -574,7 +583,7 @@ const isGsm = computed(() => {
         </div>
         <div v-if="!site.projects?.length" class="empty-state">Belum ada project untuk site ini</div>
         <div v-else class="list-rows">
-          <div v-for="p in site.projects" :key="p.id_project"
+          <div v-baris v-for="p in site.projects" :key="p.id_project"
             class="list-row clickable" @click="router.push(`/projects/${p.id_project}`)">
             <div class="lr-left">
               <div class="lr-nomor">{{ p.nomor_project }}</div>
@@ -604,7 +613,7 @@ const isGsm = computed(() => {
         </div>
         <div v-if="!site.tickets?.length" class="empty-state">Belum ada tiket untuk site ini</div>
         <div v-else class="list-rows">
-          <div v-for="t in site.tickets" :key="t.id_ticket"
+          <div v-baris v-for="t in site.tickets" :key="t.id_ticket"
             class="list-row clickable" @click="router.push(`/operations/${t.id_ticket}`)">
             <div class="lr-left">
               <div class="lr-nomor">{{ t.nomor_tiket }}</div>
@@ -653,7 +662,8 @@ const isGsm = computed(() => {
         </div>
 
         <!-- Dokumen list -->
-        <div v-if="dokumenLoading" class="empty-state">Memuat dokumen...</div>
+        <div v-if="dokumenLoadError" class="empty-state hint-error">⚠ {{ dokumenLoadError }} — <a href="#" @click.prevent="loadDokumen">coba lagi</a></div>
+        <div v-else-if="dokumenLoading" class="empty-state">Memuat dokumen...</div>
         <div v-else-if="!dokumenList.length" class="empty-state">Belum ada dokumen untuk site ini</div>
         <div v-else class="dok-list">
           <div v-for="doc in dokumenList" :key="doc.id_dokumen" class="dok-card">
@@ -695,6 +705,7 @@ const isGsm = computed(() => {
                 [{{ v.tipe_vendor }}] {{ v.nama_vendor }}
               </option>
             </select>
+            <span v-if="vendorLoadError" class="hint-error">⚠ Gagal memuat daftar vendor — <a href="#" @click.prevent="loadVendors">coba lagi</a>.</span>
           </div>
           <div class="field full">
             <label>{{ isGsm ? 'Nomor SIM / GSM' : 'Circuit ID / Nomor Pelanggan ISP' }}</label>
@@ -737,6 +748,7 @@ const isGsm = computed(() => {
                 [{{ a.kode_aset }}] {{ a.nama_perangkat }} {{ a.serial_number ? '· ' + a.serial_number : '' }}
               </option>
             </select>
+            <span v-if="asetSimLoadError" class="hint-error">⚠ Gagal memuat daftar modem/SIM — <a href="#" @click.prevent="loadAsetSim">coba lagi</a>.</span>
           </div>
           <div class="field full">
             <label>Catatan</label>
@@ -775,7 +787,8 @@ const isGsm = computed(() => {
               {{ a.serial_number ? '· SN:' + a.serial_number : '' }}
             </option>
           </select>
-          <div v-if="asetTersedia.length === 0" class="hint-text">
+          <span v-if="asetLoadError" class="hint-error">⚠ Gagal memuat daftar aset — <a href="#" @click.prevent="loadAset">coba lagi</a>.</span>
+          <div v-else-if="asetTersedia.length === 0" class="hint-text">
             Tidak ada aset tersedia di gudang. Tambah aset di modul Aset terlebih dahulu.
           </div>
         </div>
@@ -886,6 +899,7 @@ const isGsm = computed(() => {
 </template>
 
 <style scoped>
+.hint-error { display: block; font-size: 11px; color: #d97706; margin-top: 4px; }
 .page { max-width: 1100px; }
 .breadcrumb { font-size: 13px; color: var(--text-3); margin-bottom: 16px; }
 .link { cursor: pointer; color: var(--primary-hover); }

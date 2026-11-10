@@ -138,7 +138,7 @@ async function salin() {
             <template v-if="s.template?.ada"><b>{{ s.template.name }}</b> (#{{ s.template.objid }}, {{ s.template.sensors }} sensor)</template>
             <b v-else-if="s.template" class="merah">#{{ s.template.objid }} tidak ditemukan di PRTG</b>
             <b v-else class="merah">belum diatur</b>
-            <a v-if="bisaUbah" class="tautan" @click="aturTemplate"> ubah</a>
+            <a v-baris v-if="bisaUbah" class="tautan" @click="aturTemplate"> ubah</a>
           </p>
           <template v-if="bisaUbah && perluPrtg">
             <div v-if="!grup.length" class="vp-baris"><button class="btn btn-ghost" @click="muatGrup">Pilih grup PRTG…</button></div>

@@ -16,19 +16,31 @@ const o = ref<any>(null)
 const vendor = ref<Vendor[]>([])
 const tab = ref('OPS')
 const proses = ref(false)
+// status muat awal: error ditampilkan di halaman (bukan "Memuat…" selamanya)
+const muatError = ref('')
+const vendorError = ref(false)
+const pesanErr = (e: any, f: string) => { const m = e?.response?.data?.message; return Array.isArray(m) ? m.join(', ') : m || f }
 
 async function muat(gantiTab = false) {
   try {
     const { data } = await api.get(`/pasang-baru/order/${id.value}`)
     o.value = data.data
+    muatError.value = ''
     isiForm()
     if (gantiTab) tab.value = ['Network', 'Selesai'].includes(o.value.tahap) ? 'Network' : 'OPS'
   } catch (e) {
-    alertError(e, 'Gagal memuat order')
+    // muat awal gagal → tampilkan error di halaman; muat ulang setelah aksi → modal
+    if (!o.value) muatError.value = pesanErr(e, 'Gagal memuat order')
+    else alertError(e, 'Gagal memuat order')
   }
 }
+function muatVendor() {
+  vendorError.value = false
+  api.get('/pasang-baru/referensi').then(({ data }) => { vendor.value = data.data.vendor }).catch(() => { vendorError.value = true })
+}
+async function cobaLagi() { muatError.value = ''; muatVendor(); await muat(true) }
 onMounted(async () => {
-  api.get('/pasang-baru/referensi').then(({ data }) => { vendor.value = data.data.vendor }).catch(() => undefined)
+  muatVendor()
   await muat(true)
 })
 
@@ -145,9 +157,11 @@ const kurangLink = (l: any) => [
 const net = computed<any>(() => o.value?.network ?? { perangkat: [], wo: null })
 const kontakTeknisi = ref<{ id_kontak: number; nama: string; no_hp: string; asal_vendor: string | null; keahlian: string | null }[]>([])
 const kurir = ref<{ code: string; name: string }[]>([])
+const refNetworkError = ref(false)
 async function muatReferensiNetwork() {
   if (kontakTeknisi.value.length || !o.value || o.value.tahap !== 'Network') return
-  const [a, b] = await Promise.all([api.get('/pasang-baru/kontak-teknisi'), api.get('/pasang-baru/kurir')]).catch(() => [null, null])
+  refNetworkError.value = false
+  const [a, b] = await Promise.all([api.get('/pasang-baru/kontak-teknisi'), api.get('/pasang-baru/kurir')]).catch(() => { refNetworkError.value = true; return [null, null] })
   if (a) kontakTeknisi.value = a.data.data
   if (b) kurir.value = b.data.data
 }
@@ -328,15 +342,20 @@ const AKSI: Record<string, string> = {
 
 <template>
   <div class="page">
-    <p v-if="!o" class="muted">Memuat…</p>
+    <div v-if="!o && muatError" class="alert alert-danger" role="alert">
+      <span>⚠ {{ muatError }}</span>
+      <button class="btn btn-sm btn-ghost" @click="cobaLagi">Coba lagi</button>
+      <button class="btn btn-sm btn-ghost" @click="router.push('/pasang-baru')">← Daftar</button>
+    </div>
+    <p v-else-if="!o" class="muted">Memuat…</p>
     <template v-else>
       <div class="page-header">
         <div>
           <h2 class="page-title">{{ o.nomor_pb }} · {{ o.nama_site }} <span class="badge" :class="KELAS_TAHAP[o.tahap]">{{ o.tahap }}</span></h2>
           <p class="page-subtitle">
             {{ o.sph.pelanggan.nama_pelanggan }} ·
-            <a class="tautan" @click="router.push(`/pasang-baru/sph/${o.id_sph}`)">{{ o.sph.nomor_sph }}</a> ·
-            <a v-if="o.site" class="tautan" @click="router.push(`/master/site/${o.site.id_site}`)">{{ o.site.kode_site }}</a>
+            <a v-baris class="tautan" @click="router.push(`/pasang-baru/sph/${o.id_sph}`)">{{ o.sph.nomor_sph }}</a> ·
+            <a v-baris v-if="o.site" class="tautan" @click="router.push(`/master/site/${o.site.id_site}`)">{{ o.site.kode_site }}</a>
           </p>
         </div>
         <div class="op-tombol">
@@ -391,7 +410,7 @@ const AKSI: Record<string, string> = {
                   <span v-if="!kurangLink(l).length" class="hijau"><b>✓ Lengkap</b></span>
                   <template v-if="bisaUbah('OPS')">
                     <button class="btn btn-sm btn-primary" @click="bukaLink(l)">✏️ Isi data pemasangan</button>
-                    <button v-if="l.status_link === 'Rencana'" class="btn btn-sm btn-ghost" title="Hapus link" @click="hapusLink(l)">✕</button>
+                    <button v-if="l.status_link === 'Rencana'" class="btn btn-sm btn-ghost" title="Hapus link" :disabled="proses" @click="hapusLink(l)">✕</button>
                   </template>
                 </div>
               </div>
@@ -449,7 +468,7 @@ const AKSI: Record<string, string> = {
                   <span>📝 <b>Request: {{ p.nama_item }}</b></span>
                   <small>
                     Pengajuan #{{ p.pengajuan?.id_pengajuan }} · <b :class="p.pengajuan?.status_pengajuan === 'Ditolak' ? 'merah' : 'kuning'">{{ p.pengajuan?.status_pengajuan || '-' }}</b>
-                    <a class="tautan" @click="router.push(`/assets/pengajuan/${p.id_pengajuan}`)"> lihat</a>
+                    <a v-baris class="tautan" @click="router.push(`/assets/pengajuan/${p.id_pengajuan}`)"> lihat</a>
                   </small>
                   <button v-if="bisaUbah('Network') && p.pengajuan?.id_aset_hasil" class="btn btn-sm btn-primary" :disabled="proses" @click="pakai(p)">Pakai barang masuk</button>
                 </template>
@@ -483,6 +502,7 @@ const AKSI: Record<string, string> = {
                     <option value="baru">+ Teknisi baru (belum ada di kontak)…</option>
                   </select>
                   <small v-if="teknisiDipilih?.keahlian" class="form-hint">Keahlian: {{ teknisiDipilih.keahlian }}</small>
+                  <small v-if="refNetworkError" class="form-error">⚠ Gagal memuat daftar teknisi/kurir — muat ulang halaman.</small>
                   <div v-if="fn.id_kontak_teknisi === 'baru'" class="op-baru">
                     <input v-model="fn.baru.nama" class="form-input" maxlength="150" placeholder="Nama teknisi *" />
                     <input v-model="fn.baru.no_hp" class="form-input" maxlength="20" inputmode="tel" placeholder="No. HP / WA * (08…)" />
@@ -789,6 +809,7 @@ const AKSI: Record<string, string> = {
                 <option value="">— pilih —</option>
                 <option v-for="v in vendor" :key="v.id_vendor" :value="v.id_vendor">{{ v.nama_vendor }}</option>
               </select>
+              <small v-if="vendorError" class="form-error">⚠ Gagal memuat daftar vendor — muat ulang halaman.</small>
             </div>
             <div class="form-group">
               <label class="form-label">Peruntukan</label>

@@ -69,6 +69,7 @@ const isFullscreen = ref(false)
 const perangkat = ref<NocPerangkat[]>([])
 const syslogDevices = ref<SyslogDevice[]>([])
 const devicesLoading = ref(false)
+const devicesError = ref('')
 
 let fetchTimer: ReturnType<typeof setInterval> | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
@@ -99,7 +100,11 @@ async function fetchDevices() {
     const r = await api.get('/operations/noc-board/devices')
     perangkat.value = r.data.data?.perangkat ?? []
     syslogDevices.value = r.data.data?.syslogDevices ?? []
-  } catch {}
+    devicesError.value = ''
+  } catch (e: any) {
+    // Data terakhir tetap ditampilkan
+    devicesError.value = e?.response?.data?.message || 'Gagal memuat daftar perangkat'
+  }
   devicesLoading.value = false
 }
 
@@ -184,7 +189,7 @@ function onFsChange() {
 onMounted(() => {
   fetchData()
   fetchDevices()
-  fetchTimer = setInterval(fetchData, 30000)
+  fetchTimer = setInterval(() => { fetchData(); fetchDevices() }, 30000)
   clockTimer = setInterval(() => { now.value = Date.now() }, 1000)
   document.addEventListener('fullscreenchange', onFsChange)
 })
@@ -281,7 +286,7 @@ onUnmounted(() => {
               </tr>
             </thead>
             <tbody>
-              <tr
+              <tr v-baris
                 v-for="t in data.tiket"
                 :key="t.id_ticket"
                 :class="{ breached: t.sla_breached }"
@@ -352,9 +357,13 @@ onUnmounted(() => {
           </span>
         </div>
 
-        <div v-if="devicesLoading && !perangkat.length" class="empty-wo" style="padding:20px 0">Memuat perangkat…</div>
-        <div v-else-if="!perangkat.length" class="empty-wo">Belum ada perangkat terdaftar</div>
-        <div v-else class="dev-table-wrap">
+        <div v-if="devicesError" class="empty-wo" style="padding:12px 0;color:#f87171" role="alert">
+          ⚠ {{ devicesError }}<template v-if="perangkat.length"> — menampilkan data terakhir.</template>
+          <button class="btn btn-ghost btn-sm" :disabled="devicesLoading" @click="fetchDevices">Coba lagi</button>
+        </div>
+        <div v-if="devicesLoading && !perangkat.length && !devicesError" class="empty-wo" style="padding:20px 0">Memuat perangkat…</div>
+        <div v-else-if="!perangkat.length && !devicesError" class="empty-wo">Belum ada perangkat terdaftar</div>
+        <div v-else-if="perangkat.length" class="dev-table-wrap">
           <table class="dev-table">
             <thead>
               <tr>

@@ -236,7 +236,7 @@ async function cariSite(q: string): Promise<OpsiCari[]> {
           <tr v-if="!list.length">
             <td colspan="7" class="empty">Tidak ada data PIC</td>
           </tr>
-          <tr v-for="p in list" :key="p.id_pic" class="row-link" @click="router.push(`/crm/pic/${p.id_pic}`)">
+          <tr v-baris v-for="p in list" :key="p.id_pic" class="row-link" @click="router.push(`/crm/pic/${p.id_pic}`)">
             <td>
               <div class="fw">{{ p.nama_pic }}</div>
               <div class="text-sm text-gray">{{ p.email || '—' }}</div>

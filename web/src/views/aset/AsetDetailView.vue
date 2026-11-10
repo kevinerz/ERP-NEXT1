@@ -163,7 +163,7 @@ const mutasiColor: Record<string, string> = {
 <template>
   <div class="page">
     <div class="breadcrumb">
-      <span class="link" @click="router.push('/assets')">Aset</span>
+      <span v-baris class="link" @click="router.push('/assets')">Aset</span>
       <span class="sep">›</span>
       <span>{{ a?.kode_aset || '...' }}</span>
     </div>
@@ -247,7 +247,7 @@ const mutasiColor: Record<string, string> = {
           </div>
           <div class="sim-row" v-if="(a as any).sumber_internet.site">
             <span class="sim-label">Site</span>
-            <span class="sim-val link" @click="router.push(`/master/site/${(a as any).sumber_internet.site.id_site || 0}`)">
+            <span v-baris class="sim-val link" @click="router.push(`/master/site/${(a as any).sumber_internet.site.id_site || 0}`)">
               {{ (a as any).sumber_internet.site.kode_site }} — {{ (a as any).sumber_internet.site.nama_site }}
             </span>
           </div>

@@ -89,13 +89,21 @@ onMounted(async () => {
 // ── Pilih pelanggan ──────────────────────────────────────────────────────────
 const cariP = ref('')
 const hasilP = ref<Pelanggan[]>([])
+const cariPError = ref(false)
 let timerP: ReturnType<typeof setTimeout> | null = null
 watch(cariP, (q) => {
   if (timerP) clearTimeout(timerP)
+  cariPError.value = false
   if (q.trim().length < 2) { hasilP.value = []; return }
   timerP = setTimeout(async () => {
-    const { data } = await api.get('/pasang-baru/pelanggan', { params: { q } })
-    hasilP.value = data.data
+    try {
+      const { data } = await api.get('/pasang-baru/pelanggan', { params: { q } })
+      hasilP.value = data.data
+    } catch {
+      // jangan sampai terlihat seperti "tidak ada hasil"
+      hasilP.value = []
+      cariPError.value = true
+    }
   }, 300)
 })
 function pilihP(p: Pelanggan) {
@@ -219,6 +227,7 @@ async function simpan(ajukan: boolean) {
             </div>
             <div v-else class="sf-cari">
               <input v-model="cariP" class="form-input" placeholder="Ketik nama pelanggan…" />
+              <small v-if="cariPError" class="form-error">⚠ Gagal mencari pelanggan — coba ketik ulang.</small>
               <div v-if="cariP.trim().length >= 2" class="sf-hasil">
                 <button v-for="p in hasilP" :key="p.id_pelanggan" @click="pilihP(p)">
                   <b>{{ p.nama_pelanggan }}</b> <small class="muted">{{ p.kode_pelanggan }}</small>

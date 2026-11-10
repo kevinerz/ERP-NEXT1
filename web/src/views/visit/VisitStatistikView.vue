@@ -5,7 +5,6 @@ import { useRouter } from 'vue-router'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import api from '@/services/api'
-import { alertError } from '@/composables/useDialog'
 import StatBatang from '@/views/wa/StatBatang.vue'
 
 // Palet kategorikal yang sama dengan Statistik Helpdesk: selesai = biru, gagal = oranye
@@ -25,8 +24,10 @@ function pilihPreset(p: string) {
 const d = ref<any>(null)
 const pt = ref<any>(null)
 const memuat = ref(false)
+const galat = ref('')
 async function muat() {
   memuat.value = true
+  galat.value = ''
   try {
     const params = { dari: filter.dari, sampai: filter.sampai }
     const [a, b] = await Promise.all([api.get('/visit/statistik', { params }), api.get('/visit/peta', { params })])
@@ -34,7 +35,10 @@ async function muat() {
     pt.value = b.data.data
     await nextTick()
     gambarPeta()
-  } catch (e) { alertError(e, 'Gagal memuat statistik visit') } finally { memuat.value = false }
+  } catch (e: any) {
+    const m = e?.response?.data?.message
+    galat.value = (Array.isArray(m) ? m.join(', ') : m) || 'Gagal memuat statistik visit'
+  } finally { memuat.value = false }
 }
 watch(() => [filter.dari, filter.sampai], muat)
 onMounted(muat)
@@ -97,7 +101,7 @@ onBeforeUnmount(() => { peta?.remove(); peta = null })
       <div class="st-tombol">
         <button class="btn btn-ghost" @click="router.push('/jadwal-visit')">← Jadwal Visit</button>
         <button class="btn btn-ghost" @click="router.push('/jadwal-visit/maintenance')">🔁 Maintenance rutin</button>
-        <button class="btn btn-ghost" :disabled="memuat" @click="muat">↻</button>
+        <button class="btn btn-ghost" :disabled="memuat" aria-label="Muat ulang" title="Muat ulang" @click="muat">↻</button>
       </div>
     </div>
 
@@ -111,8 +115,12 @@ onBeforeUnmount(() => { peta?.remove(); peta = null })
       </template>
     </div>
 
-    <p v-if="!d" class="muted">Memuat…</p>
-    <template v-else>
+    <div v-if="galat" class="alert alert-danger st-galat" role="alert">
+      <span>⚠ {{ galat }}<template v-if="d"> — menampilkan data sebelumnya.</template></span>
+      <button class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">Coba lagi</button>
+    </div>
+    <p v-if="!d && memuat" class="muted">Memuat…</p>
+    <template v-else-if="d">
       <div class="st-kpi">
         <div class="stat-tile"><span class="stat-tile-label">Visit selesai</span><span class="stat-tile-value">{{ angka(k.selesai) }}</span><span class="stat-tile-sub">{{ angka(k.checkin) }} check-in di lokasi</span></div>
         <div class="stat-tile"><span class="stat-tile-label">Gagal / dijadwal ulang</span><span class="stat-tile-value">{{ angka(k.gagal) }}</span><span class="stat-tile-sub">{{ pctGagal == null ? '–' : pctGagal + '%' }} dari kunjungan · {{ angka(k.batal) }} batal</span></div>
@@ -193,6 +201,7 @@ onBeforeUnmount(() => { peta?.remove(); peta = null })
 </template>
 
 <style scoped>
+.st-galat { align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .st-tombol { display: flex; gap: 6px; flex-wrap: wrap; }
 .st-filter { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
 .st-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }

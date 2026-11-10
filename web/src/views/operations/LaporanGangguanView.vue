@@ -3,7 +3,6 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
-import { alertError } from '@/composables/useDialog'
 import { fmtDateTime } from '@/composables/useFormat'
 import StatBatang from '@/views/wa/StatBatang.vue'
 
@@ -20,9 +19,18 @@ function pilih(p: string) {
 
 const d = ref<any>(null)
 const memuat = ref(false)
+const galat = ref('')
+const rentangSalah = computed(() => !!filter.dari && !!filter.sampai && filter.dari > filter.sampai)
 async function muat() {
+  galat.value = ''
+  // Rentang tidak valid: jangan kirim permintaan
+  if (!filter.dari || !filter.sampai || rentangSalah.value) { d.value = null; return }
   memuat.value = true
-  try { d.value = (await api.get('/nocaas/laporan', { params: { dari: filter.dari, sampai: filter.sampai } })).data.data } catch (e) { alertError(e) } finally { memuat.value = false }
+  try { d.value = (await api.get('/nocaas/laporan', { params: { dari: filter.dari, sampai: filter.sampai } })).data.data } catch (e: any) {
+    const m = e?.response?.data?.message
+    galat.value = (Array.isArray(m) ? m.join(', ') : m) || 'Gagal memuat laporan gangguan'
+    d.value = null
+  } finally { memuat.value = false }
 }
 onMounted(muat)
 watch(() => [filter.dari, filter.sampai], muat)
@@ -73,10 +81,17 @@ function unduhCsv() {
       <div class="lg-seg">
         <button v-for="p in [['7', '7 hari'], ['30', '30 hari'], ['bulan', 'Bulan ini'], ['90', '90 hari']]" :key="p[0]" :class="{ on: filter.preset === p[0] }" @click="pilih(p[0]!)">{{ p[1] }}</button>
       </div>
-      <input v-model="filter.dari" type="date" class="form-input lg-tgl" @change="filter.preset = 'custom'" /> –
-      <input v-model="filter.sampai" type="date" class="form-input lg-tgl" @change="filter.preset = 'custom'" />
+      <input v-model="filter.dari" type="date" class="form-input lg-tgl" :max="filter.sampai || undefined" aria-label="Dari tanggal" @change="filter.preset = 'custom'" /> –
+      <input v-model="filter.sampai" type="date" class="form-input lg-tgl" :min="filter.dari || undefined" aria-label="Sampai tanggal" @change="filter.preset = 'custom'" />
       <span v-if="memuat" class="muted">Memuat…</span>
     </div>
+
+    <p v-if="rentangSalah" class="form-error" role="alert">Tanggal "dari" tidak boleh setelah tanggal "sampai".</p>
+    <div v-else-if="galat" class="alert alert-danger lg-galat" role="alert">
+      <span>⚠ {{ galat }}</span>
+      <button class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">Coba lagi</button>
+    </div>
+    <p v-else-if="memuat && !d" class="muted">Memuat…</p>
 
     <template v-if="d">
       <div class="lg-kpi">
@@ -174,7 +189,7 @@ function unduhCsv() {
           <table class="data-table">
             <thead><tr><th>Tiket</th><th>Site</th><th>Sumber · jenis</th><th>Dibuka</th><th>Durasi</th><th>Status</th></tr></thead>
             <tbody>
-              <tr v-for="t in tiket.slice(0, 300)" :key="t.id_ticket" class="lg-baris" @click="router.push(`/operations/${t.id_ticket}`)">
+              <tr v-baris v-for="t in tiket.slice(0, 300)" :key="t.id_ticket" class="lg-baris" @click="router.push(`/operations/${t.id_ticket}`)">
                 <td><b class="mono">{{ t.nomor_tiket }}</b><div class="muted">{{ t.prioritas }}</div></td>
                 <td>{{ t.site }}<div class="muted">{{ t.kode_site }} · {{ t.pelanggan }}</div></td>
                 <td>{{ t.sumber }}<div class="muted">{{ t.kategori }}</div></td>
@@ -192,6 +207,7 @@ function unduhCsv() {
 </template>
 
 <style scoped>
+.lg-galat { align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .lg-tombol { display: flex; gap: 8px; flex-wrap: wrap; }
 .lg-filter { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
 .lg-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }

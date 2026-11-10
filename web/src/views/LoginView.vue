@@ -118,13 +118,14 @@ async function handleLogin() {
                 autocomplete="current-password"
                 :disabled="auth.loading"
               />
-              <button type="button" class="toggle-pw" @click="showPassword = !showPassword" tabindex="-1"
+              <button type="button" class="toggle-pw" @click="showPassword = !showPassword"
                 :aria-label="showPassword ? 'Sembunyikan password' : 'Tampilkan password'">
                 {{ showPassword ? '🙈' : '👁️' }}
               </button>
             </div>
           </div>
 
+          <p v-if="route.query.alasan === 'sesi' && !auth.error" class="info-msg" role="status">Sesi Anda sudah berakhir. Silakan masuk lagi — Anda akan kembali ke halaman sebelumnya.</p>
           <p v-if="auth.error" class="error-msg" role="alert">{{ auth.error }}</p>
 
           <button type="submit" class="btn-login" :disabled="auth.loading || !username || !password">
@@ -334,4 +335,5 @@ async function handleLogin() {
 @media (prefers-reduced-motion: reduce) {
   .node, .pulse-line { animation: none; }
 }
+.info-msg { margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: #eff6ff; color: #1e40af; font-size: 13px; }
 </style>

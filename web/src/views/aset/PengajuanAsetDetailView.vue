@@ -26,12 +26,28 @@ const formSelesai = ref({ serial_number: '', harga_aktual: 0, id_gudang: 0, tgl_
 const formError = ref('')
 
 onMounted(async () => {
+  aset.pengajuanCurrent = null   // jangan tampilkan data pengajuan lain yang tersisa di store
   await Promise.all([load(), fetchGudang()])
 })
 
-async function load() { await aset.fetchPengajuanOne(id) }
+// bedakan 404 (memang tidak ada) dari gagal muat lainnya
+const memuat = ref(false)
+const tidakAda = ref(false)
+const loadError = ref('')
+async function load() {
+  memuat.value = true; tidakAda.value = false; loadError.value = ''
+  try {
+    aset.pengajuanCurrent = (await api.get(`/assets/pengajuan/${id}`)).data.data
+  } catch (e: any) {
+    if (e?.response?.status === 404) tidakAda.value = true
+    else if (!aset.pengajuanCurrent) loadError.value = e?.response?.data?.message || 'Gagal memuat pengajuan'
+    else alertError(e, 'Gagal memuat ulang pengajuan')
+  } finally { memuat.value = false }
+}
+const gudangLoadError = ref(false)
 async function fetchGudang() {
-  try { gudangList.value = (await api.get('/master/gudang')).data.data } catch {}
+  gudangLoadError.value = false
+  try { gudangList.value = (await api.get('/master/gudang')).data.data } catch { gudangLoadError.value = true }
 }
 
 const p = computed(() => aset.pengajuanCurrent)
@@ -90,7 +106,7 @@ async function hapusAdmin() {
 
 <template>
   <div class="page" v-if="p">
-    <div class="breadcrumb"><span @click="router.push('/assets/pengajuan')">Pengajuan Aset</span> › #{{ p.id_pengajuan }}</div>
+    <div class="breadcrumb"><span v-baris @click="router.push('/assets/pengajuan')">Pengajuan Aset</span> › #{{ p.id_pengajuan }}</div>
     <div class="page-header">
       <div>
         <h2>{{ p.nama_item }}</h2>
@@ -127,7 +143,7 @@ async function hapusAdmin() {
       </template>
       <div class="info-row" v-if="p.aset_hasil">
         <span class="info-label">Aset Tercatat</span>
-        <span class="link" @click="router.push(`/assets/${p.aset_hasil.id_aset}`)">{{ p.aset_hasil.kode_aset }} →</span>
+        <span v-baris class="link" @click="router.push(`/assets/${p.aset_hasil.id_aset}`)">{{ p.aset_hasil.kode_aset }} →</span>
       </div>
     </div>
 
@@ -155,6 +171,7 @@ async function hapusAdmin() {
             <option :value="0">— Pilih gudang —</option>
             <option v-for="g in gudangList" :key="g.id_gudang" :value="g.id_gudang">[{{ g.kode_gudang }}] {{ g.nama_gudang }}</option>
           </select>
+          <span v-if="gudangLoadError" class="hint-error">⚠ Gagal memuat daftar gudang — <a href="#" @click.prevent="fetchGudang">coba lagi</a>.</span>
         </div>
         <div class="field">
           <label>Tanggal Terima</label>
@@ -170,11 +187,20 @@ async function hapusAdmin() {
       </div>
     </div>
   </div>
-  <div v-else-if="aset.loading" class="page"><div class="loading-state">Memuat...</div></div>
-  <div v-else class="page"><div class="empty-state"><div class="empty-title">Pengajuan tidak ditemukan.</div></div></div>
+  <div v-else-if="memuat" class="page"><div class="loading-state">Memuat...</div></div>
+  <div v-else-if="loadError" class="page"><div class="empty-state">
+    <div class="empty-title">{{ loadError }}</div>
+    <button class="btn-cancel" @click="load">Coba lagi</button>
+    <button class="btn-cancel" @click="router.push('/assets/pengajuan')">← Daftar Pengajuan</button>
+  </div></div>
+  <div v-else class="page"><div class="empty-state">
+    <div class="empty-title">Pengajuan tidak ditemukan.</div>
+    <button class="btn-cancel" @click="router.push('/assets/pengajuan')">← Daftar Pengajuan</button>
+  </div></div>
 </template>
 
 <style scoped>
+.hint-error { display: block; font-size: 11px; color: #d97706; margin-top: 4px; }
 .page { max-width: 800px; }
 .breadcrumb { font-size: 13px; color: var(--text-3); margin-bottom: 16px; }
 .breadcrumb span { cursor: pointer; color: var(--primary-hover); }

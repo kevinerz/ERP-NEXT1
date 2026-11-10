@@ -564,3 +564,8 @@ body {
   /* Extra hide */
   .col-hide-xs { display: none !important; }
 }
+
+/* Baris/kartu yang bisa diklik (v-baris) — penanda fokus keyboard */
+.bisa-diklik { cursor: pointer; }
+.bisa-diklik:focus { outline: none; }
+.bisa-diklik:focus-visible { outline: 2px solid #3b82f6; outline-offset: -2px; }

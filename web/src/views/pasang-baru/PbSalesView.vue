@@ -101,7 +101,7 @@ const posisiSurvey = (s: Survey) => (s.status === 'OPS' ? 'Sedang dicek OPS' : s
       <div class="detail-section-header"><b>⚡ Perlu tindakan</b> <small class="muted">— terlama di atas</small></div>
       <div class="detail-section-body ps-tugas-wadah">
         <p v-if="!memuat && !tugas.length" class="muted ps-kosong">Tidak ada yang menunggu Anda. 👍</p>
-        <div v-for="x in tugas" :key="x.kunci" class="ps-tugas" :class="x.warna" @click="router.push(x.url)">
+        <div v-baris v-for="x in tugas" :key="x.kunci" class="ps-tugas" :class="x.warna" @click="router.push(x.url)">
           <span class="ps-ikon">{{ x.ikon }}</span>
           <div class="ps-isi"><b>{{ x.judul }}</b><small>{{ x.ket }}</small></div>
           <small class="muted ps-umur">{{ umur(x.waktu) }}</small>
@@ -122,7 +122,7 @@ const posisiSurvey = (s: Survey) => (s.status === 'OPS' ? 'Sedang dicek OPS' : s
         <thead><tr><th>Survey</th><th>Perusahaan · PIC</th><th>Site</th><th>Posisi</th><th>Hasil OPS</th><th v-if="!saya">Sales</th></tr></thead>
         <tbody>
           <tr v-if="!memuat && !survey.length"><td colspan="6" class="muted pusat">Belum ada survey berjalan.</td></tr>
-          <tr v-for="s in survey" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
+          <tr v-baris v-for="s in survey" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
             <td><b>{{ s.nomor_survey }}</b><br /><small class="muted">{{ fmtDate(s.updated_at) }}</small></td>
             <td>{{ s.nama_perusahaan }}<br /><small class="muted">{{ s.nama_pic }}<template v-if="s.telp_pic"> · {{ s.telp_pic }}</template></small></td>
             <td>{{ s.jumlah_site }}<br /><small class="muted">{{ s.kota.slice(0, 3).join(', ') }}<template v-if="s.kota.length > 3">…</template></small></td>
@@ -143,7 +143,7 @@ const posisiSurvey = (s: Survey) => (s.status === 'OPS' ? 'Sedang dicek OPS' : s
         <thead><tr><th>SPH</th><th>Pelanggan</th><th>Site</th><th class="kanan">Total / bulan</th><th>Status</th><th v-if="!saya">Sales</th></tr></thead>
         <tbody>
           <tr v-if="!memuat && !sph.length"><td colspan="6" class="muted pusat">Belum ada SPH.</td></tr>
-          <tr v-for="s in sph" :key="s.id_sph" class="klik" @click="router.push(`/pasang-baru/sph/${s.id_sph}`)">
+          <tr v-baris v-for="s in sph" :key="s.id_sph" class="klik" @click="router.push(`/pasang-baru/sph/${s.id_sph}`)">
             <td><b>{{ s.nomor_sph }}</b><br /><small class="muted">{{ fmtDate(s.updated_at) }}</small></td>
             <td>{{ s.pelanggan.nama_pelanggan }}</td>
             <td>{{ s.jumlah_site }}</td>
@@ -158,7 +158,7 @@ const posisiSurvey = (s: Survey) => (s.status === 'OPS' ? 'Sedang dicek OPS' : s
         <thead><tr><th>No. PB</th><th>Site</th><th>Pelanggan</th><th>Layanan</th><th>RFS</th><th>Tahap</th><th v-if="!saya">Sales</th></tr></thead>
         <tbody>
           <tr v-if="!memuat && !order.length"><td colspan="7" class="muted pusat">Belum ada order berjalan.</td></tr>
-          <tr v-for="o in order" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
+          <tr v-baris v-for="o in order" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
             <td><b>{{ o.nomor_pb }}</b><br /><small class="muted">{{ o.sph.nomor_sph }}</small></td>
             <td>{{ o.nama_site }}<br /><small class="muted">{{ o.site?.kode_site }}<template v-if="o.kota"> · {{ o.kota }}</template></small></td>
             <td>{{ o.sph.pelanggan.nama_pelanggan }}</td>

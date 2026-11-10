@@ -4,6 +4,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
+import { confirmDialog } from '@/composables/useDialog'
 
 interface Foto { id_foto: number; jenis_foto: string; file_path: string; created_at: string }
 interface Info {
@@ -34,6 +35,11 @@ async function jalankan(label: string, fn: () => Promise<any>) {
   try { const { data } = await fn(); info.value = data.data } catch (e) { pesan.value = errMsg(e) } finally { proses.value = '' }
 }
 onMounted(muat)
+// Pesan error bisa jauh dari tombol yang ditekan (layar HP): gulir ke pesan terdekat
+watch(pesan, (v) => {
+  if (!v || proses.value) return
+  nextTick(() => { const el = [...document.querySelectorAll('.vl-pesan')].pop(); el?.scrollIntoView({ behavior: 'smooth', block: 'center' }) })
+})
 
 const jam = (s: string | null) => (s ? new Date(s).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '')
 const hpWa = (n: string) => { let x = n.replace(/\D/g, ''); if (x.startsWith('0')) x = '62' + x.slice(1); return x }
@@ -82,8 +88,9 @@ async function pilihFoto(e: Event, jenis: string) {
   }
   proses.value = ''
 }
-function hapusFoto(f: Foto) {
-  if (!confirm('Hapus foto ini?')) return
+async function hapusFoto(f: Foto) {
+  if (proses.value) return
+  if (!(await confirmDialog({ title: 'Hapus foto?', message: 'Foto ini akan dihapus dari laporan visit.', confirmLabel: 'Hapus', variant: 'danger' }))) return
   jalankan('hapus', () => http.delete(`/lapangan/${token}/foto/${f.id_foto}`))
 }
 const lihat = ref<string | null>(null)
@@ -179,7 +186,7 @@ const gagalTerakhir = computed(() => (info.value?.catatan_teknisi || '').split('
         <small class="muted">{{ info.nomor_wo }}</small>
       </section>
 
-      <p v-if="pesan" class="vl-pesan">{{ pesan }}</p>
+      <p v-if="pesan && !tahapSelesai && !tahapGagal" class="vl-pesan" role="alert">{{ pesan }}</p>
 
       <!-- Sudah selesai -->
       <section v-if="info.status_wo === 'Completed'" class="vl-kartu vl-ok">
@@ -217,7 +224,7 @@ const gagalTerakhir = computed(() => (info.value?.catatan_teknisi || '').split('
             <div class="vl-foto-grid">
               <div v-for="f in fotoJenis(j)" :key="f.id_foto" class="vl-foto">
                 <img :src="f.file_path" alt="" @click="lihat = f.file_path" />
-                <button aria-label="Hapus foto" @click="hapusFoto(f)">✕</button>
+                <button aria-label="Hapus foto" :disabled="!!proses" @click="hapusFoto(f)">✕</button>
               </div>
               <label class="vl-foto-tambah" :class="{ mati: !info.checkin_at || !!proses }">
                 <input type="file" accept="image/*" capture="environment" multiple hidden :disabled="!info.checkin_at || !!proses" @change="pilihFoto($event, j)" />
@@ -249,6 +256,7 @@ const gagalTerakhir = computed(() => (info.value?.catatan_teknisi || '').split('
               <label class="vl-label">Alasan *</label>
               <input v-model="alasanTanpaTtd" placeholder="mis. PIC sedang tidak di tempat, sudah konfirmasi via telepon" />
             </template>
+            <p v-if="pesan" class="vl-pesan" role="alert">{{ pesan }}</p>
             <div class="vl-tombol-baris">
               <button class="vl-btn vl-btn-ghost" :disabled="!!proses" @click="tahapSelesai = false">Batal</button>
               <button class="vl-btn vl-btn-sukses" :disabled="!bisaKirim || !!proses" @click="kirimSelesai">{{ proses === 'selesai' ? 'Mengirim…' : 'Kirim laporan selesai' }}</button>
@@ -263,6 +271,7 @@ const gagalTerakhir = computed(() => (info.value?.catatan_teknisi || '').split('
             <h3>Tidak bisa dikerjakan</h3>
             <label v-for="a in ALASAN" :key="a" class="vl-cek"><input v-model="alasan" type="radio" :value="a" /> {{ a }}</label>
             <textarea v-model="catatanGagal" rows="2" placeholder="Keterangan tambahan (opsional)" />
+            <p v-if="pesan && !tahapSelesai" class="vl-pesan" role="alert">{{ pesan }}</p>
             <div class="vl-tombol-baris">
               <button class="vl-btn vl-btn-ghost" :disabled="!!proses" @click="tahapGagal = false">Batal</button>
               <button class="vl-btn vl-btn-bahaya" :disabled="!alasan || !!proses" @click="kirimGagal">{{ proses === 'gagal' ? 'Mengirim…' : 'Laporkan' }}</button>
@@ -273,7 +282,7 @@ const gagalTerakhir = computed(() => (info.value?.catatan_teknisi || '').split('
       </template>
     </template>
 
-    <div v-if="lihat" class="vl-lihat" @click="lihat = null"><img :src="lihat" alt="" /></div>
+    <div v-baris v-if="lihat" class="vl-lihat" @click="lihat = null"><img :src="lihat" alt="" /></div>
   </div>
 </template>
 
@@ -313,6 +322,7 @@ const gagalTerakhir = computed(() => (info.value?.catatan_teknisi || '').split('
 .vl-foto { position: relative; aspect-ratio: 1; }
 .vl-foto img { width: 100%; height: 100%; object-fit: cover; border-radius: 10px; }
 .vl-foto button { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgba(15, 23, 42, .7); color: #fff; font-size: 12px; cursor: pointer; }
+.vl-foto button:disabled { opacity: .4; cursor: not-allowed; }
 .vl-foto-tambah { aspect-ratio: 1; border: 2px dashed #94a3b8; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: #475569; }
 .vl-foto-tambah span { font-size: 26px; }
 .vl-foto-tambah.mati { opacity: .4; cursor: not-allowed; }

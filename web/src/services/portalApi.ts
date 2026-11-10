@@ -14,10 +14,12 @@ portalApi.interceptors.request.use((config) => {
 portalApi.interceptors.response.use(
   (res) => res,
   async (err) => {
-    if (err.response?.status === 401) {
+    // 401 dari login itu sendiri = password salah → biarkan pesan tampil, jangan reload halaman
+    const dariLogin = String(err.config?.url || '').includes('/portal/auth/')
+    if (err.response?.status === 401 && !dariLogin) {
       localStorage.removeItem('portal_token')
       localStorage.removeItem('portal_user')
-      window.location.href = '/portal/login'
+      if (!window.location.pathname.startsWith('/portal/login')) window.location.href = '/portal/login?alasan=sesi'
     }
     return Promise.reject(err)
   },

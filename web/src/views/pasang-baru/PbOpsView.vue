@@ -101,7 +101,7 @@ const KET: Record<string, string> = { ajukan: 'Diajukan Sales', teknis_selesai: 
           <tr v-if="!memuat && !(tab === 'antrian' ? antrian : teknis).length">
             <td colspan="7" class="muted pusat">{{ tab === 'antrian' ? 'Antrian kosong — tidak ada survey menunggu OPS. 👍' : 'Tidak ada survey di Teknis.' }}</td>
           </tr>
-          <tr v-for="s in (tab === 'antrian' ? antrian : teknis)" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
+          <tr v-baris v-for="s in (tab === 'antrian' ? antrian : teknis)" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
             <td><b class="po-umur" :class="kelasUmur(s.status_at)">{{ umur(s.status_at) }}</b></td>
             <td><b>{{ s.nama_perusahaan }}</b><br /><small class="muted">{{ s.nomor_survey }}</small></td>
             <td>{{ s.jumlah_site }} site<br /><small class="muted">{{ s.kota.slice(0, 3).join(', ') || '-' }}<template v-if="s.kota.length > 3"> +{{ s.kota.length - 3 }}</template></small></td>
@@ -124,7 +124,7 @@ const KET: Record<string, string> = { ajukan: 'Diajukan Sales', teknis_selesai: 
         <thead><tr><th>Lama</th><th>No. PB · Site</th><th>Pelanggan</th><th>Layanan</th><th>Link vendor</th><th class="kanan">Modal · IKG</th><th>RFS</th></tr></thead>
         <tbody>
           <tr v-if="!memuat && !order.length"><td colspan="7" class="muted pusat">Tidak ada order di tahap OPS. 👍</td></tr>
-          <tr v-for="o in order" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
+          <tr v-baris v-for="o in order" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
             <td><b class="po-umur" :class="kelasUmur(o.tahap_at)">{{ umur(o.tahap_at) }}</b></td>
             <td><b>{{ o.nomor_pb }}</b> · {{ o.nama_site }}<br /><small class="muted">{{ o.site?.kode_site }}<template v-if="o.kota"> · {{ o.kota }}</template></small></td>
             <td>{{ o.sph.pelanggan.nama_pelanggan }}</td>
@@ -141,7 +141,7 @@ const KET: Record<string, string> = { ajukan: 'Diajukan Sales', teknis_selesai: 
         <thead><tr><th>Survey · Perusahaan</th><th>Hasil</th><th class="kanan">Modal / bln</th><th class="kanan">IKG</th><th>Status</th><th>OPS</th></tr></thead>
         <tbody>
           <tr v-if="!memuat && !riwayat.length"><td colspan="6" class="muted pusat">Belum ada.</td></tr>
-          <tr v-for="s in riwayat" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
+          <tr v-baris v-for="s in riwayat" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
             <td><b>{{ s.nama_perusahaan }}</b><br /><small class="muted">{{ s.nomor_survey }}</small></td>
             <td><span class="hijau">{{ s.cover }} cover</span><template v-if="s.tidak_cover"> · <span class="oranye">{{ s.tidak_cover }} tidak cover</span></template></td>
             <td class="kanan">{{ fmtRupiah(s.modal_vendor) }}</td>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { fmtDateTime, fmtRupiah } from '@/composables/useFormat'
@@ -23,6 +23,7 @@ const id = computed(() => Number(route.params.id))
 const s = ref<any>(null)
 const vendorRef = ref<Vendor[]>([])
 const memuat = ref(true)
+const muatError = ref('')
 const proses = ref(false)
 const edit = ref<SiteEdit[]>([])
 const catatanOps = ref('')
@@ -54,13 +55,22 @@ async function muat() {
     s.value = data.data
     if (ref_) vendorRef.value = ref_.data.data.vendor
     isiEdit()
+    muatError.value = ''
   } catch (e) {
-    alertError(e, 'Gagal memuat survey')
+    // muat awal gagal → error di halaman; muat ulang setelah aksi → modal
+    if (!s.value) { const m = (e as any)?.response?.data?.message; muatError.value = Array.isArray(m) ? m.join(', ') : m || 'Gagal memuat survey' }
+    else alertError(e, 'Gagal memuat survey')
   } finally {
     memuat.value = false
   }
 }
 onMounted(muat)
+
+// cegah perubahan OPS/Teknis hilang saat pindah halaman
+onBeforeRouteLeave(async () => {
+  if (!berubah.value) return true
+  return await confirmDialog({ title: 'Perubahan belum disimpan', message: 'Ada perubahan yang belum disimpan. Tinggalkan halaman ini?', confirmLabel: 'Tinggalkan', variant: 'warning' })
+})
 
 const hak = computed(() => s.value?.hak ?? { sales: false, ops: false, teknis: false })
 const modeOps = computed(() => s.value?.status === 'OPS' && hak.value.ops)
@@ -125,6 +135,7 @@ async function hapus() {
   proses.value = true
   try {
     await api.delete(`/pasang-baru/survey/${id.value}`)
+    berubah.value = false
     router.push('/pasang-baru?tab=Survey')
   } catch (e) { alertError(e) } finally { proses.value = false }
 }
@@ -215,6 +226,11 @@ const PETUNJUK: Record<string, string> = {
 <template>
   <div class="page">
     <p v-if="memuat && !s" class="muted">Memuat…</p>
+    <div v-else-if="!s && muatError" class="alert alert-danger" role="alert">
+      <span>⚠ {{ muatError }}</span>
+      <button class="btn btn-sm btn-ghost" @click="muat">Coba lagi</button>
+      <button class="btn btn-sm btn-ghost" @click="router.push('/pasang-baru?tab=Survey')">← Daftar</button>
+    </div>
     <template v-else-if="s">
       <div class="page-header">
         <div>

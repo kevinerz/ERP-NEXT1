@@ -415,7 +415,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
           <div v-if="email.loading" class="loading">Memuat email...</div>
           <div v-else-if="!email.list.length" class="empty">Tidak ada email</div>
           <div v-else class="msg-list">
-            <div v-for="m in email.list" :key="m.uid"
+            <div v-baris v-for="m in email.list" :key="m.uid"
               :class="['msg-row', { unread: !m.seen, active: selectedUid === m.uid }]"
               @click="openMessage(m.uid)">
               <div class="msg-row-top">
@@ -451,7 +451,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
               <div><strong>Tanggal:</strong> {{ fmtTgl(email.current.date) }}</div>
             </div>
             <div v-if="email.current.attachments.length" class="attachments">
-              <div v-for="a in email.current.attachments" :key="a.partId" class="attachment-chip"
+              <div v-baris v-for="a in email.current.attachments" :key="a.partId" class="attachment-chip"
                 @click="unduhLampiran(email.current!.uid, a.partId, a.filename)">
                 📎 {{ a.filename }} <span class="text-gray">({{ fmtSize(a.size) }})</span>
               </div>
@@ -486,7 +486,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
     />
 
     <!-- ─── MODAL COMPOSE ─── -->
-    <div v-if="showCompose" class="modal-overlay" @click.self="tutupCompose">
+    <div v-if="showCompose" class="modal-overlay" data-jaga-sendiri @click.self="tutupCompose">
       <div class="modal">
         <h3>{{ editingDraftUid ? '📝 Edit Draf' : '✏️ Tulis Email' }}</h3>
         <div class="field">

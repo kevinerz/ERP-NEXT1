@@ -7,6 +7,7 @@ import api from '@/services/api'
 import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import BasePagination from '@/components/BasePagination.vue'
+import { useFilterUrl } from '@/composables/useFilterUrl'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,6 +18,8 @@ const canForce = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'
 const search = ref('')
 const filterTahapan = ref((route.query.tahapan as string) || '')
 const page = ref(1)
+// Filter & halaman disimpan di URL — tetap sama setelah kembali dari halaman detail
+useFilterUrl({ q: search, tahapan: filterTahapan, page })
 
 // Confirm hapus
 const confirmHapus = ref(false)
@@ -145,7 +148,7 @@ const fmtDate = fmtDateShort
           <tr v-if="!sales.oppList.length">
             <td colspan="9" class="empty">Tidak ada opportunity</td>
           </tr>
-          <tr
+          <tr v-baris
             v-for="o in sales.oppList" :key="o.id_opportunity"
             class="row-link"
             @click="router.push(`/sales/opportunity/${o.id_opportunity}`)"

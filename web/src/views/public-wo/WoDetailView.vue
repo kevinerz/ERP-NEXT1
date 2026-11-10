@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, toast } from '@/composables/useDialog'
 import { printSuratTugas, printBeritaAcara, printSuratJalan } from '@/composables/usePrint'
 import { fmtDateTime, fmtRupiahPenuh as fmtRp } from '@/composables/useFormat'
 
@@ -61,14 +61,17 @@ const KETERANGAN_MATERIAL = ['Penyerahan', 'Terpakai', 'Penarikan']
 const assets = ref<AssetOption[]>([])
 const assetsLoaded = ref(false)
 const assetsLoadError = ref(false)
+const assetsTotal = ref(0) // total aset di gudang (bisa > yang termuat)
 const materialRows = ref<MaterialRow[]>([])
 
 async function fetchAssets() {
   if (assetsLoaded.value) return
   assetsLoadError.value = false
   try {
-    const r = await api.get('/assets', { params: { status_aset: 'Di_Gudang', limit: 100 } })
+    // 200 = batas maksimum API /assets
+    const r = await api.get('/assets', { params: { status_aset: 'Di_Gudang', limit: 200 } })
     assets.value = r.data.data || []
+    assetsTotal.value = r.data.meta?.total ?? assets.value.length
     assetsLoaded.value = true
   } catch {
     assetsLoadError.value = true // dropdown kosong bukan krn stok habis, tapi API gagal — beri tahu user
@@ -108,13 +111,18 @@ const editingCatatan = ref(false)
 const catatanDraft   = ref('')
 const savingCatatan  = ref(false)
 
-async function fetchWo() {
-  loading.value = true; error.value = ''
+// silent = muat ulang setelah aksi: tanpa layar "Memuat…" & data lama tetap tampil
+async function fetchWo(silent = false) {
+  if (!silent) { loading.value = true; error.value = '' }
   try {
     const { data } = await api.get(`/public-wo/${id}`)
     wo.value = data.data
-  } catch {
-    error.value = 'Work Order tidak ditemukan'
+    error.value = ''
+  } catch (e: any) {
+    const m = e?.response?.data?.message
+    const pesan = e?.response?.status === 404 ? 'Work Order tidak ditemukan' : (Array.isArray(m) ? m.join(', ') : m) || 'Gagal memuat Work Order'
+    if (silent && wo.value) toast(`Gagal memuat ulang data: ${pesan}`, 'danger')
+    else error.value = pesan
   } finally {
     loading.value = false
   }
@@ -126,7 +134,7 @@ async function advanceStatus() {
   updatingStatus.value = true
   try {
     await api.patch(`/public-wo/${id}`, { status_wo: next })
-    await fetchWo()
+    await fetchWo(true)
   } catch (e: any) {
     alertError(e, 'Gagal update status Work Order')
   } finally {
@@ -139,7 +147,7 @@ async function cancelWo() {
   updatingStatus.value = true
   try {
     await api.patch(`/public-wo/${id}`, { status_wo: 'Dibatalkan' })
-    await fetchWo()
+    await fetchWo(true)
   } catch (e: any) {
     alertError(e, 'Gagal membatalkan Work Order')
   } finally {
@@ -171,7 +179,7 @@ async function submitBa() {
     }
     await api.post(`/public-wo/${id}/berita-acara`, payload)
     showBaModal.value = false
-    await fetchWo()
+    await fetchWo(true)
   } catch (e: any) {
     alertError(e, 'Gagal membuat BA')
   } finally {
@@ -188,7 +196,7 @@ async function saveCatatan() {
   savingCatatan.value = true
   try {
     await api.patch(`/public-wo/${id}`, { catatan_teknisi: catatanDraft.value })
-    await fetchWo()
+    await fetchWo(true)
     editingCatatan.value = false
   } catch (e: any) {
     alertError(e, 'Gagal menyimpan catatan')
@@ -197,19 +205,25 @@ async function saveCatatan() {
   }
 }
 
-onMounted(fetchWo)
+onMounted(() => fetchWo())
 </script>
 
 <template>
   <div class="page">
     <div class="breadcrumb">
-      <span class="bc-link" @click="router.push('/public-wo')">Work Order</span>
+      <span v-baris class="bc-link" @click="router.push('/public-wo')">Work Order</span>
       <span class="bc-sep">›</span>
       <span>{{ wo?.nomor_wo || '…' }}</span>
     </div>
 
     <div v-if="loading" class="state">Memuat…</div>
-    <div v-else-if="error" class="state error">{{ error }}</div>
+    <div v-else-if="error" class="state error" role="alert">
+      {{ error }}
+      <div style="margin-top:10px">
+        <button v-if="error !== 'Work Order tidak ditemukan'" class="btn-secondary" @click="fetchWo()">Coba lagi</button>
+        <button v-else class="btn-secondary" @click="router.push('/public-wo')">← Kembali ke daftar</button>
+      </div>
+    </div>
 
     <template v-else-if="wo">
       <!-- Header -->
@@ -222,7 +236,7 @@ onMounted(fetchWo)
             <span class="meta-sep">·</span>
             <span class="meta-text">Jadwal: {{ fmtDateTime(wo.tgl_jadwal) }}</span>
             <span v-if="wo.ticket" class="meta-sep">·</span>
-            <span v-if="wo.ticket" class="meta-link" @click="router.push(`/operations/${wo.ticket.id_ticket}`)">
+            <span v-baris v-if="wo.ticket" class="meta-link" @click="router.push(`/operations/${wo.ticket.id_ticket}`)">
               ↳ Tiket {{ wo.ticket.nomor_tiket }}
             </span>
           </div>
@@ -456,12 +470,15 @@ onMounted(fetchWo)
                   <select v-model="row.keterangan" class="form-control material-ket">
                     <option v-for="k in KETERANGAN_MATERIAL" :key="k" :value="k">{{ k }}</option>
                   </select>
-                  <button type="button" class="btn-remove-row" title="Hapus baris" @click="removeMaterialRow(i)">✕</button>
+                  <button type="button" class="btn-remove-row" title="Hapus baris" aria-label="Hapus baris" @click="removeMaterialRow(i)">✕</button>
                 </div>
               </div>
             </div>
             <div v-if="assetsLoadError" class="material-hint material-hint-error">⚠ Gagal memuat daftar aset gudang — pakai input manual, atau coba lagi nanti.</div>
-            <div v-else class="material-hint">Item dari gudang otomatis memotong stok &amp; tercatat di riwayat mutasi aset.</div>
+            <div v-else class="material-hint">
+              Item dari gudang otomatis memotong stok &amp; tercatat di riwayat mutasi aset.
+              <template v-if="assetsTotal > assets.length"><br />⚠ Hanya {{ assets.length }} dari {{ assetsTotal }} aset gudang yang ditampilkan — bila barang tidak ada di daftar, pakai input manual.</template>
+            </div>
           </div>
         </div>
         <div class="modal-footer">

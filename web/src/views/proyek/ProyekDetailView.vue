@@ -274,7 +274,7 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
           <span class="ic-label">Actual Selesai</span>
           <span class="ic-value" style="color:#15803d;font-weight:700">{{ fmtDate(proyek.current.tgl_actual_selesai) }}</span>
         </div>
-        <div class="info-chip info-chip-link" v-if="proyek.current.kontrak"
+        <div v-baris class="info-chip info-chip-link" v-if="proyek.current.kontrak"
           @click="router.push(`/contracts/${proyek.current.kontrak.id_kontrak}`)">
           <span class="ic-label">Kontrak</span>
           <span class="ic-value fw">{{ proyek.current.kontrak.nomor_kontrak }}</span>

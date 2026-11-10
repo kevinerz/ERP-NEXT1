@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtRupiah, fmtDate } from '@/composables/useFormat'
 import { KELAS_SPH, KELAS_SURVEY, KELAS_TAHAP, TAHAP_ORDER, umur } from './pb'
+import { useFilterUrl } from '@/composables/useFilterUrl'
 
 interface Sph {
   id_sph: number; nomor_sph: string; status: string; pelanggan: { nama_pelanggan: string }
@@ -26,6 +27,8 @@ const tab = ref<string>(TAB.includes(route.query.tab as any) ? (route.query.tab 
 const cari = ref('')
 const statusSph = ref('')
 const statusSurvey = ref('aktif')
+// Filter & halaman disimpan di URL — tetap sama setelah kembali dari halaman detail
+useFilterUrl({ q: cari, sph: statusSph, survey: statusSurvey })
 const ringkas = ref<{ tahap: Record<string, number>; sph: Record<string, number>; survey: Record<string, number> }>({ tahap: {}, sph: {}, survey: {} })
 const survey = ref<Survey[]>([])
 const sph = ref<Sph[]>([])
@@ -99,7 +102,7 @@ const jumlah = (t: string) => (t === 'Survey' ? ['OPS', 'Teknis', 'Siap SPH'].re
         <thead><tr><th>No. Survey</th><th>Perusahaan</th><th>PIC</th><th>Site</th><th>Sales</th><th>Status</th><th>Diperbarui</th></tr></thead>
         <tbody>
           <tr v-if="!memuat && !survey.length"><td colspan="7" class="muted pusat">Belum ada survey<template v-if="statusSurvey && statusSurvey !== 'aktif'"> berstatus {{ statusSurvey }}</template>.</td></tr>
-          <tr v-for="s in survey" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
+          <tr v-baris v-for="s in survey" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
             <td><b>{{ s.nomor_survey }}</b></td>
             <td>{{ s.nama_perusahaan }}<br /><small class="muted">{{ s.id_pelanggan ? 'Pelanggan' : 'Calon pelanggan' }}</small></td>
             <td>{{ s.nama_pic }}<br /><small class="muted">{{ s.telp_pic }}</small></td>
@@ -119,7 +122,7 @@ const jumlah = (t: string) => (t === 'Survey' ? ['OPS', 'Teknis', 'Siap SPH'].re
         <thead><tr><th>No. SPH</th><th>Pelanggan</th><th>Site</th><th class="kanan">Total bulanan</th><th>Sales</th><th>Status</th><th>Diperbarui</th></tr></thead>
         <tbody>
           <tr v-if="!memuat && !sph.length"><td colspan="7" class="muted pusat">Belum ada SPH.</td></tr>
-          <tr v-for="s in sph" :key="s.id_sph" class="klik" @click="router.push(`/pasang-baru/sph/${s.id_sph}`)">
+          <tr v-baris v-for="s in sph" :key="s.id_sph" class="klik" @click="router.push(`/pasang-baru/sph/${s.id_sph}`)">
             <td><b>{{ s.nomor_sph }}</b></td>
             <td>{{ s.pelanggan.nama_pelanggan }}</td>
             <td>{{ s.jumlah_site }}</td>
@@ -135,7 +138,7 @@ const jumlah = (t: string) => (t === 'Survey' ? ['OPS', 'Teknis', 'Siap SPH'].re
         <thead><tr><th>No. PB</th><th>Site</th><th>Pelanggan</th><th>Layanan</th><th>RFS</th><th>Tahap</th><th>Umur</th></tr></thead>
         <tbody>
           <tr v-if="!memuat && !order.length"><td colspan="7" class="muted pusat">Tidak ada order di tahap ini.</td></tr>
-          <tr v-for="o in order" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
+          <tr v-baris v-for="o in order" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
             <td><b>{{ o.nomor_pb }}</b><br /><small class="muted">{{ o.sph.nomor_sph }}</small></td>
             <td>{{ o.nama_site }}<br /><small class="muted">{{ o.site?.kode_site }}<template v-if="o.kota"> · {{ o.kota }}</template></small></td>
             <td>{{ o.sph.pelanggan.nama_pelanggan }}</td>

@@ -14,8 +14,12 @@ watch(bisaKelolaKoneksi, (v) => { if (!v && tab.value === 'koneksi') tab.value =
 
 // ─── STATUS ───────────────────────────────────────────────────
 const status = ref<any>(null)
+const statusError = ref('')
+// pesan error dari server (untuk ditampilkan inline)
+const pesanErr = (e: any, f: string) => { const m = e?.response?.data?.message; return Array.isArray(m) ? m.join(', ') : m || f }
 async function fetchStatus() {
-  try { status.value = (await api.get('/uptime-kuma/status')).data.data } catch {}
+  try { status.value = (await api.get('/uptime-kuma/status')).data.data; statusError.value = '' }
+  catch (e) { statusError.value = pesanErr(e, 'Gagal memuat status Uptime Kuma') }
 }
 
 // ─── KONEKSI ──────────────────────────────────────────────────
@@ -24,18 +28,24 @@ const webhookPath = ref<string | null>(null)
 const savingConfig = ref(false)
 const configMsg = ref('')
 const regenerating = ref(false)
+// Simpan / buat token baru boleh setelah config termuat — cegah menimpa config/token lama tanpa sadar
+const configLoaded = ref(false)
+const configLoadError = ref('')
 
 const webhookUrl = computed(() => webhookPath.value ? `${window.location.origin}${webhookPath.value}` : null)
 
 async function fetchConfig() {
+  configLoadError.value = ''
   try {
     const d = (await api.get('/uptime-kuma/config')).data.data
     configForm.value.base_url = d.base_url
     configForm.value.status_page_slug = d.status_page_slug
     webhookPath.value = d.webhook_path
-  } catch {}
+    configLoaded.value = true
+  } catch (e) { configLoadError.value = pesanErr(e, 'Gagal memuat konfigurasi Uptime Kuma') }
 }
 async function saveConfig() {
+  if (!configLoaded.value) return
   savingConfig.value = true; configMsg.value = ''; configErr.value = false
   try {
     await api.patch('/uptime-kuma/config', configForm.value)
@@ -60,11 +70,17 @@ async function buatTokenBaru() {
   } catch (e: any) { configErr.value = true; configMsg.value = e.response?.data?.message || 'Gagal membuat token' }
   finally { regenerating.value = false }
 }
-function salinUrl() {
+async function salinUrl() {
   if (!webhookUrl.value) return
-  navigator.clipboard?.writeText(webhookUrl.value)
-  configErr.value = false
-  configMsg.value = 'URL disalin ke clipboard.'
+  try {
+    if (!navigator.clipboard) throw new Error('no clipboard')
+    await navigator.clipboard.writeText(webhookUrl.value)
+    configErr.value = false
+    configMsg.value = 'URL disalin ke clipboard.'
+  } catch {
+    configErr.value = true
+    configMsg.value = 'Gagal menyalin otomatis — salin URL di atas secara manual.'
+  }
 }
 const configErr = ref(false)
 
@@ -72,6 +88,7 @@ const configErr = ref(false)
 const mappingList = ref<any[]>([])
 const unmatchedList = ref<any[]>([])
 const mappingLoading = ref(false)
+const mappingError = ref('')
 const mapForm = ref({ monitor_id: '', monitor_name: '', id_site: 0 })
 const mapSubmitting = ref(false)
 const mapMsg = ref('')
@@ -79,12 +96,12 @@ const mapErr = ref(false)
 const hapusMappingId = ref(0)
 
 async function fetchMapping() {
-  mappingLoading.value = true
+  mappingLoading.value = true; mappingError.value = ''
   try {
     const [m, u] = await Promise.all([api.get('/uptime-kuma/mapping'), api.get('/uptime-kuma/mapping/unmatched')])
     mappingList.value = m.data.data
     unmatchedList.value = u.data.data
-  } catch {} finally { mappingLoading.value = false }
+  } catch (e) { mappingError.value = pesanErr(e, 'Gagal memuat mapping') } finally { mappingLoading.value = false }
 }
 
 async function submitMapping() {
@@ -162,6 +179,8 @@ onMounted(async () => {
       <span>{{ status.pesan }}</span>
     </div>
 
+    <p v-if="statusError" class="msg err">⚠ {{ statusError }} <button class="btn-secondary" @click="fetchStatus">Coba lagi</button></p>
+
     <div class="tabs">
       <button v-if="bisaKelolaKoneksi" :class="['tab', { active: tab === 'koneksi' }]" @click="tab = 'koneksi'">⚙️ Koneksi</button>
       <button :class="['tab', { active: tab === 'mapping' }]" @click="tab = 'mapping'">🔗 Mapping Monitor → Site</button>
@@ -170,6 +189,7 @@ onMounted(async () => {
 
     <!-- ─── TAB: KONEKSI ─── -->
     <div v-if="tab === 'koneksi' && bisaKelolaKoneksi" class="tab-content">
+      <p v-if="configLoadError" class="msg err">⚠ {{ configLoadError }} — form belum berisi konfigurasi tersimpan, simpan dinonaktifkan. <button class="btn-secondary" @click="fetchConfig">Coba lagi</button></p>
       <div class="card">
         <h3>1. Token Webhook</h3>
         <p class="hint">Buat token, lalu daftarkan URL di bawah sebagai notifikasi <strong>Webhook</strong> di Uptime Kuma (Settings → Notifications → Setup Notification → tipe Webhook), Content Type: JSON. Pasang notifikasi ini di setiap monitor yang mau di-track ke ERP.</p>
@@ -177,7 +197,7 @@ onMounted(async () => {
           <code>{{ webhookUrl }}</code>
           <button class="btn-secondary" @click="salinUrl">📋 Salin</button>
         </div>
-        <button class="btn-submit" @click="buatTokenBaru" :disabled="regenerating">
+        <button class="btn-submit" @click="buatTokenBaru" :disabled="regenerating || !configLoaded">
           {{ regenerating ? 'Membuat...' : (webhookUrl ? 'Buat Ulang Token' : 'Buat Token Webhook') }}
         </button>
       </div>
@@ -193,7 +213,7 @@ onMounted(async () => {
           <label>Slug Status Page</label>
           <input v-model="configForm.status_page_slug" placeholder="mis. semua-site" />
         </div>
-        <button class="btn-submit" @click="saveConfig" :disabled="savingConfig">
+        <button class="btn-submit" @click="saveConfig" :disabled="savingConfig || !configLoaded">
           {{ savingConfig ? 'Menyimpan...' : 'Simpan' }}
         </button>
         <p v-if="configMsg" :class="['msg', { err: configErr }]">{{ configMsg }}</p>
@@ -240,7 +260,8 @@ onMounted(async () => {
 
       <div class="card">
         <h3>Mapping Tersimpan</h3>
-        <div v-if="mappingLoading" class="loading">Memuat...</div>
+        <p v-if="mappingError" class="msg err">⚠ {{ mappingError }} <button class="btn-secondary" @click="fetchMapping">Coba lagi</button></p>
+        <div v-else-if="mappingLoading" class="loading">Memuat...</div>
         <div v-else class="tbl-scroll"><table>
           <thead><tr><th>Monitor</th><th>Site</th><th></th></tr></thead>
           <tbody>

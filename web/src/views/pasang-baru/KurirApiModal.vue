@@ -61,6 +61,20 @@ async function ambil<T>(url: string, params?: Record<string, unknown>): Promise<
   return (await api.get(url, { params })).data.data as T
 }
 
+// Daftar kota/kecamatan per bagian (tujuan / alamat baru): tampilkan status memuat & error, bukan dropdown kosong diam-diam
+const lok = reactive({ tujuan: { memuat: 0, error: '' }, baru: { memuat: 0, error: '' } })
+async function ambilLokasi(bagian: 'tujuan' | 'baru', jenis: 'kota' | 'kecamatan', params: Record<string, unknown>): Promise<Lokasi[]> {
+  const st = lok[bagian]
+  st.memuat++; st.error = ''
+  try {
+    return await ambil<Lokasi[]>(`/pasang-baru/kurir-api/${jenis}`, params)
+  } catch (e: any) {
+    const m = e?.response?.data?.message
+    st.error = `Gagal memuat daftar ${jenis}: ${Array.isArray(m) ? m.join(', ') : m || 'coba pilih ulang'}`
+    return []
+  } finally { st.memuat-- }
+}
+
 onMounted(async () => {
   memuat.value = true
   try {
@@ -115,19 +129,19 @@ async function tebakTujuan(teks: string | null | undefined) {
 watch(() => tujuan.province_code, async (v, lama) => {
   if (!v || (lama === '' && kotaTujuan.value.length)) return
   tujuan.city_code = ''; tujuan.district_code = ''
-  kotaTujuan.value = await ambil<Lokasi[]>('/pasang-baru/kurir-api/kota', { province: v }).catch(() => [])
+  kotaTujuan.value = await ambilLokasi('tujuan', 'kota', { province: v })
 })
 watch(() => tujuan.city_code, async (v) => {
   tujuan.district_code = ''; kecTujuan.value = []
-  if (v) kecTujuan.value = await ambil<Lokasi[]>('/pasang-baru/kurir-api/kecamatan', { city: v }).catch(() => [])
+  if (v) kecTujuan.value = await ambilLokasi('tujuan', 'kecamatan', { city: v })
 })
 watch(() => baru.province_code, async (v) => {
   baru.city_code = ''; baru.district_code = ''; kecBaru.value = []
-  kotaBaru.value = v ? await ambil<Lokasi[]>('/pasang-baru/kurir-api/kota', { province: v }).catch(() => []) : []
+  kotaBaru.value = v ? await ambilLokasi('baru', 'kota', { province: v }) : []
 })
 watch(() => baru.city_code, async (v) => {
   baru.district_code = ''
-  kecBaru.value = v ? await ambil<Lokasi[]>('/pasang-baru/kurir-api/kecamatan', { city: v }).catch(() => []) : []
+  kecBaru.value = v ? await ambilLokasi('baru', 'kecamatan', { city: v }) : []
 })
 // Ubah data paket/tujuan → tarif lama tidak berlaku
 watch([() => tujuan.district_code, pengirim, () => ({ ...paket })], () => { tarif.value = null; dipilih.value = null }, { deep: true })
@@ -211,6 +225,8 @@ async function pesan() {
                 <select v-model="baru.city_code" class="form-input" :disabled="!kotaBaru.length"><option value="">Kota…</option><option v-for="k in kotaBaru" :key="k.code" :value="k.code">{{ k.name }}</option></select>
                 <select v-model="baru.district_code" class="form-input" :disabled="!kecBaru.length"><option value="">Kecamatan…</option><option v-for="k in kecBaru" :key="k.code" :value="k.code">{{ k.name }}</option></select>
               </div>
+              <small v-if="lok.baru.memuat" class="muted">Memuat daftar wilayah…</small>
+              <small v-else-if="lok.baru.error" class="ka-peringatan">⚠ {{ lok.baru.error }}</small>
               <textarea v-model="baru.address_line" rows="2" class="form-textarea" placeholder="Alamat lengkap"></textarea>
               <input v-model="baru.postal_code" class="form-input" placeholder="Kode pos" />
               <div class="ka-aksi">
@@ -233,6 +249,8 @@ async function pesan() {
               <select v-model="tujuan.city_code" class="form-input" :disabled="!kotaTujuan.length"><option value="">Kota…</option><option v-for="k in kotaTujuan" :key="k.code" :value="k.code">{{ k.name }}</option></select>
               <select v-model="tujuan.district_code" class="form-input" :disabled="!kecTujuan.length"><option value="">Kecamatan…</option><option v-for="k in kecTujuan" :key="k.code" :value="k.code">{{ k.name }}</option></select>
             </div>
+            <small v-if="lok.tujuan.memuat" class="muted">Memuat daftar wilayah…</small>
+            <small v-else-if="lok.tujuan.error" class="ka-peringatan">⚠ {{ lok.tujuan.error }}</small>
             <div class="grid-2">
               <label class="form-label">Berat (gram)<input v-model.number="paket.weight" type="number" min="1" class="form-input" /></label>
               <label class="form-label">Nilai barang (Rp)<input v-model.number="paket.item_value" type="number" min="0" class="form-input" /></label>
@@ -254,7 +272,7 @@ async function pesan() {
             <table class="data-table">
               <thead><tr><th></th><th>Kurir</th><th>Layanan</th><th>Estimasi</th><th class="kanan">Total</th></tr></thead>
               <tbody>
-                <tr v-for="r in tarif.rates" :key="r.courier_code + r.service_code" class="klik" :class="{ pilih: dipilih === r }" @click="dipilih = r">
+                <tr v-baris v-for="r in tarif.rates" :key="r.courier_code + r.service_code" class="klik" :class="{ pilih: dipilih === r }" @click="dipilih = r">
                   <td><input type="radio" :checked="dipilih === r" /></td>
                   <td><b>{{ r.courier_name }}</b> <span v-if="r.is_cheapest" class="badge badge-green">termurah</span> <span v-if="r.is_fastest" class="badge badge-blue">tercepat</span></td>
                   <td>{{ r.service_name }}</td>

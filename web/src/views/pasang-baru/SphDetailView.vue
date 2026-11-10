@@ -14,6 +14,7 @@ const auth = useAuthStore()
 const id = computed(() => Number(route.params.id))
 const s = ref<any>(null)
 const memuat = ref(true)
+const muatError = ref('')
 const proses = ref(false)
 
 async function muat() {
@@ -21,8 +22,11 @@ async function muat() {
   try {
     const { data } = await api.get(`/pasang-baru/sph/${id.value}`)
     s.value = data.data
+    muatError.value = ''
   } catch (e) {
-    alertError(e, 'Gagal memuat SPH')
+    // muat awal gagal → error di halaman; muat ulang setelah aksi → modal
+    if (!s.value) { const m = (e as any)?.response?.data?.message; muatError.value = Array.isArray(m) ? m.join(', ') : m || 'Gagal memuat SPH' }
+    else alertError(e, 'Gagal memuat SPH')
   } finally {
     memuat.value = false
   }
@@ -93,6 +97,11 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
 <template>
   <div class="page">
     <p v-if="memuat && !s" class="muted">Memuat…</p>
+    <div v-else-if="!s && muatError" class="alert alert-danger" role="alert">
+      <span>⚠ {{ muatError }}</span>
+      <button class="btn btn-sm btn-ghost" @click="muat">Coba lagi</button>
+      <button class="btn btn-sm btn-ghost" @click="router.push('/pasang-baru')">← Daftar</button>
+    </div>
     <template v-else-if="s">
       <div class="page-header">
         <div>
@@ -155,7 +164,7 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
         <table class="data-table">
           <thead><tr><th>#</th><th>Site</th><th>Layanan</th><th v-if="adaOps">Vendor (OPS)</th><th v-if="adaOps" class="kanan">Modal · IKG</th><th class="kanan">Bulanan</th><th class="kanan">Instalasi</th><th>RFS</th><th>PIC store</th><th>Order</th></tr></thead>
           <tbody>
-            <tr v-for="(o, i) in s.order" :key="o.id_pb" :class="{ klik: o.nomor_pb }" @click="o.nomor_pb && router.push(`/pasang-baru/order/${o.id_pb}`)">
+            <tr v-baris v-for="(o, i) in s.order" :key="o.id_pb" :class="{ klik: o.nomor_pb }" @click="o.nomor_pb && router.push(`/pasang-baru/order/${o.id_pb}`)">
               <td class="muted">{{ i + 1 }}</td>
               <td><b>{{ o.nama_site }}</b><br /><small class="muted">{{ o.alamat }}<template v-if="o.lantai_unit"> — {{ o.lantai_unit }}</template><template v-if="o.kota">, {{ o.kota }}</template></small></td>
               <td>{{ o.layanan.nama_layanan }}</td>

@@ -168,7 +168,7 @@ const activity = computed(() => {
       <div class="section-label">Pelanggan & Infrastruktur</div>
       <div class="kpi-grid">
 
-        <div class="kpi-card" @click="router.push('/master/pelanggan')">
+        <div v-baris class="kpi-card" @click="router.push('/master/pelanggan')">
           <div class="kpi-icon" style="background:#eff6ff">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
@@ -180,7 +180,7 @@ const activity = computed(() => {
           <div class="kpi-arrow">›</div>
         </div>
 
-        <div class="kpi-card" @click="router.push('/master/pelanggan')">
+        <div v-baris class="kpi-card" @click="router.push('/master/pelanggan')">
           <div class="kpi-icon" style="background:#ecfdf5">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           </div>
@@ -192,7 +192,7 @@ const activity = computed(() => {
           <div class="kpi-arrow">›</div>
         </div>
 
-        <div class="kpi-card" @click="router.push('/reports')">
+        <div v-baris class="kpi-card" @click="router.push('/reports')">
           <div class="kpi-icon" style="background:#f0fdf4">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           </div>
@@ -204,7 +204,7 @@ const activity = computed(() => {
           <div class="kpi-arrow">›</div>
         </div>
 
-        <div class="kpi-card" @click="router.push('/contracts')">
+        <div v-baris class="kpi-card" @click="router.push('/contracts')">
           <div class="kpi-icon" style="background:#f5f3ff">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           </div>
@@ -216,7 +216,7 @@ const activity = computed(() => {
           <div class="kpi-arrow">›</div>
         </div>
 
-        <div class="kpi-card" @click="router.push('/finance')">
+        <div v-baris class="kpi-card" @click="router.push('/finance')">
           <div class="kpi-icon" :style="{ background: (kpi.invoice_overdue ?? 0) > 0 ? '#fef2f2' : '#f8fafc' }">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" :stroke="(kpi.invoice_overdue ?? 0) > 0 ? '#dc2626' : '#64748b'" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
           </div>
@@ -234,7 +234,7 @@ const activity = computed(() => {
       <div class="section-label">Operasional</div>
       <div class="kpi-grid">
 
-        <div class="kpi-card" @click="router.push('/operations')">
+        <div v-baris class="kpi-card" @click="router.push('/operations')">
           <div class="kpi-icon" style="background:#fffbeb">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
@@ -246,7 +246,7 @@ const activity = computed(() => {
           <div class="kpi-arrow">›</div>
         </div>
 
-        <div class="kpi-card" @click="router.push('/reports/sla')">
+        <div v-baris class="kpi-card" @click="router.push('/reports/sla')">
           <div class="kpi-icon" :style="{ background: slaBg }">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" :stroke="slaColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           </div>
@@ -258,7 +258,7 @@ const activity = computed(() => {
           <div class="kpi-arrow">›</div>
         </div>
 
-        <div class="kpi-card" @click="router.push('/projects')">
+        <div v-baris class="kpi-card" @click="router.push('/projects')">
           <div class="kpi-icon" style="background:#ecfeff">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           </div>
@@ -270,7 +270,7 @@ const activity = computed(() => {
           <div class="kpi-arrow">›</div>
         </div>
 
-        <div class="kpi-card" @click="router.push('/operations/noc')">
+        <div v-baris class="kpi-card" @click="router.push('/operations/noc')">
           <div class="kpi-icon" style="background:#faf5ff">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
           </div>
@@ -282,7 +282,7 @@ const activity = computed(() => {
           <div class="kpi-arrow">›</div>
         </div>
 
-        <div class="kpi-card" @click="router.push('/assets')">
+        <div v-baris class="kpi-card" @click="router.push('/assets')">
           <div class="kpi-icon" style="background:#fff1f2">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
           </div>
@@ -335,7 +335,7 @@ const activity = computed(() => {
         <div class="right-col">
 
           <!-- SLA Compliance mini panel -->
-          <div class="chart-card sla-mini" @click="router.push('/reports/sla')" style="cursor:pointer">
+          <div v-baris class="chart-card sla-mini" @click="router.push('/reports/sla')" style="cursor:pointer">
             <div class="chart-header" style="margin-bottom:10px">
               <div class="chart-title">SLA Bulan Ini</div>
               <div class="sla-pct-big" :style="{ color: slaColor }">{{ kpi.sla_compliance_pct != null ? kpi.sla_compliance_pct + '%' : '—' }}</div>
@@ -400,22 +400,22 @@ const activity = computed(() => {
             <button type="button" class="chart-link" @click="router.push('/sales')">Lihat semua →</button>
           </div>
           <div class="pipeline-funnel">
-            <div class="pip-item" @click="router.push('/sales/lead')">
+            <div v-baris class="pip-item" @click="router.push('/sales/lead')">
               <div class="pip-bar-wrap"><div class="pip-bar" style="background:#e0e7ff; width:100%"></div></div>
               <div class="pip-info"><span class="pip-stage">Lead</span><span class="pip-n" style="color:#3730a3">{{ pipeline.leads ?? 0 }}</span></div>
             </div>
             <div class="pip-arrow-down">↓</div>
-            <div class="pip-item" @click="router.push('/sales/opportunity')">
+            <div v-baris class="pip-item" @click="router.push('/sales/opportunity')">
               <div class="pip-bar-wrap"><div class="pip-bar" :style="{ background: '#bfdbfe', width: pipeline.leads ? (pipeline.opportunities / pipeline.leads * 100)+'%' : '0%' }"></div></div>
               <div class="pip-info"><span class="pip-stage">Opportunity</span><span class="pip-n" style="color:#1d4ed8">{{ pipeline.opportunities ?? 0 }}</span></div>
             </div>
             <div class="pip-arrow-down">↓</div>
-            <div class="pip-item" @click="router.push('/sales/quotation')">
+            <div v-baris class="pip-item" @click="router.push('/sales/quotation')">
               <div class="pip-bar-wrap"><div class="pip-bar" :style="{ background: '#fde68a', width: pipeline.leads ? ((pipeline.quotation_draft + pipeline.quotation_approved) / pipeline.leads * 100)+'%' : '0%' }"></div></div>
               <div class="pip-info"><span class="pip-stage">Quotation</span><span class="pip-n" style="color:#b45309">{{ (pipeline.quotation_draft ?? 0) + (pipeline.quotation_approved ?? 0) }}</span></div>
             </div>
             <div class="pip-arrow-down">↓</div>
-            <div class="pip-item" @click="router.push('/contracts')">
+            <div v-baris class="pip-item" @click="router.push('/contracts')">
               <div class="pip-bar-wrap"><div class="pip-bar" :style="{ background: '#bbf7d0', width: pipeline.leads ? (pipeline.quotation_approved / pipeline.leads * 100)+'%' : '0%' }"></div></div>
               <div class="pip-info"><span class="pip-stage">Approved</span><span class="pip-n" style="color:#059669">{{ pipeline.quotation_approved ?? 0 }}</span></div>
             </div>
@@ -442,7 +442,7 @@ const activity = computed(() => {
         <div class="right-mini-col">
 
           <!-- Karyawan pill -->
-          <div class="chart-card mini-stat-card" @click="router.push('/hris')" style="cursor:pointer">
+          <div v-baris class="chart-card mini-stat-card" @click="router.push('/hris')" style="cursor:pointer">
             <div class="mini-stat-icon" style="background:#faf5ff">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
@@ -484,7 +484,7 @@ const activity = computed(() => {
           </div>
         </div>
         <div class="activity-list">
-          <div v-for="item in activity" :key="item.type + item.id" class="activity-item" @click="router.push(item.route)">
+          <div v-baris v-for="item in activity" :key="item.type + item.id" class="activity-item" @click="router.push(item.route)">
             <div class="act-type-icon" :class="item.type === 'ticket' ? 'act-ticket' : item.type === 'quotation' ? 'act-quotation' : 'act-wo'">
               <svg v-if="item.type === 'ticket'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               <svg v-else-if="item.type === 'quotation'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>

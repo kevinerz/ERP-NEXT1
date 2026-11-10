@@ -7,6 +7,7 @@ import api from '@/services/api'
 import { confirmDialog, alertDialog, promptDialog } from '@/composables/useDialog'
 import { fmtDateShort } from '@/composables/useFormat'
 import BasePagination from '@/components/BasePagination.vue'
+import { useFilterUrl } from '@/composables/useFilterUrl'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,6 +18,8 @@ const canForce = computed(() => auth.hasRole('Admin') || auth.hasRole('Director'
 const search = ref('')
 const filterStatus = ref('')
 const page = ref(1)
+// Filter & halaman disimpan di URL — tetap sama setelah kembali dari halaman detail
+useFilterUrl({ q: search, status: filterStatus, page })
 
 // Modal tambah lead
 const showModal = ref(false)
@@ -161,7 +164,7 @@ async function hapusLead(id: number, nama: string) {
           <tr v-if="!sales.leadList.length">
             <td colspan="9" class="empty">Tidak ada lead</td>
           </tr>
-          <tr
+          <tr v-baris
             v-for="l in sales.leadList" :key="l.id_lead"
             class="row-link" @click="router.push(`/sales/lead/${l.id_lead}`)"
           >

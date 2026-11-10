@@ -43,6 +43,13 @@ async function handleAdd() {
 
 async function toggleUser(u: any) {
   if (busyId.value !== null) return
+  // nonaktifkan = pelanggan tidak bisa login portal → minta konfirmasi
+  if (u.is_aktif && !(await confirmDialog({
+    title: 'Nonaktifkan Akun Portal',
+    message: `Nonaktifkan akun portal "${u.email}"? Pelanggan tidak bisa login sampai diaktifkan lagi.`,
+    variant: 'warning',
+    confirmLabel: 'Ya, Nonaktifkan',
+  }))) return
   busyId.value = u.id_user
   try {
     const res = await api.patch(`/portal/admin/users/${u.id_user}/toggle`)
@@ -187,7 +194,7 @@ function fmtDate(d: string | null) {
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: #0f172a; }
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 .loading { color: #94a3b8; padding: 40px; text-align: center; }
-.table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow: hidden; }
+.table-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.07); overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 thead tr { background: #f8fafc; }
 th { padding: 11px 14px; font-size: 11px; font-weight: 700; color: #64748b; text-align: left; text-transform: uppercase; }

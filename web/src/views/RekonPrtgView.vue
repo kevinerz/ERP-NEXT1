@@ -212,7 +212,7 @@ async function apply(r: Row) {
   const ok = await confirmDialog({
     title: 'Terapkan ke ERP & PRTG?',
     message: `PRTG: ${r.device_name}\nERP: ${f.site.nama_site}\n\nNama baru: ${f.nama_baru.trim()}`,
-    confirmLabel: 'Apply',
+    confirmLabel: 'Terapkan',
     variant: 'warning',
   })
   if (!ok) return
@@ -283,7 +283,7 @@ const statusKelas = (s: string) => {
       <div class="rk-head-inner">
         <div class="rk-title">
           <h1>Rekonsiliasi Nama PRTG ↔ Site ERP</h1>
-          <p>Samakan nama device PRTG dengan data site ERP. <b>Apply</b> mengubah nama di ERP <i>dan</i> PRTG sekaligus.</p>
+          <p>Samakan nama device PRTG dengan data site ERP. <b>Terapkan</b> mengubah nama di ERP <i>dan</i> PRTG sekaligus.</p>
         </div>
         <div class="rk-progress" v-if="!loading && !loadErr">
           <div class="rk-progress-num"><b>{{ stats.selesai }}</b> / {{ stats.total }} selesai · {{ persen }}%</div>
@@ -365,7 +365,7 @@ const statusKelas = (s: string) => {
             <div v-if="fm(r).sitePicker" class="rk-picker">
               <input v-model="fm(r).siteQ" placeholder="Cari nama / kode site…" @input="cariSite(fm(r))" />
               <ul>
-                <li v-for="s in fm(r).siteHasil" :key="s.id_site" @click="pilihSite(fm(r), s)">
+                <li v-baris v-for="s in fm(r).siteHasil" :key="s.id_site" @click="pilihSite(fm(r), s)">
                   <b>{{ s.nama_site }}</b>
                   <small>{{ s.kode_site }} · {{ s.pelanggan?.nama_pelanggan }} · {{ s.status_site }}</small>
                 </li>
@@ -397,7 +397,7 @@ const statusKelas = (s: string) => {
 
             <div class="rk-actions">
               <button class="btn" :disabled="fm(r).busy" @click="simpan(r)">Simpan</button>
-              <button class="btn btn-primary" :disabled="fm(r).busy" @click="apply(r)">Apply ERP + PRTG</button>
+              <button class="btn btn-primary" :disabled="fm(r).busy" @click="apply(r)">Terapkan ERP + PRTG</button>
               <label class="rk-check" :class="{ on: isDone(r) }">
                 <input type="checkbox" :checked="isDone(r)" :disabled="fm(r).busy" @change="toggleDone(r)" />
                 <span>{{ isDone(r) ? 'Selesai' : 'Tandai selesai' }}</span>

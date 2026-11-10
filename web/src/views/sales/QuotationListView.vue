@@ -167,7 +167,7 @@ const fmtDate = fmtDateShort
           </tr>
           <tr v-for="q in sales.quotationList" :key="q.id_quotation">
             <td>
-              <span
+              <span v-baris
                 class="nomor-link"
                 @click="router.push(`/sales/quotation/${q.id_quotation}`)"
               >{{ q.nomor_quotation }}</span>

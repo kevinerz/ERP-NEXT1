@@ -103,11 +103,13 @@ onMounted(async () => {
   fetchData()
 })
 
+const gudangLoadError = ref(false)
 async function fetchGudang() {
+  gudangLoadError.value = false
   try {
     const r = await api.get('/master/gudang')
     gudangList.value = r.data.data
-  } catch {}
+  } catch { gudangLoadError.value = true }
 }
 
 function fetchData() {
@@ -123,6 +125,8 @@ function doFilter() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
 function resetForm() {
+  // daftar gudang sempat gagal dimuat → coba lagi saat form dibuka
+  if (gudangLoadError.value) fetchGudang()
   form.value = {
     nama_perangkat: '', merk: '', tipe_model: '', serial_number: '',
     is_serialized: true, stok_jumlah: 1, kategori: '', kondisi: 'Baru',
@@ -182,7 +186,7 @@ function fmtRupiah(n: number) {
 
     <!-- Summary chips -->
     <div class="summary-row">
-      <div v-for="s in aset.summary" :key="s.status" class="summary-chip"
+      <div v-baris v-for="s in aset.summary" :key="s.status" class="summary-chip"
         :style="{ borderLeftColor: STATUS_COLOR[s.status]?.color || '#94a3b8' }"
         @click="filterStatus = filterStatus === s.status ? '' : s.status; doFilter()">
         <div class="sc-count">{{ s.count }}</div>
@@ -192,7 +196,7 @@ function fmtRupiah(n: number) {
 
     <!-- Gudang chips -->
     <div class="gudang-row" v-if="aset.summaryGudang.length">
-      <div v-for="g in aset.summaryGudang" :key="g.id_gudang" class="gudang-chip"
+      <div v-baris v-for="g in aset.summaryGudang" :key="g.id_gudang" class="gudang-chip"
         :class="{ active: filterGudang === g.id_gudang }"
         @click="filterGudang = filterGudang === g.id_gudang ? 0 : g.id_gudang; doFilter()">
         🏬 {{ g.nama_gudang }}: <strong>{{ g.count }}</strong>
@@ -258,7 +262,7 @@ function fmtRupiah(n: number) {
           <tr v-if="!aset.list.length">
             <td colspan="10" class="empty">Belum ada data aset</td>
           </tr>
-          <tr v-for="a in aset.list" :key="a.id_aset" class="row-link" @click="router.push(`/assets/${a.id_aset}`)">
+          <tr v-baris v-for="a in aset.list" :key="a.id_aset" class="row-link" @click="router.push(`/assets/${a.id_aset}`)">
             <td class="center" @click.stop>
               <input type="checkbox" :checked="selectedItems.has(a.id_aset)" @change="toggleSelect(a)" />
             </td>
@@ -355,6 +359,7 @@ function fmtRupiah(n: number) {
                 [{{ g.kode_gudang }}] {{ g.nama_gudang }}{{ g.kota ? ' — ' + g.kota : '' }}
               </option>
             </select>
+            <span v-if="gudangLoadError" class="hint-error">⚠ Gagal memuat daftar gudang — <a href="#" @click.prevent="fetchGudang">coba lagi</a>.</span>
           </div>
           <div class="field full">
             <label>Lokasi / Site (opsional)</label>
@@ -391,6 +396,7 @@ function fmtRupiah(n: number) {
 </template>
 
 <style scoped>
+.hint-error { display: block; font-size: 11px; color: #d97706; margin-top: 4px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
 .sub { margin: 0; font-size: 13px; color: var(--text-3); }
 .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }

@@ -92,7 +92,7 @@ async function simpan() {
       <h3 class="rp-h3">Akan datang & berlangsung</h3>
       <p v-if="!aktif.length" class="muted">Belum ada rapat. Buat rapat baru untuk mengundang rekan.</p>
       <div class="rp-kartu-grid">
-        <div v-for="r in aktif" :key="r.id_rapat" class="rp-kartu" :class="{ hidup: r.status === 'Berlangsung' }" @click="router.push(`/meeting/${r.id_rapat}`)">
+        <div v-baris v-for="r in aktif" :key="r.id_rapat" class="rp-kartu" :class="{ hidup: r.status === 'Berlangsung' }" @click="router.push(`/meeting/${r.id_rapat}`)">
           <div class="rp-kartu-atas">
             <span class="badge" :class="KELAS[r.status]">{{ r.status === 'Berlangsung' ? '● Berlangsung' : r.status }}</span>
             <small v-if="r.moderator" class="muted">Moderator</small>
@@ -112,7 +112,7 @@ async function simpan() {
           <thead><tr><th>Rapat</th><th>Waktu</th><th>Status</th><th>Peserta</th><th>Kehadiran</th></tr></thead>
           <tbody>
             <tr v-if="!riwayat.length"><td colspan="5" class="muted pusat">Belum ada riwayat.</td></tr>
-            <tr v-for="r in riwayat" :key="r.id_rapat" class="klik" @click="router.push(`/meeting/${r.id_rapat}`)">
+            <tr v-baris v-for="r in riwayat" :key="r.id_rapat" class="klik" @click="router.push(`/meeting/${r.id_rapat}`)">
               <td><b>{{ r.judul }}</b><br /><small class="muted">oleh {{ r.pembuat }}</small></td>
               <td>{{ waktu(r) }}</td>
               <td><span class="badge" :class="KELAS[r.status]">{{ r.status }}</span></td>

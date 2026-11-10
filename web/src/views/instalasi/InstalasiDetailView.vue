@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useInstalasiStore } from '@/stores/instalasi'
 import { useAuthStore } from '@/stores/auth'
 import { fmtDateTime as fmtDt, fmtDateShort, fmtRupiah } from '@/composables/useFormat'
 import api from '@/services/api'
-import { confirmDialog, alertDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, alertError, toast } from '@/composables/useDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,6 +33,7 @@ const fotoFile = ref<File | null>(null)
 const fotoStage = ref('Proses')
 const fotoCaption = ref('')
 const fotoUploading = ref(false)
+const fotoInput = ref<HTMLInputElement | null>(null)
 
 // BAST
 const bastForm = ref({ nama_penandatangan_pelanggan: '', jabatan_penandatangan: '' })
@@ -67,6 +68,11 @@ const FOTO_STAGE = ['Sebelum', 'Proses', 'Sesudah']
 
 const d = computed(() => ins.current)
 
+// Isi form BAST dari data tersimpan agar "Perbarui BAST" tidak menimpa penandatangan dengan kosong
+watch(() => d.value?.bast, (b) => {
+  if (b) bastForm.value = { nama_penandatangan_pelanggan: b.nama_penandatangan_pelanggan ?? '', jabatan_penandatangan: b.jabatan_penandatangan ?? '' }
+}, { immediate: true })
+
 onMounted(async () => {
   // allSettled: dropdown opsional yang gagal tidak memunculkan unhandled rejection
   await Promise.allSettled([
@@ -86,12 +92,23 @@ function openStatus() {
 }
 async function submitStatus() {
   if (!newStatus.value) { statusError.value = 'Pilih status'; return }
+  // Status akhir tidak bisa dibalik dengan mudah → konfirmasi dulu
+  if ((newStatus.value === 'Selesai' || newStatus.value === 'Dibatalkan') && newStatus.value !== d.value?.status_instalasi) {
+    const ok = await confirmDialog({
+      title: `Ubah status ke ${STATUS_LABEL[newStatus.value]}?`,
+      message: newStatus.value === 'Selesai' ? 'Order instalasi akan ditandai selesai.' : 'Order instalasi akan dibatalkan.',
+      confirmLabel: newStatus.value === 'Selesai' ? 'Ya, Selesai' : 'Ya, Batalkan',
+      variant: newStatus.value === 'Selesai' ? 'warning' : 'danger',
+    })
+    if (!ok) return
+  }
   statusSubmitting.value = true; statusError.value = ''
   try {
     await ins.update(id, { status_instalasi: newStatus.value })
     if (statusCatatan.value) await ins.addLog({ id_instalasi: id, catatan: statusCatatan.value })
     await ins.fetchOne(id)
     showStatusModal.value = false
+    toast('Status tersimpan')
   } catch (e: any) { statusError.value = e.response?.data?.message || 'Gagal update status' }
   finally { statusSubmitting.value = false }
 }
@@ -122,6 +139,7 @@ async function submitEdit() {
     await ins.update(id, p)
     await ins.fetchOne(id)
     showEditModal.value = false
+    toast('Perubahan tersimpan')
   } catch (e: any) { editError.value = e.response?.data?.message || 'Gagal menyimpan' }
   finally { editSubmitting.value = false }
 }
@@ -134,6 +152,8 @@ async function uploadFoto() {
     await ins.uploadFoto(id, fotoFile.value, fotoStage.value, fotoCaption.value)
     await ins.fetchOne(id)
     fotoFile.value = null; fotoCaption.value = ''; fotoStage.value = 'Proses'
+    if (fotoInput.value) fotoInput.value.value = '' // agar file yang sama bisa dipilih lagi
+    toast('Foto terunggah')
   } catch (e: any) { alertError(e, 'Gagal upload foto') }
   finally { fotoUploading.value = false }
 }
@@ -202,7 +222,16 @@ function getPos(e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement) {
 }
 
 async function submitBAST() {
-  bastSubmitting.value = true; bastError.value = ''
+  bastError.value = ''
+  const nama = bastForm.value.nama_penandatangan_pelanggan.trim()
+  if (!nama) { bastError.value = 'Nama penandatangan pelanggan wajib diisi'; return }
+  const lama = d.value?.bast
+  // BAST baru wajib TTD pelanggan; ganti penandatangan juga wajib TTD baru
+  if (!ttdPelangganHasInk.value && (!lama?.ttd_pelanggan_path || nama !== (lama.nama_penandatangan_pelanggan ?? '').trim())) {
+    bastError.value = 'Tanda tangan pelanggan wajib diisi'
+    return
+  }
+  bastSubmitting.value = true
   try {
     // Upload TTD sebagai PNG (hanya kanvas yang benar-benar ditandatangani)
     const ttdTeknisiPath = ttdTeknisiCanvas.value && ttdTeknisiHasInk.value
@@ -211,6 +240,7 @@ async function submitBAST() {
       ? await uploadCanvas(ttdPelangganCanvas.value, 'pelanggan') : null
     await ins.saveBAST(id, {
       ...bastForm.value,
+      nama_penandatangan_pelanggan: nama,
       ...(ttdTeknisiPath ? { ttd_teknisi_path: ttdTeknisiPath } : {}),
       ...(ttdPelangganPath ? { ttd_pelanggan_path: ttdPelangganPath } : {}),
     })
@@ -363,7 +393,7 @@ async function hapusOrder() {
           <input type="text" v-model="fotoCaption" placeholder="Keterangan foto (opsional)" class="caption-input" />
           <label class="btn-file">
             Pilih Foto
-            <input type="file" accept="image/*" @change="(e: any) => fotoFile = e.target.files[0]" style="display:none" />
+            <input ref="fotoInput" type="file" accept="image/*" @change="(e: any) => fotoFile = e.target.files[0]" style="display:none" />
           </label>
           <span v-if="fotoFile" class="file-name">{{ fotoFile.name }}</span>
           <button class="btn-upload" @click="uploadFoto" :disabled="!fotoFile || fotoUploading">
@@ -394,11 +424,11 @@ async function hapusOrder() {
           <div v-if="d.bast.ttd_pelanggan_path || d.bast.ttd_teknisi_path" class="ttd-preview-row">
             <div v-if="d.bast.ttd_teknisi_path">
               <div class="ttd-label">TTD Teknisi</div>
-              <img :src="'/uploads/' + d.bast.ttd_teknisi_path" class="ttd-preview-img" />
+              <img :src="'/uploads/' + d.bast.ttd_teknisi_path" class="ttd-preview-img" alt="Tanda tangan teknisi" />
             </div>
             <div v-if="d.bast.ttd_pelanggan_path">
               <div class="ttd-label">TTD Pelanggan</div>
-              <img :src="'/uploads/' + d.bast.ttd_pelanggan_path" class="ttd-preview-img" />
+              <img :src="'/uploads/' + d.bast.ttd_pelanggan_path" class="ttd-preview-img" alt="Tanda tangan pelanggan" />
             </div>
           </div>
           <button class="btn-outline" style="margin-top:12px" @click="downloadBAST">⬇️ Print / Download</button>

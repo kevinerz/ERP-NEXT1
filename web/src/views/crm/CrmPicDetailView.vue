@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDate, fmtDateTime } from '@/composables/useFormat'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, toast } from '@/composables/useDialog'
 
 const route  = useRoute()
 const router = useRouter()
@@ -24,12 +24,19 @@ const RENCANA_LIST = ['Internet', 'Belum ada rencana', 'Masih dipertimbangkan']
 
 onMounted(fetchDetail)
 
-async function fetchDetail() {
-  loading.value = true; err.value = ''
+async function fetchDetail(diam = false) {
+  if (!diam) loading.value = true
+  err.value = ''
   try {
     const res = await api.get(`/crm/pic/${id}`)
     pic.value = res.data.data
-  } catch { err.value = 'Data PIC tidak ditemukan' }
+  } catch (e: any) {
+    // 404 = memang tidak ada; selain itu tampilkan pesan server
+    const m = e?.response?.data?.message
+    const pesan = e?.response?.status === 404 ? 'Data PIC tidak ditemukan' : (Array.isArray(m) ? m.join(', ') : m) || 'Gagal memuat data PIC'
+    if (diam && pic.value) toast(`Gagal memperbarui data: ${pesan}`, 'danger')
+    else err.value = pesan
+  }
   finally { loading.value = false }
 }
 
@@ -57,7 +64,8 @@ async function handleEdit() {
   try {
     await api.put(`/crm/pic/${id}`, editForm.value)
     showEdit.value = false
-    await fetchDetail()
+    toast('Data PIC tersimpan')
+    await fetchDetail(true)
   } catch (e: any) { editErr.value = e.response?.data?.message || 'Gagal' }
   finally { editSave.value = false }
 }
@@ -85,13 +93,17 @@ function parseSnapshot(s: string) {
 <template>
   <div class="page">
     <div class="breadcrumb">
-      <span class="crumb" @click="router.push('/crm/pic')">CRM / PIC</span>
+      <span v-baris class="crumb" @click="router.push('/crm/pic')">CRM / PIC</span>
       <span class="sep">›</span>
       <span class="crumb-active">Detail PIC</span>
     </div>
 
     <div v-if="loading" class="loading">Memuat...</div>
-    <div v-else-if="err" class="err-msg">{{ err }}</div>
+    <div v-else-if="err" class="err-msg">
+      {{ err }}
+      <button class="btn-retry" @click="fetchDetail()">Coba lagi</button>
+      <button class="btn-retry" @click="router.push('/crm/pic')">← Daftar PIC</button>
+    </div>
 
     <div v-else-if="pic">
       <div class="page-header">
@@ -225,6 +237,7 @@ function parseSnapshot(s: string) {
 .crumb-active { color: #0f172a; font-weight: 600; }
 .loading { color: #94a3b8; padding: 40px; text-align: center; }
 .err-msg  { color: #dc2626; padding: 20px; background: #fef2f2; border-radius: 10px; }
+.btn-retry { margin-left: 8px; padding: 4px 12px; font-size: 13px; border: 1px solid #fecaca; background: #fff; color: #b91c1c; border-radius: 6px; cursor: pointer; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
 .sub { margin: 0; font-size: 13px; color: var(--text-3); }
 .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }

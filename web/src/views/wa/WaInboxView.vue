@@ -4,7 +4,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, promptDialog, toast } from '@/composables/useDialog'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -69,7 +69,7 @@ async function putuskan() {
     confirmLabel: 'Lepas', variant: 'danger',
   })
   if (!ok) return
-  try { await api.post(`/wa/akun/${AKUN}/logout`) } catch (e: any) { alert(e?.response?.data?.message || 'Gagal') }
+  try { await api.post(`/wa/akun/${AKUN}/logout`) } catch (e: any) { await alertError(e, 'Gagal melepas perangkat') }
   await muatKoneksi()
 }
 const labelStatus: Record<string, string> = {
@@ -85,6 +85,8 @@ const halaman = ref(1)
 const total = ref(0)
 const hitung = reactive({ saya: 0, belum: 0, grup: 0 })
 const memuatChat = ref(false)
+const chatGalat = ref('') // gagal muat daftar chat (daftar terakhir tetap tampil)
+const pesanGagal = (e: any, f: string) => { const m = e?.response?.data?.message; return (Array.isArray(m) ? m.join(', ') : m) || f }
 let timerCari: ReturnType<typeof setTimeout> | null = null
 
 async function muatChat(lanjut = false) {
@@ -95,6 +97,10 @@ async function muatChat(lanjut = false) {
     chats.value = lanjut ? [...chats.value, ...data.data] : data.data
     total.value = data.meta?.total ?? chats.value.length
     Object.assign(hitung, data.meta?.hitung || {})
+    chatGalat.value = ''
+  } catch (e: any) {
+    if (lanjut) halaman.value--
+    chatGalat.value = pesanGagal(e, 'Gagal memuat daftar chat')
   } finally {
     memuatChat.value = false
   }
@@ -154,8 +160,10 @@ function terapkanChat(c: Chat) {
   if (pos < 0) chats.value.push(c); else chats.value.splice(pos, 0, c)
 }
 async function ubahSematan(c: Chat) {
-  const { data } = await api.post(`/wa/chat/${c.id_chat}/${c.disematkan ? 'lepas-sematan' : 'sematkan'}`)
-  terapkanChat(data.data)
+  try {
+    const { data } = await api.post(`/wa/chat/${c.id_chat}/${c.disematkan ? 'lepas-sematan' : 'sematkan'}`)
+    terapkanChat(data.data)
+  } catch (e) { alertError(e, c.disematkan ? 'Gagal melepas sematan' : 'Gagal menyematkan chat') }
 }
 
 // ── Chat aktif & pesan ────────────────────────────────────────────────────────
@@ -163,13 +171,31 @@ const aktif = ref<Chat | null>(null)
 const pesan = ref<Pesan[]>([])
 const adaLagi = ref(false)
 const memuatPesan = ref(false)
+const pesanMuatGalat = ref('') // gagal muat pesan chat yang dibuka
+const gagalSebelumnya = ref(false) // gagal muat pesan lama → jangan muat otomatis saat gulir
 const kotakPesan = ref<HTMLElement | null>(null)
 
+// Draf ketikan per chat (di memori) agar tidak hilang saat pindah chat
+const draf = new Map<number, string>()
+function simpanDraf() {
+  const c = aktif.value
+  if (!c || editPesan.value) return
+  if (teks.value.trim()) draf.set(c.id_chat, teks.value); else draf.delete(c.id_chat)
+}
+function tutupChat() {
+  simpanDraf()
+  aktif.value = null
+}
+
 async function bukaChat(c: Chat) {
+  const chatLain = aktif.value?.id_chat !== c.id_chat
+  if (chatLain) simpanDraf()
   aktif.value = c
   pesan.value = []
+  pesanMuatGalat.value = ''
+  gagalSebelumnya.value = false
   kutip.value = null
-  teks.value = ''
+  if (chatLain || editPesan.value) teks.value = draf.get(c.id_chat) ?? ''
   editPesan.value = null
   bukaEmoji.value = false
   bukaTemplate.value = false
@@ -188,6 +214,8 @@ async function bukaChat(c: Chat) {
     nempelBawah.value = true
     baruDiBawah.value = 0
     if (c.belum_dibaca) tandaiDibaca(c)
+  } catch (e: any) {
+    if (aktif.value?.id_chat === c.id_chat) pesanMuatGalat.value = pesanGagal(e, 'Gagal memuat pesan')
   } finally {
     memuatPesan.value = false
   }
@@ -195,6 +223,7 @@ async function bukaChat(c: Chat) {
 async function muatSebelumnya() {
   if (!aktif.value || !pesan.value.length || memuatPesan.value) return
   memuatPesan.value = true
+  gagalSebelumnya.value = false
   const el = kotakPesan.value
   const tinggiLama = el?.scrollHeight ?? 0
   try {
@@ -203,6 +232,8 @@ async function muatSebelumnya() {
     adaLagi.value = !!data.meta?.ada_lagi
     await nextTick()
     if (el) el.scrollTop = el.scrollHeight - tinggiLama
+  } catch {
+    gagalSebelumnya.value = true
   } finally {
     memuatPesan.value = false
   }
@@ -220,6 +251,9 @@ async function lompatKe(id_pesan: number) {
       if (aktif.value?.id_chat !== c.id_chat) return
       pesan.value = data.data
       adaLagi.value = !!data.meta?.ada_lagi
+    } catch (e: any) {
+      toast(pesanGagal(e, 'Gagal membuka pesan'), 'danger')
+      return
     } finally { memuatPesan.value = false }
   }
   sorotId.value = id_pesan
@@ -325,7 +359,7 @@ function onScroll() {
   if (!el) return
   nempelBawah.value = dekatBawah()
   if (nempelBawah.value) baruDiBawah.value = 0
-  if (el.scrollTop < 60 && adaLagi.value) muatSebelumnya()
+  if (el.scrollTop < 60 && adaLagi.value && !gagalSebelumnya.value) muatSebelumnya()
 }
 function dekatBawah() {
   const el = kotakPesan.value
@@ -357,19 +391,30 @@ function tandaiDibaca(c: Chat) {
 const staf = ref<{ id_karyawan: number; nama: string }[]>([])
 async function ambilChat() {
   if (!aktif.value) return
-  const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/ambil`)
-  terapkanChat(data.data)
+  try {
+    const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/ambil`)
+    terapkanChat(data.data)
+  } catch (e) { alertError(e, 'Gagal mengambil chat') }
 }
 async function alihkan(ev: Event) {
   if (!aktif.value) return
-  const v = Number((ev.target as HTMLSelectElement).value)
-  const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/alihkan`, { id_karyawan: v || null })
-  terapkanChat(data.data)
+  const el = ev.target as HTMLSelectElement
+  const lama = aktif.value.pic?.id_karyawan ?? 0
+  const v = Number(el.value)
+  try {
+    const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/alihkan`, { id_karyawan: v || null })
+    terapkanChat(data.data)
+  } catch (e) {
+    el.value = String(lama) // kembalikan pilihan sebelumnya
+    alertError(e, 'Gagal mengalihkan chat')
+  }
 }
 async function ubahStatus(selesai: boolean) {
   if (!aktif.value) return
-  const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/${selesai ? 'selesai' : 'buka'}`)
-  terapkanChat(data.data)
+  try {
+    const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/${selesai ? 'selesai' : 'buka'}`)
+    terapkanChat(data.data)
+  } catch (e) { alertError(e, selesai ? 'Gagal menandai selesai' : 'Gagal membuka chat lagi') }
 }
 
 // ── Kirim ─────────────────────────────────────────────────────────────────────
@@ -584,9 +629,13 @@ async function reaksi(p: Pesan, emoji: string) {
 // ── Template balasan cepat ───────────────────────────────────────────────────
 const template = ref<Template[]>([])
 const bukaTemplate = ref(false)
+const templateGalat = ref('')
 async function muatTemplate() {
-  const { data } = await api.get('/wa/template')
-  template.value = data.data
+  try {
+    const { data } = await api.get('/wa/template')
+    template.value = data.data
+    templateGalat.value = ''
+  } catch (e: any) { templateGalat.value = pesanGagal(e, 'Gagal memuat balasan cepat') }
 }
 function pakaiTemplate(t: Template) {
   teks.value = teks.value ? `${teks.value}\n${t.isi}` : t.isi
@@ -628,13 +677,18 @@ async function tambahTemplate() {
   if (!judul) return
   const isi = await promptDialog({ title: `Balasan cepat: ${judul}`, label: 'Isi pesan', defaultValue: teks.value })
   if (!isi) return
-  await api.post('/wa/template', { judul, isi })
-  await muatTemplate()
+  try {
+    await api.post('/wa/template', { judul, isi })
+    await muatTemplate()
+    toast('Balasan cepat tersimpan')
+  } catch (e) { alertError(e, 'Gagal menyimpan balasan cepat') }
 }
 async function hapusTemplate(t: Template) {
   if (!(await confirmDialog({ title: 'Hapus balasan cepat?', message: t.judul, confirmLabel: 'Hapus', variant: 'danger' }))) return
-  await api.delete(`/wa/template/${t.id_template}`)
-  await muatTemplate()
+  try {
+    await api.delete(`/wa/template/${t.id_template}`)
+    await muatTemplate()
+  } catch (e) { alertError(e, 'Gagal menghapus balasan cepat') }
 }
 
 // ── Media (privat, diambil lewat API ber-login) ──────────────────────────────
@@ -790,12 +844,14 @@ async function ubahNama() {
     confirmLabel: 'Simpan',
   })
   if (nama === null) return
-  const { data } = await api.patch(`/wa/chat/${aktif.value.id_chat}/nama`, { nama: nama.trim() || undefined })
-  terapkanChat(data.data)
-  if (profil.value) {
-    profil.value.nama = data.data.nama
-    if (profil.value.kontak) profil.value.kontak.nama_kustom = nama.trim() || null
-  }
+  try {
+    const { data } = await api.patch(`/wa/chat/${aktif.value.id_chat}/nama`, { nama: nama.trim() || undefined })
+    terapkanChat(data.data)
+    if (profil.value) {
+      profil.value.nama = data.data.nama
+      if (profil.value.kontak) profil.value.kontak.nama_kustom = nama.trim() || null
+    }
+  } catch (e) { alertError(e, 'Gagal mengubah nama kontak') }
 }
 
 // ── Simpan kontak sebagai PIC site ───────────────────────────────────────────
@@ -1199,7 +1255,7 @@ onBeforeUnmount(() => {
       </div>
 
       <ul class="wa-list">
-        <li v-for="c in chats" :key="c.id_chat" :class="{ on: aktif?.id_chat === c.id_chat }" @click="bukaChat(c)">
+        <li v-baris v-for="c in chats" :key="c.id_chat" :class="{ on: aktif?.id_chat === c.id_chat }" @click="bukaChat(c)">
           <div class="wa-avatar" :class="{ grup: c.is_grup }">
             <img v-if="foto[c.id_chat]" :src="foto[c.id_chat]" alt="" />
             <template v-else>{{ c.is_grup ? '👥' : inisial(c.nama) }}</template>
@@ -1221,11 +1277,16 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </li>
-        <li v-if="!chats.length && !memuatChat && !(cari.trim().length >= 2 && hasilPesan.length)" class="wa-kosong">Belum ada chat{{ cari ? ' yang cocok' : '' }}.</li>
+        <li v-if="chatGalat" class="wa-kosong wa-err" role="alert">
+          ⚠ {{ chatGalat }}<template v-if="chats.length"> — menampilkan data terakhir.</template>
+          <button class="btn-sm btn-ghost" :disabled="memuatChat" @click.stop="muatChat()">Coba lagi</button>
+        </li>
+        <li v-if="!chats.length && memuatChat && !chatGalat" class="wa-kosong">Memuat…</li>
+        <li v-else-if="!chats.length && !memuatChat && !chatGalat && !(cari.trim().length >= 2 && hasilPesan.length)" class="wa-kosong">Belum ada chat{{ cari ? ' yang cocok' : '' }}.</li>
         <li v-if="chats.length < total" class="wa-lagi"><button class="btn-sm btn-ghost" :disabled="memuatChat" @click.stop="muatLagiChat">Muat lebih banyak</button></li>
         <template v-if="cari.trim().length >= 2">
           <li class="wa-seksi">Pesan<template v-if="mencariPesan"> · mencari…</template><template v-else> · {{ hasilPesan.length }}{{ hasilPesan.length >= 60 ? '+' : '' }}</template></li>
-          <li v-for="h in hasilPesan" :key="'h' + h.id_pesan" class="wa-hasil" @click="bukaHasil(h)">
+          <li v-baris v-for="h in hasilPesan" :key="'h' + h.id_pesan" class="wa-hasil" @click="bukaHasil(h)">
             <div class="wa-li-body">
               <div class="wa-li-top">
                 <b class="wa-li-nama">{{ h.chat?.is_grup ? '👥 ' : '' }}{{ h.chat?.nama }}</b>
@@ -1256,12 +1317,12 @@ onBeforeUnmount(() => {
 
       <template v-else>
         <header class="wa-head">
-          <button class="wa-back" @click="aktif = null">←</button>
-          <div class="wa-avatar klik" :class="{ grup: aktif.is_grup }" title="Lihat profil" @click="tampilkanProfil">
+          <button class="wa-back" aria-label="Kembali ke daftar chat" title="Kembali" @click="tutupChat">←</button>
+          <div v-baris class="wa-avatar klik" :class="{ grup: aktif.is_grup }" title="Lihat profil" @click="tampilkanProfil">
             <img v-if="foto[aktif.id_chat]" :src="foto[aktif.id_chat]" alt="" />
             <template v-else>{{ aktif.is_grup ? '👥' : inisial(aktif.nama) }}</template>
           </div>
-          <div class="wa-head-info klik" title="Lihat profil" @click="tampilkanProfil">
+          <div v-baris class="wa-head-info klik" title="Lihat profil" @click="tampilkanProfil">
             <b>{{ aktif.nama }}</b>
             <small>
               <template v-if="aktif.nomor">+{{ aktif.nomor }}</template>
@@ -1293,12 +1354,19 @@ onBeforeUnmount(() => {
           </small>
           <button title="Lebih lama (Enter)" :disabled="!cariChat.hasil.length" @click="navCari(1)">▲</button>
           <button title="Lebih baru (Shift+Enter)" :disabled="!cariChat.hasil.length" @click="navCari(-1)">▼</button>
-          <button title="Tutup (Esc)" @click="tutupCariChat">✕</button>
+          <button title="Tutup (Esc)" aria-label="Tutup pencarian" @click="tutupCariChat">✕</button>
         </div>
 
         <div ref="kotakPesan" class="wa-pesan" @scroll.passive="onScroll" @load.capture="onMediaMuat" @loadedmetadata.capture="onMediaMuat">
-          <div v-if="adaLagi" class="wa-muat-lama"><button class="btn-sm btn-ghost" :disabled="memuatPesan" @click="muatSebelumnya">Muat pesan sebelumnya</button></div>
-          <div v-if="memuatPesan && !pesan.length" class="wa-kosong">Memuat…</div>
+          <div v-if="adaLagi" class="wa-muat-lama">
+            <small v-if="gagalSebelumnya" class="wa-err">Gagal memuat pesan sebelumnya. </small>
+            <button class="btn-sm btn-ghost" :disabled="memuatPesan" @click="muatSebelumnya">{{ gagalSebelumnya ? 'Coba lagi' : 'Muat pesan sebelumnya' }}</button>
+          </div>
+          <div v-if="pesanMuatGalat && !pesan.length" class="wa-kosong wa-err" role="alert">
+            ⚠ {{ pesanMuatGalat }}
+            <button class="btn-sm btn-ghost" :disabled="memuatPesan" @click="aktif && bukaChat(aktif)">Coba lagi</button>
+          </div>
+          <div v-else-if="memuatPesan && !pesan.length" class="wa-kosong">Memuat…</div>
 
           <template v-for="(p, i) in pesan" :key="p.id_pesan">
             <div v-if="pisahHari(i)" class="wa-hari"><span>{{ hari(p.waktu) }}</span></div>
@@ -1396,7 +1464,7 @@ onBeforeUnmount(() => {
                 <template v-if="a.gagal">
                   <span class="wa-err">⚠️ {{ a.gagal }}</span>
                   <button class="btn-sm btn-ghost" @click="kirimUlang(a)">↻ Kirim ulang</button>
-                  <button class="btn-sm btn-ghost" @click="buangAntre(a)">✕</button>
+                  <button class="btn-sm btn-ghost" aria-label="Buang pesan gagal" title="Buang" @click="buangAntre(a)">✕</button>
                 </template>
                 <span v-else class="wa-centang">🕓</span>
               </div>
@@ -1412,16 +1480,16 @@ onBeforeUnmount(() => {
         <footer class="wa-tulis">
           <div v-if="editPesan" class="wa-tulis-kutip wa-tulis-edit">
             <span>✏️ Mengedit pesan: {{ tanpaTtd(editPesan.teks) || '📎 Media' }}</span>
-            <button title="Batal (Esc)" @click="batalEdit">✕</button>
+            <button title="Batal (Esc)" aria-label="Batal mengedit" @click="batalEdit">✕</button>
           </div>
           <div v-if="kutip" class="wa-tulis-kutip">
             <span>↩ {{ kutip.teks || (kutip.media ? '📎 ' + (kutip.media.nama || kutip.media.jenis) : 'Pesan') }}</span>
-            <button @click="kutip = null">✕</button>
+            <button aria-label="Batal membalas" title="Batal membalas" @click="kutip = null">✕</button>
           </div>
           <div v-if="file" class="wa-tulis-kutip wa-lampiran">
             <img v-if="pratinjau" :src="pratinjau" alt="" />
             <span>📎 {{ file.name }} ({{ ukuran(file.size) }})<small v-if="pratinjau"> — teks yang diketik menjadi keterangan foto</small></span>
-            <button @click="hapusFile">✕</button>
+            <button aria-label="Hapus lampiran" title="Hapus lampiran" @click="hapusFile">✕</button>
           </div>
           <p v-if="errKirim" class="wa-err">{{ errKirim }}</p>
           <label class="wa-ttd" :title="pakaiTtd ? 'Pesan diawali nama Anda (tebal di WhatsApp)' : 'Tanpa tanda tangan'">
@@ -1436,7 +1504,8 @@ onBeforeUnmount(() => {
                   <button class="wa-template-pakai" @click="pakaiTemplate(t)"><b>{{ t.judul }}</b><small>{{ t.isi }}</small></button>
                   <button class="wa-template-hapus" title="Hapus" @click="hapusTemplate(t)">🗑</button>
                 </div>
-                <p v-if="!template.length" class="muted">Belum ada balasan cepat.</p>
+                <p v-if="templateGalat" class="wa-err">{{ templateGalat }} <button class="btn-sm btn-ghost" @click="muatTemplate">Coba lagi</button></p>
+                <p v-else-if="!template.length" class="muted">Belum ada balasan cepat.</p>
                 <button class="btn-sm btn-ghost" @click="tambahTemplate">+ Tambah balasan cepat</button>
               </div>
             </div>
@@ -1490,11 +1559,11 @@ onBeforeUnmount(() => {
         <input v-model="cariTujuan" class="wa-chatbaru-input" placeholder="Nama PIC, site, pelanggan, teknisi, vendor, atau nomor HP (08…)" autofocus />
         <p v-if="errChatBaru" class="wa-err">{{ errChatBaru }}</p>
         <ul class="wa-chatbaru-list">
-          <li v-if="nomorKetik" class="klik" @click="pilihTujuan(nomorKetik)">
+          <li v-baris v-if="nomorKetik" class="klik" @click="pilihTujuan(nomorKetik)">
             <span class="wa-chatbaru-ikon">📞</span>
             <span><b>Chat ke +{{ nomorKetik }}</b><small>Nomor diketik langsung — dicek dulu terdaftar di WhatsApp</small></span>
           </li>
-          <li v-for="h in hasilTujuan" :key="h.nomor" class="klik" @click="pilihTujuan(h.nomor, h.sumber === 'whatsapp' ? undefined : h.nama)">
+          <li v-baris v-for="h in hasilTujuan" :key="h.nomor" class="klik" @click="pilihTujuan(h.nomor, h.sumber === 'whatsapp' ? undefined : h.nama)">
             <span class="wa-chatbaru-ikon">{{ IKON_SUMBER[h.sumber] }}</span>
             <span>
               <b>{{ h.nama }}</b>
@@ -1514,7 +1583,7 @@ onBeforeUnmount(() => {
     <!-- Panel profil -->
     <div v-if="bukaProfil" class="wa-profil-latar" @click.self="bukaProfil = false">
       <aside class="wa-profil">
-        <header><b>{{ aktif?.is_grup ? 'Info grup' : 'Info kontak' }}</b><button @click="bukaProfil = false">✕</button></header>
+        <header><b>{{ aktif?.is_grup ? 'Info grup' : 'Info kontak' }}</b><button aria-label="Tutup profil" title="Tutup" @click="bukaProfil = false">✕</button></header>
         <div class="wa-profil-foto">
           <img v-if="fotoBesar" :src="fotoBesar" alt="" @click="lihatFoto = { url: fotoBesar, nama: `foto-profil-${(aktif?.nama || 'wa').replace(/[^\w-]+/g, '-')}.jpg` }" />
           <div v-else class="wa-avatar besar" :class="{ grup: aktif?.is_grup }">{{ aktif?.is_grup ? '👥' : inisial(aktif?.nama || '') }}</div>
@@ -1584,7 +1653,7 @@ onBeforeUnmount(() => {
                   <input v-model="formTv.cari" placeholder="Cari nama / jabatan karyawan…" autofocus />
                   <ul v-if="formTv.hasil.length || formTv.mencari" class="wa-dropdown-list">
                     <li v-if="formTv.mencari" class="muted">Mencari…</li>
-                    <li v-for="x in formTv.hasil" :key="x.id_karyawan" @click="pilihKaryawan(x)">
+                    <li v-baris v-for="x in formTv.hasil" :key="x.id_karyawan" @click="pilihKaryawan(x)">
                       <b>{{ x.nama_lengkap }}</b>
                       <small>{{ x.jabatan }} · {{ x.departemen }}<template v-if="x.no_hp"> · HP: {{ x.no_hp }}</template></small>
                     </li>
@@ -1594,7 +1663,7 @@ onBeforeUnmount(() => {
                   No. HP di HRIS sekarang {{ formTv.karyawan.no_hp }} — akan diganti dengan nomor ini.
                 </small>
                 <small v-else-if="formTv.karyawan?.no_hp" class="hijau">✓ Nomor ini sudah tercatat di HRIS</small>
-                <p class="muted kecil">No. HP karyawan di HRIS diisi: 0{{ profil.nomor.slice(2) }}</p>
+                <p class="muted kecil">No. HP karyawan di HRIS diisi: 0{{ profil.nomor?.slice(2) }}</p>
               </template>
               <template v-else>
                 <label>Nama teknisi vendor</label>
@@ -1603,7 +1672,7 @@ onBeforeUnmount(() => {
                 <input v-model="formTv.asal" maxlength="150" placeholder="mis. CV Maju Jaya, freelance" />
                 <label>Keahlian <small class="muted">(opsional)</small></label>
                 <input v-model="formTv.keahlian" maxlength="150" placeholder="mis. FO splicing, wireless" />
-                <p class="muted kecil">{{ profil.teknisi?.length ? 'Data vendor dengan nomor ini akan diperbarui.' : 'Masuk ke Master Kontak Teknisi (pihak ketiga).' }} Nomor: 0{{ profil.nomor.slice(2) }}</p>
+                <p class="muted kecil">{{ profil.teknisi?.length ? 'Data vendor dengan nomor ini akan diperbarui.' : 'Masuk ke Master Kontak Teknisi (pihak ketiga).' }} Nomor: 0{{ profil.nomor?.slice(2) }}</p>
               </template>
               <p v-if="formTv.err" class="wa-err">{{ formTv.err }}</p>
               <div class="wa-form-pic-aksi">
@@ -1618,7 +1687,7 @@ onBeforeUnmount(() => {
                 <input v-model="formPic.cari" placeholder="Cari nama / kode site / pelanggan…" autofocus />
                 <ul v-if="formPic.hasil.length || formPic.mencari" class="wa-dropdown-list">
                   <li v-if="formPic.mencari" class="muted">Mencari…</li>
-                  <li v-for="x in formPic.hasil" :key="x.id_site" @click="pilihSitePic(x)">
+                  <li v-baris v-for="x in formPic.hasil" :key="x.id_site" @click="pilihSitePic(x)">
                     <b>{{ x.nama_site }}</b>
                     <small>{{ x.kode_site }}<template v-if="x.pelanggan"> · {{ x.pelanggan.nama_pelanggan }}</template><template v-if="x.kota"> · {{ x.kota }}</template> · {{ x.status_site }}</small>
                   </li>

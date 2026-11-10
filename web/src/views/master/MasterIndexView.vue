@@ -85,7 +85,7 @@ const menus = computed(() => semuaMenu.filter((m) => m.to !== '/settings' || aut
     </div>
 
     <div class="grid">
-      <div
+      <div v-baris
         v-for="m in menus"
         :key="m.to"
         class="card"

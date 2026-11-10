@@ -7,6 +7,7 @@ import { useMasterStore } from '@/stores/master'
 import { useProyekStore } from '@/stores/proyek'
 import { fmtDateTime as fmtDt, statusLabel } from '@/composables/useFormat'
 import BasePagination from '@/components/BasePagination.vue'
+import { useFilterUrl } from '@/composables/useFilterUrl'
 
 const router = useRouter()
 const ops = useOperationsStore()
@@ -18,6 +19,8 @@ const filterStatus = ref('')
 const filterPrioritas = ref('')
 const filterSumber = ref('')
 const search = ref('')
+// Filter & halaman disimpan di URL — tetap sama setelah kembali dari halaman detail
+useFilterUrl({ q: search, status: filterStatus, prioritas: filterPrioritas, sumber: filterSumber, page })
 
 const showModal = ref(false)
 const form = ref({ id_site: 0, judul_tiket: '', deskripsi_masalah: '', prioritas: 'Medium', sumber_tiket: 'Internal', id_teknisi_pic: 0 })
@@ -140,7 +143,7 @@ function rowClass(t: any) {
 
     <!-- Summary tiles -->
     <div class="summary-grid">
-      <div
+      <div v-baris
         v-for="s in ops.summary" :key="s.status"
         class="summary-tile"
         :class="{ active: filterStatus === s.status }"
@@ -213,7 +216,7 @@ function rowClass(t: any) {
               <div>Tidak ada tiket ditemukan</div>
             </td>
           </tr>
-          <tr
+          <tr v-baris
             v-for="t in ops.list" :key="t.id_ticket"
             class="trow" :class="rowClass(t)"
             @click="router.push(`/operations/${t.id_ticket}`)"

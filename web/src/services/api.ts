@@ -1,5 +1,6 @@
 import axios from 'axios'
 import router from '@/router'
+import { useAuthStore } from '@/stores/auth'
 
 const api = axios.create({
   baseURL: '/api',
@@ -31,11 +32,14 @@ api.interceptors.response.use(
         original.headers.Authorization = `Bearer ${newToken}`
         return api(original)
       } catch {
-        // Refresh gagal — hapus semua state dan paksa ke login
+        // Refresh gagal — hapus semua state lalu ke login dengan penjelasan,
+        // dan kembalikan ke halaman semula setelah masuk lagi
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
         localStorage.removeItem('user')
-        router.push('/login')
+        useAuthStore().logout()
+        const kini = router.currentRoute.value
+        if (kini.name !== 'login') router.push({ path: '/login', query: { alasan: 'sesi', redirect: kini.fullPath } })
       }
     }
     return Promise.reject(err)

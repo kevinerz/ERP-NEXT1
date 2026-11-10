@@ -14,6 +14,7 @@ const loadError = ref('')
 const expandedSite    = ref<number | null>(null)
 const sensorDevices   = ref<{ device_name: string; sensors: any[] }[]>([])
 const sensorLoading   = ref(false)
+const sensorError     = ref('')
 const graphHours      = ref(0)
 
 // Modal
@@ -21,6 +22,7 @@ const modalSensor       = ref<{ id_site: number; objid: number; name: string } |
 const modalHours        = ref(0)
 const modalGraphUrl     = ref<string | null>(null)
 const modalGraphLoading = ref(false)
+const modalGraphError   = ref(false)
 
 onMounted(async () => {
   try {
@@ -36,12 +38,20 @@ async function toggleSensors(id_site: number) {
     expandedSite.value = null; sensorDevices.value = []
     return
   }
-  expandedSite.value = id_site; sensorLoading.value = true; sensorDevices.value = []
+  expandedSite.value = id_site
+  await muatSensor(id_site)
+}
+// gagal ≠ kosong: error PRTG ditampilkan terpisah dari "tidak ada perangkat"
+async function muatSensor(id_site: number) {
+  sensorLoading.value = true; sensorDevices.value = []; sensorError.value = ''
   try {
     const r = await portalApi.get(`/portal/sites/${id_site}/sensors`)
     // API returns { data: [{device_name, sensors}] } — array of devices
     sensorDevices.value = Array.isArray(r.data.data) ? r.data.data : []
-  } catch { sensorDevices.value = [] }
+  } catch (e: any) {
+    sensorDevices.value = []
+    sensorError.value = e?.response?.data?.message || 'Data sensor tidak dapat dimuat saat ini.'
+  }
   finally { sensorLoading.value = false }
 }
 
@@ -53,13 +63,13 @@ async function openModal(id_site: number, objid: number, name: string) {
 
 async function fetchModalGraph(id_site: number, objid: number, graphid: number) {
   if (modalGraphUrl.value) { URL.revokeObjectURL(modalGraphUrl.value); modalGraphUrl.value = null }
-  modalGraphLoading.value = true
+  modalGraphLoading.value = true; modalGraphError.value = false
   try {
     const r = await portalApi.get(`/portal/sites/${id_site}/sensor/${objid}/graph.png`, {
       params: { graphid }, responseType: 'blob',
     })
     modalGraphUrl.value = URL.createObjectURL(r.data)
-  } catch { modalGraphUrl.value = null }
+  } catch { modalGraphUrl.value = null; modalGraphError.value = true }
   finally { modalGraphLoading.value = false }
 }
 
@@ -208,6 +218,10 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
         <!-- Sensor panel -->
         <div v-if="expandedSite === site.id_site" class="sensor-panel">
           <div v-if="sensorLoading" class="sensor-state">Memuat data sensor dari PRTG…</div>
+          <div v-else-if="sensorError" class="sensor-state sensor-error-state">
+            ⚠ {{ sensorError }}
+            <button class="btn-retry" @click="muatSensor(site.id_site)">Coba lagi</button>
+          </div>
           <div v-else-if="!sensorDevices.length" class="sensor-state sensor-empty-state">
             Tidak ada perangkat PRTG yang terdaftar untuk site ini.<br>
             <span class="sensor-empty-hint">Hubungi tim teknis untuk pengaturan monitoring.</span>
@@ -229,7 +243,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
             <div v-for="dev in sensorDevices" :key="dev.device_name" class="sensor-device-block">
               <div class="sensor-device-name">{{ dev.device_name }}</div>
               <div v-if="dev.sensors?.length" class="sensor-list">
-                <div
+                <div v-baris
                   v-for="s in dev.sensors" :key="s.objid"
                   class="sensor-row"
                   @click="openModal(site.id_site, s.objid, s.sensor)"
@@ -272,6 +286,10 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
         <div class="modal-body">
           <div v-if="modalGraphLoading" class="modal-loading">Memuat grafik dari PRTG…</div>
           <img v-else-if="modalGraphUrl" :src="modalGraphUrl" :alt="`Grafik ${modalSensor.name}`" class="modal-graph-img" />
+          <div v-else-if="modalGraphError" class="modal-loading sensor-error-state">
+            ⚠ Gagal memuat grafik dari PRTG.
+            <button class="btn-retry" @click="modalChangeHours(modalHours)">Coba lagi</button>
+          </div>
           <div v-else class="modal-loading">Grafik tidak tersedia untuk sensor ini.</div>
         </div>
       </div>
@@ -796,4 +814,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
   .modal-body { padding: 14px 16px 16px; }
 }
 
+/* status gagal memuat sensor/grafik */
+.sensor-error-state { color: #b91c1c; }
+.btn-retry { margin-left: 8px; padding: 3px 10px; font-size: 12px; border: 1px solid #fecaca; background: #fff; color: #b91c1c; border-radius: 6px; cursor: pointer; }
 </style>

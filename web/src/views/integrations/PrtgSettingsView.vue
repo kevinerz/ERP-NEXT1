@@ -13,8 +13,12 @@ const tab = ref<'monitor' | 'koneksi' | 'mapping' | 'audit' | 'graph' | 'provisi
 
 // ─── STATUS ───────────────────────────────────────────────────
 const status = ref<any>(null)
+const statusError = ref('')
+// pesan error dari server (untuk ditampilkan inline)
+const pesanErr = (e: any, f: string) => { const m = e?.response?.data?.message; return Array.isArray(m) ? m.join(', ') : m || f }
 async function fetchStatus() {
-  try { status.value = (await api.get('/prtg/status')).data.data } catch {}
+  try { status.value = (await api.get('/prtg/status')).data.data; statusError.value = '' }
+  catch (e) { statusError.value = pesanErr(e, 'Gagal memuat status PRTG') }
 }
 
 const toggling = ref(false)
@@ -41,6 +45,9 @@ const configForm = ref({ base_url: '', username: '', passhash: '', durasi_konfir
 const configHasPasshash = ref(false)
 const savingConfig = ref(false)
 const configMsg = ref('')
+// Simpan baru boleh setelah config termuat — cegah menimpa config dengan form kosong
+const configLoaded = ref(false)
+const configLoadError = ref('')
 
 const DURASI_OPTIONS = [
   { value: 3,  label: '3 menit — koneksi sangat stabil' },
@@ -59,6 +66,7 @@ const COOLDOWN_OPTIONS = [
 ]
 
 async function fetchConfig() {
+  configLoadError.value = ''
   try {
     const d = (await api.get('/prtg/config')).data.data
     configForm.value.base_url = d.base_url
@@ -66,9 +74,11 @@ async function fetchConfig() {
     configHasPasshash.value = d.has_passhash
     configForm.value.durasi_konfirmasi_menit = d.durasi_konfirmasi_menit ?? 10
     configForm.value.cooldown_flapping_menit = d.cooldown_flapping_menit ?? 60
-  } catch {}
+    configLoaded.value = true
+  } catch (e) { configLoadError.value = pesanErr(e, 'Gagal memuat konfigurasi PRTG') }
 }
 async function saveConfig() {
+  if (!configLoaded.value) return
   savingConfig.value = true; configMsg.value = ''; configErr.value = false
   try {
     await api.patch('/prtg/config', configForm.value)
@@ -134,6 +144,7 @@ function closeInlineSiteLater(deviceName: string) {
 const mappingList = ref<any[]>([])
 const unmatchedList = ref<any[]>([])
 const mappingLoading = ref(false)
+const mappingError = ref('')
 const mapForm = ref({ device_name: '', id_site: 0 })
 const mapSubmitting = ref(false)
 const mapMsg = ref('')
@@ -146,12 +157,12 @@ const mapSiteIdRef = computed({
 const mapSite = makeSiteCombo(mapSiteIdRef)
 
 async function fetchMapping() {
-  mappingLoading.value = true
+  mappingLoading.value = true; mappingError.value = ''
   try {
     const [m, u] = await Promise.all([api.get('/prtg/mapping'), api.get('/prtg/mapping/unmatched')])
     mappingList.value = m.data.data
     unmatchedList.value = u.data.data
-  } catch {} finally { mappingLoading.value = false }
+  } catch (e) { mappingError.value = pesanErr(e, 'Gagal memuat mapping') } finally { mappingLoading.value = false }
 }
 
 function pilihUnmatched(deviceName: string) {
@@ -254,6 +265,7 @@ async function fetchGraphSensors() {
 
 const graphBlobUrl     = ref<string | null>(null)
 const graphBlobLoading = ref(false)
+const graphBlobError = ref(false)
 
 async function openSensorHistory(objid: number) {
   if (openSensorId.value === objid) {
@@ -267,14 +279,14 @@ async function openSensorHistory(objid: number) {
 async function loadGraph() {
   if (!openSensorId.value) return
   if (graphBlobUrl.value) { URL.revokeObjectURL(graphBlobUrl.value); graphBlobUrl.value = null }
-  graphBlobLoading.value = true
+  graphBlobLoading.value = true; graphBlobError.value = false
   try {
     const r = await api.get(`/prtg/sensor/${openSensorId.value}/graph.png`, {
       params: { graphid: graphHours.value },
       responseType: 'blob',
     })
     graphBlobUrl.value = URL.createObjectURL(r.data)
-  } catch {}
+  } catch { graphBlobError.value = true }
   finally { graphBlobLoading.value = false }
 }
 
@@ -354,6 +366,7 @@ const importDevice        = ref<any>(null)
 const importLoading       = ref(false)
 const importResult        = ref<any>(null)
 const provAsetLookupLoad  = ref(false)
+const provAsetError       = ref('')
 const linkAset            = ref(false)
 
 const JENIS_OPTIONS = ['CPE', 'Router', 'Switch', 'ONU', 'ONT', 'Server', 'Access Point', 'Firewall', 'Lainnya']
@@ -491,12 +504,12 @@ function openProvModal(device: any) {
 
 async function lookupAset() {
   if (!provForm.value.serial_number) return
-  provAsetLookupLoad.value = true; provAsetFound.value = null
+  provAsetLookupLoad.value = true; provAsetFound.value = null; provAsetError.value = ''
   try {
     const r = await api.get('/prtg/aset/lookup', { params: { sn: provForm.value.serial_number } })
     provAsetFound.value = r.data.data
     if (provAsetFound.value) linkAset.value = true
-  } catch {} finally { provAsetLookupLoad.value = false }
+  } catch (e) { provAsetError.value = pesanErr(e, 'Gagal mencari aset') } finally { provAsetLookupLoad.value = false }
 }
 
 async function submitProvision() {
@@ -622,6 +635,8 @@ function exportKonfirmasiCSV() {
       </button>
     </div>
 
+    <p v-if="statusError" class="msg err">⚠ {{ statusError }} <button class="btn-secondary" @click="fetchStatus">Coba lagi</button></p>
+
     <div class="tabs-wrap">
       <div class="tabs">
         <button :class="['tab', { active: tab === 'monitor' }]" @click="tab = 'monitor'; fetchMonitor()">🔴 Monitor Down</button>
@@ -710,7 +725,7 @@ function exportKonfirmasiCSV() {
           <div class="field">
             <label>Site Pelanggan</label>
             <div class="site-combo">
-              <div class="site-combo-val" :class="{ 'has-val': mapForm.id_site }" @click="mapSite.open.value = true">
+              <div v-baris class="site-combo-val" :class="{ 'has-val': mapForm.id_site }" @click="mapSite.open.value = true">
                 <span v-if="mapSite.display.value">{{ mapSite.display.value }}</span>
                 <span v-else class="combo-ph">— Ketik nama site / kode —</span>
                 <span v-if="mapForm.id_site" class="combo-clear" @click.stop="mapSite.clear()">✕</span>
@@ -736,8 +751,9 @@ function exportKonfirmasiCSV() {
 
       <div class="card">
         <h3>Mapping Tersimpan</h3>
-        <div v-if="mappingLoading" class="loading">Memuat...</div>
-        <div class="table-wrap">
+        <p v-if="mappingError" class="msg err">⚠ {{ mappingError }} <button class="btn-secondary" @click="fetchMapping">Coba lagi</button></p>
+        <div v-else-if="mappingLoading" class="loading">Memuat...</div>
+        <div v-if="!mappingError" class="table-wrap">
           <table v-if="!mappingLoading">
             <thead><tr><th>Nama Device PRTG</th><th>Site</th><th></th></tr></thead>
             <tbody>
@@ -805,6 +821,7 @@ function exportKonfirmasiCSV() {
     <div v-if="tab === 'koneksi' && bisaKelolaKoneksi" class="tab-content">
       <div class="card">
         <h3>Koneksi API PRTG</h3>
+        <p v-if="configLoadError" class="msg err">⚠ {{ configLoadError }} — form di bawah belum berisi konfigurasi tersimpan, jangan disimpan. <button class="btn-secondary" @click="fetchConfig">Coba lagi</button></p>
         <div class="field"><label>Base URL</label><input v-model="configForm.base_url" placeholder="http://103.238.202.58:8081" /></div>
         <div class="field"><label>Username</label><input v-model="configForm.username" placeholder="root" /></div>
         <div class="field">
@@ -860,7 +877,7 @@ function exportKonfirmasiCSV() {
           <p class="hint" style="margin:0;color:#f97316">⚠️ Cooldown nonaktif — setiap down akan membuat tiket baru, termasuk saat flapping.</p>
         </div>
 
-        <button class="btn-submit" @click="saveConfig" :disabled="savingConfig">{{ savingConfig ? 'Menyimpan...' : 'Simpan Konfigurasi' }}</button>
+        <button class="btn-submit" @click="saveConfig" :disabled="savingConfig || !configLoaded" :title="configLoaded ? '' : 'Konfigurasi belum termuat'">{{ savingConfig ? 'Menyimpan...' : 'Simpan Konfigurasi' }}</button>
         <p v-if="configMsg" :class="['msg', { err: configErr }]">{{ configMsg }}</p>
       </div>
     </div>
@@ -900,7 +917,7 @@ function exportKonfirmasiCSV() {
           </p>
           <div class="card" v-if="dev.sensors?.length">
             <div v-for="s in dev.sensors" :key="s.objid" class="sensor-block">
-              <div class="sensor-row" @click="openSensorHistory(s.objid)">
+              <div v-baris class="sensor-row" @click="openSensorHistory(s.objid)">
                 <span class="sensor-name">{{ s.sensor }}</span>
                 <span :class="['sensor-status', s.status_raw <= 3 ? 'st-up' : 'st-down']">{{ s.status }}</span>
                 <span class="sensor-toggle">{{ openSensorId === s.objid ? '▲' : '▼' }}</span>
@@ -909,6 +926,7 @@ function exportKonfirmasiCSV() {
                 <p class="graph-label">PRTG Graph — {{ ['Live','48 jam','30 hari','365 hari'][graphHours] ?? 'Live' }}</p>
                 <div v-if="graphBlobLoading" class="loading" style="padding:12px">Memuat graph...</div>
                 <img v-else-if="graphBlobUrl" :src="graphBlobUrl" class="prtg-graph-img" />
+                <p v-else-if="graphBlobError" class="msg err" style="padding:12px">⚠ Gagal memuat graph dari PRTG <button class="btn-secondary" @click="loadGraph">Coba lagi</button></p>
                 <p v-else class="empty" style="padding:12px">Graph tidak tersedia</p>
               </div>
             </div>
@@ -1044,7 +1062,7 @@ function exportKonfirmasiCSV() {
                   <td>
                     <!-- Inline site search per row -->
                     <div class="site-combo site-combo-sm">
-                      <div class="site-combo-val" :class="{ 'has-val': inlineSiteId[d.device_name] }"
+                      <div v-baris class="site-combo-val" :class="{ 'has-val': inlineSiteId[d.device_name] }"
                         @click="inlineSiteOpen[d.device_name] = true">
                         <span v-if="inlineSiteId[d.device_name]" class="combo-selected-text">{{ inlineSiteQuery[d.device_name] }}</span>
                         <span v-else class="combo-ph">Ketik nama site...</span>
@@ -1216,7 +1234,7 @@ function exportKonfirmasiCSV() {
               <span v-if="provSelected?.match_source === 'auto'" class="field-hint"> — terisi otomatis, periksa sebelum provision</span>
             </label>
             <div class="site-combo">
-              <div class="site-combo-val" :class="{ 'has-val': provSiteId }" @click="modalSite.open.value = !modalSite.open.value">
+              <div v-baris class="site-combo-val" :class="{ 'has-val': provSiteId }" @click="modalSite.open.value = !modalSite.open.value">
                 <span v-if="modalSite.display.value">{{ modalSite.display.value }}</span>
                 <span v-else class="combo-ph">— Ketik nama site / kode —</span>
                 <span v-if="provSiteId" class="combo-clear" @click.stop="provSiteId = 0; modalSite.clear()">✕</span>
@@ -1246,7 +1264,7 @@ function exportKonfirmasiCSV() {
             <div v-if="provSelected.parsed_sns?.length" class="sn-list">
               <span class="comment-label" style="margin-top:8px">Perangkat terdeteksi:</span>
               <div v-for="s in provSelected.parsed_sns" :key="s.sn" class="sn-row-item">
-                <span class="badge-sn" style="cursor:pointer" @click="provForm.serial_number = s.sn" :title="'Klik untuk pakai SN ini'">
+                <span v-baris class="badge-sn" style="cursor:pointer" @click="provForm.serial_number = s.sn" :title="'Klik untuk pakai SN ini'">
                   SN: {{ s.sn }}
                 </span>
                 <span v-if="s.device" class="sn-device">{{ s.device }}</span>
@@ -1318,6 +1336,7 @@ function exportKonfirmasiCSV() {
             </div>
           </div>
 
+          <p v-if="provAsetError" class="msg err">⚠ {{ provAsetError }}</p>
           <div v-if="provAsetFound !== null" class="aset-result">
             <div v-if="provAsetFound" class="aset-found">
               <span class="aset-icon">📦</span>

@@ -18,6 +18,7 @@ async function handleLogin() {
   await auth.login(email.value, password.value)
     .then((ok: boolean) => { if (ok) router.push('/portal/dashboard') })
 }
+const sesiHabis = new URLSearchParams(window.location.search).get('alasan') === 'sesi'
 </script>
 
 <template>
@@ -114,7 +115,7 @@ async function handleLogin() {
                 required
                 autocomplete="current-password"
               />
-              <button type="button" class="pw-toggle" @click="showPw = !showPw" tabindex="-1" :aria-label="showPw ? 'Sembunyikan password' : 'Tampilkan password'">
+              <button type="button" class="pw-toggle" @click="showPw = !showPw"  :aria-label="showPw ? 'Sembunyikan password' : 'Tampilkan password'">
                 <svg v-if="!showPw" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                 </svg>
@@ -126,7 +127,8 @@ async function handleLogin() {
             </div>
           </div>
 
-          <div v-if="auth.error" class="alert-error">
+          <div v-if="sesiHabis && !auth.error" class="alert-info" role="status">Sesi Anda sudah berakhir. Silakan masuk kembali.</div>
+          <div v-if="auth.error" class="alert-error" role="alert">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
             </svg>
@@ -324,4 +326,5 @@ async function handleLogin() {
   .mobile-logo { display: flex; }
   .form-wrap { max-width: 100%; }
 }
+.alert-info { margin-bottom: 12px; padding: 9px 12px; border-radius: 8px; background: #eff6ff; color: #1e40af; font-size: 13px; }
 </style>

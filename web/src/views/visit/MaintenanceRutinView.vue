@@ -19,15 +19,24 @@ const aturan = ref<Aturan[]>([])
 const pelanggan = ref<{ id_pelanggan: number; nama_pelanggan: string; site_aktif: number }[]>([])
 const memuat = ref(false)
 const proses = ref(false)
+const galat = ref('')
+const pesanGagal = (e: any, f: string) => { const m = e?.response?.data?.message; return (Array.isArray(m) ? m.join(', ') : m) || f }
 
 async function muat() {
   memuat.value = true
-  try { aturan.value = (await api.get('/visit/pm/aturan')).data.data } catch (e) { alertError(e) } finally { memuat.value = false }
+  galat.value = ''
+  try { aturan.value = (await api.get('/visit/pm/aturan')).data.data } catch (e) { galat.value = pesanGagal(e, 'Gagal memuat aturan maintenance') } finally { memuat.value = false }
 }
-onMounted(async () => {
-  muat()
-  try { pelanggan.value = (await api.get('/visit/pm/pelanggan')).data.data } catch { /* abaikan */ }
-})
+// Daftar pelanggan wajib termuat sebelum simpan, agar aturan tidak tersimpan "Semua pelanggan" tanpa sengaja
+const pelangganOk = ref(false)
+const pelangganMemuat = ref(false)
+const pelangganGalat = ref('')
+async function muatPelanggan() {
+  pelangganMemuat.value = true
+  pelangganGalat.value = ''
+  try { pelanggan.value = (await api.get('/visit/pm/pelanggan')).data.data; pelangganOk.value = true } catch (e) { pelangganGalat.value = pesanGagal(e, 'Gagal memuat daftar pelanggan') } finally { pelangganMemuat.value = false }
+}
+onMounted(() => { muat(); muatPelanggan() })
 
 const tglLokal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const form = ref<any>(null)
@@ -39,6 +48,7 @@ function bukaForm(a?: Aturan) {
 async function simpan() {
   const f = form.value
   if (f.nama.trim().length < 3) { alertDialog({ title: 'Isi nama aturan', message: 'mis. "PM Kopi Kenangan 3 bulanan"' }); return }
+  if (!pelangganOk.value) { alertDialog({ title: 'Daftar pelanggan belum termuat', message: 'Muat ulang daftar pelanggan dulu agar pilihan pelanggan tidak tersimpan keliru.', variant: 'warning' }); return }
   proses.value = true
   try {
     const body = { nama: f.nama, id_pelanggan: f.id_pelanggan || null, kota: f.kota || undefined, interval_hari: Number(f.interval_hari), maks_per_hari: Number(f.maks_per_hari), tgl_mulai: f.tgl_mulai || undefined, prioritas: f.prioritas, deskripsi: f.deskripsi, is_aktif: f.is_aktif }
@@ -80,7 +90,11 @@ const angka = (n: number) => n.toLocaleString('id-ID')
       bila antrean aturan itu yang belum dijadwalkan sudah 5× maks per hari — jadi antrean tidak kebanjiran.
     </div>
 
-    <p v-if="memuat && !aturan.length" class="muted">Memuat…</p>
+    <div v-if="galat" class="alert alert-danger mr-galat" role="alert">
+      <span>⚠ {{ galat }}</span>
+      <button class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">Coba lagi</button>
+    </div>
+    <p v-else-if="memuat && !aturan.length" class="muted">Memuat…</p>
     <div v-else-if="!aturan.length" class="card mr-kosong">
       <p>Belum ada aturan maintenance rutin.</p>
       <button class="btn btn-primary" @click="bukaForm()">+ Buat aturan pertama</button>
@@ -95,7 +109,7 @@ const angka = (n: number) => n.toLocaleString('id-ID')
           <div class="mr-tombol">
             <button class="btn btn-ghost btn-sm" :disabled="proses || !a.is_aktif" @click="jalankan(a)">▶ Jalankan sekarang</button>
             <button class="btn btn-ghost btn-sm" @click="bukaForm(a)">✏️ Ubah</button>
-            <button class="btn btn-ghost btn-sm" @click="hapus(a)">🗑</button>
+            <button class="btn btn-ghost btn-sm" aria-label="Hapus aturan" title="Hapus aturan" @click="hapus(a)">🗑</button>
           </div>
         </div>
         <div class="mr-angka">
@@ -122,10 +136,15 @@ const angka = (n: number) => n.toLocaleString('id-ID')
           <div class="form-group"><label class="form-label form-required">Nama aturan</label><input v-model="form.nama" class="form-input" placeholder="mis. PM Kopi Kenangan 3 bulanan" /></div>
           <div class="form-group">
             <label class="form-label">Pelanggan</label>
-            <select v-model="form.id_pelanggan" class="form-select">
+            <select v-model="form.id_pelanggan" class="form-select" :disabled="!pelangganOk">
               <option :value="0">Semua pelanggan</option>
               <option v-for="p in pelanggan" :key="p.id_pelanggan" :value="p.id_pelanggan">{{ p.nama_pelanggan }} ({{ p.site_aktif }} store)</option>
             </select>
+            <span v-if="pelangganMemuat" class="form-hint">Memuat daftar pelanggan…</span>
+            <span v-else-if="pelangganGalat" class="form-error">
+              {{ pelangganGalat }} — aturan belum bisa disimpan.
+              <button type="button" class="btn btn-ghost btn-sm" @click="muatPelanggan">Coba lagi</button>
+            </span>
           </div>
           <div class="form-group"><label class="form-label">Kota (opsional)</label><input v-model="form.kota" class="form-input" placeholder="mis. Surabaya — kosongkan untuk semua kota" /></div>
           <div class="form-row">
@@ -154,7 +173,7 @@ const angka = (n: number) => n.toLocaleString('id-ID')
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" @click="form = null">Batal</button>
-          <button class="btn btn-primary" :disabled="proses" @click="simpan">Simpan</button>
+          <button class="btn btn-primary" :disabled="proses || !pelangganOk" @click="simpan">Simpan</button>
         </div>
       </div>
     </div>
@@ -162,6 +181,7 @@ const angka = (n: number) => n.toLocaleString('id-ID')
 </template>
 
 <style scoped>
+.mr-galat { align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .mr-tombol { display: flex; gap: 6px; flex-wrap: wrap; align-items: flex-start; }
 .mr-info { padding: 12px 16px; font-size: 13px; color: var(--text-2); line-height: 1.6; margin-bottom: 16px; }
 .mr-kosong { padding: 32px; text-align: center; }

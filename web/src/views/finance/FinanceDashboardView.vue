@@ -175,7 +175,7 @@ async function handleBulk() {
             <tr v-if="!finance.aging.invoices.length">
               <td colspan="6" class="empty">Tidak ada invoice outstanding 🎉</td>
             </tr>
-            <tr v-for="inv in finance.aging.invoices" :key="inv.id_invoice" class="row-link"
+            <tr v-baris v-for="inv in finance.aging.invoices" :key="inv.id_invoice" class="row-link"
               @click="router.push(`/finance/invoice/${inv.id_invoice}`)">
               <td>
                 <div class="fw600">{{ inv.pelanggan }}</div>

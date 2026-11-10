@@ -337,11 +337,15 @@ const STATUS_LIST = ['Open', 'In_Progress', 'Pending_Customer', 'Resolved', 'Clo
 const PRIORITAS_LIST = ['Low', 'Medium', 'High', 'Critical']
 const JENIS_WO = ['Troubleshoot', 'Maintenance', 'Instalasi', 'Survey', 'Upgrade']
 const jenisGangguanList = ref<string[]>([])
+const jenisGangguanError = ref('')
 async function fetchJenisGangguan() {
+  jenisGangguanError.value = ''
   try {
     const r = await api.get('/master/jenis-gangguan', { params: { is_aktif: 'true' } })
     jenisGangguanList.value = (r.data.data as any[]).map((j) => j.nama)
-  } catch { /* pakai fallback jika API gagal */ }
+  } catch (e: any) {
+    jenisGangguanError.value = e?.response?.data?.message || 'Gagal memuat daftar jenis gangguan'
+  }
 }
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Open:             { bg: '#eff6ff', color: '#1d4ed8' },
@@ -786,8 +790,8 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                 <div v-if="fotosOf(stage).length" class="foto-stage-col">
                   <div class="stage-label">{{ stageLabel(stage) }}</div>
                   <div class="stage-row-grid">
-                    <div v-for="f in fotosOf(stage)" :key="f.id_foto" class="foto-thumb-wrap" @click="previewUrl = f.url">
-                      <img :src="f.url" class="foto-thumb" loading="lazy" />
+                    <div v-baris v-for="f in fotosOf(stage)" :key="f.id_foto" class="foto-thumb-wrap" @click="previewUrl = f.url">
+                      <img :src="f.url" class="foto-thumb" loading="lazy" :alt="`Foto ${stageLabel(stage)} ${fmtDt(f.created_at)}`" />
                       <div class="foto-time">{{ fmtDt(f.created_at) }}</div>
                     </div>
                   </div>
@@ -806,7 +810,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
               </span>
             </div>
             <div v-if="!ops.current.work_orders?.length" class="empty-section">Belum ada surat tugas</div>
-            <div v-for="wo in ops.current.work_orders" :key="wo.id_wo" class="wo-item" style="cursor: pointer" title="Buka di Jadwal Visit" @click="router.push({ path: '/jadwal-visit', query: { wo: wo.id_wo } })">
+            <div v-baris v-for="wo in ops.current.work_orders" :key="wo.id_wo" class="wo-item" style="cursor: pointer" title="Buka di Jadwal Visit" @click="router.push({ path: '/jadwal-visit', query: { wo: wo.id_wo } })">
               <div class="wo-left">
                 <div class="wo-nomor">{{ wo.nomor_wo }}</div>
                 <div class="wo-jenis">{{ wo.jenis_wo }}</div>
@@ -896,7 +900,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
             <div v-else-if="prtgError" class="prtg-err">{{ prtgError }}</div>
             <div v-else-if="!prtgSensors.length" class="prtg-empty">Tidak ada sensor ditemukan untuk device ini</div>
             <div v-else class="sensor-grid">
-              <div
+              <div v-baris
                 v-for="s in prtgSensors"
                 :key="s.objid"
                 class="sensor-card"
@@ -1072,7 +1076,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                     <div class="feed-foto-label">📷 {{ item.label }}</div>
                     <div class="feed-meta">{{ fmtDt(item.time) }}</div>
                     <div class="feed-thumbs">
-                      <img v-for="f in item.fotos" :key="f.id_foto" :src="f.url" class="feed-thumb" @click="previewUrl = f.url" loading="lazy" />
+                      <img v-for="f in item.fotos" :key="f.id_foto" :src="f.url" class="feed-thumb" @click="previewUrl = f.url" loading="lazy" alt="Foto lampiran" />
                     </div>
                   </div>
                 </template>
@@ -1086,7 +1090,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
               <div class="section-header">
                 <span class="card-title">Tiket lain di {{ ops.current.site?.nama_site }}</span>
               </div>
-              <div v-for="t in ops.current.related_tickets" :key="t.id_ticket"
+              <div v-baris v-for="t in ops.current.related_tickets" :key="t.id_ticket"
                 class="related-item" @click="router.push(`/operations/${t.id_ticket}`)">
                 <div class="rel-left">
                   <div class="rel-nomor">{{ t.nomor_tiket }}</div>
@@ -1155,7 +1159,7 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                   </div>
                   <!-- Fotos in timeline -->
                   <div v-if="ev.type === 'foto' && ev.fotos?.length" class="tl-fotos">
-                    <img v-for="f in ev.fotos" :key="f.id_foto" :src="f.url" class="tl-foto-thumb" @click="previewUrl = f.url; showTimeline = false" loading="lazy" />
+                    <img v-for="f in ev.fotos" :key="f.id_foto" :src="f.url" class="tl-foto-thumb" @click="previewUrl = f.url; showTimeline = false" loading="lazy" alt="Foto lampiran" />
                   </div>
                 </div>
               </div>
@@ -1216,6 +1220,9 @@ async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
                 <option value="">— Belum dikategorikan —</option>
                 <option v-for="j in jenisGangguanList" :key="j" :value="j">{{ j }}</option>
               </select>
+              <p v-if="jenisGangguanError" class="form-error">
+                {{ jenisGangguanError }} <button type="button" class="btn btn-ghost btn-sm" @click="fetchJenisGangguan">Coba lagi</button>
+              </p>
             </div>
             <div class="field full">
               <label>Root Cause / Catatan Teknis</label>

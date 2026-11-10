@@ -300,7 +300,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
           :key="grp.id_grup"
           class="grup-card"
         >
-          <div
+          <div v-baris
             class="grup-header"
             :style="{ borderLeftColor: grupColor(idx) }"
             @click="toggleGrup(grp.id_grup)"
@@ -360,7 +360,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
 
         <!-- Standalone (tanpa grup) -->
         <div v-if="standalonePelanggan.length" class="grup-card standalone">
-          <div
+          <div v-baris
             class="grup-header"
             style="border-left-color: #94a3b8"
             @click="toggleGrup(0)"

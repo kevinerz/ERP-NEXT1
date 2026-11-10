@@ -27,11 +27,14 @@ onMounted(async () => {
   fetchData()
 })
 
+// gagal muat gudang → hint di form (pilihan wajib), bukan dropdown kosong diam-diam
+const gudangLoadError = ref(false)
 async function fetchGudang() {
+  gudangLoadError.value = false
   try {
     const r = await api.get('/master/gudang')
     gudangList.value = r.data.data
-  } catch {}
+  } catch { gudangLoadError.value = true }
 }
 
 function fetchData() {
@@ -103,7 +106,7 @@ function persenSelesai(o: any) {
           <tr v-if="!aset.opnameList.length">
             <td colspan="7" class="empty">Belum ada sesi stok opname</td>
           </tr>
-          <tr v-for="o in aset.opnameList" :key="o.id_opname" class="row-link" @click="router.push(`/assets/stok-opname/${o.id_opname}`)">
+          <tr v-baris v-for="o in aset.opnameList" :key="o.id_opname" class="row-link" @click="router.push(`/assets/stok-opname/${o.id_opname}`)">
             <td class="kode">#{{ o.id_opname }}</td>
             <td>{{ o.gudang?.nama_gudang }}</td>
             <td>
@@ -138,6 +141,7 @@ function persenSelesai(o: any) {
               [{{ g.kode_gudang }}] {{ g.nama_gudang }}{{ g.kota ? ' — ' + g.kota : '' }}
             </option>
           </select>
+          <span v-if="gudangLoadError" class="hint-error">⚠ Gagal memuat daftar gudang — <a href="#" @click.prevent="fetchGudang">coba lagi</a>.</span>
         </div>
         <div class="field">
           <label>Catatan (opsional)</label>
@@ -156,6 +160,7 @@ function persenSelesai(o: any) {
 </template>
 
 <style scoped>
+.hint-error { display: block; font-size: 11px; color: #d97706; margin-top: 4px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
 .sub { margin: 0; font-size: 13px; color: var(--text-3); }
 

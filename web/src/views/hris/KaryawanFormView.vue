@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
+import { confirmDialog } from '@/composables/useDialog'
 
 const router = useRouter()
 const route = useRoute()
@@ -39,14 +40,28 @@ const EMPTY_FORM = () => ({
 const form = ref(EMPTY_FORM())
 const submitting = ref(false)
 const errorMsg = ref('')
+// status muat data (mode edit) — gagal muat jangan tampil sebagai form kosong
+const muatForm = ref(false)
+const muatError = ref('')
+// snapshot isian awal untuk peringatan perubahan belum disimpan
+const awal = ref(JSON.stringify(form.value))
+const berubah = computed(() => JSON.stringify(form.value) !== awal.value)
+const tersimpan = ref(false)
+const departemenGagal = ref(false)
 
 // Muat ulang tiap kali route berubah (Tambah -> Edit -> Tambah tanpa reload
 // halaman sebelumnya membuat data karyawan lama tetap nempel di form).
 async function loadForm() {
   errorMsg.value = ''
+  muatError.value = ''
   form.value = EMPTY_FORM()
+  awal.value = JSON.stringify(form.value)
   if (isEdit.value && id.value) {
+    muatForm.value = true
+    hris.error = ''
     const data = await hris.fetchOne(id.value)
+    muatForm.value = false
+    if (!data) { muatError.value = hris.error || 'Gagal memuat data karyawan'; return }
     if (data) {
       form.value = {
         nip: data.nip,
@@ -73,13 +88,24 @@ async function loadForm() {
         bank_no_rekening: data.bank_no_rekening || '',
         bank_atas_nama: data.bank_atas_nama || '',
       }
+      awal.value = JSON.stringify(form.value)
     }
   }
 }
 
-onMounted(async () => {
+async function muatDepartemen() {
   await hris.fetchDepartemen()
+  departemenGagal.value = !hris.departemenList.length
+}
+
+onMounted(async () => {
+  await muatDepartemen()
   await loadForm()
+})
+
+onBeforeRouteLeave(async () => {
+  if (tersimpan.value || !berubah.value) return true
+  return await confirmDialog({ title: 'Perubahan belum disimpan', message: 'Isian karyawan belum disimpan. Tinggalkan halaman ini?', confirmLabel: 'Tinggalkan', variant: 'warning' })
 })
 
 watch(() => route.params.id, () => { loadForm() })
@@ -88,6 +114,14 @@ async function submit() {
   errorMsg.value = ''
   if (!form.value.nip || !form.value.nama_lengkap || !form.value.jabatan || !form.value.departemen) {
     errorMsg.value = 'NIP, Nama, Jabatan, dan Departemen wajib diisi'
+    return
+  }
+  if (form.value.no_ktp && !/^\d{16}$/.test(form.value.no_ktp.trim())) {
+    errorMsg.value = 'No. KTP harus 16 digit angka'
+    return
+  }
+  if (form.value.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.value.email.trim())) {
+    errorMsg.value = 'Format email tidak valid'
     return
   }
 
@@ -121,9 +155,11 @@ async function submit() {
 
     if (isEdit.value && id.value) {
       await hris.updateKaryawan(id.value, payload)
+      tersimpan.value = true
       router.push(`/hris/karyawan/${id.value}`)
     } else {
       const result = await hris.createKaryawan(payload)
+      tersimpan.value = true
       router.push(`/hris/karyawan/${result.id_karyawan}`)
     }
   } catch (e: any) {
@@ -141,7 +177,15 @@ async function submit() {
       <h2>{{ isEdit ? 'Edit Karyawan' : 'Tambah Karyawan' }}</h2>
     </div>
 
-    <div class="form-card">
+    <div v-if="muatError" class="form-card">
+      <p class="error-msg">⚠ {{ muatError }}</p>
+      <div class="form-actions">
+        <button type="button" class="btn-cancel" @click="router.push('/hris/karyawan')">← Daftar Karyawan</button>
+        <button type="button" class="btn-submit" @click="loadForm">Coba lagi</button>
+      </div>
+    </div>
+    <div v-else-if="muatForm" class="form-card">Memuat data karyawan…</div>
+    <div v-else class="form-card">
       <form @submit.prevent="submit">
         <div class="form-grid">
           <div class="field">
@@ -162,6 +206,7 @@ async function submit() {
               <option value="">Pilih departemen</option>
               <option v-for="d in hris.departemenList" :key="d" :value="d">{{ d }}</option>
             </select>
+            <small v-if="departemenGagal" class="error-msg">⚠ Gagal memuat daftar departemen — <a href="#" @click.prevent="muatDepartemen">coba lagi</a></small>
           </div>
           <div class="field">
             <label>No. HP</label>
@@ -226,7 +271,7 @@ async function submit() {
           </div>
           <div class="field">
             <label>No. KTP</label>
-            <input v-model="form.no_ktp" type="text" maxlength="20" placeholder="16 digit NIK" />
+            <input v-model="form.no_ktp" type="text" inputmode="numeric" maxlength="16" placeholder="16 digit NIK" />
           </div>
           <div class="field">
             <label>No. NPWP</label>

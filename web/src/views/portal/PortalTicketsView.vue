@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import portalApi from '@/services/portalApi'
-import { statusLabel, fmtDateTime } from '@/composables/useFormat'
+import { fmtDateTime } from '@/composables/useFormat'
 
 const TICKET_LIMIT = 200
 
@@ -110,6 +110,15 @@ async function submitTicket() {
   } finally { saving.value = false }
 }
 
+// Label untuk pelanggan — tanpa istilah internal berbahasa Inggris
+const LABEL_STATUS: Record<string, string> = {
+  Open: 'Terbuka', In_Progress: 'Sedang ditangani', Pending_Customer: 'Menunggu konfirmasi Anda',
+  Pending: 'Tertunda', Resolved: 'Selesai', Closed: 'Ditutup',
+}
+const LABEL_PRIORITAS: Record<string, string> = { Critical: 'Kritis', High: 'Tinggi', Medium: 'Sedang', Low: 'Rendah' }
+const labelStatus = (s?: string | null) => LABEL_STATUS[s ?? ''] ?? (s ?? '').replace(/_/g, ' ')
+const labelPrioritas = (p: string) => LABEL_PRIORITAS[p] ?? p
+
 const fmtDate = fmtDateTime
 
 function statusBadge(s: string): { bg: string; fg: string } {
@@ -179,7 +188,7 @@ function waktuSelesai(t: any): string | null {
       <div class="kpi-div" />
       <div class="kpi">
         <span class="kpi-n" style="color:#b45309">{{ kpi.open }}</span>
-        <span class="kpi-l">Open</span>
+        <span class="kpi-l">Terbuka</span>
       </div>
       <div class="kpi-div" />
       <div class="kpi">
@@ -200,7 +209,7 @@ function waktuSelesai(t: any): string | null {
           Semua <span class="tab-count">{{ kpi.total }}</span>
         </button>
         <button :class="['tab', activeTab==='open'     && 'tab-active']" @click="activeTab='open'">
-          Open <span class="tab-count">{{ kpi.open }}</span>
+          Terbuka <span class="tab-count">{{ kpi.open }}</span>
         </button>
         <button :class="['tab', activeTab==='progress' && 'tab-active']" @click="activeTab='progress'">
           Diproses <span class="tab-count">{{ kpi.progress }}</span>
@@ -243,7 +252,7 @@ function waktuSelesai(t: any): string | null {
       <!-- Info bar -->
       <div class="tbl-info">
         <span>{{ filtered.length }} tiket ditampilkan</span>
-        <span v-if="search || filterSite" class="clear-filter" @click="search=''; filterSite=0">
+        <span v-baris v-if="search || filterSite" class="clear-filter" @click="search=''; filterSite=0">
           Hapus filter ✕
         </span>
       </div>
@@ -274,11 +283,11 @@ function waktuSelesai(t: any): string | null {
             <td>
               <span class="status-badge"
                 :style="{ background: statusBadge(t.status ?? t.status_tiket).bg, color: statusBadge(t.status ?? t.status_tiket).fg }">
-                {{ statusLabel(t.status ?? t.status_tiket) }}
+                {{ labelStatus(t.status ?? t.status_tiket) }}
               </span>
             </td>
             <td class="col-pri" :style="{ color: prioritasColor(t.prioritas ?? 'Medium') }">
-              {{ t.prioritas ?? 'Medium' }}
+              {{ labelPrioritas(t.prioritas ?? 'Medium') }}
             </td>
             <td class="col-date">{{ fmtDate(t.tgl_open ?? t.created_at) }}</td>
           </tr>
@@ -303,13 +312,13 @@ function waktuSelesai(t: any): string | null {
             <div class="meta-lbl">Status</div>
             <span class="status-badge"
               :style="{ background: statusBadge(detail.status_tiket ?? detail.status).bg, color: statusBadge(detail.status_tiket ?? detail.status).fg }">
-              {{ statusLabel(detail.status_tiket ?? detail.status) }}
+              {{ labelStatus(detail.status_tiket ?? detail.status) }}
             </span>
           </div>
           <div class="meta-cell">
             <div class="meta-lbl">Prioritas</div>
             <span class="meta-val" :style="{ color: prioritasColor(detail.prioritas ?? 'Medium'), fontWeight: 600 }">
-              {{ detail.prioritas ?? 'Medium' }}
+              {{ labelPrioritas(detail.prioritas ?? 'Medium') }}
             </span>
           </div>
           <div class="meta-cell">
@@ -371,7 +380,7 @@ function waktuSelesai(t: any): string | null {
               <div class="log-dot"></div>
               <div>
                 <div class="log-body">
-                  <span style="font-weight:700;color:#0f172a">{{ statusLabel(log.status_ke) }}</span>
+                  <span style="font-weight:700;color:#0f172a">{{ labelStatus(log.status_ke) }}</span>
                   <span v-if="log.catatan" style="color:#64748b"> — {{ log.catatan }}</span>
                 </div>
                 <div class="log-time">{{ fmtDate(log.created_at) }}</div>

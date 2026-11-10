@@ -30,7 +30,7 @@
         </div>
 
         <div class="sim-list">
-          <div
+          <div v-baris
             v-for="sim in simCards" :key="sim.id_sumber"
             class="sim-item"
             :class="{ selected: selectedSim?.id_sumber === sim.id_sumber }"
@@ -235,7 +235,7 @@
             <div class="produk-list">
               <div v-if="loadingProduk" class="empty-state">Memuat daftar produk...</div>
               <div v-else-if="!produkFiltered.length" class="empty-state">Tidak ada produk cocok</div>
-              <div v-for="p in produkFiltered" :key="p.kode_produk"
+              <div v-baris v-for="p in produkFiltered" :key="p.kode_produk"
                 class="produk-item" :class="{ selected: beliForm.buyer_sku_code === p.kode_produk }"
                 @click="beliForm.buyer_sku_code = p.kode_produk">
                 <div class="produk-info">

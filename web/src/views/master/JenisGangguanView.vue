@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
+import { confirmDialog } from '@/composables/useDialog'
 
 interface JenisGangguan {
   id_jenis: number
@@ -67,23 +68,35 @@ async function handleSubmit() {
   finally { submitting.value = false }
 }
 
+// baris yang sedang diproses — tombol dikunci agar tidak diklik ganda
+const busyId = ref<number | null>(null)
+
 async function toggleAktif(row: JenisGangguan) {
+  if (busyId.value !== null) return
+  busyId.value = row.id_jenis
   try {
     await api.patch(`/master/jenis-gangguan/${row.id_jenis}/toggle`)
     await fetchData()
     flash(row.is_aktif ? 'Dinonaktifkan' : 'Diaktifkan')
   } catch (e: any) { error.value = e.response?.data?.message || 'Gagal' }
+  finally { busyId.value = null }
 }
 
-const confirmDelete = ref<JenisGangguan | null>(null)
-async function doDelete() {
-  if (!confirmDelete.value) return
+async function hapus(row: JenisGangguan) {
+  if (busyId.value !== null) return
+  if (!(await confirmDialog({
+    title: 'Hapus Jenis Gangguan?',
+    message: `Hapus "${row.nama}"? Tiket yang sudah memakai kategori ini tidak terpengaruh.`,
+    variant: 'danger',
+    confirmLabel: 'Ya, Hapus',
+  }))) return
+  busyId.value = row.id_jenis
   try {
-    await api.delete(`/master/jenis-gangguan/${confirmDelete.value.id_jenis}`)
-    flash(`"${confirmDelete.value.nama}" dihapus`)
-    confirmDelete.value = null
+    await api.delete(`/master/jenis-gangguan/${row.id_jenis}`)
+    flash(`"${row.nama}" dihapus`)
     await fetchData()
   } catch (e: any) { error.value = e.response?.data?.message || 'Gagal hapus' }
+  finally { busyId.value = null }
 }
 </script>
 
@@ -98,9 +111,10 @@ async function doDelete() {
     </div>
 
     <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error" class="alert alert-danger">{{ error }} <button type="button" class="btn btn-sm btn-secondary" @click="fetchData">Coba lagi</button></div>
 
     <div v-if="loading" class="table-card"><div class="loading-state">Memuat...</div></div>
+    <div v-else-if="error && !rows.length"></div>
     <div v-else-if="!rows.length" class="table-card">
       <div class="empty-state">
         <div class="empty-icon">⚡</div>
@@ -130,10 +144,10 @@ async function doDelete() {
             <td>
               <div class="actions">
                 <button type="button" class="btn btn-sm btn-secondary" @click="openEdit(row)">Edit</button>
-                <button type="button" :class="['btn btn-sm', row.is_aktif ? 'btn-secondary btn-muted' : 'btn-soft-success']" @click="toggleAktif(row)">
+                <button type="button" :class="['btn btn-sm', row.is_aktif ? 'btn-secondary btn-muted' : 'btn-soft-success']" :disabled="busyId === row.id_jenis" @click="toggleAktif(row)">
                   {{ row.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}
                 </button>
-                <button type="button" class="btn btn-sm btn-soft-danger" @click="confirmDelete = row">Hapus</button>
+                <button type="button" class="btn btn-sm btn-soft-danger" :disabled="busyId === row.id_jenis" @click="hapus(row)">{{ busyId === row.id_jenis ? '…' : 'Hapus' }}</button>
               </div>
             </td>
           </tr>
@@ -171,22 +185,6 @@ async function doDelete() {
       </div>
     </div>
 
-    <!-- Confirm Delete -->
-    <div v-if="confirmDelete" class="modal-overlay" @click.self="confirmDelete = null">
-      <div class="modal modal-sm">
-        <div class="modal-header">
-          <h3 class="modal-title">Hapus Jenis Gangguan?</h3>
-          <button type="button" class="btn-modal-close" @click="confirmDelete = null">×</button>
-        </div>
-        <div class="modal-body">
-          <p class="confirm-text">Hapus <strong>{{ confirmDelete.nama }}</strong>? Tiket yang sudah memakai kategori ini tidak terpengaruh.</p>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" @click="confirmDelete = null">Batal</button>
-          <button type="button" class="btn btn-danger" @click="doDelete">Ya, Hapus</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 

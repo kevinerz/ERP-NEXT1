@@ -21,6 +21,8 @@ const SUMBER: Record<string, string> = { ip_perangkat: 'IP tunnel di perangkat s
 
 const data = ref<any>(null)
 const memuat = ref(false)
+const galat = ref('') // pesan gagal muat ringkasan (data terakhir tetap ditampilkan)
+const pesanGagal = (e: any, f = 'Gagal memuat data') => { const m = e?.response?.data?.message; return Array.isArray(m) ? m.join(', ') : m || f }
 const sinkron = ref(false)
 const tab = ref<'tiket' | 'tanpa' | 'belum'>('tiket')
 const minMenit = ref(15)
@@ -30,8 +32,10 @@ const filterTanpa = ref<'' | 'offline' | 'internet_ok' | 'macet'>('')
 const cfg = ref<any>(null)
 const cfgEdit = ref(false)
 const cfgForm = ref<any>({ tiket_aktif: true, wa_pic_aktif: false, durasi_konfirmasi_menit: 10, cooldown_menit: 60, maks_tiket_per_putaran: 30, kategori: null })
+const cfgGalat = ref('')
 async function muatCfg() {
-  try { cfg.value = (await api.get('/nocaas/konfigurasi')).data.data } catch { /* abaikan */ }
+  cfgGalat.value = ''
+  try { cfg.value = (await api.get('/nocaas/konfigurasi')).data.data } catch (e) { cfgGalat.value = pesanGagal(e, 'Gagal memuat konfigurasi tiket otomatis') }
 }
 function bukaCfg() {
   const c = cfg.value
@@ -44,7 +48,8 @@ async function simpanCfg() {
 
 async function muat() {
   memuat.value = true
-  try { data.value = (await api.get('/nocaas/ringkasan')).data.data } catch (e) { alertError(e) } finally { memuat.value = false }
+  // Dipanggil tiap menit: jangan buka dialog, cukup banner & simpan data terakhir
+  try { data.value = (await api.get('/nocaas/ringkasan')).data.data; galat.value = '' } catch (e) { galat.value = pesanGagal(e, 'Gagal memuat ringkasan NOCaaS') } finally { memuat.value = false }
 }
 async function sinkronSekarang() {
   sinkron.value = true
@@ -161,8 +166,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
       </div>
     </div>
 
+    <div v-if="galat" class="alert alert-danger nc-galat" role="alert">
+      <span>⚠ {{ galat }}<template v-if="data"> — menampilkan data terakhir.</template></span>
+      <button class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">{{ memuat ? 'Memuat…' : 'Coba lagi' }}</button>
+    </div>
     <p v-if="memuat && !data" class="muted">Memuat…</p>
     <template v-else-if="data">
+      <p v-if="cfgGalat" class="form-error">{{ cfgGalat }} <button class="btn btn-ghost btn-sm" @click="muatCfg">Coba lagi</button></p>
       <div class="nc-ubin">
         <div v-for="s in data.status" :key="s.status" class="card nc-angka">
           <span class="nc-titik" :style="{ background: WARNA[s.status] }"></span>
@@ -227,7 +237,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             <thead><tr><th>Tiket</th><th>Site</th><th>Sumber</th><th>Dibuka</th><th>NOCaaS sekarang</th><th>Arti</th></tr></thead>
             <tbody>
               <tr v-if="!tiket.length"><td colspan="6" class="muted nc-kosong">Tidak ada tiket aktif.</td></tr>
-              <tr v-for="t in tiket" :key="t.id_ticket" class="nc-baris" @click="router.push(`/operations/${t.id_ticket}`)">
+              <tr v-baris v-for="t in tiket" :key="t.id_ticket" class="nc-baris" @click="router.push(`/operations/${t.id_ticket}`)">
                 <td><b class="mono">{{ t.nomor_tiket }}</b><div class="muted">{{ t.judul_tiket }}</div></td>
                 <td>{{ t.site?.nama_site }}<div class="muted">{{ t.site?.kode_site }} · {{ t.site?.kota }}</div></td>
                 <td>{{ t.sumber_tiket }}</td>
@@ -309,7 +319,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
             <tbody>
               <tr v-if="!belum.length"><td colspan="3" class="muted nc-kosong">Tidak ada router di sini.</td></tr>
               <template v-for="(r, i) in belum" :key="r.site_key">
-                <tr :class="{ 'nc-fokus': jenis === 'belum' && i === fokus }" @click="fokus = i">
+                <tr v-baris :class="{ 'nc-fokus': jenis === 'belum' && i === fokus }" @click="fokus = i">
                   <td>
                     <div class="mono nc-rkey">{{ r.site_key }}</div>
                     <div class="muted mono">{{ [r.ns_ip, r.un_ip].filter(Boolean).join(' · ') }}</div>
@@ -352,7 +362,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
                 <tr v-if="petaKey === r.site_key">
                   <td colspan="3" class="nc-peta">
                     <input v-model="petaCari" class="form-input" placeholder="Cari site ERP (nama / kode / pelanggan)…" @input="cariSite" />
-                    <div v-for="s in petaHasil" :key="s.id_site" class="nc-pilih" @click="simpanPeta(s.id_site)">
+                    <div v-baris v-for="s in petaHasil" :key="s.id_site" class="nc-pilih" @click="simpanPeta(s.id_site)">
                       <b>{{ s.nama_site }}</b> <span class="muted">{{ s.kode_site }} · {{ s.pelanggan?.nama_pelanggan }} · {{ s.kota }}<template v-if="s.status_site !== 'Aktif'"> · {{ s.status_site }}</template></span>
                     </div>
                     <p v-if="petaCari.trim().length >= 2 && !petaHasil.length" class="muted">Tidak ada site cocok — ubah kata kunci.</p>
@@ -373,6 +383,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 </template>
 
 <style scoped>
+.nc-galat { align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .nc-tombol { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .gagal { color: #dc2626; }
 .nc-ubin { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }

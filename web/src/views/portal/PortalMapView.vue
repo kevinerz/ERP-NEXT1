@@ -7,6 +7,8 @@ const sites      = ref<any[]>([])
 const downStatus = ref<{ id_site: number; sensors: string[] }[]>([])
 const loading    = ref(true)
 const loadError  = ref('')
+// status gangguan gagal dimuat → jangan tampilkan semua site seolah normal
+const downError  = ref(false)
 let   leafletMap: any = null
 
 function parseCoord(gps: string | null): [number, number] | null {
@@ -62,7 +64,8 @@ async function initMap() {
     bounds.push(coord)
     const isDown = siteIsDown(site.id_site)
     const tiket  = site.tiket_aktif || 0
-    const color  = isDown ? '#dc2626' : tiket > 0 ? '#f59e0b' : '#16a34a'
+    const unknown = downError.value && !isDown
+    const color  = isDown ? '#dc2626' : tiket > 0 ? '#f59e0b' : unknown ? '#94a3b8' : '#16a34a'
 
     const icon = L.divIcon({
       className: '',
@@ -91,8 +94,8 @@ async function initMap() {
         <div style="font-weight:700;font-size:14px;color:#0f172a;margin-bottom:2px">${escapeHtml(site.nama_site)}</div>
         <div style="font-size:11px;color:#64748b;margin-bottom:8px">${escapeHtml(site.kode_site)}${site.layanan?.nama_layanan ? ' · ' + escapeHtml(site.layanan.nama_layanan) : ''}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-          <span style="background:${isDown?'#fef2f2':tiket>0?'#fffbeb':'#f0fdf4'};color:${isDown?'#dc2626':tiket>0?'#d97706':'#15803d'};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">
-            ${isDown ? '● Down' : tiket > 0 ? '● Ada Tiket' : '● Online'}
+          <span style="background:${isDown?'#fef2f2':tiket>0?'#fffbeb':unknown?'#f1f5f9':'#f0fdf4'};color:${isDown?'#dc2626':tiket>0?'#d97706':unknown?'#475569':'#15803d'};padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">
+            ${isDown ? '● Down' : tiket > 0 ? '● Ada Tiket' : unknown ? '● Status tidak tersedia' : '● Online'}
           </span>
           ${tiket > 0 ? `<span style="background:#eff6ff;color:#1d4ed8;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700">${tiket} Tiket</span>` : ''}
         </div>
@@ -114,7 +117,7 @@ onMounted(async () => {
   try {
     const [sitesRes, downRes] = await Promise.all([
       portalApi.get('/portal/sites'),
-      portalApi.get('/portal/sites/down-status').catch(() => ({ data: { data: [] } })),
+      portalApi.get('/portal/sites/down-status').catch(() => { downError.value = true; return { data: { data: [] } } }),
     ])
     sites.value      = sitesRes.data.data
     downStatus.value = downRes.data.data ?? []
@@ -158,7 +161,7 @@ const sitesDown       = () => downStatus.value.length
           <span class="stat-lbl">Di Peta</span>
         </div>
         <div class="stat-item" :class="sitesDown() > 0 ? 'stat-down' : ''">
-          <span class="stat-val">{{ sitesDown() }}</span>
+          <span class="stat-val">{{ downError ? '—' : sitesDown() }}</span>
           <span class="stat-lbl">Down</span>
         </div>
       </div>
@@ -170,6 +173,7 @@ const sitesDown       = () => downStatus.value.length
       </div>
       <div v-else-if="loadError" class="map-error">{{ loadError }}</div>
       <template v-else>
+        <div v-if="downError" class="map-down-warn" role="status">⚠ Status gangguan tidak tersedia saat ini — warna penanda belum mencerminkan kondisi terkini.</div>
         <div id="portal-geo-map" class="geo-map"></div>
         <div v-if="!sitesWithCoord()" class="map-no-coord">
           Koordinat GPS belum diatur pada data site. Tambahkan di menu Master → Detail Site.
@@ -180,6 +184,7 @@ const sitesDown       = () => downStatus.value.length
 </template>
 
 <style scoped>
+.map-down-warn { background: #fffbeb; color: #92400e; border-bottom: 1px solid #fde68a; padding: 10px 24px; font-size: 13px; text-align: center; }
 
 * { box-sizing: border-box; }
 

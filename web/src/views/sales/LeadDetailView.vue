@@ -226,7 +226,7 @@ const fmtDatetime = fmtDateTime
             <button class="btn-add-small" @click="showAddOpp = true">+ Tambah</button>
           </div>
           <div v-if="!sales.currentLead.opportunities?.length" class="empty-section">Belum ada opportunity</div>
-          <div
+          <div v-baris
             v-for="o in sales.currentLead.opportunities" :key="o.id_opportunity"
             class="opp-item"
             @click="router.push(`/sales/opportunity/${o.id_opportunity}`)"

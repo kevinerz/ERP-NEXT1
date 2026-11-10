@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import { alertError, confirmDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
 import { fmtDateTime } from '@/composables/useFormat'
 import { eksporExcel, type QcModul, type QcCatatan, WARNA_STATUS, WARNA_PRIORITAS, IKON_JENIS } from './qc'
 
@@ -76,7 +76,7 @@ const teksDesk = ref('')
 function mulaiEditDesk(m: QcModul) { editDesk.value = m.id; teksDesk.value = m.deskripsi ?? '' }
 async function simpanDesk(m: QcModul) { await ubahModul(m, { deskripsi: teksDesk.value }); editDesk.value = null }
 async function ubahPic(m: QcModul) {
-  const v = window.prompt(`PIC / penanggung jawab modul "${m.nama}"`, m.pic ?? '')
+  const v = await promptDialog({ title: 'PIC Modul', message: `Penanggung jawab modul "${m.nama}"`, label: 'PIC', defaultValue: m.pic ?? '' })
   if (v !== null) ubahModul(m, { pic: v })
 }
 

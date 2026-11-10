@@ -244,12 +244,12 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
         <p class="page-subtitle">Seret kartu dari antrean ke kotak teknisi & hari untuk menugaskan · klik kartu untuk detail & kirim WA</p>
       </div>
       <div class="jv-tombol">
-        <button class="btn btn-ghost" :disabled="memuat" @click="geser(-7)">‹</button>
+        <button class="btn btn-ghost" :disabled="memuat" aria-label="Minggu sebelumnya" title="Minggu sebelumnya" @click="geser(-7)">‹</button>
         <button class="btn btn-ghost" :disabled="memuat" @click="muat('')">Minggu ini</button>
         <span class="jv-minggu">{{ judulMinggu }}</span>
-        <button class="btn btn-ghost" :disabled="memuat" @click="geser(7)">›</button>
-        <button class="btn btn-ghost" title="Statistik & peta" @click="router.push('/jadwal-visit/statistik')">📊</button>
-        <button class="btn btn-ghost" title="Maintenance rutin" @click="router.push('/jadwal-visit/maintenance')">🔁</button>
+        <button class="btn btn-ghost" :disabled="memuat" aria-label="Minggu berikutnya" title="Minggu berikutnya" @click="geser(7)">›</button>
+        <button class="btn btn-ghost" title="Statistik & peta" aria-label="Statistik & peta" @click="router.push('/jadwal-visit/statistik')">📊</button>
+        <button class="btn btn-ghost" title="Maintenance rutin" aria-label="Maintenance rutin" @click="router.push('/jadwal-visit/maintenance')">🔁</button>
         <button class="btn btn-primary" @click="bukaBaru">+ Visit baru</button>
       </div>
     </div>
@@ -267,7 +267,7 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
         <input v-model="cari" class="form-input jv-cari" placeholder="Cari store, pelanggan, kota…" />
         <p v-if="!antreanTampil.length" class="muted jv-kosong">{{ papan.antrean.length ? 'Tidak ada yang cocok.' : 'Antrean kosong 🎉' }}</p>
         <div class="jv-antrean-daftar">
-          <div
+          <div v-baris
             v-for="v in antreanTampil" :key="v.id_wo" class="jv-kartu" :class="{ terlewat: v.terlewat }"
             :style="{ borderLeftColor: WARNA_PRIORITAS[v.prioritas] }" draggable="true"
             @dragstart="mulaiSeret($event, v)" @dragend="selesaiSeret" @click="buka(v)"
@@ -313,7 +313,7 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
               :class="{ hariini: h.tgl === papan.hari_ini, sasaran: sasaran === `${t.id_karyawan}|${h.tgl}`, lampau: h.tgl < papan.hari_ini }"
               @dragover.prevent="sasaran = `${t.id_karyawan}|${h.tgl}`" @dragleave="sasaran = ''" @drop.prevent="jatuhkan(t.id_karyawan, h.tgl)"
             >
-              <div
+              <div v-baris
                 v-for="v in visitDi(t.id_karyawan, h.tgl)" :key="v.id_wo" class="jv-kartu kecil" :class="`st-${v.status_wo}`"
                 :style="{ borderLeftColor: WARNA_PRIORITAS[v.prioritas] }" :draggable="['Open', 'In_Progress'].includes(v.status_wo)"
                 @dragstart="mulaiSeret($event, v)" @dragend="selesaiSeret" @click="buka(v)"
@@ -548,7 +548,7 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
         </div>
       </div>
     </div>
-    <div v-if="lihatFoto" class="jv-lihat" @click="lihatFoto = null"><img :src="lihatFoto" alt="" /></div>
+    <div v-baris v-if="lihatFoto" class="jv-lihat" @click="lihatFoto = null"><img :src="lihatFoto" alt="" /></div>
   </div>
 </template>
 

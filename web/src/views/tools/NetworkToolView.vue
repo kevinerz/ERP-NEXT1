@@ -40,6 +40,7 @@ const pingStatusColor = computed(() => {
 })
 
 async function run() {
+  if (loading.value) return // cegah permintaan ganda (Enter saat masih berjalan)
   if (!host.value.trim()) { error.value = 'Masukkan host / IP dulu'; return }
   if (activeTab.value === 'port' && !portNum.value) { error.value = 'Masukkan nomor port'; return }
   loading.value = true
@@ -47,6 +48,7 @@ async function run() {
   result.value  = null
   elapsed.value = 0
 
+  if (timer) clearInterval(timer)
   timer = setInterval(() => { elapsed.value++ }, 1000)
 
   try {

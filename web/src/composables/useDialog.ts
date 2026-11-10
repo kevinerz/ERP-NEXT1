@@ -1,4 +1,4 @@
-import { shallowRef } from 'vue'
+import { ref, shallowRef } from 'vue'
 
 /* ══════════════════════════════════════════════
    Dialog global berbasis Promise — pengganti
@@ -82,6 +82,17 @@ export function alertError(err: any, fallback = 'Terjadi kesalahan'): Promise<vo
   return alertDialog({ title: 'Gagal', message, variant: 'danger' })
 }
 
+// ── Toast: umpan balik singkat yang tidak perlu diklik (mis. "Tersimpan") ──────────
+export interface Toast { id: number; pesan: string; variant: 'success' | 'danger' | 'warning' | 'default' }
+export const toasts = ref<Toast[]>([])
+let toastId = 0
+export function toast(pesan: string, variant: Toast['variant'] = 'success', durasiMs = 4000) {
+  const id = ++toastId
+  toasts.value = [...toasts.value, { id, pesan, variant }]
+  setTimeout(() => tutupToast(id), durasiMs)
+}
+export function tutupToast(id: number) { toasts.value = toasts.value.filter((t) => t.id !== id) }
+
 export function useDialog() {
-  return { confirm: confirmDialog, alert: alertDialog, prompt: promptDialog, alertError }
+  return { confirm: confirmDialog, alert: alertDialog, prompt: promptDialog, alertError, toast }
 }

@@ -102,6 +102,7 @@ const pg = useGroups('/starsender/pelanggan-groups')
 type PelangganOption = { id_pelanggan: number; kode_pelanggan: string; nama_pelanggan: string }
 const pelangganList    = ref<PelangganOption[]>([])
 const pelangganLoading = ref(false)
+const pelangganError   = ref(false)
 const pelangganSearch  = ref('')
 const selectedPelanggan = ref<PelangganOption | null>(null)
 
@@ -114,11 +115,11 @@ const pelangganFiltered = computed(() => {
 
 async function loadPelangganDropdown() {
   if (pelangganList.value.length) return
-  pelangganLoading.value = true
+  pelangganLoading.value = true; pelangganError.value = false
   try {
     const r = await api.get('/master/pelanggan/dropdown')
     pelangganList.value = r.data.data ?? []
-  } catch { } finally { pelangganLoading.value = false }
+  } catch { pelangganError.value = true } finally { pelangganLoading.value = false }
 }
 
 function selectPelanggan(p: PelangganOption) {
@@ -479,6 +480,7 @@ async function test() {
                     <span class="pel-nama">{{ p.nama_pelanggan }}</span>
                   </div>
                 </div>
+                <small v-if="pelangganError" style="color:#dc2626;font-size:11.5px">⚠ Gagal memuat daftar pelanggan — <a href="#" @click.prevent="loadPelangganDropdown">coba lagi</a> (nama grup tetap bisa diketik manual)</small>
               </div>
               <input v-model="pg.addForm.value.group_id" type="text" placeholder="Group ID WA  (120363...@g.us)" class="mono" />
               <button class="btn-primary" @click="pg.add()" :disabled="pg.adding.value || !pg.addForm.value.group_id || !pg.addForm.value.nama_group">{{ pg.adding.value ? '...' : '+ Tambah' }}</button>
@@ -526,10 +528,10 @@ async function test() {
                 <div class="placeholder-title">Klik variabel untuk menyisipkan:</div>
                 <div class="placeholder-chips">
                   <template v-if="!isMonitorTpl">
-                    <span v-for="p in placeholders.tiket" :key="p" class="placeholder-chip" @click="insertPlaceholder(p)">{{ p }}</span>
+                    <span v-baris v-for="p in placeholders.tiket" :key="p" class="placeholder-chip" @click="insertPlaceholder(p)">{{ p }}</span>
                   </template>
                   <template v-else>
-                    <span v-for="p in placeholders.monitor" :key="p" class="placeholder-chip" @click="insertPlaceholder(p)">{{ p }}</span>
+                    <span v-baris v-for="p in placeholders.monitor" :key="p" class="placeholder-chip" @click="insertPlaceholder(p)">{{ p }}</span>
                   </template>
                 </div>
                 <div class="placeholder-hint" v-if="!isMonitorTpl">

@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 import { fmtDateShort, escapeHtml } from '@/composables/useFormat'
 import BasePagination from '@/components/BasePagination.vue'
+import { useFilterUrl } from '@/composables/useFilterUrl'
 
 const router = useRouter()
 const master = useMasterStore()
@@ -20,6 +21,8 @@ const filterPelanggan = ref(0)
 const filterLayanan = ref(0)
 const filterStatus = ref('')
 const filterGrup = ref(0)
+// Filter & halaman disimpan di URL — tetap sama setelah kembali dari halaman detail
+useFilterUrl({ q: search, pelanggan: filterPelanggan, layanan: filterLayanan, status: filterStatus, grup: filterGrup, page })
 const viewMode = ref<'list' | 'grup'>('grup')
 
 // ─── Grup view state ─────────────────────────────────────────
@@ -436,7 +439,7 @@ function highlight(text: string, q: string) {
     <!-- ─── Status chips ─── -->
     <div class="status-bar">
       <div class="status-chips">
-        <span
+        <span v-baris
           v-for="st in STATUS_SITE" :key="st"
           class="chip"
           :class="{ active: filterStatus === st }"
@@ -494,7 +497,7 @@ function highlight(text: string, q: string) {
           class="grup-card"
           v-show="grupSiteCount(grp) > 0 || (!filterStatus && !filterLayanan && !grupSearch)"
         >
-          <div class="grup-header" :style="{ borderLeftColor: grupColor(idx) }" @click="toggleGrup(grp.id_grup)">
+          <div v-baris class="grup-header" :style="{ borderLeftColor: grupColor(idx) }" @click="toggleGrup(grp.id_grup)">
             <div class="grup-left">
               <span class="grup-kode" :style="{ color: grupColor(idx) }">{{ grp.kode_grup }}</span>
               <span class="grup-nama">{{ grp.nama_grup }}</span>
@@ -511,7 +514,7 @@ function highlight(text: string, q: string) {
 
           <div v-if="expandedGrup.has(grp.id_grup)" class="grup-body">
             <template v-for="pt in grp.pelanggan" :key="pt.id_pelanggan">
-              <div
+              <div v-baris
                 class="pt-row"
                 v-show="(siteByPelanggan.get(pt.id_pelanggan)?.length ?? 0) > 0 || (!filterStatus && !filterLayanan && !grupSearch)"
                 @click="togglePt(pt.id_pelanggan)"
@@ -543,7 +546,7 @@ function highlight(text: string, q: string) {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr
+                    <tr v-baris
                       v-for="s in (siteByPelanggan.get(pt.id_pelanggan) ?? [])"
                       :key="s.id_site"
                       class="site-row"
@@ -586,7 +589,7 @@ function highlight(text: string, q: string) {
 
         <!-- Standalone -->
         <div class="grup-card standalone" v-if="standalonePtWithSites.length">
-          <div class="grup-header" style="border-left-color:#94a3b8" @click="toggleGrup(0)">
+          <div v-baris class="grup-header" style="border-left-color:#94a3b8" @click="toggleGrup(0)">
             <div class="grup-left">
               <span class="grup-kode" style="color:#94a3b8">—</span>
               <span class="grup-nama" style="color:#64748b">Lainnya</span>
@@ -602,7 +605,7 @@ function highlight(text: string, q: string) {
           </div>
           <div v-if="expandedGrup.has(0)" class="grup-body">
             <template v-for="pt in standalonePtWithSites" :key="pt.id_pelanggan">
-              <div class="pt-row" @click="togglePt(pt.id_pelanggan)">
+              <div v-baris class="pt-row" @click="togglePt(pt.id_pelanggan)">
                 <div class="pt-left">
                   <span class="pt-chevron" :class="{ open: expandedPt.has(pt.id_pelanggan) }">▸</span>
                   <span class="pt-kode">{{ pt.kode_pelanggan }}</span>
@@ -618,7 +621,7 @@ function highlight(text: string, q: string) {
                     <tr><th>Kode Site</th><th>Nama Site</th><th>Kota</th><th>Layanan</th><th>Status</th><th>Tgl Aktif</th><th></th></tr>
                   </thead>
                   <tbody>
-                    <tr v-for="s in (siteByPelanggan.get(pt.id_pelanggan) ?? [])" :key="s.id_site"
+                    <tr v-baris v-for="s in (siteByPelanggan.get(pt.id_pelanggan) ?? [])" :key="s.id_site"
                       class="site-row" @click="router.push('/master/site/' + s.id_site)">
                       <td>
                         <span class="kode-cell" :class="{ copied: copiedKode === s.kode_site }"
@@ -736,7 +739,7 @@ function highlight(text: string, q: string) {
                 </div>
               </td>
             </tr>
-            <tr v-for="s in master.siteList" :key="s.id_site" class="table-row clickable-row"
+            <tr v-baris v-for="s in master.siteList" :key="s.id_site" class="table-row clickable-row"
               @click="router.push('/master/site/' + s.id_site)">
               <td>
                 <span

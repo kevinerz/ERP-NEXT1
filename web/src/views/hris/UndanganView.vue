@@ -27,14 +27,19 @@
       <p v-if="createError" class="error-msg">{{ createError }}</p>
 
       <div v-if="lastLink" class="link-result">
-        <span class="link-text">{{ lastLink }}</span>
+        <span ref="linkEl" class="link-text">{{ lastLink }}</span>
         <button class="btn-copy" @click="copyLink(lastLink)">{{ copied ? '✓ Disalin' : 'Salin Link' }}</button>
       </div>
+      <p v-if="copyFailed" class="error-msg">Gagal menyalin otomatis — link sudah ditandai, tekan Ctrl+C (atau tahan &amp; salin di HP).</p>
     </div>
 
     <div class="card">
       <h3>Daftar Undangan</h3>
-      <div v-if="loading" class="empty-state">Memuat...</div>
+      <div v-if="loadError" class="empty-state error-msg">
+        ⚠ {{ loadError }}
+        <button class="btn-copy" @click="fetchInvitations">Coba lagi</button>
+      </div>
+      <div v-else-if="loading" class="empty-state">Memuat...</div>
       <div v-else-if="!invitations.length" class="empty-state">Belum ada undangan dibuat</div>
       <div v-else class="table-wrap">
       <table class="tbl">
@@ -89,18 +94,23 @@ const creating = ref(false)
 const createError = ref('')
 const lastLink = ref('')
 const copied = ref(false)
+const copyFailed = ref(false)
+const linkEl = ref<HTMLElement | null>(null)
 
 const invitations = ref<any[]>([])
 const loading = ref(true)
+const loadError = ref('')
 const revokingId = ref(0)
 
 async function fetchInvitations() {
   loading.value = true
+  loadError.value = ''
   try {
     const r = await api.get('/hris/invitations')
     invitations.value = r.data.data
-  } catch {
-    // biarkan daftar kosong, tidak fatal
+  } catch (e: any) {
+    // gagal ≠ kosong: tampilkan pesan + tombol coba lagi
+    loadError.value = e?.response?.data?.message || 'Gagal memuat daftar undangan'
   } finally {
     loading.value = false
   }
@@ -127,12 +137,22 @@ async function handleCreate() {
 }
 
 async function copyLink(link: string) {
+  copyFailed.value = false
   try {
     await navigator.clipboard.writeText(link)
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
   } catch {
-    // clipboard API mungkin tidak tersedia — biarkan user salin manual dari teks
+    // clipboard API tidak tersedia (mis. bukan HTTPS) — tandai teks link agar user tinggal Ctrl+C
+    copyFailed.value = true
+    const el = linkEl.value
+    const sel = window.getSelection()
+    if (el && sel) {
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
   }
 }
 

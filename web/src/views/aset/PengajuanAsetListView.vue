@@ -36,17 +36,22 @@ onMounted(async () => {
   fetchData()
 })
 
+// dropdown gagal dimuat → tampilkan hint, bukan daftar kosong diam-diam
+const gudangLoadError = ref(false)
+const karyawanLoadError = ref(false)
 async function fetchGudang() {
-  try { gudangList.value = (await api.get('/master/gudang')).data.data } catch {}
+  gudangLoadError.value = false
+  try { gudangList.value = (await api.get('/master/gudang')).data.data } catch { gudangLoadError.value = true }
 }
 
 async function fetchKaryawan() {
+  karyawanLoadError.value = false
   try {
     const r = await api.get('/hris/karyawan', { params: { status_aktif: true, limit: 300 } })
     karyawanList.value = (r.data.data as any[])
       .filter((k: any) => k.user?.id_user)
       .map((k: any) => ({ id_user: k.user.id_user, nama_lengkap: k.nama_lengkap, jabatan: k.jabatan, departemen: k.departemen }))
-  } catch {}
+  } catch { karyawanLoadError.value = true }
 }
 
 function fetchData() {
@@ -58,6 +63,8 @@ function doFilter() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
 function resetForm() {
+  if (gudangLoadError.value) fetchGudang()
+  if (karyawanLoadError.value) fetchKaryawan()
   karyawanSearch.value = ''
   form.value = { nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0, link_marketplace: '', id_pemohon: auth.user?.id_user ?? 0 }
 }
@@ -130,7 +137,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
           <tr v-if="!aset.pengajuanList.length">
             <td colspan="7" class="empty">Belum ada pengajuan aset</td>
           </tr>
-          <tr v-for="p in aset.pengajuanList" :key="p.id_pengajuan" class="row-link" @click="router.push(`/assets/pengajuan/${p.id_pengajuan}`)">
+          <tr v-baris v-for="p in aset.pengajuanList" :key="p.id_pengajuan" class="row-link" @click="router.push(`/assets/pengajuan/${p.id_pengajuan}`)">
             <td class="kode">#{{ p.id_pengajuan }}</td>
             <td>
               <div class="fw600">{{ p.nama_item }}</div>
@@ -166,6 +173,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
               {{ k.nama_lengkap }}{{ k.jabatan ? ` — ${k.jabatan}` : '' }}
             </option>
           </select>
+          <span v-if="karyawanLoadError" class="hint-error">⚠ Gagal memuat daftar karyawan — <a href="#" @click.prevent="fetchKaryawan">coba lagi</a>.</span>
         </div>
         <div class="field">
           <label>Nama Barang <span class="req">*</span></label>
@@ -194,6 +202,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
             <option :value="0">— Belum ditentukan —</option>
             <option v-for="g in gudangList" :key="g.id_gudang" :value="g.id_gudang">[{{ g.kode_gudang }}] {{ g.nama_gudang }}</option>
           </select>
+          <span v-if="gudangLoadError" class="hint-error">⚠ Gagal memuat daftar gudang — <a href="#" @click.prevent="fetchGudang">coba lagi</a>.</span>
         </div>
         <div class="field">
           <label>Alasan / Justifikasi <span class="req">*</span></label>
@@ -212,6 +221,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 </template>
 
 <style scoped>
+.hint-error { display: block; font-size: 11px; color: #d97706; margin-top: 4px; }
 .page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
 .sub { margin: 0; font-size: 13px; color: var(--text-3); }
 

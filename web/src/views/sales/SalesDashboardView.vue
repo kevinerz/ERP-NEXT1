@@ -47,7 +47,7 @@ onMounted(async () => {
     <h3 class="section-title">Pipeline Opportunity</h3>
     <div v-if="!sales.pipeline.length && !loadError" class="pipeline-empty">{{ loaded ? 'Belum ada data pipeline' : 'Memuat...' }}</div>
     <div v-else class="pipeline-grid">
-      <div
+      <div v-baris
         v-for="p in sales.pipeline"
         :key="p.tahapan"
         class="pipeline-card"
@@ -63,15 +63,15 @@ onMounted(async () => {
     <!-- Quick nav -->
     <h3 class="section-title" style="margin-top:28px">Menu</h3>
     <div class="menu-grid">
-      <div class="menu-card" @click="router.push('/sales/lead')">
+      <div v-baris class="menu-card" @click="router.push('/sales/lead')">
         <span class="menu-icon">📋</span>
         <span class="menu-label">Lead</span>
       </div>
-      <div class="menu-card" @click="router.push('/sales/opportunity')">
+      <div v-baris class="menu-card" @click="router.push('/sales/opportunity')">
         <span class="menu-icon">🎯</span>
         <span class="menu-label">Opportunity</span>
       </div>
-      <div class="menu-card" @click="router.push('/sales/quotation')">
+      <div v-baris class="menu-card" @click="router.push('/sales/quotation')">
         <span class="menu-icon">📄</span>
         <span class="menu-label">Quotation</span>
       </div>

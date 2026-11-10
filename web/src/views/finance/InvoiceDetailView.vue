@@ -155,6 +155,17 @@ async function handleBayar() {
     formError.value = 'Tanggal bayar dan jumlah wajib diisi'
     return
   }
+  if (Number(bayarForm.value.jumlah) <= 0) {
+    formError.value = 'Jumlah bayar harus lebih dari 0'
+    return
+  }
+  // bayar melebihi sisa tagihan → minta konfirmasi (bisa salah ketik)
+  if (Number(bayarForm.value.jumlah) > sisa.value && !(await confirmDialog({
+    title: 'Jumlah melebihi sisa tagihan',
+    message: `Jumlah bayar ${fmtRupiah(bayarForm.value.jumlah)} lebih besar dari sisa tagihan ${fmtRupiah(sisa.value)}. Tetap catat pembayaran ini?`,
+    variant: 'warning',
+    confirmLabel: 'Ya, Catat',
+  }))) return
   submitting.value = true
   formError.value = ''
   try {
@@ -171,19 +182,23 @@ async function handleBayar() {
   }
 }
 
+// pembayaran yang sedang dihapus — tombol dikunci selama request
+const hapusPayId = ref<number | null>(null)
 async function handleHapusPembayaran(idPembayaran: number) {
+  if (hapusPayId.value !== null) return
   if (!(await confirmDialog({
     title: 'Hapus Pembayaran?',
     message: 'Pembayaran ini akan dihapus.',
     variant: 'danger',
     confirmLabel: 'Ya, Hapus',
   }))) return
+  hapusPayId.value = idPembayaran
   try {
     await finance.removePembayaran(idPembayaran)
     await load()
   } catch (err: any) {
     await alertError(err, 'Gagal menghapus pembayaran')
-  }
+  } finally { hapusPayId.value = null }
 }
 
 </script>
@@ -191,9 +206,9 @@ async function handleHapusPembayaran(idPembayaran: number) {
 <template>
   <div class="page">
     <div class="breadcrumb">
-      <span class="link" @click="router.push('/finance')">Finance</span>
+      <span v-baris class="link" @click="router.push('/finance')">Finance</span>
       <span class="sep">›</span>
-      <span class="link" @click="router.push('/finance/invoice')">Invoice</span>
+      <span v-baris class="link" @click="router.push('/finance/invoice')">Invoice</span>
       <span class="sep">›</span>
       <span>{{ inv?.nomor_invoice || '...' }}</span>
     </div>
@@ -244,7 +259,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
         <div class="info-item" v-if="inv.kontrak">
           <div class="info-label">Kontrak</div>
           <div class="info-value">
-            <span class="qt-link" @click="router.push(`/contracts/${inv.kontrak.id_kontrak}`)">{{ inv.kontrak.nomor_kontrak }}</span>
+            <span v-baris class="qt-link" @click="router.push(`/contracts/${inv.kontrak.id_kontrak}`)">{{ inv.kontrak.nomor_kontrak }}</span>
           </div>
         </div>
         <div class="info-item">
@@ -301,7 +316,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
             <div class="pay-by" v-if="p.user?.karyawan?.nama_lengkap">oleh {{ p.user.karyawan.nama_lengkap }}</div>
             <div class="pay-catatan" v-if="p.catatan">{{ p.catatan }}</div>
           </div>
-          <button class="mini-btn hapus" @click="handleHapusPembayaran(p.id_pembayaran)">Hapus</button>
+          <button class="mini-btn hapus" :disabled="hapusPayId !== null" @click="handleHapusPembayaran(p.id_pembayaran)">{{ hapusPayId === p.id_pembayaran ? 'Menghapus...' : 'Hapus' }}</button>
         </div>
       </div>
       <div v-else class="pay-empty">Belum ada pembayaran</div>

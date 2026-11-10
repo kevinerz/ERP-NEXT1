@@ -202,7 +202,7 @@ function badgePresales(s: string) {
   return { Provisioned: 'badge-green', Cancelled: 'badge-red', Ordered: 'badge-blue', Survey_Done: 'badge-amber', Draft: 'badge-gray' }[s] ?? 'badge-gray'
 }
 function labelPresales(s: string) {
-  return { Draft: 'Draft', Survey_Done: 'Survey ✓', Ordered: 'Ordered', Provisioned: 'Provisioned', Cancelled: 'Batal' }[s] ?? s
+  return { Draft: 'Draft', Survey_Done: 'Survey ✓', Ordered: 'Sudah order', Provisioned: 'Sudah aktif', Cancelled: 'Batal' }[s] ?? s
 }
 const fmtDate = fmtDateShort
 function prospecName(s: Survey) {
@@ -241,7 +241,7 @@ function prospecName(s: Survey) {
 
     <!-- Pipeline badges -->
     <div class="ps-pipeline">
-      <span v-for="s in STATUS_PRESALES" :key="s"
+      <span v-baris v-for="s in STATUS_PRESALES" :key="s"
         class="pipe-badge" :class="badgePresales(s)"
         :style="{ cursor: 'pointer', opacity: filters.status_presales === s ? 1 : 0.55 }"
         @click="filters.status_presales = filters.status_presales === s ? '' : s; searchInput()">
@@ -275,7 +275,7 @@ function prospecName(s: Survey) {
           <tr v-if="!surveys.length">
             <td colspan="12" class="ps-empty">Belum ada data survey</td>
           </tr>
-          <tr v-for="s in surveys" :key="s.id_survey" class="ps-row" @click="openEdit(s)">
+          <tr v-baris v-for="s in surveys" :key="s.id_survey" class="ps-row" @click="openEdit(s)">
             <td class="td-name">
               <span class="td-main">{{ prospecName(s) }}</span>
               <span v-if="s.alamat_survey" class="td-sub">{{ s.alamat_survey }}</span>
@@ -286,7 +286,7 @@ function prospecName(s: Survey) {
             <td>{{ s.layanan?.nama_layanan || s.vendor || '—' }}</td>
             <td>{{ s.nomor_order_vendor || '—' }}</td>
             <td class="td-mono">{{ s.sn_modem || '—' }}</td>
-            <td><span class="badge" :class="badgeOrder(s.status_order)">{{ s.status_order.replace(/_/g, ' ') }}</span></td>
+            <td><span class="badge" :class="badgeOrder(s.status_order)">{{ s.status_order === 'Submitted' ? 'Diajukan' : s.status_order.replace(/_/g, ' ') }}</span></td>
             <td>{{ fmtDate(s.tanggal_survey) }}</td>
             <td><span class="badge" :class="badgePresales(s.status_presales)">{{ labelPresales(s.status_presales) }}</span></td>
             <td>{{ s.presales_pic?.nama_lengkap || '—' }}</td>
@@ -384,7 +384,7 @@ function prospecName(s: Survey) {
               <div class="field">
                 <label>Status Order</label>
                 <select v-model="form.status_order">
-                  <option v-for="s in STATUS_ORDER" :key="s" :value="s">{{ s.replace(/_/g, ' ') }}</option>
+                  <option v-for="s in STATUS_ORDER" :key="s" :value="s">{{ s === 'Submitted' ? 'Diajukan' : s.replace(/_/g, ' ') }}</option>
                 </select>
               </div>
             </div>

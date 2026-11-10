@@ -45,14 +45,25 @@ const STATUS_LABEL: Record<string, string> = {
   Draft: 'Draft', Dijadwalkan: 'Dijadwalkan', Dalam_Proses: 'Dalam Proses', Selesai: 'Selesai', Dibatalkan: 'Dibatalkan',
 }
 
-onMounted(async () => {
+// Dropdown yang gagal dimuat (ditampilkan sebagai peringatan di modal)
+const dropdownGagal = ref<string[]>([])
+const dropdownMemuat = ref(false)
+async function muatDropdown() {
+  dropdownMemuat.value = true
   // allSettled: dropdown opsional yang gagal dimuat tidak boleh menghalangi daftar order tampil
-  await Promise.allSettled([
-    proyek.fetchSiteList(),
+  const hasil = await Promise.allSettled([
+    api.get('/projects/site-list').then(r => { proyek.siteList = r.data.data ?? [] }),
     api.get('/master/layanan').then(r => { layananList.value = r.data.data ?? [] }),
     api.get('/operations/teknisi-list').then(r => { teknisiList.value = r.data.data ?? [] }),
     api.get('/master/kontak-teknisi', { params: { limit: 200 } }).then(r => { kontakTeknisiList.value = r.data.data ?? [] }),
   ])
+  const nama = ['site', 'layanan', 'teknisi internal', 'kontak teknisi vendor']
+  dropdownGagal.value = hasil.flatMap((h, i) => (h.status === 'rejected' ? [nama[i]!] : []))
+  dropdownMemuat.value = false
+}
+
+onMounted(async () => {
+  await muatDropdown()
   fetchData()
 })
 
@@ -138,7 +149,7 @@ async function handleSubmit() {
           <tr v-if="!ins.list.length">
             <td colspan="8" class="empty">Belum ada order instalasi</td>
           </tr>
-          <tr v-for="item in ins.list" :key="item.id_instalasi" class="row-link"
+          <tr v-baris v-for="item in ins.list" :key="item.id_instalasi" class="row-link"
               @click="router.push(`/instalasi/${item.id_instalasi}`)">
             <td class="fw700">{{ item.nomor_instalasi }}</td>
             <td>
@@ -225,6 +236,10 @@ async function handleSubmit() {
             <textarea v-model="form.catatan" rows="2" placeholder="Catatan awal..."></textarea>
           </div>
         </div>
+        <p v-if="dropdownGagal.length" class="form-error">
+          ⚠ Gagal memuat daftar {{ dropdownGagal.join(', ') }} — pilihan di atas mungkin kosong/tidak lengkap.
+          <button type="button" class="btn-cancel" :disabled="dropdownMemuat" @click="muatDropdown">{{ dropdownMemuat ? 'Memuat…' : 'Coba lagi' }}</button>
+        </p>
         <p v-if="formError" class="form-error">{{ formError }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showModal = false">Batal</button>

@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateTime as fmtDate } from '@/composables/useFormat'
 import { alertError } from '@/composables/useDialog'
+import { useFilterUrl } from '@/composables/useFilterUrl'
 
 const router = useRouter()
 
@@ -19,6 +20,8 @@ const filterStatus  = ref('')
 const filterJenis   = ref('')
 const filterTeknisi = ref('')
 const page          = ref(1)
+// Filter & halaman disimpan di URL — tetap sama setelah kembali dari halaman detail
+useFilterUrl({ q: search, status: filterStatus, jenis: filterJenis, teknisi: filterTeknisi, page })
 const meta          = ref({ total: 0, total_pages: 1 })
 
 const showModal  = ref(false)
@@ -221,7 +224,7 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
           </tr>
         </thead>
         <tbody>
-          <tr v-for="w in wos" :key="w.id_wo" class="row-link" @click="goDetail(w.id_wo)">
+          <tr v-baris v-for="w in wos" :key="w.id_wo" class="row-link" @click="goDetail(w.id_wo)">
             <td>
               <div class="mono">{{ w.nomor_wo }}</div>
               <div v-if="w.ticket" class="sub-text">↳ {{ w.ticket.nomor_tiket }}</div>

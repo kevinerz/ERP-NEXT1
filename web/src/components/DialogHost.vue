@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
-import { activeDialog, settleDialog } from '@/composables/useDialog'
+import { activeDialog, settleDialog, toasts, tutupToast } from '@/composables/useDialog'
 
 const d = activeDialog
 const input = ref('')
@@ -59,6 +59,13 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown, true))
 
 <template>
   <Teleport to="body">
+    <div class="dh-toasts" aria-live="polite">
+      <div v-for="t in toasts" :key="t.id" :class="['dh-toast', `dh-toast-${t.variant}`]" role="status">
+        <span>{{ t.variant === 'success' ? '✓' : t.variant === 'danger' ? '✕' : t.variant === 'warning' ? '⚠' : 'ℹ' }}</span>
+        <span class="dh-toast-teks">{{ t.pesan }}</span>
+        <button type="button" class="dh-toast-x" aria-label="Tutup" @click="tutupToast(t.id)">✕</button>
+      </div>
+    </div>
     <div v-if="d" class="dh-overlay" @click.self="cancel">
       <div :key="d.title + (d.message ?? '')" class="dh-box" v-focus-trap aria-labelledby="dh-title">
         <div class="dh-icon" :class="d.variant ?? 'default'" aria-hidden="true">{{ icon }}</div>
@@ -138,4 +145,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown, true))
   .dh-box { max-width: 100vw; border-radius: var(--r-lg) var(--r-lg) 0 0; padding: 24px 18px 20px; }
   .dh-actions .btn { max-width: none; }
 }
+.dh-toasts { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 4000; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; width: min(92vw, 440px); }
+.dh-toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; border-radius: 10px; color: #fff; font-size: 14px; box-shadow: 0 8px 24px rgba(15, 23, 42, .22); background: #334155; }
+.dh-toast-success { background: #047857; }
+.dh-toast-danger { background: #b91c1c; }
+.dh-toast-warning { background: #b45309; }
+.dh-toast-teks { flex: 1; min-width: 0; }
+.dh-toast-x { border: 0; background: none; color: inherit; cursor: pointer; font-size: 13px; opacity: .8; }
 </style>

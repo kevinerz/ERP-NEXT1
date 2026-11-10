@@ -98,7 +98,7 @@ const pelaksana = (o: Order) => (o.network_metode === 'Kirim_Vendor'
           <tr v-if="!memuat && !(tab === 'antrian' ? antrian : selesai).length">
             <td colspan="6" class="muted pusat">{{ tab === 'antrian' ? 'Tidak ada order di tahap Network. 👍' : 'Belum ada.' }}</td>
           </tr>
-          <tr v-for="o in (tab === 'antrian' ? antrian : selesai)" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
+          <tr v-baris v-for="o in (tab === 'antrian' ? antrian : selesai)" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
             <td><b :class="jam(o.tahap_at) > 72 && tab === 'antrian' ? 'merah' : ''">{{ umur(o.tahap_at) }}</b></td>
             <td><b>{{ o.nomor_pb }}</b> · {{ o.nama_site }}<br /><small class="muted">{{ o.site?.kode_site }}<template v-if="o.kota"> · {{ o.kota }}</template></small></td>
             <td>{{ o.sph.pelanggan.nama_pelanggan }}<br /><small class="muted">{{ o.layanan.nama_layanan }}</small></td>

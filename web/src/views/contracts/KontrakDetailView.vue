@@ -5,7 +5,7 @@ import { useContractsStore } from '@/stores/contracts'
 import { printKontrak, printInvoice } from '@/composables/usePrint'
 import { fmtRupiah, fmtDate, statusLabel } from '@/composables/useFormat'
 import api from '@/services/api'
-import { confirmDialog, alertDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, alertError, toast } from '@/composables/useDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -56,6 +56,7 @@ async function handleEdit() {
     if (!payload.tgl_berakhir) delete payload.tgl_berakhir
     await contracts.update(id, payload)
     showEditModal.value = false
+    toast('Kontrak tersimpan')
   } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal menyimpan' }
   finally { submitting.value = false }
 }
@@ -66,6 +67,7 @@ async function handleTerminasi() {
   try {
     await contracts.terminasi(id, terminasiForm.value)
     showTerminasiModal.value = false
+    toast('Kontrak diterminasi')
   } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal terminasi' }
   finally { submitting.value = false }
 }
@@ -126,7 +128,7 @@ async function handleDelete() {
 <template>
   <div class="page">
     <div class="breadcrumb">
-      <span class="link" @click="router.push('/contracts')">Kontrak</span>
+      <span v-baris class="link" @click="router.push('/contracts')">Kontrak</span>
       <span class="sep">›</span>
       <span>{{ k?.nomor_kontrak || '...' }}</span>
     </div>
@@ -192,7 +194,7 @@ async function handleDelete() {
         <div class="info-item" v-if="k.quotation">
           <div class="info-label">Quotation</div>
           <div class="info-value">
-            <span class="qt-link"
+            <span v-baris class="qt-link"
               @click="router.push(`/sales/quotation/${k.quotation.id_quotation}`)">
               {{ k.quotation.nomor_quotation }}
             </span>
@@ -207,7 +209,7 @@ async function handleDelete() {
         <span v-else-if="!k.quotation" class="proj-hint">Perlu Quotation terhubung</span>
       </div>
       <div class="project-list" v-if="k.projects?.length">
-        <div v-for="p in k.projects" :key="p.id_project"
+        <div v-baris v-for="p in k.projects" :key="p.id_project"
           class="project-item" @click="router.push(`/projects/${p.id_project}`)">
           <span class="proj-nomor">{{ p.nomor_project }}</span>
           <span class="proj-status" :class="`pstatus-${p.status_project.toLowerCase()}`">
@@ -253,7 +255,10 @@ async function handleDelete() {
           <div class="field full">
             <label>Status</label>
             <select v-model="editForm.status_kontrak">
-              <option v-for="s in STATUS_LIST" :key="s" :value="s">{{ statusLabel(s) }}</option>
+              <!-- Terminasi hanya lewat tombol Terminasi (butuh tanggal & alasan); tampil terkunci bila sudah Terminasi -->
+              <template v-for="s in STATUS_LIST" :key="s">
+                <option v-if="s !== 'Terminasi' || k?.status_kontrak === 'Terminasi'" :value="s" :disabled="s === 'Terminasi'">{{ statusLabel(s) }}</option>
+              </template>
             </select>
           </div>
         </div>

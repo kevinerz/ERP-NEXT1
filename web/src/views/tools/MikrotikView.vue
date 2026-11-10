@@ -285,12 +285,12 @@ onMounted(() => {
           Tidak ada perangkat yang cocok dengan "{{ search }}".
         </div>
         <template v-else>
-          <div class="dp-select-all" @click="toggleAll">
+          <div v-baris class="dp-select-all" @click="toggleAll">
             <input type="checkbox" :checked="allSelected" readonly />
             <span>{{ allSelected ? 'Batalkan Semua' : 'Pilih Semua' }} ({{ filteredDevices.length }})</span>
           </div>
           <div class="dp-list">
-            <div
+            <div v-baris
               v-for="d in filteredDevices"
               :key="d.id_perangkat"
               :class="['device-item', { selected: selected.has(d.ip_address || '') }]"

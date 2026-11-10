@@ -39,7 +39,7 @@ interface SiteOption {
 const showModal = ref(false)
 const submitting = ref(false)
 const formError = ref('')
-const form = ref({
+const FORM_KOSONG = () => ({
   id_site: 0,
   periode: monthLocal(),
   tgl_invoice: todayLocal(),
@@ -48,6 +48,13 @@ const form = ref({
   ppn_persen: 11,
   catatan: '',
 })
+const form = ref(FORM_KOSONG())
+// form selalu bersih tiap modal dibuka (isian lama tidak terbawa)
+function bukaModal() {
+  form.value = FORM_KOSONG()
+  formError.value = ''
+  showModal.value = true
+}
 
 onMounted(async () => {
   fetchData()
@@ -81,6 +88,10 @@ function goPage(p: number) { page.value = p; fetchData() }
 async function handleSubmit() {
   if (!form.value.id_site || !form.value.periode || !form.value.tgl_invoice || !form.value.tgl_jatuh_tempo) {
     formError.value = 'Site, periode, tanggal invoice, dan jatuh tempo wajib diisi'
+    return
+  }
+  if (!(Number(form.value.subtotal) > 0)) {
+    formError.value = 'Subtotal harus lebih dari 0'
     return
   }
   submitting.value = true
@@ -201,7 +212,7 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
       </div>
       <div class="header-actions">
         <button type="button" class="btn-export" @click="handleExport" :disabled="exporting">{{ exporting ? 'Menyiapkan...' : '⬇ Export CSV' }}</button>
-        <button type="button" class="btn btn-primary" @click="showModal = true; formError = ''">+ Buat Invoice</button>
+        <button type="button" class="btn btn-primary" @click="bukaModal">+ Buat Invoice</button>
       </div>
     </div>
 
@@ -240,7 +251,7 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
             <tr v-if="!finance.invoices.length">
               <td colspan="10" class="empty">Belum ada data invoice</td>
             </tr>
-            <tr v-for="inv in finance.invoices" :key="inv.id_invoice" class="row-link"
+            <tr v-baris v-for="inv in finance.invoices" :key="inv.id_invoice" class="row-link"
               @click="router.push(`/finance/invoice/${inv.id_invoice}`)">
               <td class="nomor">{{ inv.nomor_invoice }}</td>
               <td>

@@ -65,7 +65,7 @@ function fmtTime(d: string) {
       </div>
 
       <div v-else>
-        <div
+        <div v-baris
           v-for="n in notif.notifications"
           :key="n.id_notif"
           :class="['notif-item', { unread: !n.is_read, clickable: !!n.url }]"

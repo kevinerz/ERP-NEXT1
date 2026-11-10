@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { fmtDateTime } from '@/composables/useFormat'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import api from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,8 +21,23 @@ const confirmSelesai = ref(false)
 const confirmBatal = ref(false)
 const actionError = ref('')
 
-onMounted(load)
-async function load() { await aset.fetchOpnameOne(id) }
+onMounted(() => {
+  aset.opnameCurrent = null   // jangan tampilkan sesi lain yang tersisa di store
+  load()
+})
+// bedakan 404 (memang tidak ada) dari gagal muat lainnya
+const memuat = ref(false)
+const loadError = ref('')
+async function load() {
+  memuat.value = true; loadError.value = ''
+  try {
+    aset.opnameCurrent = (await api.get(`/assets/stok-opname/${id}`)).data.data
+  } catch (e: any) {
+    const pesan = e?.response?.status === 404 ? '' : (e?.response?.data?.message || 'Gagal memuat sesi opname')
+    if (aset.opnameCurrent) actionError.value = pesan ? `Gagal memuat ulang: ${pesan}` : 'Sesi opname tidak ditemukan'
+    else loadError.value = pesan
+  } finally { memuat.value = false }
+}
 
 const o = computed(() => aset.opnameCurrent)
 const items = computed(() => o.value?.items || [])
@@ -47,11 +63,21 @@ async function handleScan() {
   } finally { scanning.value = false }
 }
 
-async function toggleManual(item: any) {
+// id item yang sedang diproses — checkbox dikunci agar tidak diklik ganda
+const togglingId = ref<number | null>(null)
+async function toggleManual(item: any, ev?: Event) {
+  const cb = ev?.target as HTMLInputElement | undefined
+  if (togglingId.value !== null) { if (cb) cb.checked = item.ditemukan; return }
+  togglingId.value = item.id_item
+  actionError.value = ''
   try {
     await aset.toggleOpnameItem(item.id_item, !item.ditemukan)
     await load()
-  } catch (e: any) { actionError.value = e.response?.data?.message || 'Gagal update item' }
+  } catch (e: any) {
+    actionError.value = e.response?.data?.message || 'Gagal update item'
+    if (cb) cb.checked = item.ditemukan   // kembalikan centang bila gagal
+  }
+  finally { togglingId.value = null }
 }
 
 function selesaikan() { confirmSelesai.value = true }
@@ -102,7 +128,7 @@ async function doBatalkan() {
 
     <div class="page-header">
       <div>
-        <div class="breadcrumb"><span @click="router.push('/assets/stok-opname')">Stok Opname</span> › #{{ o.id_opname }}</div>
+        <div class="breadcrumb"><span v-baris @click="router.push('/assets/stok-opname')">Stok Opname</span> › #{{ o.id_opname }}</div>
         <h2>{{ o.gudang?.nama_gudang }}</h2>
         <span class="status-badge" :class="o.status_opname === 'Selesai' ? 'st-selesai' : 'st-berjalan'">{{ o.status_opname }}</span>
       </div>
@@ -147,7 +173,7 @@ async function doBatalkan() {
           </tr>
           <tr v-for="it in snapshotItems" :key="it.id_item" :class="{ 'row-found': it.ditemukan }">
             <td class="center">
-              <input type="checkbox" :checked="it.ditemukan" :disabled="!isBerjalan" @change="toggleManual(it)" />
+              <input type="checkbox" :checked="it.ditemukan" :disabled="!isBerjalan || togglingId !== null" @change="toggleManual(it, $event)" />
             </td>
             <td class="kode">{{ it.aset?.kode_aset }}</td>
             <td>
@@ -181,8 +207,16 @@ async function doBatalkan() {
       </table>
     </div>
   </div>
-  <div v-else-if="aset.loading" class="page"><div class="loading-state">Memuat...</div></div>
-  <div v-else class="page"><div class="empty-state"><div class="empty-title">Sesi opname tidak ditemukan.</div></div></div>
+  <div v-else-if="memuat" class="page"><div class="loading-state">Memuat...</div></div>
+  <div v-else-if="loadError" class="page"><div class="empty-state">
+    <div class="empty-title">{{ loadError }}</div>
+    <button type="button" class="btn btn-secondary" @click="load">Coba lagi</button>
+    <button type="button" class="btn btn-secondary" @click="router.push('/assets/stok-opname')">← Daftar Opname</button>
+  </div></div>
+  <div v-else class="page"><div class="empty-state">
+    <div class="empty-title">Sesi opname tidak ditemukan.</div>
+    <button type="button" class="btn btn-secondary" @click="router.push('/assets/stok-opname')">← Daftar Opname</button>
+  </div></div>
 </template>
 
 <style scoped>

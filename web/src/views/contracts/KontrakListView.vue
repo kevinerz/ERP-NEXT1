@@ -7,6 +7,7 @@ import { useProyekStore } from '@/stores/proyek'
 import { fmtRupiah, fmtDateShort as fmtDate, statusLabel } from '@/composables/useFormat'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
+import { useFilterUrl } from '@/composables/useFilterUrl'
 
 const router = useRouter()
 const contracts = useContractsStore()
@@ -16,6 +17,8 @@ const proyek = useProyekStore()
 const page = ref(1)
 const filterStatus = ref('')
 const search = ref('')
+// Filter & halaman disimpan di URL — tetap sama setelah kembali dari halaman detail
+useFilterUrl({ q: search, status: filterStatus, page })
 
 const showModal = ref(false)
 const submitting = ref(false)
@@ -106,7 +109,7 @@ function sisaHari(d?: string) {
 
     <!-- Summary -->
     <div class="summary-row" v-if="contracts.summary">
-      <div v-for="s in contracts.summary.statuses" :key="s.status" class="summary-chip"
+      <div v-baris v-for="s in contracts.summary.statuses" :key="s.status" class="summary-chip"
         :style="{ borderLeftColor: STATUS_COLOR[s.status]?.color || '#94a3b8' }"
         @click="filterStatus = filterStatus === s.status ? '' : s.status; doFilter()">
         <div class="sc-count">{{ s.count }}</div>
@@ -152,7 +155,7 @@ function sisaHari(d?: string) {
           <tr v-if="!contracts.list.length">
             <td colspan="7" class="empty">Belum ada data kontrak</td>
           </tr>
-          <tr v-for="k in contracts.list" :key="k.id_kontrak" class="row-link"
+          <tr v-baris v-for="k in contracts.list" :key="k.id_kontrak" class="row-link"
             @click="router.push(`/contracts/${k.id_kontrak}`)">
             <td class="nomor">{{ k.nomor_kontrak }}</td>
             <td>

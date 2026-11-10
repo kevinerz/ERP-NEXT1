@@ -41,7 +41,7 @@ const bolehKelolaBlok = computed(() => ['Admin', 'Director', 'Manager_Ops'].some
 async function muatDaftar() {
   const { data } = await api.get('/ipam/blok')
   daftarBlok.value = data.data
-  if (!idBlok.value && daftarBlok.value.length) idBlok.value = daftarBlok.value[0].id_blok
+  if (!idBlok.value && daftarBlok.value.length) idBlok.value = daftarBlok.value[0]!.id_blok
 }
 async function muatBlok() {
   if (!idBlok.value) return
@@ -73,7 +73,7 @@ function ipKeAngka(ip: string): number | null {
   if (!m) return null
   const o = m.slice(1).map(Number)
   if (o.some((x) => x > 255)) return null
-  return ((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]) >>> 0
+  return ((o[0]! << 24) | (o[1]! << 16) | (o[2]! << 8) | o[3]!) >>> 0
 }
 const angkaKeIp = (n: number) => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.')
 const networkBlok = computed(() => (blok.value ? ipKeAngka(blok.value.network) ?? 0 : 0))
@@ -234,6 +234,8 @@ const detail = ref<Alokasi | null>(null)
 const ubah = reactive({ status: '', peruntukan: '', gateway: '', vlan: '' as string | number, perangkat: '', keterangan: '', hapusSite: false, simpan: false, err: '' })
 const siteUbah = pencariSite()
 const riwayat = ref<Riwayat[]>([])
+const riwayatMemuat = ref(false)
+const riwayatGalat = ref('')
 const tersalin = ref('')
 
 async function bukaDetail(a: Alokasi) {
@@ -245,10 +247,18 @@ async function bukaDetail(a: Alokasi) {
   siteUbah.kosongkan()
   riwayat.value = []
   tersalin.value = ''
+  await muatRiwayat(a)
+}
+async function muatRiwayat(a: Alokasi) {
+  riwayatMemuat.value = true
+  riwayatGalat.value = ''
   try {
     const { data } = await api.get(`/ipam/alokasi/${a.id_alokasi}/riwayat`)
-    riwayat.value = data.data
-  } catch { /* abaikan */ }
+    if (detail.value?.id_alokasi === a.id_alokasi) riwayat.value = data.data
+  } catch (e: any) {
+    const m = e?.response?.data?.message
+    riwayatGalat.value = (Array.isArray(m) ? m.join(', ') : m) || 'Gagal memuat riwayat'
+  } finally { riwayatMemuat.value = false }
 }
 async function simpanUbah() {
   const a = detail.value
@@ -341,7 +351,9 @@ async function simpanZona() {
 }
 async function hapusZona(z: Zona) {
   if (!(await confirmDialog({ title: 'Hapus zona?', message: `${z.nama} (${z.prefix}). Alokasi IP di dalamnya tidak ikut terhapus.`, confirmLabel: 'Hapus', variant: 'danger' }))) return
-  await api.delete(`/ipam/zona/${z.id_zona}`)
+  try {
+    await api.delete(`/ipam/zona/${z.id_zona}`)
+  } catch (e) { alertError(e, 'Gagal menghapus zona'); return }
   await muatBlok()
 }
 
@@ -451,8 +463,8 @@ async function simpanBlok() {
             <tr><th>Prefix</th><th>Status</th><th>Peruntukan</th><th>Site / Pelanggan</th><th>Gateway</th><th>VLAN</th><th>Perangkat</th><th>Sejak</th></tr>
           </thead>
           <tbody>
-            <tr v-if="!daftarTampil.length"><td colspan="8" class="muted pusat">Belum ada alokasi.</td></tr>
-            <tr v-for="a in daftarTampil" :key="a.id_alokasi" class="klik" @click="bukaDetail(a)">
+            <tr v-if="!daftarTampil.length"><td colspan="8" class="muted pusat">{{ cari.trim() || filterStatus ? 'Tidak ada alokasi yang cocok dengan filter.' : 'Belum ada alokasi.' }}</td></tr>
+            <tr v-baris v-for="a in daftarTampil" :key="a.id_alokasi" class="klik" @click="bukaDetail(a)">
               <td><b class="mono">{{ a.prefix }}</b></td>
               <td>
                 <span class="badge" :class="KELAS_STATUS[a.status]">{{ a.status }}</span>
@@ -522,7 +534,7 @@ async function simpanBlok() {
               <input v-model="siteForm.s.teks" class="form-input" placeholder="Cari nama / kode site / pelanggan…" />
               <ul v-if="siteForm.s.hasil.length || siteForm.s.mencari" class="ipam-dropdown-list">
                 <li v-if="siteForm.s.mencari" class="muted">Mencari…</li>
-                <li v-for="x in siteForm.s.hasil" :key="x.id_site" @click="siteForm.pilih(x)">
+                <li v-baris v-for="x in siteForm.s.hasil" :key="x.id_site" @click="siteForm.pilih(x)">
                   <b>{{ x.nama_site }}</b>
                   <small>{{ x.kode_site }}<template v-if="x.pelanggan"> · {{ x.pelanggan.nama_pelanggan }}</template> · {{ x.status_site }}</small>
                 </li>
@@ -566,7 +578,7 @@ async function simpanBlok() {
             <div v-for="[k, v] in ([['Netmask', detail.subnet.netmask], ['Network', detail.subnet.network], ['Host', `${detail.subnet.host_pertama} – ${detail.subnet.host_terakhir}`], ['Broadcast', detail.subnet.broadcast], ['Jumlah host', String(detail.subnet.jumlah_host)]] as [string, string | null][])" :key="k">
               <template v-if="v">
                 <small class="muted">{{ k }}</small>
-                <span class="mono klik" title="Klik untuk salin" @click="salin(v)">{{ v }}<template v-if="tersalin === v"> ✓</template></span>
+                <span v-baris class="mono klik" title="Klik untuk salin" @click="salin(v)">{{ v }}<template v-if="tersalin === v"> ✓</template></span>
               </template>
             </div>
           </div>
@@ -592,7 +604,7 @@ async function simpanBlok() {
               <input v-model="siteUbah.s.teks" class="form-input" placeholder="Cari nama / kode site / pelanggan…" />
               <ul v-if="siteUbah.s.hasil.length || siteUbah.s.mencari" class="ipam-dropdown-list">
                 <li v-if="siteUbah.s.mencari" class="muted">Mencari…</li>
-                <li v-for="x in siteUbah.s.hasil" :key="x.id_site" @click="siteUbah.pilih(x)">
+                <li v-baris v-for="x in siteUbah.s.hasil" :key="x.id_site" @click="siteUbah.pilih(x)">
                   <b>{{ x.nama_site }}</b>
                   <small>{{ x.kode_site }}<template v-if="x.pelanggan"> · {{ x.pelanggan.nama_pelanggan }}</template> · {{ x.status_site }}</small>
                 </li>
@@ -626,7 +638,11 @@ async function simpanBlok() {
               <b>{{ r.aksi }}</b> <span>{{ r.detail }}</span>
               <small class="muted">{{ fmtWaktu(r.created_at) }} · {{ r.nama_karyawan || 'sistem' }}</small>
             </li>
-            <li v-if="!riwayat.length" class="muted">—</li>
+            <li v-if="riwayatGalat" class="form-error">
+              {{ riwayatGalat }} <button type="button" class="btn btn-ghost btn-sm" @click="muatRiwayat(detail)">Coba lagi</button>
+            </li>
+            <li v-else-if="riwayatMemuat && !riwayat.length" class="muted">Memuat…</li>
+            <li v-else-if="!riwayat.length" class="muted">—</li>
           </ul>
           <button type="button" class="btn btn-ghost btn-sm" @click="lihatRiwayatIp(detail.awal)">Riwayat pemakaian IP {{ ipOffset(detail.awal) }} sebelumnya</button>
         </div>

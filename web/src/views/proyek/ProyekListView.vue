@@ -8,6 +8,7 @@ import api from '@/services/api'
 import { confirmDialog, alertError } from '@/composables/useDialog'
 import BasePagination from '@/components/BasePagination.vue'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
+import { useFilterUrl } from '@/composables/useFilterUrl'
 
 const router = useRouter()
 const proyek = useProyekStore()
@@ -15,6 +16,8 @@ const master = useMasterStore()
 
 const filterStatus = ref('')
 const page = ref(1)
+// Filter & halaman disimpan di URL — tetap sama setelah kembali dari halaman detail
+useFilterUrl({ status: filterStatus, page })
 
 // Modal tambah project
 const showModal = ref(false)
@@ -113,7 +116,7 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
 
     <!-- Summary chips -->
     <div class="summary-row">
-      <div
+      <div v-baris
         v-for="s in proyek.summary" :key="s.status"
         :class="['summary-chip', { active: filterStatus === s.status }]"
         :style="{ borderLeftColor: STATUS_COLOR[s.status]?.color || '#94a3b8' }"
@@ -156,7 +159,7 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
           <tr v-if="!proyek.list.length">
             <td colspan="9" class="empty">Tidak ada project</td>
           </tr>
-          <tr
+          <tr v-baris
             v-for="p in proyek.list" :key="p.id_project"
             class="row-link"
             @click="router.push(`/projects/${p.id_project}`)"

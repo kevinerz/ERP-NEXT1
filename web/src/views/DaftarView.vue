@@ -49,6 +49,7 @@
               <option value="">Pilih departemen</option>
               <option v-for="d in departemenList" :key="d" :value="d">{{ d }}</option>
             </select>
+            <small v-if="departemenError" class="dept-error" role="alert">⚠ {{ departemenError }} — <a href="#" @click.prevent="fetchDepartemenList">Coba lagi</a></small>
           </div>
           <div class="field">
             <label>No. HP <span class="req">*</span></label>
@@ -185,6 +186,7 @@ import { ref, onMounted } from 'vue'
 import api from '@/services/api'
 
 const departemenList = ref<string[]>([])
+const departemenError = ref('')
 
 const foto = ref<File | null>(null)
 const fotoPreview = ref('')
@@ -207,11 +209,14 @@ const submitError = ref('')
 const result = ref<any>(null)
 
 async function fetchDepartemenList() {
+  departemenError.value = ''
   try {
     const r = await api.get('/onboarding-open/departemen')
     departemenList.value = r.data.data.departemen_list || []
-  } catch {
+  } catch (e: any) {
+    // pilihan wajib kosong tanpa penjelasan → tampilkan pesan + coba lagi
     departemenList.value = []
+    departemenError.value = e?.response?.data?.message || 'Gagal memuat daftar departemen'
   }
 }
 
@@ -335,6 +340,7 @@ h2 { font-size: 18px; color: #0f172a; margin: 0 0 6px; }
 }
 .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.dept-error { display: block; font-size: 12px; color: #dc2626; margin-top: 4px; }
 .error-msg {
   background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
   color: #dc2626; font-size: 13px; padding: 10px 14px; margin: 20px 0 0;

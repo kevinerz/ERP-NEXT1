@@ -12,6 +12,10 @@ const auth = useAuthStore()
 const d = ref<any>(null)
 const memuat = ref(true)
 const error = ref('')
+// refresh otomatis: catat waktu sukses terakhir; gagal di latar belakang cukup catatan kecil
+const terakhir = ref<Date | null>(null)
+const gagalPerbarui = ref(false)
+const jamTerakhir = computed(() => terakhir.value ? terakhir.value.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '')
 
 async function muat(diam = false) {
   if (!diam) memuat.value = true
@@ -19,8 +23,11 @@ async function muat(diam = false) {
     const r = await api.get('/dashboard/saya')
     d.value = r.data.data
     error.value = ''
+    terakhir.value = new Date()
+    gagalPerbarui.value = false
   } catch (e: any) {
-    if (!diam) error.value = e.response?.data?.message || 'Gagal memuat dashboard'
+    if (!diam || !d.value) error.value = e.response?.data?.message || 'Gagal memuat dashboard'
+    else gagalPerbarui.value = true
   } finally { memuat.value = false }
 }
 let timer: ReturnType<typeof setInterval> | null = null
@@ -104,7 +111,7 @@ const slaWarna = (v: number) => (v >= 99 ? 'hijau' : v >= 95 ? 'kuning' : 'merah
       <div>
         <div class="dsb-eyebrow">Dashboard{{ d?.divisi ? ` · ${d.divisi}` : '' }}</div>
         <h1 class="dsb-title">{{ salam }}, <span>{{ auth.user?.nama_lengkap }}</span></h1>
-        <div class="dsb-date">{{ hariIni }}</div>
+        <div class="dsb-date">{{ hariIni }}<template v-if="jamTerakhir"> · Terakhir diperbarui {{ jamTerakhir }}</template><span v-if="gagalPerbarui" class="dsb-gagal"> · Gagal memperbarui</span></div>
       </div>
       <div class="dsb-aksi">
         <button v-for="a in aksi" :key="a.ke" type="button" class="dsb-btn" @click="router.push(a.ke)">{{ a.t }}</button>
@@ -112,7 +119,7 @@ const slaWarna = (v: number) => (v >= 99 ? 'hijau' : v >= 95 ? 'kuning' : 'merah
     </div>
 
     <div v-if="memuat" class="dsb-muat">Memuat dashboard…</div>
-    <div v-else-if="error" class="dsb-error">{{ error }}</div>
+    <div v-else-if="error" class="dsb-error">{{ error }} <button type="button" class="dsb-btn" @click="muat()">Coba lagi</button></div>
     <div v-else-if="!bagian.length" class="dsb-kosong">Belum ada ringkasan untuk akun ini. Gunakan menu di samping untuk membuka modul Anda.</div>
 
     <template v-else>
@@ -249,6 +256,7 @@ const slaWarna = (v: number) => (v >= 99 ? 'hijau' : v >= 95 ? 'kuning' : 'merah
 .dsb-title { font-size: 22px; font-weight: 700; color: #0f172a; margin: 0 0 4px; overflow-wrap: anywhere; }
 .dsb-title span { color: #0B1D35; }
 .dsb-date { font-size: 12px; color: #94a3b8; }
+.dsb-gagal { color: #d97706; font-weight: 600; }
 .dsb-aksi { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .dsb-btn { padding: 7px 13px; border-radius: 8px; border: 1.5px solid #e2e8f0; background: #fff; color: #334155; font-size: 12px; font-weight: 600; cursor: pointer; }
 .dsb-btn:first-child { background: #0B1D35; border-color: #0B1D35; color: #fff; }
