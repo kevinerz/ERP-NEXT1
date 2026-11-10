@@ -35,6 +35,7 @@ import { VisitModule } from './modules/visit/visit.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PublicWoModule } from './modules/public-wo/public-wo.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { FileServerModule } from './modules/fileserver/fileserver.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { SettingsModule } from './modules/settings/settings.module';
@@ -106,6 +107,7 @@ import { PresalesModule } from './modules/presales/presales.module';
     PublicWoModule,
     ReportsModule,
     DashboardModule,
+    FileServerModule,
     AdminModule,
     SettingsModule,
     FinanceModule,

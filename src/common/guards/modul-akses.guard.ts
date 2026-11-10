@@ -39,6 +39,7 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   ipam: 'operations', // IP publik NEXT1
   visit: 'operations', // Jadwal Visit teknis
   nocaas: 'operations', // Pembanding status router NOCaaS untuk tiket gangguan
+  fileserver: 'fileserver', // File server kantor (SMB)
 };
 
 // Divisi yang terlibat alur Pasang Baru (Sales → OPS → Instalasi → NOC → Finance)

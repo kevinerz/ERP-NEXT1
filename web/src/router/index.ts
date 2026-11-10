@@ -400,6 +400,11 @@ const router = createRouter({
         },
         // Meeting internal (LiveKit)
         {
+          path: 'file-server',
+          name: 'file-server',
+          component: () => import('@/views/fileserver/FileServerView.vue'),
+        },
+        {
           path: 'meeting',
           name: 'meeting-list',
           component: () => import('@/views/meeting/MeetingListView.vue'),
@@ -560,6 +565,7 @@ const ROUTE_MODUL: Record<string, string | string[]> = {
   'laporan': 'reports', 'laporan-sla': 'reports',
   'finance-dashboard': 'finance', 'invoice-list': 'finance', 'invoice-detail': 'finance',
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',
+  'file-server': 'fileserver',
 }
 
 router.beforeEach((to) => {

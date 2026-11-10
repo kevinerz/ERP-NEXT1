@@ -79,5 +79,6 @@ export const PAGE_TITLES: Record<string, string> = {
   "meeting-list":         "Meeting",
   "meeting-room":         "Meeting — Ruang Rapat",
   ipam:                   "IP Publik",
+  "file-server":          "File Server",
   "admin-portal-users":   "Admin — Portal Akun",
 }

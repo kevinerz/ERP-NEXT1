@@ -43,6 +43,7 @@ const MENU: { t: string; ke: string; i: string; m?: string[]; kata?: string }[] 
   { t: 'Laporan SLA', ke: '/reports/sla', i: '📉', m: ['reports'] },
   { t: 'Karyawan (HRIS)', ke: '/hris/karyawan', i: '👥', m: ['hris'], kata: 'pegawai staf' },
   { t: 'Meeting', ke: '/meeting', i: '📹', kata: 'rapat' },
+  { t: 'File server', ke: '/file-server', i: '🗃️', m: ['fileserver'], kata: 'berkas dokumen folder smb share nas' },
   { t: 'Profil saya', ke: '/profile', i: '👤', kata: 'password akun' },
 ]
 const menuCocok = computed(() => {

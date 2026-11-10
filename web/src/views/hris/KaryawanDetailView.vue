@@ -156,6 +156,7 @@ const ALL_MODULS = [
   { key: 'prtg',          label: 'PRTG',         icon: '📡' },
   { key: 'mekari',        label: 'Mekari',       icon: '💳' },
   { key: 'whatsapp',      label: 'WhatsApp',     icon: '💬' },
+  { key: 'fileserver',    label: 'File Server',  icon: '🗃️' },
 ]
 
 const PRESETS = [

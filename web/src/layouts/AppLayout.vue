@@ -142,6 +142,7 @@ const menuGroups: { label: string; accent: string; items: MenuItem[] }[] = [
       { label: 'WhatsApp',    emoji: '💬', to: '/whatsapp',        modul: 'whatsapp' },
       { label: 'Statistik Helpdesk', emoji: '📶', to: '/whatsapp/statistik', modul: 'whatsapp' },
       { label: 'Meeting',     emoji: '📹', to: '/meeting',         modul: null },
+      { label: 'File Server', emoji: '🗃️', to: '/file-server',     modul: 'fileserver' },
       { label: 'QC ERP',      emoji: '🧪', to: '/qc',              modul: null },
     ],
   },
