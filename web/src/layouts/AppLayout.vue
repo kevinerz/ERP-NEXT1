@@ -6,6 +6,7 @@ import { useNotificationStore } from '@/stores/notification'
 import { useSettingsStore } from '@/stores/settings'
 import api from '@/services/api'
 import { fmtRelativeTime } from '@/composables/useFormat'
+import { PAGE_TITLES } from '@/router/judul'
 
 const router = useRouter()
 const route  = useRoute()
@@ -128,14 +129,18 @@ function fmtTime(d: string) {
   return fmtRelativeTime(d, true)
 }
 
-const menuGroups = [
+type Modul = string | string[] | null
+interface MenuItem { label: string; emoji: string; to: string; modul: Modul; match?: string[] }
+
+// `match` = awalan path tambahan yang ikut menyalakan menu (halaman turunan / detail)
+const menuGroups: { label: string; accent: string; items: MenuItem[] }[] = [
   {
     label: 'UMUM', accent: '#3b82f6',
     items: [
       { label: 'Dashboard',   emoji: '📊', to: '/dashboard',      modul: null },
       { label: 'Email',       emoji: '📧', to: '/email',           modul: null },
       { label: 'WhatsApp',    emoji: '💬', to: '/whatsapp',        modul: 'whatsapp' },
-      { label: 'Statistik Helpdesk', emoji: '📈', to: '/whatsapp/statistik', modul: 'whatsapp' },
+      { label: 'Statistik Helpdesk', emoji: '📶', to: '/whatsapp/statistik', modul: 'whatsapp' },
       { label: 'Meeting',     emoji: '📹', to: '/meeting',         modul: null },
       { label: 'QC ERP',      emoji: '🧪', to: '/qc',              modul: null },
     ],
@@ -143,7 +148,7 @@ const menuGroups = [
   {
     label: 'SDM', accent: '#8b5cf6',
     items: [
-      { label: 'HRIS',        emoji: '👥', to: '/hris/karyawan',  modul: 'hris' },
+      { label: 'HRIS',        emoji: '👥', to: '/hris/karyawan',  modul: 'hris', match: ['/hris'] },
       { label: 'Master Data', emoji: '🗄️', to: '/master',          modul: 'master' },
     ],
   },
@@ -153,7 +158,7 @@ const menuGroups = [
       { label: 'Pasang Baru', emoji: '🆕', to: '/pasang-baru',     modul: ['sales', 'operations', 'instalasi', 'finance'] },
       { label: 'Pre-Sales',   emoji: '🔍', to: '/presales',        modul: 'sales' },
       { label: 'Sales',       emoji: '💼', to: '/sales',           modul: 'sales' },
-      { label: 'CRM',         emoji: '🤝', to: '/crm/pic',         modul: 'crm' },
+      { label: 'CRM',         emoji: '🤝', to: '/crm/pic',         modul: 'crm', match: ['/crm'] },
       { label: 'Proyek',      emoji: '📐', to: '/projects',        modul: 'projects' },
       { label: 'Kontrak',     emoji: '📄', to: '/contracts',       modul: 'contracts' },
     ],
@@ -184,98 +189,62 @@ const menuGroups = [
     label: 'KEUANGAN', accent: '#eab308',
     items: [
       { label: 'Finance',     emoji: '💰', to: '/finance',          modul: 'finance' },
-      { label: 'Laporan',     emoji: '📈', to: '/reports',          modul: 'reports' },
+      { label: 'Laporan',     emoji: '🧾', to: '/reports',          modul: 'reports' },
       { label: 'Laporan SLA', emoji: '📉', to: '/reports/sla',      modul: 'reports' },
     ],
   },
 ]
 
-const adminMenu = [
-  { label: 'Portal Akun',    emoji: '🌐', to: '/admin/portal-users' },
-  { label: 'Activity Log',   emoji: '📝', to: '/admin/logs' },
-  { label: 'Email Log',      emoji: '📤', to: '/admin/email-log' },
-  { label: 'PRTG',           emoji: '📡', to: '/integrations/prtg' },
-  { label: 'Uptime Kuma',    emoji: '🟢', to: '/integrations/uptime-kuma' },
-  { label: 'StarSender WA',  emoji: '💬', to: '/integrations/starsender' },
-  { label: 'Pengaturan',     emoji: '⚙️', to: '/settings' },
+// Modul di sini harus sama dengan ROUTE_MODUL di router — supaya menu yang tampil memang bisa dibuka
+const adminMenu: MenuItem[] = [
+  { label: 'Portal Akun',    emoji: '🪪', to: '/admin/portal-users', modul: null },
+  { label: 'Activity Log',   emoji: '📝', to: '/admin/logs',         modul: null },
+  { label: 'Email Log',      emoji: '📤', to: '/admin/email-log',    modul: null },
+  { label: 'PRTG',           emoji: '📡', to: '/integrations/prtg',  modul: 'prtg' },
+  { label: 'Uptime Kuma',    emoji: '🟢', to: '/integrations/uptime-kuma', modul: 'uptime-kuma' },
+  { label: 'StarSender WA',  emoji: '📨', to: '/integrations/starsender', modul: 'operations' },
+  { label: 'Pengaturan',     emoji: '⚙️', to: '/settings',           modul: null },
 ]
 
-const visibleGroups = computed(() =>
-  menuGroups.map(g => ({
-    ...g,
-    items: g.items.filter(m => !m.modul || (Array.isArray(m.modul) ? m.modul.some(x => auth.canAccess(x)) : auth.canAccess(m.modul))),
-  })).filter(g => g.items.length > 0)
-)
+const bolehLihat = (m: MenuItem) => !m.modul || (Array.isArray(m.modul) ? m.modul.some(x => auth.canAccess(x)) : auth.canAccess(m.modul))
 
-const PAGE_TITLES: Record<string, string> = {
-  dashboard:              "Dashboard",
-  "hris-list":            "HRIS — Karyawan",
-  "hris-tambah":          "HRIS — Tambah Karyawan",
-  "hris-detail":          "HRIS — Detail Karyawan",
-  "hris-edit":            "HRIS — Edit Karyawan",
-  "master-index":         "Master Data",
-  "master-layanan":       "Master — Layanan",
-  "master-vendor":        "Master — Vendor ISP",
-  "master-gudang":        "Master — Gudang",
-  "master-kontak-teknisi": "Master — Kontak Teknisi",
-  "master-pelanggan":     "Master — Pelanggan",
-  "master-site":          "Master — Site",
-  "master-site-detail":   "Master — Detail Site",
-  "pasang-baru":          "Pasang Baru",
-  "pb-survey-baru":       "Pasang Baru — Survey Baru",
-  "pb-survey-ubah":       "Pasang Baru — Ubah Survey",
-  "pb-survey":            "Pasang Baru — Survey",
-  "pb-sph-baru":          "Pasang Baru — SPH Baru",
-  "pb-sph-ubah":          "Pasang Baru — Ubah SPH",
-  "pb-sph":               "Pasang Baru — SPH",
-  "pb-order":             "Pasang Baru — Order",
-  "sales-dashboard":      "Sales",
-  "sales-lead-list":      "Sales — Lead",
-  "sales-lead-detail":    "Sales — Detail Lead",
-  "sales-opp-list":       "Sales — Opportunity",
-  "sales-opp-detail":     "Sales — Detail Opportunity",
-  "sales-quotation-list": "Sales — Quotation",
-  "sales-quotation-detail": "Sales — Detail Quotation",
-  "proyek-list":          "Proyek",
-  "proyek-detail":        "Proyek — Detail",
-  "tiket-list":           "Gangguan — Tiket",
-  "tiket-detail":         "Gangguan — Detail Tiket",
-  "instalasi-list":       "Pemasangan",
-  "instalasi-detail":     "Pemasangan — Detail",
-  "jadwal-visit":         "Jadwal Visit",
-  "visit-statistik":      "Statistik & Peta Visit",
-  "visit-maintenance":    "Maintenance Rutin",
-  "wo-list":              "Work Order",
-  "wo-detail":            "Work Order — Detail",
-  "aset-list":            "Aset",
-  "aset-detail":          "Aset — Detail",
-  "sim-topup":            "SIM Card — Topup",
-  "kontrak-list":         "Kontrak",
-  "noc-board":            "NOC Board",
-  "nocaas":               "Pembanding NOCaaS",
-  "laporan-gangguan":     "Laporan Gangguan",
-  "qc":                   "QC & Evaluasi ERP",
-  "finance-dashboard":    "Finance — Dashboard",
-  "invoice-list":         "Finance — Invoice",
-  "invoice-detail":       "Finance — Detail Invoice",
-  "kontrak-detail":       "Kontrak — Detail",
-  laporan:                "Laporan",
-  "laporan-sla":          "Laporan SLA",
-  "admin-logs":           "Admin — Activity Log",
-  "admin-email-log":      "Admin — Email Log",
-  "notifications":        "Notifikasi",
-  "profile":              "Profil Saya",
-  "settings":             "Pengaturan Aplikasi",
-  "prtg-settings":        "PRTG — Monitoring",
-  "uptime-kuma-settings": "Uptime Kuma — Monitoring",
-  "starsender-settings":  "StarSender — WhatsApp",
-  "email-inbox":          "Email",
-  "wa-inbox":             "WhatsApp",
-  "wa-statistik":         "Statistik Helpdesk",
-  "changelog":            "Changelog",
-  "tools-network":        "Network Tools",
-  "tools-mikrotik":       "Remote Mikrotik",
+const isAdmin = computed(() => auth.hasRole('Admin') || auth.hasRole('Director') || auth.hasRole('Manager_Ops') || auth.isSuperAdmin)
+
+const visibleGroups = computed(() => {
+  const g = menuGroups.map(g => ({ ...g, items: g.items.filter(bolehLihat) }))
+  if (isAdmin.value) g.push({ label: 'ADMIN', accent: '#ef4444', items: adminMenu.filter(bolehLihat) })
+  return g.filter(g => g.items.length > 0)
+})
+
+// Menu aktif = awalan path terpanjang yang cocok, supaya halaman detail (/operations/123,
+// /sales/lead/5, /assets/stok-opname) tetap menyalakan menunya — dan /operations/noc
+// tetap milik NOC Board, bukan Gangguan.
+const cocok = (path: string, awalan: string) => path === awalan || path.startsWith(awalan + '/')
+const menuAktif = computed(() => {
+  const path = route.path
+  let terbaik = '', panjang = -1
+  for (const g of visibleGroups.value) for (const m of g.items) {
+    for (const aw of [m.to, ...(m.match ?? [])]) {
+      if (cocok(path, aw) && aw.length > panjang) { terbaik = m.to; panjang = aw.length }
+    }
+  }
+  return terbaik
+})
+
+// ── Sidebar diciutkan & grup yang dilipat — diingat per browser ──────────
+function bacaLokal(k: string): string | null { try { return localStorage.getItem(k) } catch { return null } }
+function tulisLokal(k: string, v: string) { try { localStorage.setItem(k, v) } catch { /* abaikan */ } }
+sidebarOpen.value = bacaLokal('sidebar_open') !== '0'
+watch(sidebarOpen, v => tulisLokal('sidebar_open', v ? '1' : '0'))
+
+const grupTerlipat = ref<string[]>((() => { try { return JSON.parse(bacaLokal('sidebar_lipat') || '[]') } catch { return [] } })())
+function lipatGrup(label: string) {
+  grupTerlipat.value = grupTerlipat.value.includes(label) ? grupTerlipat.value.filter(x => x !== label) : [...grupTerlipat.value, label]
+  tulisLokal('sidebar_lipat', JSON.stringify(grupTerlipat.value))
 }
+// Grup yang memuat halaman aktif selalu terbuka; saat sidebar diciutkan semua ikon tampil
+const grupTerbuka = (g: { label: string; items: MenuItem[] }) =>
+  !(sidebarOpen.value || mobileNavOpen.value) || !grupTerlipat.value.includes(g.label) || g.items.some(m => m.to === menuAktif.value)
 
 const pageTitle = computed(() => PAGE_TITLES[route.name as string] || "ERP NEXT1")
 
@@ -305,41 +274,29 @@ const initials = computed(() => {
       <!-- Navigation -->
       <nav class="sidebar-nav">
         <template v-for="group in visibleGroups" :key="group.label">
-          <div class="nav-group-label" v-if="sidebarOpen || mobileNavOpen">
+          <button v-if="sidebarOpen || mobileNavOpen" type="button"
+            :class="['nav-group-label', { 'admin-group': group.label === 'ADMIN' }]"
+            :aria-expanded="grupTerbuka(group)" @click="lipatGrup(group.label)">
             <span class="group-dot" :style="{ background: group.accent }"></span>
             {{ group.label }}
-          </div>
+            <span class="group-caret">{{ grupTerbuka(group) ? '▾' : '▸' }}</span>
+          </button>
           <div v-else class="nav-group-divider-mini"></div>
-          <RouterLink
-            v-for="item in group.items" :key="item.to" :to="item.to"
-            class="nav-item" active-class="active"
-            :title="sidebarOpen || mobileNavOpen ? undefined : item.label"
-            :style="{ '--group-accent': group.accent }"
-          >
-            <span class="nav-emoji">{{ item.emoji }}</span>
-            <Transition name="fade-text">
-              <span v-if="sidebarOpen || mobileNavOpen" class="nav-label">{{ item.label }}</span>
-            </Transition>
-          </RouterLink>
-        </template>
-
-        <template v-if="auth.hasRole('Admin') || auth.hasRole('Director') || auth.hasRole('Manager_Ops') || auth.isSuperAdmin">
-          <div class="nav-group-label admin-group" v-if="sidebarOpen || mobileNavOpen">
-            <span class="group-dot" style="background:#ef4444"></span>
-            ADMIN
-          </div>
-          <div v-else class="nav-group-divider-mini"></div>
-          <RouterLink
-            v-for="item in adminMenu" :key="item.to" :to="item.to"
-            class="nav-item" active-class="active"
-            :title="sidebarOpen || mobileNavOpen ? undefined : item.label"
-            style="--group-accent:#ef4444"
-          >
-            <span class="nav-emoji">{{ item.emoji }}</span>
-            <Transition name="fade-text">
-              <span v-if="sidebarOpen || mobileNavOpen" class="nav-label">{{ item.label }}</span>
-            </Transition>
-          </RouterLink>
+          <template v-if="grupTerbuka(group)">
+            <RouterLink
+              v-for="item in group.items" :key="item.to" :to="item.to"
+              :class="['nav-item', { active: item.to === menuAktif }]"
+              active-class="" exact-active-class=""
+              :aria-current="item.to === menuAktif ? 'page' : undefined"
+              :title="sidebarOpen || mobileNavOpen ? undefined : item.label"
+              :style="{ '--group-accent': group.accent }"
+            >
+              <span class="nav-emoji">{{ item.emoji }}</span>
+              <Transition name="fade-text">
+                <span v-if="sidebarOpen || mobileNavOpen" class="nav-label">{{ item.label }}</span>
+              </Transition>
+            </RouterLink>
+          </template>
         </template>
       </nav>
 
@@ -565,6 +522,11 @@ const initials = computed(() => {
   white-space: nowrap;
   text-transform: uppercase;
 }
+button.nav-group-label {
+  width: 100%; background: none; border: 0; cursor: pointer; text-align: left; font-family: inherit;
+}
+button.nav-group-label:hover { color: #64748b; }
+.group-caret { margin-left: auto; font-size: 10px; opacity: .7; }
 .nav-group-label.admin-group { margin-top: 4px; }
 .group-dot {
   width: 6px; height: 6px;

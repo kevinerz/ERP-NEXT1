@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { usePortalAuthStore } from '@/stores/portalAuth'
+import { PAGE_TITLES } from './judul'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -528,7 +529,11 @@ const router = createRouter({
 })
 
 // Map route name → modul key
-const ROUTE_MODUL: Record<string, string> = {
+// Pasang Baru lintas divisi — sama dengan MODUL_PASANG_BARU di ModulAksesGuard backend
+const MODUL_PB = ['sales', 'operations', 'instalasi', 'finance']
+const ROUTE_MODUL: Record<string, string | string[]> = {
+  'pasang-baru': MODUL_PB, 'pb-survey-baru': MODUL_PB, 'pb-survey-ubah': MODUL_PB, 'pb-survey': MODUL_PB,
+  'pb-sph-baru': MODUL_PB, 'pb-sph-ubah': MODUL_PB, 'pb-sph': MODUL_PB, 'pb-order': MODUL_PB,
   'wa-inbox': 'whatsapp', 'wa-statistik': 'whatsapp',
   'ipam': 'operations',
   'jadwal-visit': 'operations', 'visit-statistik': 'operations', 'visit-maintenance': 'operations',
@@ -549,7 +554,7 @@ const ROUTE_MODUL: Record<string, string> = {
   'pengajuan-aset-list': 'assets', 'pengajuan-aset-detail': 'assets',
   'prtg-settings': 'prtg',
   'uptime-kuma-settings': 'uptime-kuma',
-  'starsender-settings': 'starsender',
+  'starsender-settings': 'operations', // backend: segment starsender → modul operations
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'crm-pic-list': 'crm', 'crm-pic-detail': 'crm',
   'laporan': 'reports', 'laporan-sla': 'reports',
@@ -584,9 +589,9 @@ router.beforeEach((to) => {
   // Cek akses modul
   if (loggedIn && to.name) {
     const modul = ROUTE_MODUL[to.name as string]
-    if (modul && !auth.canAccess(modul)) return '/dashboard'
-    // halaman admin hanya Admin / Director
-    const adminPages = ['admin-logs', 'admin-email-log', 'admin-portal-users']
+    if (modul && !(Array.isArray(modul) ? modul.some((m) => auth.canAccess(m)) : auth.canAccess(modul))) return '/dashboard'
+    // halaman admin & integrasi hanya Admin / Director / Manager_Ops (sama dengan grup ADMIN di sidebar)
+    const adminPages = ['admin-logs', 'admin-email-log', 'admin-portal-users', 'settings', 'prtg-settings', 'uptime-kuma-settings', 'starsender-settings']
     if (adminPages.includes(to.name as string) && !auth.hasRole('Admin') && !auth.hasRole('Director') && !auth.hasRole('Manager_Ops')) return '/dashboard'
   }
 })
@@ -645,7 +650,7 @@ const ROUTE_TITLE: Record<string, string> = {
 router.afterEach((to) => {
   const name = to.name as string | undefined
   const meta = to.meta?.title as string | undefined
-  document.title = meta || (name && ROUTE_TITLE[name]) || 'NextOne ERP'
+  document.title = meta || (name && ROUTE_TITLE[name]) || (name && PAGE_TITLES[name] ? `${PAGE_TITLES[name]} — NextOne ERP` : 'NextOne ERP')
 })
 
 export default router

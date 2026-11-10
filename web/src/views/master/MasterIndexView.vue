@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 const router = useRouter()
 
-const menus = [
+const auth = useAuthStore()
+const semuaMenu = [
   {
     icon: '🌐',
     label: 'Layanan',
@@ -68,6 +71,8 @@ const menus = [
     accent: '#475569',
   },
 ]
+// Pengaturan hanya untuk Admin / Director / Manager_Ops (sama dengan guard rute)
+const menus = computed(() => semuaMenu.filter((m) => m.to !== '/settings' || auth.hasRole('Admin') || auth.hasRole('Director') || auth.hasRole('Manager_Ops') || auth.isSuperAdmin))
 </script>
 
 <template>
