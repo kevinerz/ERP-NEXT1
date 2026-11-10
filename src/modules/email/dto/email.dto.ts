@@ -19,6 +19,10 @@ export class SendEmailDto {
   /** UID draf asal (kalau mengirim draf yang sedang diedit) — dihapus dari
    * folder Draf setelah berhasil terkirim. */
   @IsOptional() @IsString() draft_uid?: string;
+  /** Balas / teruskan: pesan asal (uid + folder) supaya utas tersambung */
+  @IsOptional() @IsString() ref_jenis?: string;
+  @IsOptional() @IsString() ref_uid?: string;
+  @IsOptional() @IsString() ref_folder?: string;
 }
 
 export class SaveDraftDto {

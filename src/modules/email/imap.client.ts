@@ -17,6 +17,9 @@ export interface InboxMessage {
   from: { name?: string; address?: string } | null;
   date: Date | null;
   seen: boolean;
+  flagged?: boolean;
+  answered?: boolean;
+  to?: string;
   hasAttachments: boolean;
 }
 
@@ -30,6 +33,10 @@ export interface MessageDetail {
   date?: Date;
   html: string | null;
   text: string | null;
+  flagged?: boolean;
+  from_address?: string;
+  to_list?: string[];
+  cc_list?: string[];
   attachments: { partId: number; filename: string; size: number; contentType: string }[];
 }
 
@@ -313,7 +320,14 @@ export class ImapClientService implements OnModuleDestroy {
         cc: parsed.cc && 'text' in parsed.cc ? parsed.cc.text : undefined,
         bcc: parsed.bcc && 'text' in parsed.bcc ? parsed.bcc.text : undefined,
         date: parsed.date,
-        html: parsed.html || null,
+        // Gambar inline (cid:…) ditanam sebagai data URI supaya tampil di browser
+        html: parsed.html
+          ? parsed.attachments.reduce((h, a) => (a.cid && a.size <= 2_000_000
+            ? h.split(`cid:${a.cid}`).join(`data:${a.contentType};base64,${a.content.toString('base64')}`) : h), parsed.html as string)
+          : null,
+        from_address: parsed.from?.value?.[0]?.address,
+        to_list: parsed.to && 'value' in parsed.to ? parsed.to.value.map((x) => x.address!).filter(Boolean) : [],
+        cc_list: parsed.cc && 'value' in parsed.cc ? parsed.cc.value.map((x) => x.address!).filter(Boolean) : [],
         text: parsed.text || null,
         attachments: parsed.attachments.map((a, i) => ({
           partId: i,
@@ -343,6 +357,13 @@ export class ImapClientService implements OnModuleDestroy {
   }
 
   /** Pindah pesan ke folder lain (dipakai untuk "hapus" = pindah ke Sampah) */
+  async setFlag(creds: ImapCreds, mailboxPath: string, uid: number, flag: string, on: boolean) {
+    return this.withMailbox(creds, mailboxPath, async (client) => {
+      if (on) await client.messageFlagsAdd({ uid: String(uid) }, [flag]);
+      else await client.messageFlagsRemove({ uid: String(uid) }, [flag]);
+    });
+  }
+
   async moveMessage(creds: ImapCreds, fromPath: string, uid: number, toPath: string) {
     return this.withMailbox(creds, fromPath, async (client) => {
       await client.messageMove({ uid: String(uid) }, toPath);
@@ -376,6 +397,9 @@ export class ImapClientService implements OnModuleDestroy {
       from: from ? { name: from.name, address: from.address } : null,
       date: msg.envelope?.date ?? null,
       seen: !!msg.flags?.has?.('\\Seen'),
+      flagged: !!msg.flags?.has?.('\\Flagged'),
+      answered: !!msg.flags?.has?.('\\Answered'),
+      to: (msg.envelope?.to ?? []).map((x: any) => x.name || x.address).filter(Boolean).join(', ') || undefined,
       hasAttachments: hasAttachmentPart(msg.bodyStructure),
     };
   }

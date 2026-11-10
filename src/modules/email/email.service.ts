@@ -106,7 +106,10 @@ export class EmailService {
     const row = await this.prisma.emailAccount.findUnique({ where: { id_user: userId } });
     if (!row) return { data: null };
     const { password_enc, ...safe } = row;
-    return { data: { ...safe, via_api: !!(await this.mailboxApi(row.email_address)) } };
+    const via_api = !!(await this.mailboxApi(row.email_address));
+    // Fitur yang tersedia beda antara mode API dan IMAP — dipakai UI untuk menampilkan tombol
+    const fitur = { bintang: true, massal: true, kuota: via_api, draf: !via_api, hitung_folder: via_api };
+    return { data: { ...safe, via_api, fitur } };
   }
 
   async connectAccount(userId: number, dto: ConnectEmailDto) {
@@ -184,15 +187,17 @@ export class EmailService {
   async listFolders(userId: number) {
     const { rid } = await this.jalur(userId);
     if (rid) {
-      const data = await Promise.all(FOLDER_KEYS.map(async (key) => ({
-        key, label: FOLDER_LABELS[key], path: await this.hmail.resolveFolder(rid, key).catch(() => null),
-      })));
+      const hitung = await this.hmail.hitungFolder(rid).catch(() => ({} as Record<string, { total: number; unread: number }>));
+      const data = await Promise.all(FOLDER_KEYS.map(async (key) => {
+        const path = await this.hmail.resolveFolder(rid, key).catch(() => null);
+        return { key, label: FOLDER_LABELS[key], path, total: path ? hitung[path]?.total ?? null : null, unread: path ? hitung[path]?.unread ?? null : null };
+      }));
       return { data };
     }
     const { account, password } = await this.resolveCreds(userId);
     const creds = this.imapCreds(account, password);
     const data = await Promise.all(
-      FOLDER_KEYS.map(async (key) => ({ key, label: FOLDER_LABELS[key], path: await this.imap.resolveFolder(creds, key) })),
+      FOLDER_KEYS.map(async (key) => ({ key, label: FOLDER_LABELS[key], path: await this.imap.resolveFolder(creds, key), total: null, unread: null })),
     );
     return { data };
   }
@@ -279,6 +284,64 @@ export class EmailService {
     return { message: 'Email dipindah ke Sampah' };
   }
 
+  /** Bintangi / lepas bintang */
+  async setFlagged(userId: number, folder: string | undefined, uid: number, on: boolean) {
+    const key = this.normalizeFolder(folder);
+    const { rid } = await this.jalur(userId);
+    if (rid) await this.hmail.setFlag(rid, await this.hmail.resolveFolder(rid, key), uid, '\\Flagged', on);
+    else {
+      const { account, password } = await this.resolveCreds(userId);
+      const creds = this.imapCreds(account, password);
+      await this.imap.setFlag(creds, await this.imap.resolveFolder(creds, key), uid, '\\Flagged', on);
+    }
+    return { message: on ? 'Diberi bintang' : 'Bintang dilepas' };
+  }
+
+  /** Aksi massal untuk pesan terpilih: baca | belum | bintang | lepas_bintang | sampah | hapus | spam | inbox */
+  async massal(userId: number, body: { folder?: string; uids?: number[]; aksi?: string }) {
+    const key = this.normalizeFolder(body.folder);
+    const uids = [...new Set((body.uids ?? []).map(Number).filter((x) => Number.isInteger(x) && x > 0))].slice(0, 100);
+    if (!uids.length) throw new BadRequestException('Pilih minimal satu email');
+    const aksi = String(body.aksi || '');
+    const FLAG: Record<string, [string[], string[]]> = {
+      baca: [['\\Seen'], []], belum: [[], ['\\Seen']], bintang: [['\\Flagged'], []], lepas_bintang: [[], ['\\Flagged']],
+    };
+    const TUJUAN: Record<string, FolderKind> = { sampah: 'trash', spam: 'junk', inbox: 'inbox' };
+    if (!FLAG[aksi] && !TUJUAN[aksi] && aksi !== 'hapus') throw new BadRequestException(`Aksi tidak dikenal: ${aksi}`);
+    if (aksi === 'sampah' && key === 'trash') throw new BadRequestException('Email sudah di Sampah — pakai Hapus permanen');
+
+    const { rid } = await this.jalur(userId);
+    if (rid) {
+      const path = await this.hmail.resolveFolder(rid, key);
+      if (FLAG[aksi]) await this.hmail.flagsMassal(rid, path, uids, FLAG[aksi][0], FLAG[aksi][1]);
+      else if (aksi === 'hapus') await this.hmail.hapusMassal(rid, path, uids);
+      else await this.hmail.pindahMassal(rid, path, uids, await this.hmail.resolveFolder(rid, TUJUAN[aksi]));
+    } else {
+      const { account, password } = await this.resolveCreds(userId);
+      const creds = this.imapCreds(account, password);
+      const path = await this.imap.resolveFolder(creds, key);
+      const target = TUJUAN[aksi] ? await this.imap.resolveFolder(creds, TUJUAN[aksi]) : null;
+      for (const uid of uids) {
+        if (aksi === 'baca' || aksi === 'belum') await this.imap.setSeen(creds, path, uid, aksi === 'baca');
+        else if (FLAG[aksi]) await this.imap.setFlag(creds, path, uid, '\\Flagged', aksi === 'bintang');
+        else if (aksi === 'hapus') await this.imap.expungeMessage(creds, path, uid);
+        else if (target) await this.imap.moveMessage(creds, path, uid, target);
+      }
+    }
+    const LABEL: Record<string, string> = {
+      baca: 'ditandai dibaca', belum: 'ditandai belum dibaca', bintang: 'diberi bintang', lepas_bintang: 'dilepas bintangnya',
+      sampah: 'dipindah ke Sampah', hapus: 'dihapus permanen', spam: 'dipindah ke Spam', inbox: 'dipindah ke Kotak Masuk',
+    };
+    return { message: `${uids.length} email ${LABEL[aksi]}` };
+  }
+
+  /** Pemakaian kapasitas mailbox (hanya mode API) */
+  async quota(userId: number) {
+    const { rid } = await this.jalur(userId);
+    if (!rid) return { data: null };
+    return { data: await this.hmail.kuota(rid).catch(() => null) };
+  }
+
   async sendMail(userId: number, dto: SendEmailDto, files?: { originalname: string; buffer: Buffer }[]) {
     const { rid } = await this.jalur(userId);
     if (rid) {
@@ -286,6 +349,11 @@ export class EmailService {
       const { html, logoAttachment } = this.branding.build(dto.html, settings);
       await this.hmail.send(rid, {
         to: dto.to, cc: dto.cc, bcc: dto.bcc, subject: dto.subject, html,
+        ...(dto.ref_uid && dto.ref_folder && (dto.ref_jenis === 'balas' || dto.ref_jenis === 'teruskan')
+          ? { [dto.ref_jenis === 'balas' ? 'balasKe' : 'teruskanDari']: {
+              uid: Number(dto.ref_uid), folder: await this.hmail.resolveFolder(rid, this.normalizeFolder(dto.ref_folder)),
+            } }
+          : {}),
         attachments: [
           ...(files?.map((f) => ({ filename: f.originalname, content: f.buffer })) || []),
           ...(logoAttachment ? [logoAttachment] : []),

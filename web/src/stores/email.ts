@@ -14,12 +14,15 @@ export interface EmailAccount {
   connected_at: string
   /** true = dilayani Hostinger Mail API (HTTPS), bukan IMAP/SMTP */
   via_api?: boolean
+  fitur?: { bintang: boolean; massal: boolean; kuota: boolean; draf: boolean; hitung_folder: boolean }
 }
 
 export interface FolderInfo {
   key: string
   label: string
   path: string
+  total?: number | null
+  unread?: number | null
 }
 
 export interface InboxMessage {
@@ -28,6 +31,9 @@ export interface InboxMessage {
   from: { name?: string; address?: string } | null
   date: string | null
   seen: boolean
+  flagged?: boolean
+  answered?: boolean
+  to?: string
   hasAttachments: boolean
 }
 
@@ -41,6 +47,10 @@ export interface MessageDetail {
   date?: string
   html: string | null
   text: string | null
+  flagged?: boolean
+  from_address?: string
+  to_list?: string[]
+  cc_list?: string[]
   attachments: { partId: number; filename: string; size: number; contentType: string }[]
 }
 
@@ -56,6 +66,7 @@ export const useEmailStore = defineStore('email', {
     loading: false,
     loadingMessage: false,
     error: '',
+    kuota: null as { totalUsage: number; totalLimit: number; totalPercentage: number } | null,
   }),
   actions: {
     async fetchAccount() {
@@ -90,8 +101,9 @@ export const useEmailStore = defineStore('email', {
       this.list = []
       await this.fetchMessages({ page: 1 })
     },
-    async fetchMessages(params: Record<string, any> = {}) {
-      this.loading = true; this.error = ''
+    async fetchMessages(params: Record<string, any> = {}, diam = false) {
+      if (!diam) this.loading = true
+      this.error = ''
       try {
         const r = await api.get('/email/messages', { params: { ...params, folder: this.currentFolder } })
         this.list = r.data.data
@@ -108,6 +120,38 @@ export const useEmailStore = defineStore('email', {
         if (row) row.seen = true
       } catch (e: any) { this.error = e.response?.data?.message || 'Gagal memuat email' }
       finally { this.loadingMessage = false }
+    },
+    async setFlagged(uid: number, flagged: boolean) {
+      const row = this.list.find((m) => m.uid === uid)
+      const lama = row?.flagged
+      if (row) row.flagged = flagged // optimistis — dikembalikan bila gagal
+      if (this.current?.uid === uid) this.current.flagged = flagged
+      try {
+        await api.patch(`/email/messages/${uid}/flag`, { flagged }, { params: { folder: this.currentFolder } })
+      } catch (e: any) {
+        if (row) row.flagged = lama
+        if (this.current?.uid === uid) this.current.flagged = lama
+        throw e
+      }
+    },
+    /** Aksi untuk banyak email sekaligus */
+    async massal(uids: number[], aksi: string) {
+      const r = await api.post('/email/messages/bulk', { folder: this.currentFolder, uids, aksi })
+      if (['sampah', 'hapus', 'spam', 'inbox'].includes(aksi)) {
+        this.list = this.list.filter((m) => !uids.includes(m.uid))
+        if (this.current && uids.includes(this.current.uid)) this.current = null
+      } else {
+        for (const m of this.list) if (uids.includes(m.uid)) {
+          if (aksi === 'baca') m.seen = true
+          if (aksi === 'belum') m.seen = false
+          if (aksi === 'bintang') m.flagged = true
+          if (aksi === 'lepas_bintang') m.flagged = false
+        }
+      }
+      return r.data.message as string
+    },
+    async fetchKuota() {
+      try { this.kuota = (await api.get('/email/quota')).data.data } catch { this.kuota = null }
     },
     async setSeen(uid: number, seen: boolean) {
       try {
@@ -130,7 +174,7 @@ export const useEmailStore = defineStore('email', {
       }
     },
     async sendMail(
-      payload: { to: string; cc?: string; bcc?: string; subject: string; html: string; in_reply_to?: string },
+      payload: { to: string; cc?: string; bcc?: string; subject: string; html: string; in_reply_to?: string; ref_jenis?: string; ref_uid?: string; ref_folder?: string },
       files?: File[],
       draftUid?: number | null,
     ) {

@@ -73,6 +73,19 @@ export class EmailController {
     return this.svc.setSeen(req.user.id_user, folder, uid, seen !== false);
   }
 
+  @Patch('messages/:uid/flag')
+  setFlagged(@Param('uid', ParseIntPipe) uid: number, @Query('folder') folder: string, @Body('flagged') flagged: boolean, @Req() req: any) {
+    return this.svc.setFlagged(req.user.id_user, folder, uid, flagged !== false);
+  }
+
+  @Post('messages/bulk')
+  massal(@Body() body: { folder?: string; uids?: number[]; aksi?: string }, @Req() req: any) {
+    return this.svc.massal(req.user.id_user, body);
+  }
+
+  @Get('quota')
+  quota(@Req() req: any) { return this.svc.quota(req.user.id_user); }
+
   @Delete('messages/:uid')
   deleteMessage(@Param('uid', ParseIntPipe) uid: number, @Query('folder') folder: string, @Req() req: any) {
     return this.svc.deleteMessage(req.user.id_user, folder, uid);

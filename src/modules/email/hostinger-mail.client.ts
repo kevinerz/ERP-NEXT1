@@ -26,7 +26,7 @@ interface Alamat { name?: string; address?: string }
 interface PesanApi {
   uid: number; date?: string; flags?: string[]; unseen?: boolean; subject?: string;
   from?: Alamat[] | Alamat; to?: Alamat[] | Alamat; cc?: Alamat[] | Alamat; bcc?: Alamat[] | Alamat; messageId?: string;
-  attachments?: { id: string; contentType?: string; sizeBytes?: number; inline?: boolean; filename?: string }[];
+  attachments?: { id: string; contentType?: string; sizeBytes?: number; inline?: boolean; filename?: string; contentId?: string }[];
 }
 
 // API kadang mengirim alamat sebagai satu objek, kadang sebagai daftar — samakan jadi daftar
@@ -129,6 +129,9 @@ export class HostingerMailClient {
       from: daftarAlamat(m.from)[0] ? { name: daftarAlamat(m.from)[0]!.name, address: daftarAlamat(m.from)[0]!.address } : null,
       date: m.date ? new Date(m.date) : null,
       seen: !m.unseen,
+      flagged: (m.flags ?? []).includes('\\Flagged'),
+      answered: (m.flags ?? []).includes('\\Answered'),
+      to: daftarAlamat(m.to).map((x) => x.name || x.address).filter(Boolean).join(', ') || undefined,
       hasAttachments: lampiranNyata(m).length > 0,
     }));
     return { data, meta: { total: r.pagination?.total ?? data.length, page: opts.page, limit: opts.limit } };
@@ -142,12 +145,29 @@ export class HostingerMailClient {
     ]);
     const m = meta.data;
     if (markSeen && m.unseen) await this.setSeen(rid, path, uid, true).catch(() => {});
+    // Gambar inline (cid:…, mis. logo di kop email) tidak bisa dibuka browser —
+    // ambil lampirannya lalu tanam sebagai data URI di HTML.
+    let html = teks.data?.html || null;
+    if (html && /cid:/i.test(html)) {
+      for (const a of m.attachments ?? []) {
+        const cid = (a as any).contentId?.replace(/^<|>$/g, '');
+        if (!cid || (a.sizeBytes ?? 0) > 2_000_000 || !html.includes(`cid:${cid}`)) continue;
+        try {
+          const buf = await this.minta<Buffer>(`${base}/attachments/${this.enc(a.id)}`, { mentah: true });
+          html = html.split(`cid:${cid}`).join(`data:${a.contentType || 'image/png'};base64,${buf.toString('base64')}`);
+        } catch { /* biarkan gambar tetap kosong */ }
+      }
+    }
     return {
+      flagged: (m.flags ?? []).includes('\\Flagged'),
+      from_address: daftarAlamat(m.from)[0]?.address,
+      to_list: daftarAlamat(m.to).map((x) => x.address!).filter(Boolean),
+      cc_list: daftarAlamat(m.cc).map((x) => x.address!).filter(Boolean),
       uid,
       subject: m.subject || '(tanpa subjek)',
       from: teksAlamat(m.from), to: teksAlamat(m.to), cc: teksAlamat(m.cc), bcc: teksAlamat(m.bcc),
       date: m.date ? new Date(m.date) : undefined,
-      html: teks.data?.html || null,
+      html,
       text: teks.data?.text || null,
       attachments: lampiranNyata(m).map((a, i) => ({
         partId: i, filename: a.filename || `lampiran-${i + 1}`, size: a.sizeBytes ?? 0, contentType: a.contentType || 'application/octet-stream',
@@ -178,10 +198,44 @@ export class HostingerMailClient {
     await this.minta(`/mailboxes/${rid}/folders/${this.enc(path)}/messages/${uid}`, { method: 'DELETE' });
   }
 
+  async setFlag(rid: string, path: string, uid: number, flag: string, on: boolean) {
+    await this.minta(`/mailboxes/${rid}/folders/${this.enc(path)}/messages/${uid}`, {
+      method: 'PATCH', body: on ? { addFlags: [flag] } : { removeFlags: [flag] },
+    });
+  }
+
+  // ── Aksi massal (maks 100 pesan per panggilan) ──
+  async flagsMassal(rid: string, path: string, uids: number[], tambah: string[], hapus: string[]) {
+    await this.minta(`/mailboxes/${rid}/folders/${this.enc(path)}/messages/flags`, {
+      method: 'POST', body: { uids, ...(tambah.length ? { addFlags: tambah } : {}), ...(hapus.length ? { removeFlags: hapus } : {}) },
+    });
+  }
+  async pindahMassal(rid: string, path: string, uids: number[], target: string) {
+    await this.minta(`/mailboxes/${rid}/folders/${this.enc(path)}/messages/move`, { method: 'POST', body: { uids, targetFolder: target } });
+  }
+  async hapusMassal(rid: string, path: string, uids: number[]) {
+    await this.minta(`/mailboxes/${rid}/folders/${this.enc(path)}/messages/delete`, { method: 'POST', body: { uids } });
+  }
+
+  /** Jumlah pesan & belum dibaca per folder (tanpa cache — untuk lencana di menu folder) */
+  async hitungFolder(rid: string): Promise<Record<string, { total: number; unread: number }>> {
+    const r = await this.minta<{ data: any[] }>(`/mailboxes/${rid}/folders?perPage=100`);
+    this.cacheFolder.set(rid, { t: Date.now(), data: r.data ?? [] });
+    const out: Record<string, { total: number; unread: number }> = {};
+    for (const f of r.data ?? []) out[f.path] = { total: f.messageCount ?? 0, unread: f.unreadCount ?? 0 };
+    return out;
+  }
+
+  async kuota(rid: string) {
+    const r = await this.minta<{ data: { totalUsage: number; totalLimit: number; totalPercentage: number; supported: boolean } }>(`/mailboxes/${rid}/quota`);
+    return r.data;
+  }
+
   /** Kirim email. Hostinger otomatis menyimpan salinan ke folder Terkirim. */
   async send(rid: string, input: {
     to: string; cc?: string; bcc?: string; subject: string; html: string; displayName?: string;
     attachments?: { filename: string; content: Buffer; contentType?: string; cid?: string }[];
+    balasKe?: { uid: number; folder: string }; teruskanDari?: { uid: number; folder: string };
   }) {
     const daftar = (s?: string) => (s || '').split(/[,;]/).map((x) => x.trim()).filter(Boolean);
     const to = daftar(input.to);
@@ -193,6 +247,8 @@ export class HostingerMailClient {
         to, cc: daftar(input.cc), bcc: daftar(input.bcc),
         subject: input.subject, html: input.html,
         ...(input.displayName ? { displayName: input.displayName } : {}),
+        // Balas/teruskan: Hostinger menyalin Message-ID asli (utas tetap tersambung) & menandai pesan asal
+        ...(input.balasKe ? { inReplyTo: input.balasKe } : input.teruskanDari ? { forwardOf: input.teruskanDari } : {}),
         attachments: (input.attachments ?? []).map((a) => ({
           filename: a.filename, content: a.content.toString('base64'), encoding: 'base64',
           ...(a.contentType ? { contentType: a.contentType } : {}), ...(a.cid ? { cid: a.cid } : {}),
