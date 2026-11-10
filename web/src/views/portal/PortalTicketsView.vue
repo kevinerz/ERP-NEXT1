@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import portalApi from '@/services/portalApi'
 import { statusLabel, fmtDateTime } from '@/composables/useFormat'
 
@@ -13,7 +14,13 @@ const refreshErr = ref('')
 const activeTab = ref<'all' | 'open' | 'progress' | 'done'>('all')
 const detail    = ref<any>(null)
 const search    = ref('')
-const filterSite = ref(0)
+// Dari dashboard: /portal/tickets?id_site=… langsung tersaring ke site itu
+const route = useRoute()
+const filterSite = ref(Number(route.query.id_site) || 0)
+const detailMemuat = ref(0)
+const detailErr = ref('')
+const sukses = ref('')
+const sorotId = ref(0)
 
 const showForm = ref(false)
 const saving   = ref(false)
@@ -60,10 +67,14 @@ const kpi = computed(() => ({
 }))
 
 async function openDetail(t: any) {
+  if (detailMemuat.value) return
+  detailMemuat.value = t.id_ticket; detailErr.value = ''
   try {
     const r = await portalApi.get(`/portal/tickets/${t.id_ticket}`)
     detail.value = r.data.data
-  } catch { /* detail tetap null, modal tidak terbuka */ }
+  } catch (e: any) {
+    detailErr.value = `Detail tiket ${t.nomor_tiket ?? ''} gagal dibuka: ${e.response?.data?.message || 'periksa koneksi lalu coba lagi'}`
+  } finally { detailMemuat.value = 0 }
 }
 
 async function submitTicket() {
@@ -71,12 +82,14 @@ async function submitTicket() {
     formErr.value = 'Site dan judul tiket wajib diisi'; return
   }
   saving.value = true; formErr.value = ''
+  let baru: { nomor_tiket?: string; id_ticket?: number } = {}
   try {
-    await portalApi.post('/portal/tickets', {
+    const r = await portalApi.post('/portal/tickets', {
       id_site:           form.value.id_site,
       judul_tiket:       form.value.judul_tiket.trim(),
       deskripsi_masalah: form.value.deskripsi_masalah.trim() || undefined,
     })
+    baru = r.data?.data ?? {}
   } catch (e: any) {
     formErr.value = e.response?.data?.message || 'Gagal membuat tiket'
     saving.value = false
@@ -84,6 +97,9 @@ async function submitTicket() {
   }
   showForm.value = false
   form.value = { id_site: 0, judul_tiket: '', deskripsi_masalah: '' }
+  sukses.value = `Tiket ${baru.nomor_tiket ?? ''} berhasil dibuat. Tim support kami akan segera menindaklanjuti.`
+  sorotId.value = baru.id_ticket ?? 0
+  activeTab.value = 'all'; search.value = ''
   try {
     const fresh = await portalApi.get('/portal/tickets', { params: { limit: TICKET_LIMIT } })
     tickets.value = fresh.data.data ?? []
@@ -209,6 +225,11 @@ function waktuSelesai(t: any): string | null {
       </div>
     </div>
 
+    <div v-if="sukses" class="ok-banner" role="status">
+      ✅ {{ sukses }}
+      <button type="button" class="banner-x" aria-label="Tutup pesan" @click="sukses = ''">✕</button>
+    </div>
+    <div v-if="detailErr" class="form-err" role="alert" style="margin-bottom:16px">{{ detailErr }}</div>
     <div v-if="refreshErr" class="form-err" style="margin-bottom:16px">{{ refreshErr }}</div>
 
     <div v-if="loading" class="empty-state">Memuat data tiket…</div>
@@ -245,7 +266,8 @@ function waktuSelesai(t: any): string | null {
               <div>Tidak ada tiket yang sesuai</div>
             </td>
           </tr>
-          <tr v-for="t in filtered" :key="t.id_ticket" class="tbl-row" @click="openDetail(t)">
+          <tr v-for="t in filtered" :key="t.id_ticket" :class="['tbl-row', { sorot: t.id_ticket === sorotId, memuat: t.id_ticket === detailMemuat }]"
+            tabindex="0" :aria-label="`Buka tiket ${t.nomor_tiket}`" @click="openDetail(t)" @keydown.enter="openDetail(t)">
             <td class="col-no">{{ t.nomor_tiket }}</td>
             <td class="col-site" :title="t.site?.nama_site">{{ t.site?.nama_site ?? '—' }}</td>
             <td class="col-judul" :title="t.judul ?? t.judul_tiket">{{ t.judul ?? t.judul_tiket }}</td>
@@ -560,4 +582,9 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
   .modal { padding: 20px 18px; }
   .meta-strip, .downtime-grid { grid-template-columns: 1fr; }
 }
+.ok-banner { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding: 10px 14px; border-radius: 10px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; font-size: 14px; }
+.banner-x { margin-left: auto; border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; }
+.tbl-row.sorot { background: #ecfdf5; }
+.tbl-row.memuat { opacity: .6; cursor: progress; }
+.tbl-row:focus-visible { outline: 2px solid #1A56DB; outline-offset: -2px; }
 </style>

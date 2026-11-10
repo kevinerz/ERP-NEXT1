@@ -7,6 +7,7 @@ import { fmtDateShort as fmtDate } from '@/composables/useFormat'
 import api from '@/services/api'
 import { confirmDialog, alertError } from '@/composables/useDialog'
 import BasePagination from '@/components/BasePagination.vue'
+import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 
 const router = useRouter()
 const proyek = useProyekStore()
@@ -34,7 +35,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 }
 
 onMounted(async () => {
-  await Promise.all([proyek.fetchSummary(), proyek.fetchPmList(), proyek.fetchSiteList()])
+  await Promise.all([proyek.fetchSummary(), proyek.fetchPmList()])
   fetchData()
 })
 
@@ -84,6 +85,20 @@ async function hapusProyek(id: number, nomor: string) {
   }
 }
 
+
+// Pencarian ke server — dulu opportunity & kontrak diisi ID angka manual, site dipotong 2.000 pertama
+async function cariOpportunity(q: string): Promise<OpsiCari[]> {
+  const r = await api.get('/projects/opportunity-cari', { params: { search: q || undefined } })
+  return (r.data.data as any[]).map((o) => ({ value: o.id_opportunity, label: `#${o.id_opportunity} ${o.nama_opportunity}`, sub: o.lead?.nama_perusahaan || o.lead?.nama_prospek }))
+}
+async function cariSite(q: string): Promise<OpsiCari[]> {
+  const r = await api.get('/projects/site-list', { params: { search: q || undefined } })
+  return (r.data.data as any[]).slice(0, 50).map((s) => ({ value: s.id_site, label: `[${s.kode_site}] ${s.nama_site}`, sub: s.pelanggan?.nama_pelanggan }))
+}
+async function cariKontrak(q: string): Promise<OpsiCari[]> {
+  const r = await api.get('/projects/kontrak-cari', { params: { search: q || undefined } })
+  return (r.data.data as any[]).map((k) => ({ value: k.id_kontrak, label: k.nomor_kontrak, sub: `${k.site?.nama_site ?? ''} · ${k.status_kontrak}` }))
+}
 </script>
 
 <template>
@@ -182,18 +197,16 @@ async function hapusProyek(id: number, nomor: string) {
         <h3>Buat Project Baru</h3>
         <div class="form-grid">
           <div class="field full">
-            <label>ID Opportunity <span class="req">*</span></label>
-            <input v-model.number="form.id_opportunity" type="number" placeholder="ID opportunity dari Sales" />
-            <span class="hint">Cek di modul Sales → Opportunity</span>
+            <label>Opportunity <span class="req">*</span></label>
+            <CariPilih :model-value="form.id_opportunity || null" :cari="cariOpportunity"
+              placeholder="Cari nama opportunity / perusahaan…"
+              @update:model-value="(v) => (form.id_opportunity = v || 0)" />
           </div>
           <div class="field full">
             <label>Site <span class="req">*</span></label>
-            <select v-model="form.id_site">
-              <option :value="0">— Pilih Site —</option>
-              <option v-for="s in proyek.siteList" :key="s.id_site" :value="s.id_site">
-                [{{ s.kode_site }}] {{ s.nama_site }} — {{ s.pelanggan?.nama_pelanggan }}
-              </option>
-            </select>
+            <CariPilih :model-value="form.id_site || null" :cari="cariSite"
+              placeholder="Cari site: nama, kode, kota, pelanggan…"
+              @update:model-value="(v) => (form.id_site = v || 0)" />
           </div>
           <div class="field full">
             <label>Project Manager <span class="req">*</span></label>
@@ -205,8 +218,10 @@ async function hapusProyek(id: number, nomor: string) {
             </select>
           </div>
           <div class="field full">
-            <label>ID Kontrak <span class="field-hint">(opsional)</span></label>
-            <input v-model.number="form.id_kontrak" type="number" min="1" placeholder="Isi jika sudah ada kontrak terkait" />
+            <label>Kontrak <span class="field-hint">(opsional)</span></label>
+            <CariPilih :model-value="form.id_kontrak" :cari="cariKontrak"
+              placeholder="Cari nomor kontrak / site — kosongkan jika belum ada"
+              @update:model-value="(v) => (form.id_kontrak = v)" />
           </div>
           <div class="field">
             <label>Tgl Mulai</label>

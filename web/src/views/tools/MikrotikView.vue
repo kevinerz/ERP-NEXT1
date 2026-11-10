@@ -72,6 +72,16 @@ const filteredDevices = computed(() =>
   })
 )
 
+// Router terpilih yang tidak tampil karena pencarian — tetap ikut dijalankan, jadi harus terlihat
+const tersembunyi = computed(() => {
+  const tampil = new Set(filteredDevices.value.map(d => d.ip_address || ''))
+  return Array.from(selected.value).filter(ip => !tampil.has(ip))
+})
+function hapusTersembunyi() {
+  tersembunyi.value.forEach(ip => selected.value.delete(ip))
+  selected.value = new Set(selected.value)
+}
+
 const allSelected = computed(() =>
   filteredDevices.value.length > 0 &&
   filteredDevices.value.every(d => selected.value.has(d.ip_address || ''))
@@ -256,6 +266,10 @@ onMounted(() => {
           <span class="dp-title">PERANGKAT</span>
           <span class="dp-count" v-if="selected.size">{{ selected.size }} dipilih</span>
         </div>
+        <div v-if="tersembunyi.length" class="dp-hidden" role="status">
+          ⚠ {{ tersembunyi.length }} router terpilih tidak tampil karena pencarian — tetap ikut dijalankan.
+          <button type="button" class="dp-hidden-btn" @click="hapusTersembunyi">Batalkan pilihan itu</button>
+        </div>
 
         <div class="dp-search">
           <input v-model="search" placeholder="Cari IP / site / pelanggan..." class="inp search-inp" />
@@ -342,6 +356,12 @@ onMounted(() => {
               Command berikut akan dijalankan di <strong>{{ selected.size }} router</strong>:
             </div>
             <pre class="run-confirm-cmd">{{ command.trim() }}</pre>
+            <div class="run-confirm-text">Target:</div>
+            <ul class="run-confirm-target">
+              <li v-for="ip in Array.from(selected)" :key="ip" :class="{ hidden: tersembunyi.includes(ip) }">
+                {{ deviceName(ip) }}<span v-if="tersembunyi.includes(ip)"> · tidak tampil di daftar</span>
+              </li>
+            </ul>
             <div class="run-confirm-actions">
               <button type="button" class="btn-clear" @click="confirmRun = false">Batal</button>
               <button type="button" class="btn-run btn-run-danger" :disabled="running" @click="runCommand">Ya, jalankan di {{ selected.size }} router</button>
@@ -617,6 +637,10 @@ onMounted(() => {
   border: 1px solid #fcd34d;
   border-radius: 8px;
 }
+.run-confirm-target { max-height: 160px; overflow-y: auto; margin: 4px 0 10px; padding-left: 18px; font-size: 12.5px; color: #78350f; }
+.run-confirm-target li.hidden { font-weight: 700; color: #b45309; }
+.dp-hidden { margin: 6px 10px 0; padding: 6px 8px; border-radius: 6px; background: #fef3c7; color: #92400e; font-size: 12px; line-height: 1.4; }
+.dp-hidden-btn { margin-left: 4px; border: 0; background: none; color: #b45309; text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0; }
 .run-confirm-title { font-size: 13px; font-weight: 700; color: #92400e; margin-bottom: 4px; }
 .run-confirm-text { font-size: 13px; color: #78350f; }
 .run-confirm-cmd {

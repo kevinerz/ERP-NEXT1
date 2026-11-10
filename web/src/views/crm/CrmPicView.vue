@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
+import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 import { fmtDateShort } from '@/composables/useFormat'
 
 const router = useRouter()
@@ -20,11 +21,13 @@ const importRows   = ref<any[]>([])
 const importResult = ref<any[]>([])
 const importing    = ref(false)
 const importDone   = ref(false)
+const importError  = ref('')
+const importDilewati = ref(0)
+const loadError    = ref('')
 
 // Tambah PIC manual
 const showAdd   = ref(false)
 const addForm   = ref({ id_site: 0, nama_pic: '', jabatan: '', no_kontak: '', email: '', is_utama: false, tempat_lahir: '', tgl_lahir: '', media_komunikasi: '', rencana_tambah_layanan: '' })
-const siteList  = ref<any[]>([])
 const addError  = ref('')
 const addSubmit = ref(false)
 
@@ -43,12 +46,17 @@ async function fetchList() {
     const res = await api.get('/crm/pic', { params })
     list.value = res.data.data
     meta.value = res.data.meta
+    loadError.value = ''
+  } catch (e: any) {
+    loadError.value = e?.response?.data?.message || 'Gagal memuat daftar PIC'
   } finally { loading.value = false }
 }
 
 async function fetchStats() {
-  const res = await api.get('/crm/pic/stats')
-  stats.value = res.data.data
+  try {
+    const res = await api.get('/crm/pic/stats')
+    stats.value = res.data.data
+  } catch { /* angka ringkasan opsional — daftar tetap tampil */ }
 }
 
 function doSearch() { page.value = 1; fetchList() }
@@ -59,24 +67,53 @@ function onFileChange(e: Event) {
   importRows.value = []
   importResult.value = []
   importDone.value = false
+  importError.value = ''
+  importDilewati.value = 0
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
   const reader = new FileReader()
   reader.onload = ev => {
     const text = ev.target?.result as string
     importRows.value = parseCsv(text)
+    if (!importRows.value.length) importError.value = 'Tidak ada baris yang bisa diimpor — pastikan header berisi "Nama Perusahaan" dan "Nama Lengkap PIC".'
   }
+  reader.onerror = () => { importError.value = 'File tidak bisa dibaca' }
   reader.readAsText(file)
 }
 
+// Parser CSV sesuai RFC 4180: field ber-tanda kutip boleh berisi koma, baris baru, dan "" (kutip).
+// Dulu pakai split(',') biasa — jawaban Google Form yang berisi koma membuat kolom bergeser.
+function bacaCsv(text: string): string[][] {
+  const baris: string[][] = []
+  let kolom: string[] = [], sel = '', kutip = false
+  const t = text.replace(/^\uFEFF/, '')
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i]
+    if (kutip) {
+      if (c === '"' && t[i + 1] === '"') { sel += '"'; i++ }
+      else if (c === '"') kutip = false
+      else sel += c
+    } else if (c === '"') kutip = true
+    else if (c === ',') { kolom.push(sel); sel = '' }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && t[i + 1] === '\n') i++
+      kolom.push(sel); sel = ''
+      if (kolom.some((k) => k.trim())) baris.push(kolom)
+      kolom = []
+    } else sel += c
+  }
+  kolom.push(sel)
+  if (kolom.some((k) => k.trim())) baris.push(kolom)
+  return baris
+}
+
 function parseCsv(text: string) {
-  const lines = text.trim().split('\n')
-  if (lines.length < 2) return []
-  const headers = lines[0]!.split(',').map(h => h.trim().replace(/"/g, ''))
-  return lines.slice(1).map(line => {
-    const vals = line.split(',').map(v => v.trim().replace(/"/g, ''))
+  const semua = bacaCsv(text)
+  if (semua.length < 2) return []
+  const headers = semua[0]!.map(h => h.trim())
+  const hasil = semua.slice(1).map(vals => {
     const obj: any = {}
-    headers.forEach((h, i) => { obj[h] = vals[i] || '' })
+    headers.forEach((h, i) => { obj[h] = (vals[i] ?? '').trim() })
     // Petakan kolom dari form Google
     return {
       nama_perusahaan:        obj['Nama Perusahaan'] || obj['nama_perusahaan'] || '',
@@ -90,7 +127,10 @@ function parseCsv(text: string) {
       media_komunikasi:       obj['Media komunikasi yang paling disukai'] || '',
       rencana_tambah_layanan: obj['Apakah perusahaan berencana menambah layanan Next One dalam 6–12 bulan ke depan?'] || '',
     }
-  }).filter(r => r.nama_perusahaan && r.nama_pic)
+  })
+  const valid = hasil.filter(r => r.nama_perusahaan && r.nama_pic)
+  importDilewati.value = hasil.length - valid.length
+  return valid
 }
 
 async function doImport() {
@@ -101,15 +141,13 @@ async function doImport() {
     importResult.value = res.data.data
     importDone.value = true
     await Promise.all([fetchList(), fetchStats()])
+  } catch (e: any) {
+    importError.value = `Import gagal: ${e?.response?.data?.message || 'periksa koneksi lalu coba lagi'}. Tidak ada baris yang tersimpan dari percobaan ini.`
   } finally { importing.value = false }
 }
 
 // ── Tambah PIC manual ─────────────────────────────────────
 async function openAdd() {
-  if (!siteList.value.length) {
-    const res = await api.get('/master/site', { params: { limit: 500 } })
-    siteList.value = res.data.data || []
-  }
   addForm.value = { id_site: 0, nama_pic: '', jabatan: '', no_kontak: '', email: '', is_utama: false, tempat_lahir: '', tgl_lahir: '', media_komunikasi: '', rencana_tambah_layanan: '' }
   addError.value = ''
   showAdd.value = true
@@ -136,6 +174,11 @@ function statusColor(s: string) {
 const fmtDate = fmtDateShort
 
 const STATUS_TEXT: Record<string, string> = { created: 'Dibuat', updated: 'Diperbarui', skip: 'Dilewati', error: 'Error' }
+
+async function cariSite(q: string): Promise<OpsiCari[]> {
+  const r = await api.get('/master/site', { params: { search: q || undefined, limit: 30 } })
+  return (r.data.data as any[]).map((s) => ({ value: s.id_site, label: `[${s.kode_site}] ${s.nama_site}`, sub: s.pelanggan?.nama_pelanggan }))
+}
 </script>
 
 <template>
@@ -176,6 +219,7 @@ const STATUS_TEXT: Record<string, string> = { created: 'Dibuat', updated: 'Diper
     <!-- Tabel -->
     <div class="table-card">
       <div v-if="loading" class="loading">Memuat...</div>
+      <div v-else-if="loadError" class="form-error" role="alert" style="margin:16px">{{ loadError }} <button type="button" class="btn-cancel" @click="fetchList">Coba lagi</button></div>
       <table v-else>
         <thead>
           <tr>
@@ -230,6 +274,8 @@ const STATUS_TEXT: Record<string, string> = { created: 'Dibuat', updated: 'Diper
         <div v-if="!importDone">
           <input type="file" accept=".csv" class="file-input" @change="onFileChange" />
 
+          <p v-if="importDilewati" class="import-info">⚠ {{ importDilewati }} baris dilewati karena Nama Perusahaan atau Nama PIC kosong.</p>
+          <p v-if="importError" class="form-error" role="alert">{{ importError }}</p>
           <div v-if="importRows.length" class="preview-box">
             <p class="preview-title">Preview {{ importRows.length }} baris:</p>
             <table class="preview-table">
@@ -286,12 +332,9 @@ const STATUS_TEXT: Record<string, string> = { created: 'Dibuat', updated: 'Diper
         <div class="form-grid">
           <div class="field full">
             <label>Site <span class="req">*</span></label>
-            <select v-model="addForm.id_site">
-              <option :value="0">— Pilih Site —</option>
-              <option v-for="s in siteList" :key="s.id_site" :value="s.id_site">
-                [{{ s.kode_site }}] {{ s.nama_site }} — {{ s.pelanggan?.nama_pelanggan }}
-              </option>
-            </select>
+            <CariPilih :model-value="addForm.id_site || null" :cari="cariSite"
+              placeholder="Cari site: nama, kode, kota, pelanggan…"
+              @update:model-value="(v) => (addForm.id_site = v || 0)" />
           </div>
           <div class="field full">
             <label>Nama PIC <span class="req">*</span></label>
@@ -409,4 +452,5 @@ td { padding: 12px 14px; font-size: 14px; color: #0f172a; border-top: 1px solid 
 @media (max-width: 480px) {
   .modal { padding: 20px 18px; }
 }
+.import-info { margin: 8px 0; color: #b45309; font-size: 13px; }
 </style>

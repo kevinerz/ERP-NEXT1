@@ -14,7 +14,10 @@ export class ProjectsController {
   // Helpers
   @Get('pm-list')    getPmList()                              { return this.projectsService.getPmList(); }
   @Get('teknisi-list') getTeknisiList()                      { return this.projectsService.getTeknisiList(); }
+  @Get('vendor-list') getVendorList()                        { return this.projectsService.getVendorList(); }
   @Get('site-list')  getSiteList(@Query('search') s?: string){ return this.projectsService.getSiteList(s); }
+  @Get('opportunity-cari') cariOpportunity(@Query('search') s?: string) { return this.projectsService.cariOpportunity(s); }
+  @Get('kontrak-cari') cariKontrak(@Query('search') s?: string) { return this.projectsService.cariKontrak(s); }
   @Get('summary')    getSummary()                            { return this.projectsService.getStatusSummary(); }
 
   // Project

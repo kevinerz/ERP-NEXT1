@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useProyekStore } from '@/stores/proyek'
 import { printBAST } from '@/composables/usePrint'
 import { fmtDateShort as fmtDate, fmtDateTime as fmtDt } from '@/composables/useFormat'
 import api from '@/services/api'
+import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 import { confirmDialog, alertError } from '@/composables/useDialog'
 
 const router = useRouter()
@@ -136,9 +137,23 @@ async function handleDeleteBast(b: any) {
   } catch (e: any) { await alertError(e, 'Gagal menghapus BAST') }
 }
 
+// Vendor untuk WO bertipe Vendor Ketiga — dulu tidak ada pilihannya, jadi WO vendor tanpa eksekutor
+const vendorList = ref<{ id_vendor: number; nama_vendor: string }[]>([])
+const vendorErr = ref('')
+async function muatVendor() {
+  if (vendorList.value.length) return
+  vendorErr.value = ''
+  try { vendorList.value = (await api.get('/projects/vendor-list')).data.data ?? [] }
+  catch (e: any) { vendorErr.value = e?.response?.data?.message || 'Gagal memuat daftar vendor' }
+}
+watch(() => woForm.value.tipe_eksekutor, (t) => { if (t === 'Vendor_Ketiga') muatVendor() })
+
 async function handleAddWo() {
   if (!woForm.value.tgl_jadwal || !woForm.value.deskripsi_tugas) {
     woError.value = 'Jadwal dan deskripsi wajib diisi'; return
+  }
+  if (woForm.value.tipe_eksekutor === 'Vendor_Ketiga' && !woForm.value.id_vendor_ketiga) {
+    woError.value = 'Pilih vendor yang mengerjakan WO ini'; return
   }
   woSubmitting.value = true; woError.value = ''
   try {
@@ -202,6 +217,11 @@ async function handleAddBast() {
 }
 
 function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
+
+async function cariKontrak(q: string): Promise<OpsiCari[]> {
+  const r = await api.get('/projects/kontrak-cari', { params: { search: q || undefined } })
+  return (r.data.data as any[]).map((k) => ({ value: k.id_kontrak, label: k.nomor_kontrak, sub: `${k.site?.nama_site ?? ''} · ${k.status_kontrak}` }))
+}
 </script>
 
 <template>
@@ -332,8 +352,11 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
               </select>
             </div>
             <div class="field full">
-              <label>ID Kontrak <span class="field-hint">(opsional — nomor ID kontrak terkait)</span></label>
-              <input v-model.number="editForm.id_kontrak" type="number" min="1" placeholder="Kosongkan jika tidak ada" />
+              <label>Kontrak <span class="field-hint">(opsional)</span></label>
+              <CariPilih :model-value="editForm.id_kontrak" :cari="cariKontrak"
+                :label-terpilih="proyek.current?.kontrak?.nomor_kontrak || (editForm.id_kontrak ? `Kontrak #${editForm.id_kontrak}` : '')"
+                placeholder="Cari nomor kontrak / site…"
+                @update:model-value="(v) => (editForm.id_kontrak = v)" />
             </div>
             <div class="field">
               <label>Tgl Mulai</label>
@@ -386,6 +409,14 @@ function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMs
                 <option :value="0">— Pilih —</option>
                 <option v-for="t in proyek.teknisiList" :key="t.id_karyawan" :value="t.id_karyawan">{{ t.nama_lengkap }}</option>
               </select>
+            </div>
+            <div class="field" v-if="woForm.tipe_eksekutor === 'Vendor_Ketiga'">
+              <label>Vendor <span class="req">*</span></label>
+              <select v-model.number="woForm.id_vendor_ketiga" @focus="muatVendor">
+                <option :value="0">— Pilih Vendor —</option>
+                <option v-for="v in vendorList" :key="v.id_vendor" :value="v.id_vendor">{{ v.nama_vendor }}</option>
+              </select>
+              <small v-if="vendorErr" style="color:#dc2626">{{ vendorErr }}</small>
             </div>
             <div class="field" v-if="woForm.tipe_eksekutor === 'Vendor_Ketiga'">
               <label>Fee Vendor (Rp)</label>

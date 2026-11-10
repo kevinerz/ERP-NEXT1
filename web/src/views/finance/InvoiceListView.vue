@@ -7,6 +7,7 @@ import { fmtRupiah, fmtDateShort as fmtDate, statusLabel, todayLocal, monthLocal
 import api from '@/services/api'
 import { confirmDialog, alertDialog, alertError } from '@/composables/useDialog'
 import BasePagination from '@/components/BasePagination.vue'
+import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 
 const router = useRouter()
 const finance = useFinanceStore()
@@ -34,7 +35,6 @@ interface SiteOption {
   nama_site: string
   pelanggan?: { nama_pelanggan: string }
 }
-const siteList = ref<SiteOption[]>([])
 
 const showModal = ref(false)
 const submitting = ref(false)
@@ -51,14 +51,16 @@ const form = ref({
 
 onMounted(async () => {
   fetchData()
-  fetchSites()
 })
 
-async function fetchSites() {
-  try {
-    const r = await api.get('/master/site', { params: { limit: 500 } })
-    siteList.value = r.data.data
-  } catch { /* dropdown opsional */ }
+// Site dicari ke server (ada ±3.000 site — dulu dropdown hanya memuat 500 pertama)
+async function cariSite(q: string): Promise<OpsiCari[]> {
+  const r = await api.get('/master/site', { params: { search: q || undefined, limit: 30 } })
+  return (r.data.data as SiteOption[]).map((s) => ({
+    value: s.id_site,
+    label: `[${s.kode_site}] ${s.nama_site}`,
+    sub: s.pelanggan?.nama_pelanggan,
+  }))
 }
 
 async function fetchData() {
@@ -281,12 +283,9 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
         <div class="form-grid">
           <div class="field full">
             <label>Site <span class="req">*</span></label>
-            <select v-model.number="form.id_site">
-              <option :value="0">— Pilih Site —</option>
-              <option v-for="s in siteList" :key="s.id_site" :value="s.id_site">
-                [{{ s.kode_site }}] {{ s.nama_site }} — {{ s.pelanggan?.nama_pelanggan }}
-              </option>
-            </select>
+            <CariPilih :model-value="form.id_site || null" :cari="cariSite"
+              placeholder="Cari nama site, kode, kota, atau pelanggan…"
+              @update:model-value="(v) => (form.id_site = v || 0)" />
           </div>
           <div class="field">
             <label>Periode <span class="req">*</span></label>

@@ -14,7 +14,10 @@ export class PublicWoController {
   getTeknisiList() { return this.publicWoService.getTeknisiList(); }
 
   @Get('sites')
-  getSiteDropdown() { return this.publicWoService.getSiteDropdown(); }
+  getSiteDropdown(@Query('search') search?: string) { return this.publicWoService.getSiteDropdown(search); }
+
+  @Get('vendor')
+  getVendorDropdown() { return this.publicWoService.getVendorDropdown(); }
 
   @Get()
   findAll(@Query() query: any) { return this.publicWoService.findAll(query); }

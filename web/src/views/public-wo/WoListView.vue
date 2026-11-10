@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import BasePagination from '@/components/BasePagination.vue'
+import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateTime as fmtDate } from '@/composables/useFormat'
@@ -22,7 +23,8 @@ const meta          = ref({ total: 0, total_pages: 1 })
 
 const showModal  = ref(false)
 const saving     = ref(false)
-const sites      = ref<any[]>([])
+const vendors    = ref<{ id_vendor: number; nama_vendor: string }[]>([])
+const vendorErr  = ref('')
 const form = ref({
   jenis_wo: 'Instalasi',
   id_site: '',
@@ -78,14 +80,36 @@ async function fetchList() {
 
 async function fetchDropdowns() {
   try {
-    const [t, s] = await Promise.all([
-      api.get('/public-wo/teknisi'),
-      api.get('/public-wo/sites'),
-    ])
+    const t = await api.get('/public-wo/teknisi')
     teknisis.value = t.data.data
-    sites.value    = s.data.data
   } catch { /* dropdown filter kosong kalau gagal — tidak fatal buat halaman */ }
 }
+
+// Site dicari ke server (daftar lama hanya 500 site aktif pertama)
+async function cariSite(q: string): Promise<OpsiCari[]> {
+  const r = await api.get('/public-wo/sites', { params: { search: q || undefined } })
+  return (r.data.data as any[]).slice(0, 50).map((s) => ({ value: s.id_site, label: `${s.kode_site} — ${s.nama_site}`, sub: s.pelanggan?.nama_pelanggan }))
+}
+
+async function muatVendor() {
+  if (vendors.value.length) return
+  vendorErr.value = ''
+  try { vendors.value = (await api.get('/public-wo/vendor')).data.data }
+  catch (e: any) { vendorErr.value = e?.response?.data?.message || 'Gagal memuat daftar vendor' }
+}
+watch(() => form.value.tipe_eksekutor, (t) => {
+  if (t === 'Vendor_Ketiga') { form.value.id_teknisi_internal = ''; muatVendor() }
+  else form.value.id_vendor_ketiga = ''
+})
+// Field wajib yang belum diisi — ditampilkan supaya tombol nonaktif tidak membingungkan
+const kurang = computed(() => {
+  const k: string[] = []
+  if (!form.value.id_site) k.push('site')
+  if (form.value.tipe_eksekutor === 'Vendor_Ketiga' && !form.value.id_vendor_ketiga) k.push('vendor')
+  if (!form.value.tgl_jadwal) k.push('tanggal jadwal')
+  if (!form.value.deskripsi_tugas.trim()) k.push('deskripsi tugas')
+  return k
+})
 
 function resetFilter() {
   search.value = ''; filterStatus.value = ''; filterJenis.value = ''; filterTeknisi.value = ''
@@ -104,7 +128,7 @@ function openModal() {
 }
 
 async function submitWo() {
-  if (!form.value.id_site || !form.value.tgl_jadwal || !form.value.deskripsi_tugas) return
+  if (kurang.value.length) return
   saving.value = true
   try {
     const payload: any = {
@@ -114,7 +138,8 @@ async function submitWo() {
       tgl_jadwal: form.value.tgl_jadwal,
       deskripsi_tugas: form.value.deskripsi_tugas,
     }
-    if (form.value.id_teknisi_internal) payload.id_teknisi_internal = Number(form.value.id_teknisi_internal)
+    if (form.value.tipe_eksekutor === 'Internal_NEXT1' && form.value.id_teknisi_internal) payload.id_teknisi_internal = Number(form.value.id_teknisi_internal)
+    if (form.value.tipe_eksekutor === 'Vendor_Ketiga') payload.id_vendor_ketiga = Number(form.value.id_vendor_ketiga)
     const { data } = await api.post('/public-wo', payload)
     showModal.value = false
     fetchSummary()
@@ -252,12 +277,17 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
           </div>
           <div class="form-group">
             <label>Site *</label>
-            <select v-model="form.id_site" class="form-control">
-              <option value="">-- Pilih Site --</option>
-              <option v-for="s in sites" :key="s.id_site" :value="s.id_site">
-                {{ s.kode_site }} — {{ s.nama_site }} ({{ s.pelanggan?.nama_pelanggan }})
-              </option>
+            <CariPilih :model-value="form.id_site ? Number(form.id_site) : null" :cari="cariSite"
+              placeholder="Cari site aktif: nama, kode, kota, pelanggan…"
+              @update:model-value="(v) => (form.id_site = v ? String(v) : '')" />
+          </div>
+          <div class="form-group" v-if="form.tipe_eksekutor === 'Vendor_Ketiga'">
+            <label>Vendor *</label>
+            <select v-model="form.id_vendor_ketiga" class="form-control">
+              <option value="">-- Pilih Vendor --</option>
+              <option v-for="v in vendors" :key="v.id_vendor" :value="v.id_vendor">{{ v.nama_vendor }}</option>
             </select>
+            <small v-if="vendorErr" style="color:#dc2626">{{ vendorErr }}</small>
           </div>
           <div class="form-group" v-if="form.tipe_eksekutor === 'Internal_NEXT1'">
             <label>Teknisi</label>
@@ -276,11 +306,13 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
           </div>
         </div>
         <div class="modal-footer">
+          <small v-if="kurang.length" class="wo-kurang">Lengkapi: {{ kurang.join(', ') }}</small>
           <button type="button" class="btn btn-secondary" @click="showModal = false">Batal</button>
           <button
             type="button"
             class="btn btn-primary"
-            :disabled="saving || !form.id_site || !form.tgl_jadwal || !form.deskripsi_tugas"
+            :disabled="saving || kurang.length > 0"
+            :title="kurang.length ? `Lengkapi: ${kurang.join(', ')}` : undefined"
             @click="submitWo"
           >
             {{ saving ? 'Menyimpan…' : 'Buat WO' }}
@@ -338,4 +370,5 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
 .form-control { padding: 8px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; }
 .form-control:focus { outline: none; border-color: #93c5fd; }
 textarea.form-control { resize: vertical; font-family: inherit; }
+.wo-kurang { margin-right: auto; color: #b45309; font-size: 12.5px; }
 </style>

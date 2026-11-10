@@ -113,7 +113,16 @@ async function simpan(ajukan: boolean) {
     }
     const { data } = idSurvey.value ? await api.put(`/pasang-baru/survey/${idSurvey.value}`, body) : await api.post('/pasang-baru/survey', body)
     const id = idSurvey.value ?? data.data.id_survey
-    if (ajukan) await api.post(`/pasang-baru/survey/${id}/ajukan`, {})
+    if (ajukan) {
+      try {
+        await api.post(`/pasang-baru/survey/${id}/ajukan`, {})
+      } catch (e) {
+        // Data sudah tersimpan — pindah ke halamannya supaya klik ulang tidak membuat Survey dobel
+        router.push(`/pasang-baru/survey/${id}`)
+        alertError(e, 'Survey tersimpan sebagai draft, tapi gagal diajukan. Ajukan lagi dari halaman ini.')
+        return
+      }
+    }
     router.push(`/pasang-baru/survey/${id}`)
   } catch (e) {
     alertError(e, 'Gagal menyimpan survey')

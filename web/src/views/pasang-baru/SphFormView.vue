@@ -172,7 +172,16 @@ async function simpan(ajukan: boolean) {
     }
     const { data } = idSph.value ? await api.put(`/pasang-baru/sph/${idSph.value}`, body) : await api.post('/pasang-baru/sph', body)
     const id = idSph.value ?? data.data.id_sph
-    if (ajukan) await api.post(`/pasang-baru/sph/${id}/ajukan`)
+    if (ajukan) {
+      try {
+        await api.post(`/pasang-baru/sph/${id}/ajukan`)
+      } catch (e) {
+        // Data sudah tersimpan — pindah ke halamannya supaya klik ulang tidak membuat SPH dobel
+        router.push(`/pasang-baru/sph/${id}`)
+        alertError(e, 'SPH tersimpan sebagai draft, tapi gagal diajukan. Ajukan lagi dari halaman ini.')
+        return
+      }
+    }
     router.push(`/pasang-baru/sph/${id}`)
   } catch (e) {
     alertError(e, 'Gagal menyimpan SPH')

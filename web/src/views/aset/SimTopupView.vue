@@ -50,7 +50,11 @@
               <div class="sim-count">{{ sim._count?.topup || 0 }}x topup</div>
             </div>
           </div>
-          <div v-if="simCards.length === 0" class="empty-state">Tidak ada data sumber internet</div>
+          <div v-if="simError" class="empty-state" style="color:#dc2626" role="alert">
+            {{ simError }} · <button type="button" class="btn-hapus-sm" @click="fetchSimCards">Coba lagi</button>
+          </div>
+          <div v-else-if="simMemuat && simCards.length === 0" class="empty-state">Memuat…</div>
+          <div v-else-if="simCards.length === 0" class="empty-state">Tidak ada data sumber internet</div>
         </div>
       </div>
 
@@ -124,7 +128,15 @@
                     <button class="btn-hapus-sm" @click="deleteTopup(t.id_topup)">Hapus</button>
                   </td>
                 </tr>
-                <tr v-if="topups.length === 0">
+                <tr v-if="topupError">
+                  <td colspan="10" class="empty-cell" style="color:#dc2626" role="alert">
+                    {{ topupError }} · <button type="button" class="btn-hapus-sm" @click="fetchTopup">Coba lagi</button>
+                  </td>
+                </tr>
+                <tr v-else-if="topupMemuat && topups.length === 0">
+                  <td colspan="10" class="empty-cell">Memuat…</td>
+                </tr>
+                <tr v-else-if="topups.length === 0">
                   <td colspan="10" class="empty-cell">Belum ada data topup</td>
                 </tr>
               </tbody>
@@ -305,6 +317,11 @@ const bisaKelolaDigiflazz = computed(() => auth.hasRole('Admin') || auth.hasRole
 const JENIS_TOPUP = ['Data', 'Pulsa', 'Paket_Bulanan', 'Aktivasi', 'Lainnya']
 
 const simCards    = ref<any[]>([])
+// Bedakan "gagal memuat" dari "memang kosong" — dulu error ditelan & tampil "Belum ada data"
+const simMemuat   = ref(true)
+const simError    = ref('')
+const topupMemuat = ref(true)
+const topupError  = ref('')
 const topups      = ref<any[]>([])
 const meta        = ref({ total: 0, total_pages: 1, total_nominal: 0 })
 const page        = ref(1)
@@ -424,7 +441,9 @@ async function openConfigModal() {
     const cfg = (await api.get('/digiflazz/config')).data.data
     configForm.value = { username: cfg.username || '', api_key: '' }
     configHasKey.value = !!cfg.has_api_key
-  } catch {}
+  } catch (e: any) {
+    configError.value = `Konfigurasi saat ini gagal dimuat (${e?.response?.data?.message || 'koneksi bermasalah'}). Menyimpan akan menimpa nilai lama.`
+  }
 }
 
 async function submitConfig() {
@@ -460,10 +479,14 @@ function statusClass(s: string) {
 }
 
 async function fetchSimCards() {
+  simMemuat.value = true
   try {
     const r = await api.get('/assets/sim-cards', { params: { search: simSearch.value || undefined } })
     simCards.value = r.data.data || []
-  } catch {}
+    simError.value = ''
+  } catch (e: any) {
+    simError.value = e?.response?.data?.message || 'Gagal memuat daftar SIM'
+  } finally { simMemuat.value = false }
 }
 
 async function fetchTopup() {
@@ -473,10 +496,14 @@ async function fetchTopup() {
     if (filterJenis.value) params.jenis_topup = filterJenis.value
     if (filterDari.value) params.tgl_dari = filterDari.value
     if (filterSampai.value) params.tgl_sampai = filterSampai.value
+    topupMemuat.value = true
     const r = await api.get('/assets/sim-topup', { params })
     topups.value = r.data.data || []
     meta.value = r.data.meta || meta.value
-  } catch {}
+    topupError.value = ''
+  } catch (e: any) {
+    topupError.value = e?.response?.data?.message || 'Gagal memuat riwayat topup'
+  } finally { topupMemuat.value = false }
 }
 
 function selectSim(sim: any) {

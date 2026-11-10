@@ -243,15 +243,32 @@ export class PublicWoService {
     return { message: `Work Order ${row.nomor_wo} dihapus` };
   }
 
-  async getSiteDropdown() {
+  async getSiteDropdown(search?: string) {
+    const q = (search || '').trim();
     const data = await this.prisma.sitePelanggan.findMany({
-      where: { status_site: 'Aktif' },
+      where: {
+        status_site: 'Aktif',
+        ...(q ? { OR: [
+          { nama_site: { contains: q } }, { kode_site: { contains: q } }, { kota: { contains: q } },
+          { pelanggan: { nama_pelanggan: { contains: q } } },
+        ] } : {}),
+      },
       select: {
         id_site: true, kode_site: true, nama_site: true,
         pelanggan: { select: { nama_pelanggan: true } },
       },
       orderBy: { nama_site: 'asc' },
-      take: 500,
+      take: q ? 50 : 500,
+    });
+    return { data };
+  }
+
+  /** Vendor aktif untuk WO bertipe Vendor Ketiga */
+  async getVendorDropdown() {
+    const data = await this.prisma.masterVendorIsp.findMany({
+      where: { is_aktif: true },
+      select: { id_vendor: true, nama_vendor: true },
+      orderBy: { nama_vendor: 'asc' },
     });
     return { data };
   }

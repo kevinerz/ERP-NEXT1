@@ -17,16 +17,19 @@ const laporanBulan = ref(new Date().getMonth() + 1)
 const laporanTahun = ref(new Date().getFullYear())
 const pelangganList = ref<any[]>([])
 const pelangganLoading = ref(false)
+const pelangganError = ref('')
 
 async function openLaporanModal() {
   showLaporanModal.value = true
   if (pelangganList.value.length === 0) {
     pelangganLoading.value = true
     try {
-      const res = await api.get('/master/pelanggan')
+      pelangganError.value = ''
+      // Tanpa limit backend hanya mengirim 20 pelanggan pertama
+      const res = await api.get('/master/pelanggan', { params: { limit: 1000 } })
       pelangganList.value = res.data.data ?? res.data ?? []
-    } catch (e) {
-      console.error('Gagal memuat pelanggan', e)
+    } catch (e: any) {
+      pelangganError.value = e?.response?.data?.message || 'Gagal memuat daftar pelanggan — tutup lalu buka lagi untuk mencoba ulang'
     } finally {
       pelangganLoading.value = false
     }
@@ -197,6 +200,7 @@ function exportCsv() {
               {{ p.kode_pelanggan }} — {{ p.nama_pelanggan }}
             </option>
           </select>
+          <p v-if="pelangganError" class="form-error" role="alert" style="color:#dc2626;font-size:13px;margin:6px 0 0">{{ pelangganError }}</p>
 
           <div class="form-row">
             <div class="form-group">

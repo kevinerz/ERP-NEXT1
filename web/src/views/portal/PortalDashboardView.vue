@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { usePortalAuthStore } from '@/stores/portalAuth'
 import portalApi from '@/services/portalApi'
 import { fmtDateShort } from '@/composables/useFormat'
 
 const auth   = usePortalAuthStore()
-const router = useRouter()
 
 const sites     = ref<any[]>([])
 const loading   = ref(true)
@@ -144,11 +142,12 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
           </div>
           <div class="card-head-right">
             <span :class="['pill-status', `pill-${site.status_site?.toLowerCase()}`]">{{ site.status_site }}</span>
-            <span
+            <RouterLink
               v-if="site.tiket_aktif"
               class="pill-tiket"
-              @click="router.push({ path: '/portal/tickets', query: { id_site: site.id_site } })"
-            >{{ site.tiket_aktif }} Tiket</span>
+              :to="{ path: '/portal/tickets', query: { id_site: site.id_site } }"
+              :aria-label="`Lihat ${site.tiket_aktif} tiket aktif ${site.nama_site}`"
+            >{{ site.tiket_aktif }} Tiket</RouterLink>
           </div>
         </div>
 
@@ -445,6 +444,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
 .pill-prospek    { background: #FFFBEB; color: #92400E; }
 .pill-terminasi  { background: #FEF2F2; color: #991B1B; }
 .pill-tiket {
+  text-decoration: none;
   font-size: 10px;
   font-weight: 700;
   background: #FEF3C7;

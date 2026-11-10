@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useMasterStore } from '@/stores/master'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import api from '@/services/api'
@@ -130,10 +130,13 @@ onMounted(() => {
 
 function fetchData() {
   const params: any = { page: page.value }
+  // Tampilan Grup butuh semua pelanggan (bagian Standalone dihitung dari sini) — tanpa paginasi
+  if (viewMode.value === 'grup') { params.page = 1; params.limit = 1000 }
   if (search.value) params.search = search.value
   master.fetchPelanggan(params)
 }
 function doSearch() { page.value = 1; fetchData() }
+watch(viewMode, () => { page.value = 1; fetchData() })
 function goPage(p: number) { page.value = p; fetchData() }
 
 function toggleGrup(id: number) {
@@ -356,7 +359,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
         </div>
 
         <!-- Standalone (tanpa grup) -->
-        <div v-if="master.pelangganList.some(p => !p.id_grup)" class="grup-card standalone">
+        <div v-if="standalonePelanggan.length" class="grup-card standalone">
           <div
             class="grup-header"
             style="border-left-color: #94a3b8"
@@ -369,7 +372,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
             </div>
             <div class="grup-right">
               <span class="grup-stat">
-                <b>{{ master.pelangganList.filter(p => !p.id_grup).length }}</b> PT
+                <b>{{ standalonePelanggan.length }}</b> PT
               </span>
               <span class="chevron" :class="{ open: expandedGrup.has(0) }">▾</span>
             </div>
@@ -387,7 +390,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="p in master.pelangganList.filter(p => !p.id_grup)" :key="p.id_pelanggan">
+                <tr v-for="p in standalonePelanggan" :key="p.id_pelanggan">
                   <td class="kode-cell">{{ p.kode_pelanggan }}</td>
                   <td><span class="nama-pt">{{ p.nama_pelanggan }}</span></td>
                   <td class="text-muted">{{ p.kota || '—' }}</td>
@@ -407,7 +410,7 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
           </div>
         </div>
 
-        <div v-if="!master.grupList.length && !master.pelangganList.some(p => !p.id_grup)" class="grup-card empty-state">
+        <div v-if="!master.grupList.length && !standalonePelanggan.length" class="grup-card empty-state">
           <div class="empty-icon">🏢</div>
           <div class="empty-title">Belum ada grup atau pelanggan</div>
           <div class="empty-desc">Tambahkan grup / holding atau pelanggan baru untuk memulai.</div>

@@ -7,7 +7,7 @@ import BasePagination from '@/components/BasePagination.vue'
 import RecipientInput from '@/components/RecipientInput.vue'
 import { fmtDateTime, escapeHtml } from '@/composables/useFormat'
 import api from '@/services/api'
-import { promptDialog } from '@/composables/useDialog'
+import { promptDialog, confirmDialog } from '@/composables/useDialog'
 
 const email = useEmailStore()
 
@@ -173,6 +173,7 @@ const savingDraft = ref(false)
 const sendError = ref('')
 const showCc = ref(false)
 const editingDraftUid = ref<number | null>(null)
+const terkirim = ref('')
 
 // ─── EDITOR RICH TEXT + KONTAK HRIS ──────────────────────────
 const editorRef = ref<HTMLElement | null>(null)
@@ -227,8 +228,16 @@ watch(showCompose, (open) => {
   // HTML balasan/draf berasal dari email pihak luar — wajib disanitasi sebelum masuk editor
   nextTick(() => {
     if (editorRef.value) editorRef.value.innerHTML = DOMPurify.sanitize(composeForm.value.html || '', { ADD_ATTR: ['target'] })
+    snapshotCompose = isiCompose()
   })
 })
+
+// Deteksi isian berubah — supaya klik di luar modal / Batal tidak membuang email yang sedang ditulis
+let snapshotCompose = ''
+function isiCompose() {
+  return JSON.stringify([toTags.value, ccTags.value, bccTags.value, composeForm.value.subject,
+    editorRef.value?.innerHTML ?? composeForm.value.html, composeFiles.value.length])
+}
 
 function bodyAsHtml(msg: { html?: string | null; text?: string | null }) {
   return msg.html || escapeHtml(msg.text || '').replace(/\n/g, '<br>')
@@ -267,8 +276,16 @@ function handleFileInput(e: Event) {
 }
 function hapusFile(i: number) { composeFiles.value.splice(i, 1) }
 
-function tutupCompose() {
+async function tutupCompose() {
   if (sending.value || savingDraft.value) return
+  if (isiCompose() !== snapshotCompose) {
+    const buang = await confirmDialog({
+      title: 'Buang email ini?',
+      message: 'Isi email belum dikirim dan belum disimpan. Klik "Simpan Draf" kalau ingin melanjutkannya nanti.',
+      confirmLabel: 'Buang', variant: 'danger',
+    })
+    if (!buang) return
+  }
   showCompose.value = false
 }
 
@@ -291,6 +308,8 @@ async function kirimEmail() {
   try {
     await email.sendMail(buildPayload(), composeFiles.value, editingDraftUid.value)
     showCompose.value = false
+    terkirim.value = `Email "${composeForm.value.subject}" terkirim.`
+    setTimeout(() => (terkirim.value = ''), 5000)
     if (email.currentFolder === 'sent' || email.currentFolder === 'drafts') await loadInbox()
   } catch (e: any) { sendError.value = e.response?.data?.message || 'Gagal mengirim email' }
   finally { sending.value = false }
@@ -321,6 +340,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 
 <template>
   <div class="page">
+    <div v-if="terkirim" class="toast-terkirim" role="status">✅ {{ terkirim }}</div>
     <!-- ─── BELUM CONNECT ─── -->
     <div v-if="email.accountChecked && !email.account" class="connect-wrap">
       <div class="connect-card">
@@ -658,4 +678,5 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-draft { padding: 9px 18px; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-weight: 600; color: #334155; cursor: pointer; }
 .btn-draft:disabled { opacity: 0.5; cursor: not-allowed; }
+.toast-terkirim { position: fixed; right: 24px; bottom: 24px; z-index: 300; padding: 10px 16px; border-radius: 10px; background: #065f46; color: #fff; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
 </style>

@@ -42,9 +42,10 @@ const bisaBatal = computed(() => ['OPS', 'Network'].includes(o.value?.tahap) && 
 const lengkap = computed(() => (o.value?.syarat || []).every((x: any) => x.ok))
 const SEBELUM: Record<string, string> = { Network: 'OPS', Selesai: 'Network' }
 
-async function jalankan(fn: () => Promise<any>, gantiTab = false) {
+// true = berhasil — modal hanya ditutup kalau simpan berhasil, supaya isian (mis. TTD BA) tidak hilang saat gagal
+async function jalankan(fn: () => Promise<any>, gantiTab = false): Promise<boolean> {
   proses.value = true
-  try { await fn(); await muat(gantiTab) } catch (e) { alertError(e) } finally { proses.value = false }
+  try { await fn(); await muat(gantiTab); return true } catch (e) { alertError(e); return false } finally { proses.value = false }
 }
 async function serahkan() {
   const net = o.value.tahap === 'Network'
@@ -109,8 +110,7 @@ async function simpanLink() {
     speedtest_up: isi.speedtest_up === '' ? null : Number(isi.speedtest_up),
     speedtest_ping: isi.speedtest_ping === '' ? null : Number(isi.speedtest_ping),
   }
-  await jalankan(() => (id_sumber ? api.patch(`/pasang-baru/link/${id_sumber}`, body) : api.post(`/pasang-baru/order/${id.value}/link`, body)))
-  fl.buka = false
+  if (await jalankan(() => (id_sumber ? api.patch(`/pasang-baru/link/${id_sumber}`, body) : api.post(`/pasang-baru/order/${id.value}/link`, body)))) fl.buka = false
 }
 async function hapusLink(l: any) {
   if (!(await confirmDialog({ title: 'Hapus link', message: `Hapus link ${l.vendor.nama_vendor}?`, variant: 'danger', confirmLabel: 'Hapus' }))) return
@@ -160,14 +160,12 @@ async function muatStok() {
 function bukaStok() { Object.assign(stok, { buka: true, cari: '' }); muatStok() }
 function cariStok() { if (timerStok) clearTimeout(timerStok); timerStok = setTimeout(muatStok, 300) }
 async function ambil(a: any) {
-  await jalankan(() => api.post(`/pasang-baru/order/${id.value}/perangkat`, { id_aset: a.id_aset }))
-  stok.buka = false
+  if (await jalankan(() => api.post(`/pasang-baru/order/${id.value}/perangkat`, { id_aset: a.id_aset }))) stok.buka = false
 }
 const req = reactive({ buka: false, nama_item: '', jumlah: 1, estimasi_harga: 0, link_marketplace: '', alasan: '' })
 function bukaRequest() { Object.assign(req, { buka: true, nama_item: stok.cari.trim() || 'Mikrotik hAP ac²', jumlah: 1, estimasi_harga: 0, link_marketplace: '', alasan: '' }); stok.buka = false }
 async function kirimRequest() {
-  await jalankan(() => api.post(`/pasang-baru/order/${id.value}/perangkat/request`, { ...req, buka: undefined, jumlah: Number(req.jumlah) || 1, estimasi_harga: Number(req.estimasi_harga) || 0 }))
-  req.buka = false
+  if (await jalankan(() => api.post(`/pasang-baru/order/${id.value}/perangkat/request`, { ...req, buka: undefined, jumlah: Number(req.jumlah) || 1, estimasi_harga: Number(req.estimasi_harga) || 0 }))) req.buka = false
 }
 async function lepas(p: any) {
   if (!(await confirmDialog({ title: 'Lepas perangkat', message: p.id_aset ? `${p.nama_item} dikembalikan ke gudang?` : `Hapus request ${p.nama_item} dari order ini? (pengajuan aset tetap ada)`, confirmLabel: 'Ya', variant: 'danger' }))) return
@@ -253,8 +251,7 @@ function mulaiGores(e: PointerEvent) { menggambar = true; kanvas.value!.setPoint
 function gores(e: PointerEvent) { if (!menggambar) return; const g = kanvas.value!.getContext('2d')!, [x, y] = titik(e); g.lineTo(x, y); g.stroke(); adaCoretan.value = true }
 function hapusCoretan() { const c = kanvas.value!; c.getContext('2d')!.clearRect(0, 0, c.width, c.height); adaCoretan.value = false }
 async function simpanBa() {
-  await jalankan(() => api.post(`/pasang-baru/order/${id.value}/ba`, { nama: fb.nama, jabatan: fb.jabatan || undefined, nama_next1: fb.nama_next1 || undefined, ttd: kanvas.value!.toDataURL('image/png') }))
-  fb.buka = false
+  if (await jalankan(() => api.post(`/pasang-baru/order/${id.value}/ba`, { nama: fb.nama, jabatan: fb.jabatan || undefined, nama_next1: fb.nama_next1 || undefined, ttd: kanvas.value!.toDataURL('image/png') }))) fb.buka = false
 }
 const cetakBa = () => printBaAktivasi(o.value)
 // Data tambahan BA format NextOne
@@ -288,8 +285,7 @@ async function kirimScan() {
   fd.append('file', scan.file)
   fd.append('nama', scan.nama)
   if (scan.jabatan) fd.append('jabatan', scan.jabatan)
-  await jalankan(() => api.post(`/pasang-baru/order/${id.value}/ba-scan`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }))
-  scan.buka = false
+  if (await jalankan(() => api.post(`/pasang-baru/order/${id.value}/ba-scan`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }))) scan.buka = false
 }
 
 // ── Dokumen ──────────────────────────────────────────────────────────────────

@@ -282,6 +282,16 @@ export class ProjectsService {
     return { data };
   }
 
+  /** Vendor aktif — untuk WO proyek bertipe Vendor Ketiga */
+  async getVendorList() {
+    const data = await this.prisma.masterVendorIsp.findMany({
+      where: { is_aktif: true },
+      select: { id_vendor: true, nama_vendor: true },
+      orderBy: { nama_vendor: 'asc' },
+    });
+    return { data };
+  }
+
   async getTeknisiList() {
     const data = await this.prisma.hrisKaryawan.findMany({
       where: {
@@ -303,6 +313,8 @@ export class ProjectsService {
       where.OR = [
         { nama_site: { contains: search } },
         { kode_site: { contains: search } },
+        { kota: { contains: search } },
+        { pelanggan: { nama_pelanggan: { contains: search } } },
       ];
     }
     const data = await this.prisma.sitePelanggan.findMany({
@@ -313,7 +325,37 @@ export class ProjectsService {
         layanan: { select: { kode_layanan: true } },
       },
       orderBy: { nama_site: 'asc' },
-      take: 2000,
+      take: search ? 50 : 2000,
+    });
+    return { data };
+  }
+
+  /** Cari opportunity (nama / perusahaan / ID) — pengganti input ID manual di form proyek */
+  async cariOpportunity(search?: string) {
+    const q = (search || '').trim();
+    const id = Number(q);
+    const data = await this.prisma.salesOpportunity.findMany({
+      where: q ? { OR: [
+        { nama_opportunity: { contains: q } },
+        { lead: { nama_perusahaan: { contains: q } } },
+        { lead: { nama_prospek: { contains: q } } },
+        ...(Number.isInteger(id) && id > 0 ? [{ id_opportunity: id }] : []),
+      ] } : {},
+      select: { id_opportunity: true, nama_opportunity: true, lead: { select: { nama_perusahaan: true, nama_prospek: true } } },
+      orderBy: { id_opportunity: 'desc' },
+      take: 30,
+    });
+    return { data };
+  }
+
+  /** Cari kontrak (nomor / site) — pengganti input ID manual di form proyek */
+  async cariKontrak(search?: string) {
+    const q = (search || '').trim();
+    const data = await this.prisma.kontrakLayanan.findMany({
+      where: q ? { OR: [{ nomor_kontrak: { contains: q } }, { site: { nama_site: { contains: q } } }] } : {},
+      select: { id_kontrak: true, nomor_kontrak: true, status_kontrak: true, site: { select: { nama_site: true } } },
+      orderBy: { id_kontrak: 'desc' },
+      take: 30,
     });
     return { data };
   }
