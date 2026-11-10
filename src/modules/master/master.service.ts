@@ -522,7 +522,7 @@ export class MasterService {
     const data = await this.prisma.sitePelanggan.findUnique({
       where: { id_site: id },
       include: {
-        pelanggan: true,
+        pelanggan: { include: { grup: { select: { id_grup: true, nama_grup: true } } } },
         layanan: true,
         sumber_internet: {
           orderBy: { created_at: 'asc' },

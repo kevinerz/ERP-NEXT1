@@ -5,6 +5,8 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import NocaasSitePanel from './NocaasSitePanel.vue'
+import SiteFormModal from './SiteFormModal.vue'
+import PetaLokasi from '@/components/PetaLokasi.vue'
 import { fmtDateShort, fmtRupiah } from '@/composables/useFormat'
 
 const route = useRoute()
@@ -18,7 +20,7 @@ const vendorList = ref<any[]>([])
 const asetSimList = ref<any[]>([])
 const asetList = ref<any[]>([])  // untuk perangkat picker
 
-const activeTab = ref<'sumber' | 'perangkat' | 'pic' | 'proyek' | 'tiket' | 'dokumen' | 'nocaas'>('sumber')
+const activeTab = ref<'sumber' | 'perangkat' | 'pic' | 'proyek' | 'tiket' | 'dokumen' | 'nocaas'>('perangkat')
 // Tab NOCaaS: data router hanya untuk pengguna modul operations (endpoint /nocaas digate backend)
 const auth = useAuthStore()
 const bisaNocaas = computed(() => auth.canAccess('operations'))
@@ -345,88 +347,126 @@ const isGsm = computed(() => {
   const tipe = selectedVendor.value?.tipe_vendor?.toLowerCase() || ''
   return tipe.includes('gsm') || tipe.includes('seluler') || tipe.includes('cellular')
 })
+
+// ─── Kepala & ringkasan detail site ───────────────────────────
+const ubahSite = ref(false)
+async function setelahUbah() { ubahSite.value = false; await loadSite() }
+const kodeTersalin = ref(false), alamatTersalin = ref(false)
+async function salin(teks: string, jenis: 'kode' | 'alamat') {
+  try { await navigator.clipboard.writeText(teks || '') } catch { /* abaikan */ }
+  const r = jenis === 'kode' ? kodeTersalin : alamatTersalin
+  r.value = true; setTimeout(() => (r.value = false), 1500)
+}
+const picUtama = computed(() => site.value?.pic?.find((p: any) => p.is_utama) ?? site.value?.pic?.[0] ?? null)
+const waNomor = (n: string) => n.replace(/\D/g, '').replace(/^0/, '62')
+const tiketAktif = computed(() => (site.value?.tickets ?? []).filter((t: any) => ['Open', 'In_Progress', 'Pending', 'Pending_Customer'].includes(t.status_tiket)).length)
+const tabSite = computed(() => [
+  { k: 'perangkat' as const, i: '🔌', l: 'Perangkat', n: site.value?.perangkat?.length ?? 0 },
+  { k: 'sumber' as const, i: '🌐', l: 'Sumber internet', n: site.value?.sumber_internet?.length ?? 0 },
+  { k: 'pic' as const, i: '👤', l: 'PIC kontak', n: site.value?.pic?.length ?? 0 },
+  { k: 'tiket' as const, i: '🎫', l: 'Tiket', n: site.value?.tickets?.length ?? 0 },
+  ...(bisaNocaas.value ? [{ k: 'nocaas' as const, i: '🛰️', l: 'Router NOCaaS', n: null }] : []),
+  { k: 'proyek' as const, i: '📦', l: 'Project', n: site.value?.projects?.length ?? 0 },
+  { k: 'dokumen' as const, i: '📄', l: 'Dokumen', n: dokumenList.value.length },
+])
+// Status router singkat untuk kartu ringkasan (hanya pengguna modul operations)
+const routerRingkas = ref<{ teks: string; sub?: string; kelas: string } | null>(null)
+async function muatRouterRingkas() {
+  if (!bisaNocaas.value) return
+  try {
+    const rs = (await api.get(`/nocaas/site/${id}/panel`)).data.data.routers ?? []
+    const r = rs[0]
+    if (!r) { routerRingkas.value = { teks: 'Belum terpetakan', kelas: 'abu' }; return }
+    const T: Record<string, [string, string]> = { online: ['🟢 Online', 'hijau'], partial: ['🟡 Sebagian', 'kuning'], internet_ok: ['🟡 VPN putus', 'kuning'], offline: ['🔴 Offline', 'merah'] }
+    const [teks, kelas] = T[r.status] ?? [r.status, 'abu']
+    routerRingkas.value = { teks, kelas, sub: [r.live?.model, r.public_ip].filter(Boolean).join(' · ') || undefined }
+  } catch { routerRingkas.value = null }
+}
+onMounted(muatRouterRingkas)
 </script>
 
 <template>
   <div class="page">
-    <div class="breadcrumb">
-      <span v-baris class="link" @click="router.push('/master/site')">Site Pelanggan</span>
-      <span class="sep">›</span>
-      <span>{{ site?.kode_site || '...' }}</span>
-    </div>
-
     <div v-if="loading && !site" class="loading-state">Memuat data site...</div>
     <div v-else-if="error && !site" class="alert alert-danger">{{ error }}</div>
 
     <template v-else-if="site">
       <div v-if="error" class="alert alert-danger page-alert">{{ error }}</div>
-      <!-- Header -->
-      <div class="page-header">
-        <div>
-          <div class="kode">{{ site.kode_site }}</div>
-          <h2>{{ site.nama_site }}</h2>
-          <div class="sub-row">
-            <span class="pelanggan">{{ site.pelanggan?.nama_pelanggan }}</span>
-            <span class="status-badge"
-              :style="{ background: SITE_STATUS_COLOR[site.status_site]?.bg || '#f1f5f9', color: SITE_STATUS_COLOR[site.status_site]?.color || '#64748b' }">
-              {{ site.status_site }}
-            </span>
+      <!-- ═══ Kepala site ═══ -->
+      <div class="sd-hero">
+        <div class="sd-hero-kiri">
+          <RouterLink to="/master/site" class="sd-kembali">← Semua site</RouterLink>
+          <div class="sd-judul">
+            <h1>{{ site.nama_site }}</h1>
+            <span :class="['sd-status', 'sd-' + (site.status_site || '').toLowerCase()]">{{ site.status_site }}</span>
+          </div>
+          <div class="sd-meta">
+            <button type="button" class="sd-kode" :title="kodeTersalin ? 'Tersalin!' : 'Klik untuk menyalin kode'" @click="salin(site.kode_site, 'kode')">{{ kodeTersalin ? '✓ tersalin' : site.kode_site }}</button>
+            <RouterLink :to="`/master/site?pelanggan=${site.id_pelanggan}`" class="sd-pt" title="Lihat semua site pelanggan ini">🏢 {{ site.pelanggan?.nama_pelanggan }}</RouterLink>
+            <span v-if="site.pelanggan?.grup" class="sd-grup">🏷️ {{ site.pelanggan.grup.nama_grup }}</span>
+            <span v-if="site.kota || site.provinsi">📍 {{ [site.kota, site.provinsi].filter(Boolean).join(', ') }}</span>
           </div>
         </div>
-      </div>
-
-      <!-- Info bar -->
-      <div class="info-bar">
-        <div class="info-item">
-          <div class="info-label">Layanan</div>
-          <div class="info-value">{{ site.layanan?.nama_layanan }}</div>
-        </div>
-        <div class="info-item">
-          <div class="info-label">Alamat</div>
-          <div class="info-value">{{ site.alamat_lengkap }}</div>
-        </div>
-        <div class="info-item" v-if="site.kota">
-          <div class="info-label">Kota</div>
-          <div class="info-value">{{ site.kota }}</div>
-        </div>
-        <div class="info-item" v-if="site.tgl_aktif">
-          <div class="info-label">Tgl Aktif</div>
-          <div class="info-value">{{ fmtDate(site.tgl_aktif) }}</div>
-        </div>
-        <div class="info-item" v-if="site.koordinat_gps">
-          <div class="info-label">GPS</div>
-          <div class="info-value mono">{{ site.koordinat_gps }}</div>
-        </div>
-        <div class="info-item" v-if="site.kontrak?.length">
-          <div class="info-label">Kontrak Aktif</div>
-          <div class="info-value green">{{ site.kontrak.length }} kontrak</div>
+        <div class="sd-aksi">
+          <button type="button" class="btn btn-primary" @click="ubahSite = true">✏️ Ubah data site</button>
+          <a v-if="site.koordinat_gps" :href="`https://www.google.com/maps?q=${encodeURIComponent(site.koordinat_gps)}`" target="_blank" rel="noopener" class="btn btn-ghost">🗺️ Buka peta</a>
+          <RouterLink v-if="bisaNocaas" to="/operations" class="btn btn-ghost">🎫 Tiket</RouterLink>
         </div>
       </div>
 
-      <!-- Tabs -->
-      <div class="tabs">
-        <button :class="['tab', { active: activeTab === 'sumber' }]" @click="activeTab = 'sumber'">
-          🌐 Sumber Internet ({{ site.sumber_internet?.length || 0 }})
+      <!-- ═══ Ringkasan cepat ═══ -->
+      <div class="sd-ringkas">
+        <div class="sd-kartu biru">
+          <span class="ikon">🌐</span>
+          <div><small>Layanan</small><b>{{ site.layanan?.nama_layanan || '—' }}</b><em v-if="site.tgl_aktif">aktif sejak {{ fmtDate(site.tgl_aktif) }}</em></div>
+        </div>
+        <button v-if="bisaNocaas" type="button" :class="['sd-kartu', routerRingkas?.kelas ?? 'abu']" @click="activeTab = 'nocaas'">
+          <span class="ikon">📡</span>
+          <div><small>Router (NOCaaS)</small><b>{{ routerRingkas?.teks ?? 'Belum terpetakan' }}</b><em v-if="routerRingkas?.sub">{{ routerRingkas.sub }}</em></div>
         </button>
-        <button :class="['tab', { active: activeTab === 'perangkat' }]" @click="activeTab = 'perangkat'">
-          🔌 Perangkat ({{ site.perangkat?.length || 0 }})
+        <button type="button" :class="['sd-kartu', tiketAktif ? 'merah' : 'hijau']" @click="activeTab = 'tiket'">
+          <span class="ikon">🎫</span>
+          <div><small>Tiket aktif</small><b>{{ tiketAktif }}</b><em>{{ site.tickets?.length || 0 }} tiket terakhir</em></div>
         </button>
-        <button :class="['tab', { active: activeTab === 'pic' }]" @click="activeTab = 'pic'">
-          👤 PIC Kontak ({{ site.pic?.length || 0 }})
+        <button type="button" class="sd-kartu ungu" @click="activeTab = 'perangkat'">
+          <span class="ikon">🔌</span>
+          <div><small>Perangkat</small><b>{{ site.perangkat?.length || 0 }}</b><em>{{ site.sumber_internet?.length || 0 }} sumber internet</em></div>
         </button>
-        <button :class="['tab', { active: activeTab === 'proyek' }]" @click="activeTab = 'proyek'">
-          📦 Project ({{ site.projects?.length || 0 }})
-        </button>
-        <button :class="['tab', { active: activeTab === 'tiket' }]" @click="activeTab = 'tiket'">
-          🎫 Tiket ({{ site.tickets?.length || 0 }})
-        </button>
-        <button :class="['tab', { active: activeTab === 'dokumen' }]" @click="activeTab = 'dokumen'">
-          📄 Dokumen ({{ dokumenList.length }})
-        </button>
-        <button v-if="bisaNocaas" :class="['tab', { active: activeTab === 'nocaas' }]" @click="activeTab = 'nocaas'">
-          🛰️ NOCaaS
+        <button type="button" class="sd-kartu toska" @click="activeTab = 'pic'">
+          <span class="ikon">👤</span>
+          <div><small>PIC utama</small><b>{{ picUtama?.nama_pic || 'Belum ada' }}</b>
+            <em v-if="picUtama?.no_kontak"><a :href="`https://wa.me/${waNomor(picUtama.no_kontak)}`" target="_blank" rel="noopener" @click.stop>💬 {{ picUtama.no_kontak }}</a></em>
+            <em v-else-if="!picUtama">Tambahkan di tab PIC</em>
+          </div>
         </button>
       </div>
+
+      <!-- ═══ Lokasi ═══ -->
+      <div class="sd-lokasi">
+        <div class="sd-info">
+          <h3>📍 Lokasi</h3>
+          <p class="sd-alamat">{{ site.alamat_lengkap || '—' }}</p>
+          <dl>
+            <dt>Kota</dt><dd>{{ site.kota || '—' }}</dd>
+            <dt>Provinsi</dt><dd>{{ site.provinsi || '—' }}</dd>
+            <dt>Koordinat</dt><dd><code v-if="site.koordinat_gps">{{ site.koordinat_gps }}</code><span v-else class="sd-redup">belum diisi — atur lewat “Ubah data site”</span></dd>
+            <template v-if="site.kontrak?.length"><dt>Kontrak aktif</dt><dd>{{ site.kontrak.map((k: any) => k.nomor_kontrak).join(', ') }}</dd></template>
+          </dl>
+          <div class="sd-info-aksi">
+            <button type="button" class="sd-link" @click="salin(site.alamat_lengkap, 'alamat')">{{ alamatTersalin ? '✓ Alamat tersalin' : '📋 Salin alamat' }}</button>
+          </div>
+          <div v-if="site.catatan" class="sd-catatan"><b>📝 Catatan</b><p>{{ site.catatan }}</p></div>
+        </div>
+        <PetaLokasi :koordinat="site.koordinat_gps" :tinggi="250" />
+      </div>
+
+      <!-- ═══ Tab isi ═══ -->
+      <nav class="sd-tab" role="tablist" aria-label="Isi site">
+        <button v-for="t in tabSite" :key="t.k" type="button" role="tab" :aria-selected="activeTab === t.k"
+          :class="{ on: activeTab === t.k }" @click="activeTab = t.k">
+          <span>{{ t.i }}</span>{{ t.l }}<b v-if="t.n != null">{{ t.n }}</b>
+        </button>
+      </nav>
 
       <!-- Tab: NOCaaS -->
       <div v-if="activeTab === 'nocaas' && bisaNocaas" class="tab-content">
@@ -908,12 +948,66 @@ const isGsm = computed(() => {
         </div>
       </div>
     </div>
+    <SiteFormModal v-if="ubahSite && site" :site="site" @tutup="ubahSite = false" @tersimpan="setelahUbah" />
   </div>
 </template>
 
 <style scoped>
+/* ── Kepala ── */
+.sd-hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; padding: 20px 22px; margin-bottom: 14px; border-radius: 20px; background: linear-gradient(120deg, #eaf2fd 0%, #f3effd 60%, #fdf2f7 100%); border: 1px solid #e0e7f5; }
+.sd-hero-kiri { min-width: 0; flex: 1 1 420px; }
+.sd-kembali { font-size: 12.5px; font-weight: 700; color: #1d4ed8; text-decoration: none; }
+.sd-judul { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 6px 0 8px; }
+.sd-judul h1 { margin: 0; font-size: 26px; font-weight: 800; color: #0f172a; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.sd-status { padding: 4px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 800; background: #e2e8f0; color: #475569; }
+.sd-aktif { background: #dcfce7; color: #15803d; } .sd-prospek { background: #dbeafe; color: #1d4ed8; }
+.sd-suspend { background: #fef3c7; color: #92400e; } .sd-dismantle { background: #fee2e2; color: #b91c1c; }
+.sd-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13.5px; color: #475569; }
+.sd-kode { border: 0; padding: 3px 10px; border-radius: 8px; background: #fff; font: 600 12.5px ui-monospace, monospace; color: #0f172a; cursor: copy; box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
+.sd-pt { color: #1d4ed8; font-weight: 700; text-decoration: none; }
+.sd-pt:hover { text-decoration: underline; }
+.sd-grup { color: #4b3cb8; font-weight: 700; }
+.sd-aksi { display: flex; gap: 8px; flex-wrap: wrap; }
+.sd-aksi .btn { text-decoration: none; }
+/* ── Ringkasan ── */
+.sd-ringkas { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.sd-kartu { --a: #2a78d6; --b: #eef5ff; display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 16px; background: linear-gradient(135deg, var(--b), #fff 80%); border: 1px solid color-mix(in srgb, var(--a) 20%, #fff); text-align: left; font: inherit; cursor: pointer; transition: transform .15s, box-shadow .15s; min-width: 0; }
+div.sd-kartu { cursor: default; }
+button.sd-kartu:hover { transform: translateY(-2px); box-shadow: 0 8px 20px color-mix(in srgb, var(--a) 18%, transparent); }
+.sd-kartu .ikon { width: 36px; height: 36px; flex-shrink: 0; display: grid; place-items: center; border-radius: 11px; background: color-mix(in srgb, var(--a) 14%, #fff); font-size: 18px; }
+.sd-kartu div { min-width: 0; display: flex; flex-direction: column; }
+.sd-kartu small { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+.sd-kartu b { font-size: 15px; color: #0f172a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-kartu em { font-style: normal; font-size: 12px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sd-kartu em a { color: #15803d; font-weight: 700; text-decoration: none; }
+.sd-kartu.biru { --a: #2a78d6; --b: #eef5ff; } .sd-kartu.hijau { --a: #1baf7a; --b: #e9f8f1; } .sd-kartu.merah { --a: #e34948; --b: #fdeeee; }
+.sd-kartu.kuning { --a: #eda100; --b: #fdf5df; } .sd-kartu.ungu { --a: #6250d6; --b: #f1effd; } .sd-kartu.toska { --a: #0e9fb3; --b: #e6f7fa; } .sd-kartu.abu { --a: #94a3b8; --b: #f5f7fa; }
+/* ── Lokasi ── */
+.sd-lokasi { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 14px; margin-bottom: 18px; }
+.sd-info { padding: 16px 18px; border-radius: 16px; background: #fff; border: 1px solid #ecebe6; }
+.sd-info h3 { margin: 0 0 8px; font-size: 14px; font-weight: 800; color: #0f172a; }
+.sd-alamat { margin: 0 0 10px; font-size: 14px; color: #0f172a; line-height: 1.5; }
+.sd-info dl { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 13px; }
+.sd-info dt { color: #64748b; }
+.sd-info dd { margin: 0; color: #0f172a; overflow-wrap: anywhere; }
+.sd-info code { font-size: 12.5px; background: #f1f5f9; padding: 1px 6px; border-radius: 6px; }
+.sd-redup { color: #94a3b8; font-size: 12.5px; }
+.sd-info-aksi { margin-top: 10px; }
+.sd-link { border: 0; background: none; padding: 0; color: #1d4ed8; font-weight: 700; font-size: 12.5px; cursor: pointer; }
+.sd-catatan { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: #fffbeb; border: 1px solid #fde68a; font-size: 13px; }
+.sd-catatan p { margin: 4px 0 0; white-space: pre-wrap; color: #78350f; }
+/* ── Tab ── */
+.sd-tab { display: flex; gap: 6px; flex-wrap: wrap; padding: 6px; margin-bottom: 14px; border-radius: 16px; background: #f1f5f9; }
+.sd-tab button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 12px; border: 0; background: transparent; font: inherit; font-size: 13.5px; font-weight: 700; color: #475569; cursor: pointer; transition: all .15s; }
+.sd-tab button:hover { background: rgba(255, 255, 255, .6); }
+.sd-tab button.on { background: #fff; color: #0f172a; box-shadow: 0 2px 8px rgba(15, 23, 42, .08); }
+.sd-tab button b { padding: 0 7px; border-radius: 99px; background: #e2e8f0; font-size: 11.5px; color: #334155; }
+.sd-tab button.on b { background: #2a78d6; color: #fff; }
+@media (max-width: 900px) { .sd-lokasi { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .sd-judul h1 { font-size: 21px; } .sd-hero { padding: 16px; } .sd-tab button { padding: 7px 10px; font-size: 12.5px; } }
+
 .hint-error { display: block; font-size: 11px; color: #d97706; margin-top: 4px; }
-.page { max-width: 1100px; }
+.page { max-width: 1240px; }
 .breadcrumb { font-size: 13px; color: var(--text-3); margin-bottom: 16px; }
 .link { cursor: pointer; color: var(--primary-hover); }
 .link:hover { text-decoration: underline; }

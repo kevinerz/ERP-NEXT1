@@ -8,6 +8,7 @@ import api from '@/services/api'
 import { fmtDateShort, escapeHtml } from '@/composables/useFormat'
 import BasePagination from '@/components/BasePagination.vue'
 import { useFilterUrl } from '@/composables/useFilterUrl'
+import SiteFormModal from './SiteFormModal.vue'
 
 const router = useRouter()
 const master = useMasterStore()
@@ -243,12 +244,20 @@ const hasActiveFilters = computed(() =>
 )
 
 // ─── Form ────────────────────────────────────────────────────
+const editSite = ref<any | null>(null)
+async function setelahSimpan() {
+  showModal.value = false
+  flash(editSite.value ? 'Site diperbarui' : 'Site ditambahkan')
+  fetchData(); master.fetchSiteAll()
+}
 function openAdd() {
+  editSite.value = null
   editId.value = 0
   form.value = { id_pelanggan: filterPelanggan.value || 0, id_layanan: 0, kode_site: '', nama_site: '', alamat_lengkap: '', kota: '', provinsi: '', koordinat_gps: '', status_site: 'Aktif', tgl_aktif: '', catatan: '' }
   formError.value = ''; showModal.value = true
 }
 function openEdit(s: any) {
+  editSite.value = s
   editId.value = s.id_site
   form.value = {
     id_pelanggan: s.id_pelanggan, id_layanan: s.id_layanan,
@@ -518,102 +527,9 @@ function highlight(text: string, q: string) {
       </label>
     </div>
 
-    <!-- ─── Modal Form Site ─── -->
-    <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
-      <div class="modal modal-site">
-        <div class="modal-header">
-          <h3 class="modal-title">{{ editId ? 'Edit Site' : 'Tambah Site Baru' }}</h3>
-          <button type="button" class="btn-modal-close" @click="showModal = false">✕</button>
-        </div>
-        <div class="form-grid">
-          <div class="field full">
-            <label>Pelanggan <span class="req">*</span></label>
-            <select v-model="form.id_pelanggan" :disabled="!!editId">
-              <option :value="0">— Pilih Pelanggan —</option>
-              <option v-for="p in master.pelangganDropdown" :key="p.id_pelanggan" :value="p.id_pelanggan">
-                [{{ p.kode_pelanggan }}] {{ p.nama_pelanggan }}
-              </option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Layanan <span class="req">*</span></label>
-            <select v-model="form.id_layanan">
-              <option :value="0">— Pilih Layanan —</option>
-              <option v-for="l in master.layananList" :key="l.id_layanan" :value="l.id_layanan">
-                {{ l.nama_layanan }}
-              </option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Kode Site <span class="req">*</span></label>
-            <input v-model="form.kode_site" placeholder="SITE-001" :disabled="!!editId" />
-          </div>
-          <div class="field full">
-            <label>Nama Site <span class="req">*</span></label>
-            <input v-model="form.nama_site" placeholder="Kantor Pusat / Outlet ..." />
-          </div>
-          <div class="field full gmaps-field">
-            <label>🗺 Cari Lokasi (HERE Maps)</label>
-            <div class="osm-wrap">
-              <input
-                v-model="mapQuery"
-                @input="onMapInput"
-                @focus="mapShowDropdown = mapResults.length > 0"
-                @blur="hideMapDropdown"
-                class="osm-input"
-                placeholder="Ketik nama tempat atau alamat..."
-                autocomplete="off"
-              />
-              <span v-if="mapLoading" class="osm-spin">⏳</span>
-              <ul v-if="mapShowDropdown && mapResults.length" class="osm-dropdown">
-                <li v-for="r in mapResults" :key="r.name + r.lat" @mousedown.prevent="selectMapResult(r)">
-                  <span class="osm-name">{{ r.name }}</span>
-                  <span class="osm-addr">{{ r.address }}</span>
-                </li>
-              </ul>
-            </div>
-            <span class="gmaps-hint">Pilih dari saran untuk isi otomatis: Nama Site, Alamat, Kota, Provinsi, Koordinat GPS</span>
-          </div>
-          <div class="field full">
-            <label>Alamat Lengkap <span class="req">*</span></label>
-            <textarea v-model="form.alamat_lengkap" rows="2" placeholder="Jl. ..."></textarea>
-          </div>
-          <div class="field">
-            <label>Kota <span v-if="!editId" class="req">*</span></label>
-            <input v-model="form.kota" placeholder="Jakarta" />
-          </div>
-          <div class="field">
-            <label>Provinsi <span v-if="!editId" class="req">*</span></label>
-            <input v-model="form.provinsi" placeholder="DKI Jakarta" />
-          </div>
-          <div class="field">
-            <label>Koordinat GPS</label>
-            <input v-model="form.koordinat_gps" placeholder="-6.123456, 106.123456" />
-          </div>
-          <div class="field">
-            <label>Status Site</label>
-            <select v-model="form.status_site">
-              <option v-for="s in STATUS_SITE" :key="s" :value="s">{{ s }}</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Tgl Aktif</label>
-            <input v-model="form.tgl_aktif" type="date" />
-          </div>
-          <div class="field full">
-            <label>Catatan</label>
-            <textarea v-model="form.catatan" rows="2"></textarea>
-          </div>
-        </div>
-        <p v-if="formError" class="form-error-box">{{ formError }}</p>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" @click="showModal = false">Batal</button>
-          <button type="button" class="btn btn-primary" @click="handleSubmit" :disabled="submitting">
-            {{ submitting ? 'Menyimpan...' : (editId ? 'Simpan Perubahan' : 'Tambah Site') }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- ─── Form tambah / ubah site ─── -->
+    <SiteFormModal v-if="showModal" :site="editSite" :id-pelanggan-awal="filterPelanggan || undefined"
+      @tutup="showModal = false" @tersimpan="setelahSimpan" />
   </div>
 </template>
 
