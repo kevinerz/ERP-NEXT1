@@ -8,5 +8,6 @@ import { SecretCryptoService } from '../../common/crypto/secret-crypto.service';
 @Module({
   controllers: [FileServerController],
   providers: [FileServerService, SmbClient, SecretCryptoService],
+  exports: [FileServerService],
 })
 export class FileServerModule {}

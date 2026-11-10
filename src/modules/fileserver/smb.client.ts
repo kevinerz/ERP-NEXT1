@@ -24,7 +24,8 @@ export class SmbClient {
   static bagianAman(s: string) {
     if (!s || s.length > 255) return false;
     if (s === '.' || s === '..') return false;
-    return !/["';\r\n\t\0\\/:*?<>|]/.test(s) && !/[\x00-\x1f]/.test(s);
+    // Tanda petik tunggal boleh (mis. "D'Botanica") — argumen smbclient dibungkus kutip ganda
+    return !/[";\r\n\t\0\\/:*?<>|]/.test(s) && !/[\x00-\x1f]/.test(s);
   }
   /** Path relatif di dalam share: "a/b/c" → dipecah & divalidasi, hasil "a\b\c" */
   static pathAman(p: string): string {
@@ -87,17 +88,35 @@ export class SmbClient {
     return this.jalankan(k, [`//${k.host}/${SmbClient.shareAman(share)}`, '-c', skrip], timeoutMs);
   }
 
+  /** Satu baris keluaran `ls` smbclient → item (atribut bisa huruf kecil, mis. "AHn" di Windows) */
+  static uraiBaris(l: string): ItemSmb | null {
+    const m = l.match(/^ {2}(.+?)\s+([A-Za-z]{0,8})\s+(\d+)\s+(\w{3} \w{3} [ \d]\d \d\d:\d\d:\d\d \d{4})\s*$/);
+    if (!m || m[1] === '.' || m[1] === '..') return null;
+    const atr = m[2]!.toUpperCase();
+    const tgl = new Date(m[4]!.replace(/\s+/g, ' '));
+    return { nama: m[1]!, folder: atr.includes('D'), ukuran: Number(m[3]), diubah: isNaN(tgl.getTime()) ? null : tgl.toISOString(), tersembunyi: atr.includes('H') || m[1]!.startsWith('~$') };
+  }
+
   async ls(k: KredensialSmb, share: string, dir: string): Promise<ItemSmb[]> {
     const d = SmbClient.pathAman(dir);
     const out = await this.perintah(k, share, `${d ? `cd "${d}"; ` : ''}ls`);
-    const items: ItemSmb[] = [];
-    for (const l of out.split('\n')) {
-      const m = l.match(/^ {2}(.+?)\s+([DAHSRNV]*)\s+(\d+)\s+(\w{3} \w{3} [ \d]\d \d\d:\d\d:\d\d \d{4})\s*$/);
-      if (!m || m[1] === '.' || m[1] === '..') continue;
-      const tgl = new Date(m[4]!.replace(/\s+/g, ' '));
-      items.push({ nama: m[1]!, folder: m[2]!.includes('D'), ukuran: Number(m[3]), diubah: isNaN(tgl.getTime()) ? null : tgl.toISOString(), tersembunyi: m[2]!.includes('H') });
-    }
+    const items = out.split('\n').map(SmbClient.uraiBaris).filter((x): x is ItemSmb => !!x);
     return items.sort((a, b) => Number(b.folder) - Number(a.folder) || a.nama.localeCompare(b.nama, 'id'));
+  }
+
+  /** Semua berkas di bawah folder (rekursif) — path relatif terhadap share, pemisah "/" */
+  async lsRekursif(k: KredensialSmb, share: string, dir: string): Promise<(ItemSmb & { path: string })[]> {
+    const d = SmbClient.pathAman(dir);
+    const out = await this.perintah(k, share, `${d ? `cd "${d}"; ` : ''}recurse ON; ls`, 10 * 60_000);
+    const hasil: (ItemSmb & { path: string })[] = [];
+    let folder = d;
+    for (const l of out.split('\n')) {
+      // Kepala sub-folder: "\\Data\\01-TEKNIS\\..." (path absolut di share, diawali backslash)
+      if (/^\\/.test(l.trim()) && !l.startsWith('  ')) { folder = l.trim().replace(/^\\+/, ''); continue; }
+      const it = SmbClient.uraiBaris(l);
+      if (it && !it.folder) hasil.push({ ...it, path: [folder, it.nama].filter(Boolean).join('\\').replace(/\\/g, '/') });
+    }
+    return hasil;
   }
 
   /** Unduh ke berkas sementara lokal; pemanggil wajib menghapusnya */

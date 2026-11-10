@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, toast } from '@/composables/useDialog'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
@@ -383,6 +383,28 @@ async function muatRouterRingkas() {
   } catch { routerRingkas.value = null }
 }
 onMounted(muatRouterRingkas)
+
+// Dokumen yang tersimpan di file server (smb://) diambil lewat ERP — butuh token, jadi bukan tautan biasa
+const bukaDok = ref<number | null>(null)
+async function bukaDokumenFs(doc: any) {
+  bukaDok.value = doc.id_dokumen
+  const jendela = window.open('', '_blank') // dibuka dulu supaya tidak diblokir pop-up blocker
+  try {
+    const r = await api.get(`/master/site/dokumen/${doc.id_dokumen}/berkas`, { responseType: 'blob', timeout: 5 * 60_000 })
+    const url = URL.createObjectURL(r.data as Blob)
+    if (['pdf', 'jpg', 'jpeg', 'png'].includes(doc.tipe_file) && jendela) jendela.location.href = url
+    else {
+      jendela?.close()
+      const a = document.createElement('a'); a.href = url; a.download = doc.nama_file; document.body.appendChild(a); a.click(); a.remove()
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (e: any) {
+    jendela?.close()
+    let m = 'Gagal membuka dokumen dari file server'
+    if (e.response?.data instanceof Blob) { try { m = JSON.parse(await e.response.data.text()).message || m } catch { /* bukan JSON */ } }
+    toast(m, 'danger')
+  } finally { bukaDok.value = null }
+}
 </script>
 
 <template>
@@ -721,11 +743,12 @@ onMounted(muatRouterRingkas)
         <div v-else class="dok-list">
           <div v-for="doc in dokumenList" :key="doc.id_dokumen" class="dok-card">
             <div class="dok-icon">
-              <span v-if="doc.tipe_file === 'pdf'">📄</span>
+              <span v-if="doc.tipe_file === 'pdf'">📕</span>
+              <span v-else-if="['doc', 'docx'].includes(doc.tipe_file)">📘</span>
               <span v-else>🖼️</span>
             </div>
             <div class="dok-info">
-              <div class="dok-nama">{{ doc.nama_file }}</div>
+              <div class="dok-nama">{{ doc.nama_file }} <span v-if="doc.url_file?.startsWith('smb://')" class="dok-fs" title="Tersimpan di file server kantor">🗃️ file server</span></div>
               <div class="dok-meta">
                 <span v-if="doc.keterangan" class="dok-ket">{{ doc.keterangan }}</span>
                 <span class="dok-size">{{ fmtBytes(doc.ukuran_byte) }}</span>
@@ -733,7 +756,8 @@ onMounted(muatRouterRingkas)
               </div>
             </div>
             <div class="dok-actions">
-              <a :href="doc.url_file" target="_blank" rel="noopener" class="btn-view">Buka</a>
+              <button v-if="doc.url_file?.startsWith('smb://')" type="button" class="btn-view" :disabled="bukaDok === doc.id_dokumen" @click="bukaDokumenFs(doc)">{{ bukaDok === doc.id_dokumen ? 'Membuka…' : 'Buka' }}</button>
+              <a v-else :href="doc.url_file" target="_blank" rel="noopener" class="btn-view">Buka</a>
               <button type="button" class="btn-icon red" @click="deleteDokumen(doc)" title="Hapus">🗑️</button>
             </div>
           </div>
@@ -953,6 +977,7 @@ onMounted(muatRouterRingkas)
 </template>
 
 <style scoped>
+.dok-fs { margin-left: 6px; padding: 1px 7px; border-radius: 99px; background: #eef5ff; color: #1c4f9c; font-size: 10.5px; font-weight: 700; }
 /* ── Kepala ── */
 .sd-hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; padding: 20px 22px; margin-bottom: 14px; border-radius: 20px; background: linear-gradient(120deg, #eaf2fd 0%, #f3effd 60%, #fdf2f7 100%); border: 1px solid #e0e7f5; }
 .sd-hero-kiri { min-width: 0; flex: 1 1 420px; }

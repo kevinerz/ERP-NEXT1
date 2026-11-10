@@ -5,6 +5,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { confirmDialog, promptDialog, toast } from '@/composables/useDialog'
+import ImporBaPanel from './ImporBaPanel.vue'
+const imporBa = ref(false)
 
 interface Item { nama: string; folder: boolean; ukuran: number; diubah: string | null; tersembunyi: boolean }
 const route = useRoute()
@@ -218,6 +220,7 @@ async function unduhTerpilih() { for (const it of daftar.value.filter((i) => dip
         </nav>
         <div class="fs-tombol">
           <div class="fs-cari"><span aria-hidden="true">🔎</span><input v-model="cari" type="search" placeholder="Cari di folder ini…" aria-label="Cari di folder ini" /></div>
+          <button v-if="status?.bisa_atur" type="button" class="btn btn-ghost" :disabled="!share" title="Tautkan BA di folder ini (dan sub-folder) ke dokumen site" @click="imporBa = true">📥 Impor BA ke site</button>
           <button type="button" class="btn btn-ghost" :disabled="!share" @click="folderBaru">📁 Folder baru</button>
           <button type="button" class="btn btn-primary" :disabled="!share" @click="inputBerkas?.click()">⬆️ Unggah</button>
           <input ref="inputBerkas" type="file" multiple hidden @change="unggah(($event.target as HTMLInputElement).files)" />
@@ -261,6 +264,8 @@ async function unduhTerpilih() { for (const it of daftar.value.filter((i) => dip
         </template>
       </div>
     </template>
+
+    <ImporBaPanel v-if="imporBa" :share="share" :path="dir" @tutup="imporBa = false" />
 
     <div v-if="seret" class="fs-seret"><span>📥</span>Lepaskan untuk mengunggah ke <b>{{ share }}/{{ dir || '' }}</b></div>
 

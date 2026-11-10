@@ -1,4 +1,5 @@
 import {
+  Res,
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, ParseIntPipe, ForbiddenException, Req,
   UseInterceptors, UploadedFile, BadRequestException,
@@ -6,6 +7,9 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { MasterService } from './master.service';
+import { FileServerService } from '../fileserver/fileserver.service';
+import type { Response } from 'express';
+import { promises as fsp } from 'fs';
 import { CreateLayananDto, UpdateLayananDto } from './dto/layanan.dto';
 import { CreateVendorDto, UpdateVendorDto } from './dto/vendor.dto';
 import { CreatePelangganDto, UpdatePelangganDto } from './dto/pelanggan.dto';
@@ -21,7 +25,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('master')
 export class MasterController {
-  constructor(private readonly masterService: MasterService) {}
+  constructor(private readonly masterService: MasterService, private readonly fileServer: FileServerService) {}
 
   // ─── LAYANAN ────────────────────────────────────────────────
 
@@ -205,6 +209,20 @@ export class MasterController {
   ) {
     if (!file) throw new BadRequestException('File wajib diupload');
     return this.masterService.uploadDokumenSite(id, file, keterangan);
+  }
+
+  // Buka dokumen site: berkas di file server (smb://) diambil langsung, selain itu dialihkan ke URL-nya
+  @Get('site/dokumen/:id_dokumen/berkas')
+  async berkasDokumenSite(@Param('id_dokumen', ParseIntPipe) id: number, @Res() res: Response) {
+    const doc = await this.masterService.getDokumenById(id);
+    if (!doc.url_file.startsWith('smb://')) return res.redirect(doc.url_file);
+    const { lokal, nama } = await this.fileServer.unduhDokumenSite(doc.url_file);
+    const ext = nama.split('.').pop()?.toLowerCase() ?? '';
+    const tipe: Record<string, string> = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
+    // PDF & gambar dibuka langsung di browser; dokumen Word diunduh
+    res.setHeader('Content-Disposition', `${tipe[ext] ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(nama)}`);
+    if (tipe[ext]) res.type(tipe[ext]);
+    res.sendFile(lokal, () => { fsp.rm(lokal, { force: true }).catch(() => undefined); });
   }
 
   @Delete('site/dokumen/:id_dokumen')

@@ -32,5 +32,9 @@ export class FileServerController {
 
   @Post('folder') folder(@CurrentUser() u: any, @Body() b: { share: string; path?: string; nama: string }) { return this.svc.folder(u, b.share, b.path ?? '', b.nama); }
   @Post('ganti-nama') gantiNama(@CurrentUser() u: any, @Body() b: { share: string; path: string; baru: string }) { return this.svc.gantiNama(u, b.share, b.path, b.baru); }
+  // Impor BA: pindai folder (rekursif) & cocokkan ke site → simpan tautan ke dokumen site
+  @Post('impor-ba/pratinjau') pratinjauBa(@CurrentUser() u: any, @Body() b: { share: string; path?: string; foto?: boolean }) { return this.svc.pratinjauBa(u, b.share, b.path ?? '', b.foto === true); }
+  @Post('impor-ba/terapkan') terapkanBa(@CurrentUser() u: any, @Body() b: { share: string; items: any[] }) { return this.svc.terapkanBa(u, b.share, b.items); }
+
   @Post('hapus') hapus(@CurrentUser() u: any, @Body() b: { share: string; path: string; folder?: boolean }) { return this.svc.hapus(u, b.share, b.path, b.folder === true); }
 }

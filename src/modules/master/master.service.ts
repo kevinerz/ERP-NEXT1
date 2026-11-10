@@ -950,6 +950,12 @@ export class MasterService {
     return { data };
   }
 
+  async getDokumenById(id: number) {
+    const doc = await this.prisma.siteDokumen.findUnique({ where: { id_dokumen: id } });
+    if (!doc) throw new NotFoundException('Dokumen tidak ditemukan');
+    return doc;
+  }
+
   async uploadDokumenSite(
     id_site: number,
     file: any,

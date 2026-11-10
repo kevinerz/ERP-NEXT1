@@ -117,4 +117,112 @@ export class FileServerService {
     this.logger.warn(`HAPUS oleh user ${u.id_user}: ${share}/${item}${folder ? ' (folder + isi)' : ''}`);
     return { message: folder ? 'Folder beserta isinya dihapus' : 'Berkas dihapus' };
   }
+
+  // ─── Impor BA dari file server ke dokumen site ────────────────────────────────
+  // Berkas TIDAK disalin — dicatat sebagai tautan "smb://<share>/<path>" di site_dokumen (jenis BA)
+  // dan diambil langsung dari file server saat dibuka.
+
+  private static KATA_UMUM = new Set(('ba berita acara aktivasi psb pemasangan pasang baru bast serah terima instalasi installasi scan ttd final rev revisi ' +
+    'fo upgrade downgrade dismantle relokasi migrasi site store outlet toko dan pt tbk the copy signed of doc docx pdf jpg jpeg png nextone next1 ' +
+    'perdana global internet layanan link new baru2 januari februari maret april mei juni juli agustus september oktober november desember ' +
+    'jan feb mar apr jun jul agu agt ags sep okt nov des dokumentasi form dismantel maintenance perangkat aktif ' +
+    'img wa whatsapp image at screenshot foto photo dedicated broadband laporan divisi teknis periode mike titipan next').split(' '));
+  private static SINONIM: Record<string, string[]> = {
+    kk: ['kopi', 'kenangan'], ahi: ['ace'], acehardware: ['ace'], kawanlama: ['kawan', 'lama'],
+    ss: ['sports', 'station'], sportstation: ['sports', 'station'], sport: ['sports'], fore: ['fore'], cp: ['centrepark'], centralpark: ['central', 'park'],
+  };
+
+  static token(teks: string): string[] {
+    const t = teks.toLowerCase().replace(/\.[a-z0-9]{2,4}$/, '').replace(/[^a-z0-9]+/g, ' ').split(' ').filter(Boolean);
+    const hasil: string[] = [];
+    for (const w of t) {
+      if (/^\d+$/.test(w) || w.length < 2 || FileServerService.KATA_UMUM.has(w)) continue;
+      hasil.push(...(FileServerService.SINONIM[w] ?? [w]));
+    }
+    return [...new Set(hasil)];
+  }
+
+  async pratinjauBa(u: User, share: string, dir: string, denganFoto = false) {
+    if (!this.kelola(u)) throw new ForbiddenException('Impor BA hanya untuk Admin / Director');
+    this.cekShare(await this.konfig(), share);
+    const t0 = Date.now();
+    const semua = await this.smb.lsRekursif(await this.kredensial(), share, dir);
+    // Default hanya dokumen (PDF/Word); foto dokumentasi ikut bila diminta
+    const EXT = denganFoto ? /\.(pdf|docx?|jpe?g|png)$/i : /\.(pdf|docx?)$/i;
+    const berkas = semua.filter((f) => EXT.test(f.nama) && !f.tersembunyi && f.ukuran > 1024);
+
+    const [sites, sudah] = await Promise.all([
+      this.prisma.sitePelanggan.findMany({ select: { id_site: true, nama_site: true, kode_site: true, kota: true, status_site: true, pelanggan: { select: { nama_pelanggan: true } } } }),
+      this.prisma.siteDokumen.findMany({ where: { url_file: { startsWith: `smb://${share}/` } }, select: { url_file: true, id_site: true } }),
+    ]);
+    const sudahSet = new Set(sudah.map((d) => d.url_file));
+    // Indeks kata → site
+    const tokSite = new Map<number, string[]>(), indeks = new Map<string, number[]>();
+    for (const st of sites) {
+      const tk = FileServerService.token(st.nama_site);
+      tokSite.set(st.id_site, tk);
+      for (const w of tk) indeks.set(w, [...(indeks.get(w) ?? []), st.id_site]);
+    }
+    const infoSite = new Map(sites.map((x) => [x.id_site, x]));
+
+    const hasil = berkas.map((f) => {
+      // Nama berkas umum (IMG-…, WhatsApp Image …) → pakai nama folder terdekat yang bermakna
+      let tf = FileServerService.token(f.nama);
+      if (tf.length < 2) {
+        const folders = f.path.split('/').slice(0, -1).reverse();
+        for (const fd of folders) { const t = FileServerService.token(fd); if (t.length >= 2) { tf = [...new Set([...tf, ...t])]; break; } }
+      }
+      const kandidat = new Map<number, number>();
+      for (const w of tf) for (const id of indeks.get(w) ?? []) kandidat.set(id, (kandidat.get(id) ?? 0) + 1);
+      const skor = [...kandidat].map(([id, cocok]) => {
+        const ts = tokSite.get(id)!.length || 1;
+        const p = cocok / ts, r = cocok / (tf.length || 1);
+        return { id, cocok, f1: p + r ? (2 * p * r) / (p + r) : 0, p };
+      }).filter((x) => x.cocok >= 2 || (x.cocok === 1 && x.p === 1 && tf.length === 1))
+        .sort((a, b) => b.f1 - a.f1 || b.p - a.p).slice(0, 3);
+      const terbaik = skor[0], kedua = skor[1];
+      const yakin = !!terbaik && terbaik.f1 >= 0.7 && terbaik.p >= 0.75 && (!kedua || terbaik.f1 - kedua.f1 >= 0.12);
+      const url = `smb://${share}/${f.path}`;
+      return {
+        path: f.path, nama: f.nama, ukuran: f.ukuran, diubah: f.diubah,
+        sudah: sudahSet.has(url),
+        status: !terbaik ? 'tidak_cocok' : yakin ? 'yakin' : 'ragu',
+        kandidat: skor.map((x) => ({ id_site: x.id, nama_site: infoSite.get(x.id)!.nama_site, kode_site: infoSite.get(x.id)!.kode_site, pelanggan: infoSite.get(x.id)!.pelanggan?.nama_pelanggan, status_site: infoSite.get(x.id)!.status_site, skor: Math.round(x.f1 * 100) })),
+      };
+    });
+    const hitung = (st: string) => hasil.filter((h) => h.status === st && !h.sudah).length;
+    this.logger.log(`Pratinjau impor BA ${share}/${dir}: ${berkas.length} berkas dalam ${Date.now() - t0} ms`);
+    return { data: { total: berkas.length, yakin: hitung('yakin'), ragu: hitung('ragu'), tidak_cocok: hitung('tidak_cocok'), sudah: hasil.filter((h) => h.sudah).length, berkas: hasil } };
+  }
+
+  /** Simpan tautan BA ke dokumen site. item: { path, id_site, nama, ukuran } */
+  async terapkanBa(u: User, share: string, items: { path: string; id_site: number; nama: string; ukuran?: number }[]) {
+    if (!this.kelola(u)) throw new ForbiddenException('Impor BA hanya untuk Admin / Director');
+    this.cekShare(await this.konfig(), share);
+    if (!Array.isArray(items) || !items.length) throw new BadRequestException('Tidak ada berkas yang dipilih');
+    if (items.length > 5000) throw new BadRequestException('Maksimal 5.000 berkas per impor');
+    const ids = [...new Set(items.map((x) => Number(x.id_site)))];
+    const ada = new Set((await this.prisma.sitePelanggan.findMany({ where: { id_site: { in: ids } }, select: { id_site: true } })).map((x) => x.id_site));
+    const urlAda = new Set((await this.prisma.siteDokumen.findMany({ where: { url_file: { in: items.map((x) => `smb://${share}/${x.path}`) } }, select: { url_file: true } })).map((x) => x.url_file));
+    const data = items.filter((x) => ada.has(Number(x.id_site)) && !urlAda.has(`smb://${share}/${x.path}`)).map((x) => {
+      SmbClient.pathAman(x.path); // validasi
+      const nama = String(x.nama || x.path.split('/').pop()).slice(0, 255);
+      return {
+        id_site: Number(x.id_site), nama_file: nama, url_file: `smb://${share}/${x.path}`,
+        tipe_file: (nama.split('.').pop() || 'bin').toLowerCase().slice(0, 10), jenis: /\.(jpe?g|png)$/i.test(nama) ? 'LAIN' : 'BA',
+        keterangan: `File server: ${share}/${x.path.split('/').slice(0, -1).join('/')}`.slice(0, 500),
+        ukuran_byte: x.ukuran ? Math.min(Number(x.ukuran), 2_147_483_647) : null,
+      };
+    });
+    for (let i = 0; i < data.length; i += 500) await this.prisma.siteDokumen.createMany({ data: data.slice(i, i + 500) });
+    this.logger.log(`Impor BA oleh user ${u.id_user}: ${data.length} tautan dokumen dibuat`);
+    return { message: `${data.length} BA ditautkan ke ${new Set(data.map((d) => d.id_site)).size} site`, data: { dibuat: data.length, dilewati: items.length - data.length } };
+  }
+
+  /** Ambil berkas dokumen site yang tersimpan di file server (url smb://share/path) */
+  async unduhDokumenSite(url: string) {
+    const m = url.match(/^smb:\/\/([^/]+)\/(.+)$/);
+    if (!m) throw new BadRequestException('Bukan dokumen file server');
+    return { lokal: await this.smb.unduh(await this.kredensial(), m[1]!, m[2]!), nama: m[2]!.split('/').pop()! };
+  }
 }

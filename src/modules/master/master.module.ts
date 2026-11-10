@@ -6,9 +6,11 @@ import { MulterModule } from '@nestjs/platform-express';
 import { MasterController } from './master.controller';
 import { MasterService } from './master.service';
 import { UploadModule } from '../../common/upload/upload.module';
+import { FileServerModule } from '../fileserver/fileserver.module';
 
 @Module({
   imports: [
+    FileServerModule,
     PassportModule,
     ConfigModule,
     JwtModule.registerAsync({
