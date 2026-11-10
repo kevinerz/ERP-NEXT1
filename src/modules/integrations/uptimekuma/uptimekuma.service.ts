@@ -1,3 +1,4 @@
+import { dipegangHelpdesk, catatSekali } from '../../../common/utils/tiket-helpdesk';
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -162,7 +163,10 @@ export class UptimeKumaService {
       where: { monitor_id: monitorId, ticket: { status_tiket: { in: STATUS_TIKET_AKTIF }, sumber_tiket: 'Uptime Kuma' } },
       include: { ticket: { select: { id_ticket: true, nomor_tiket: true, status_tiket: true } } },
     });
-    if (aktif?.ticket) {
+    if (aktif?.ticket && (await dipegangHelpdesk(this.prisma, aktif.ticket.id_ticket))) {
+      await catatSekali(this.prisma, aktif.ticket.id_ticket, aktif.ticket.status_tiket, `Uptime Kuma: monitor "${monitorName}" sudah UP kembali`,
+        `Uptime Kuma: monitor "${monitorName}" sudah UP kembali — status tidak diubah otomatis karena tiket ditangani helpdesk; tutup bila sudah beres.`);
+    } else if (aktif?.ticket) {
       await this.prisma.operationTicket.update({
         where: { id_ticket: aktif.ticket.id_ticket },
         data: { status_tiket: 'Resolved', tgl_resolved: new Date() },

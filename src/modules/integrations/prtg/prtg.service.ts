@@ -1,3 +1,4 @@
+import { dipegangHelpdesk, ditutupHelpdesk, catatSekali } from '../../../common/utils/tiket-helpdesk';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -442,6 +443,12 @@ export class PrtgService {
           continue;
         }
       }
+      // Tiket dipegang helpdesk → ikuti helpdesk: catat saja, jangan ubah status
+      if (await dipegangHelpdesk(this.prisma, ticket.id_ticket)) {
+        await catatSekali(this.prisma, ticket.id_ticket, ticket.status_tiket, 'PRTG: device sudah UP kembali',
+          `PRTG: device sudah UP kembali (${devices.filter(Boolean).join(', ')}) — status tidak diubah otomatis karena tiket ditangani helpdesk; tutup bila sudah beres.`);
+        continue;
+      }
       await this.prisma.operationTicket.update({
         where: { id_ticket: ticket.id_ticket },
         data: { status_tiket: 'Resolved', tgl_resolved: new Date() },
@@ -526,13 +533,21 @@ export class PrtgService {
         sumber_tiket: 'PRTG',
         judul_tiket: { contains: info.device },
         status_tiket: { in: ['Resolved', 'Closed'] },
-        tgl_resolved: { gte: cooldownSince },
+        OR: [{ tgl_resolved: { gte: cooldownSince } }, { tgl_closed: { gte: cooldownSince } }],
       },
-      orderBy: { tgl_resolved: 'desc' },
+      orderBy: { updated_at: 'desc' },
     });
 
+    // Ditutup helpdesk → jangan dibuka ulang, cukup catat (keputusan helpdesk diikuti)
+    if (ticketFlapping && (await ditutupHelpdesk(this.prisma, ticketFlapping.id_ticket))) {
+      await catatSekali(this.prisma, ticketFlapping.id_ticket, ticketFlapping.status_tiket, 'PRTG: device DOWN lagi setelah tiket ditutup helpdesk',
+        `PRTG: device DOWN lagi setelah tiket ditutup helpdesk (${info.device} — ${info.sensor}) — tidak dibuka ulang. DOWN berikutnya setelah ${cooldownMenit} menit membuat tiket baru.`,
+        ticketFlapping.tgl_resolved ?? ticketFlapping.tgl_closed ?? undefined);
+      return { ticket: ticketFlapping, isReopen: true };
+    }
+
     if (ticketFlapping) {
-      const menitSejak = Math.round((now.getTime() - new Date(ticketFlapping.tgl_resolved!).getTime()) / 60_000);
+      const menitSejak = Math.round((now.getTime() - new Date(ticketFlapping.tgl_resolved ?? ticketFlapping.tgl_closed ?? now).getTime()) / 60_000);
       // Hitung berapa kali sudah flapping (jumlah log "flapping" di tiket ini)
       const jmlFlapping = await this.prisma.operationTicketLog.count({
         where: { id_ticket: ticketFlapping.id_ticket, catatan: { contains: 'flapping' } },

@@ -1,3 +1,4 @@
+import { dipegangHelpdesk, ditutupHelpdesk, catatSekali } from '../../../common/utils/tiket-helpdesk';
 import { execFile, spawn } from 'child_process';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -719,8 +720,25 @@ export class NocaasService {
           await this.prisma.operationTicketLog.create({ data: { id_ticket, status_ke: t.status_tiket, catatan: `NOCaaS: ${info.label} — ${rincian}` } });
           ditempel++;
         } else {
-          id_ticket = await this.buatTiketKategori(id_site, kategori, kondisi, rincian);
-          dibuat++;
+          // Helpdesk sudah menutup kondisi yang sama di site ini ≤ 24 jam lalu (mis. "VPN saja, internet normal")
+          // → ikuti keputusan helpdesk: cukup catat di tiket itu, jangan buat tiket baru
+          const lama = await this.prisma.nocaasGangguan.findMany({
+            where: { id_site, kategori, id_ticket: { not: null }, terakhir_at: { gte: new Date(now.getTime() - 24 * 3600_000) } },
+            orderBy: { terakhir_at: 'desc' }, select: { id_ticket: true }, take: 5,
+          });
+          const sebelumnya = lama.length ? await this.prisma.operationTicket.findFirst({
+            where: { id_ticket: { in: lama.map((g) => g.id_ticket!) }, status_tiket: { in: ['Resolved', 'Closed'] } },
+            orderBy: { updated_at: 'desc' }, select: { id_ticket: true, status_tiket: true },
+          }) : null;
+          if (sebelumnya && (await ditutupHelpdesk(this.prisma, sebelumnya.id_ticket))) {
+            id_ticket = sebelumnya.id_ticket;
+            await catatSekali(this.prisma, id_ticket, sebelumnya.status_tiket, `NOCaaS: ${info.label} muncul lagi`,
+              `NOCaaS: ${info.label} muncul lagi — ${rincian}. Tidak dibuat tiket baru karena kondisi ini sudah ditutup helpdesk ≤ 24 jam lalu.`, new Date(now.getTime() - 3600_000));
+            ditempel++;
+          } else {
+            id_ticket = await this.buatTiketKategori(id_site, kategori, kondisi, rincian);
+            dibuat++;
+          }
         }
         await this.prisma.nocaasGangguan.updateMany({ where: { id: { in: kondisi.map((g) => g.id) } }, data: { id_ticket } });
       }
@@ -735,6 +753,11 @@ export class NocaasService {
     for (const t of tiket) {
       const masih = await this.prisma.nocaasGangguan.count({ where: { id_ticket: t.id_ticket, selesai_at: null } });
       if (masih) continue;
+      if (await dipegangHelpdesk(this.prisma, t.id_ticket)) {
+        await catatSekali(this.prisma, t.id_ticket, t.status_tiket, 'NOCaaS: kondisi sudah normal kembali',
+          'NOCaaS: kondisi sudah normal kembali — status tidak diubah otomatis karena tiket ditangani helpdesk; tutup bila sudah beres.');
+        continue;
+      }
       await this.prisma.operationTicket.update({ where: { id_ticket: t.id_ticket }, data: { status_tiket: 'Resolved', tgl_resolved: now } });
       await this.prisma.operationTicketLog.create({ data: { id_ticket: t.id_ticket, status_dari: t.status_tiket, status_ke: 'Resolved', catatan: 'NOCaaS: kondisi sudah normal kembali — auto-resolved' } });
       await this.prisma.notification.deleteMany({ where: { is_read: false, url: `/operations/${t.id_ticket}` } }).catch(() => {});
@@ -911,7 +934,7 @@ export class NocaasService {
     } else {
       for (const id_site of perluBaru) {
         const r = await this.buatTiket(perSite.get(id_site)!, cfg.cooldown_menit);
-        if (r.hasil === 'baru') hasil.dibuat++; else hasil.dibuka_ulang++;
+        if (r.hasil === 'baru') hasil.dibuat++; else if (r.hasil === 'ulang') hasil.dibuka_ulang++; else hasil.dicatat++;
         if (cfg.wa_pic_aktif && r.hasil === 'baru') {
           const rs = perSite.get(id_site)!;
           const mati = rs.some((x) => x.jenis === 'mati');
@@ -951,8 +974,13 @@ export class NocaasService {
         });
         continue;
       }
-      await this.prisma.operationTicket.update({ where: { id_ticket: t.id_ticket }, data: { status_tiket: 'Resolved', tgl_resolved: now } });
       const hidup = rs.filter((r) => r.status === 'online' || r.status === 'partial');
+      if (await dipegangHelpdesk(this.prisma, t.id_ticket)) {
+        await catatSekali(this.prisma, t.id_ticket, t.status_tiket, 'NOCaaS: router sudah tersambung kembali',
+          `NOCaaS: router sudah tersambung kembali (${hidup.map((r) => `${r.site_key} ${KESIMPULAN[r.status as StatusRouter].label}`).join(', ')}) — status tidak diubah otomatis karena tiket ditangani helpdesk; tutup bila sudah beres.`);
+        continue;
+      }
+      await this.prisma.operationTicket.update({ where: { id_ticket: t.id_ticket }, data: { status_tiket: 'Resolved', tgl_resolved: now } });
       await this.prisma.operationTicketLog.create({
         data: { id_ticket: t.id_ticket, status_dari: t.status_tiket, status_ke: 'Resolved', catatan: `NOCaaS: router kembali tersambung (${hidup.map((r) => `${r.site_key} ${KESIMPULAN[r.status as StatusRouter].label}`).join(', ')}) — auto-resolved` },
       });
@@ -969,7 +997,7 @@ export class NocaasService {
   }
 
   /** Tiket baru (atau buka ulang tiket yang baru saja resolve — flapping) untuk satu site */
-  private async buatTiket(rs: any[], cooldownMenit: number): Promise<{ hasil: 'baru' | 'ulang'; nomor: string }> {
+  private async buatTiket(rs: any[], cooldownMenit: number): Promise<{ hasil: 'baru' | 'ulang' | 'dicatat'; nomor: string }> {
     const site = rs[0].site as { id_site: number; nama_site: string };
     const now = new Date();
     const downAt: Date = rs[0].sejak;
@@ -979,11 +1007,25 @@ export class NocaasService {
     const rincian = rs.map((r) => this.catatanRouter(r)).join('\n');
 
     const flapping = await this.prisma.operationTicket.findFirst({
-      where: { id_site: site.id_site, sumber_tiket: 'NOCaaS', jenis_gangguan: { in: ['Mati total', 'VPN macet'] }, status_tiket: { in: ['Resolved', 'Closed'] }, tgl_resolved: { gte: new Date(now.getTime() - cooldownMenit * 60_000) } },
-      orderBy: { tgl_resolved: 'desc' },
+      where: {
+        id_site: site.id_site, sumber_tiket: 'NOCaaS', status_tiket: { in: ['Resolved', 'Closed'] },
+        // jenis bisa sudah diganti helpdesk (mis. "FO Cut") — kenali juga dari judul tiket otomatis
+        AND: [
+          { OR: [{ jenis_gangguan: { in: ['Mati total', 'VPN macet'] } }, { judul_tiket: { contains: '— Mati total' } }, { judul_tiket: { contains: '— VPN macet' } }] },
+          { OR: [{ tgl_resolved: { gte: new Date(now.getTime() - cooldownMenit * 60_000) } }, { tgl_closed: { gte: new Date(now.getTime() - cooldownMenit * 60_000) } }] },
+        ],
+      },
+      orderBy: { updated_at: 'desc' },
     });
+    if (flapping && (await ditutupHelpdesk(this.prisma, flapping.id_ticket))) {
+      // Ditutup helpdesk → ikuti keputusannya: jangan dibuka ulang, cukup catat. Lewat cooldown & masih mati → tiket baru.
+      const ditutupAt = flapping.tgl_resolved ?? flapping.tgl_closed ?? now;
+      await catatSekali(this.prisma, flapping.id_ticket, flapping.status_tiket, 'NOCaaS: router mati lagi setelah tiket ditutup helpdesk',
+        `NOCaaS: router mati lagi setelah tiket ditutup helpdesk (${jenisTeks.toLowerCase()} sejak ${this.waktuWib(downAt)}) — tidak dibuka ulang. Bila masih mati lewat ${cooldownMenit} menit, tiket baru dibuat.\n${rincian}`, ditutupAt);
+      return { hasil: 'dicatat', nomor: flapping.nomor_tiket };
+    }
     if (flapping) {
-      const menit = Math.round((now.getTime() - flapping.tgl_resolved!.getTime()) / 60_000);
+      const menit = Math.round((now.getTime() - (flapping.tgl_resolved ?? flapping.tgl_closed ?? now).getTime()) / 60_000);
       const ke = (await this.prisma.operationTicketLog.count({ where: { id_ticket: flapping.id_ticket, catatan: { contains: 'flapping' } } })) + 1;
       await this.prisma.operationTicket.update({
         where: { id_ticket: flapping.id_ticket },
