@@ -61,12 +61,23 @@ export class MeetingService {
     return new Map(k.map((x) => [x.id_karyawan, { nama: x.nama_lengkap.trim(), jabatan: x.jabatan }]));
   }
 
-  private async rapatAnggota(id_rapat: number, id_karyawan: number) {
+  /** Superadmin (modul_akses kosong) & role Admin / Director boleh melihat & memantau semua rapat */
+  static pemantau(u?: { modul_akses?: unknown; roles?: string[] } | null) {
+    if (!u) return false;
+    const akses = u.modul_akses;
+    return akses == null || (Array.isArray(akses) && !akses.length) || (u.roles ?? []).some((r) => r === 'Admin' || r === 'Director');
+  }
+
+  /** semua=true → pemantau boleh lihat / masuk walau tidak diundang (tanpa hak moderator) */
+  private async rapatAnggota(id_rapat: number, id_karyawan: number, semua = false) {
     const r = await this.prisma.rapat.findUnique({ where: { id_rapat }, include: { peserta: true } });
     if (!r) throw new NotFoundException('Rapat tidak ditemukan');
     const saya = r.peserta.find((p) => p.id_karyawan === id_karyawan);
-    if (!saya) throw new ForbiddenException('Anda tidak diundang ke rapat ini');
-    return { r, moderator: saya.peran === 'moderator' };
+    if (!saya) {
+      if (semua) return { r, moderator: false, diundang: false };
+      throw new ForbiddenException('Anda tidak diundang ke rapat ini');
+    }
+    return { r, moderator: saya.peran === 'moderator', diundang: true };
   }
 
   private async moderatorSaja(id_rapat: number, id_karyawan: number) {
@@ -102,9 +113,9 @@ export class MeetingService {
   }
 
   // ── Daftar & detail ──────────────────────────────────────────────────────────
-  async daftar(id_karyawan: number) {
+  async daftar(id_karyawan: number, semua = false) {
     const rapat = await this.prisma.rapat.findMany({
-      where: { peserta: { some: { id_karyawan } } },
+      where: semua ? {} : { peserta: { some: { id_karyawan } } },
       include: { peserta: true, _count: { select: { kehadiran: true } } },
       orderBy: [{ created_at: 'desc' }],
       take: 100,
@@ -115,6 +126,7 @@ export class MeetingService {
       mulai_at: r.mulai_at, selesai_at: r.selesai_at, created_at: r.created_at,
       pembuat: nama.get(r.id_pembuat)?.nama ?? '-',
       moderator: r.peserta.some((p) => p.id_karyawan === id_karyawan && p.peran === 'moderator'),
+      diundang: r.peserta.some((p) => p.id_karyawan === id_karyawan),
       peserta: r.peserta.map((p) => ({ id_karyawan: p.id_karyawan, nama: nama.get(p.id_karyawan)?.nama ?? `#${p.id_karyawan}`, peran: p.peran })),
       jumlah_hadir: r._count.kehadiran,
     });
@@ -124,8 +136,8 @@ export class MeetingService {
     return { aktif: aktif.map(bentuk), riwayat: riwayat.map(bentuk) };
   }
 
-  async detail(id_rapat: number, id_karyawan: number) {
-    const { r, moderator } = await this.rapatAnggota(id_rapat, id_karyawan);
+  async detail(id_rapat: number, id_karyawan: number, semua = false) {
+    const { r, moderator, diundang } = await this.rapatAnggota(id_rapat, id_karyawan, semua);
     const hadir = await this.prisma.rapatKehadiran.findMany({ where: { id_rapat }, orderBy: { masuk_at: 'asc' } });
     const nama = await this.namaKaryawan([...new Set([r.id_pembuat, ...r.peserta.map((p) => p.id_karyawan)])]);
     // Ringkas kehadiran per orang (karyawan per id, tamu per identity): pertama masuk, terakhir keluar, total menit
@@ -145,7 +157,7 @@ export class MeetingService {
     const linkAktif = this.linkBerlaku(r);
     return {
       id_rapat: r.id_rapat, judul: r.judul, deskripsi: r.deskripsi, jadwal_at: r.jadwal_at, status: r.status,
-      mulai_at: r.mulai_at, selesai_at: r.selesai_at, created_at: r.created_at, moderator,
+      mulai_at: r.mulai_at, selesai_at: r.selesai_at, created_at: r.created_at, moderator, diundang,
       pembuat: { id_karyawan: r.id_pembuat, nama: nama.get(r.id_pembuat)?.nama ?? '-' },
       peserta: r.peserta.map((p) => {
         const k = per.get(p.id_karyawan);
@@ -289,8 +301,8 @@ export class MeetingService {
   }
 
   // ── Masuk rapat ──────────────────────────────────────────────────────────────
-  async token(id_rapat: number, id_karyawan: number) {
-    const { r, moderator } = await this.rapatAnggota(id_rapat, id_karyawan);
+  async token(id_rapat: number, id_karyawan: number, semua = false) {
+    const { r, moderator } = await this.rapatAnggota(id_rapat, id_karyawan, semua);
     if (r.status === 'Dibatalkan') throw new BadRequestException('Rapat ini dibatalkan');
     const lk = this.lk;
     const nama = (await this.namaKaryawan([id_karyawan])).get(id_karyawan)?.nama ?? `Karyawan ${id_karyawan}`;

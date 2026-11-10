@@ -9,7 +9,7 @@ export class MeetingController {
   constructor(private meeting: MeetingService) {}
 
   @Get()
-  daftar(@CurrentUser('id_karyawan') id_karyawan: number) { return this.meeting.daftar(id_karyawan); }
+  daftar(@CurrentUser() u: any) { return this.meeting.daftar(u?.id_karyawan, MeetingService.pemantau(u)); }
 
   @Get('karyawan')
   karyawan(@Query('q') q: string) { return this.meeting.cariKaryawan(q); }
@@ -18,7 +18,7 @@ export class MeetingController {
   buat(@CurrentUser('id_karyawan') id_karyawan: number, @Body() dto: BuatRapatDto) { return this.meeting.buat(id_karyawan, dto); }
 
   @Get(':id')
-  detail(@CurrentUser('id_karyawan') id_karyawan: number, @Param('id', ParseIntPipe) id: number) { return this.meeting.detail(id, id_karyawan); }
+  detail(@CurrentUser() u: any, @Param('id', ParseIntPipe) id: number) { return this.meeting.detail(id, u?.id_karyawan, MeetingService.pemantau(u)); }
 
   @Patch(':id')
   ubah(@CurrentUser('id_karyawan') id_karyawan: number, @Param('id', ParseIntPipe) id: number, @Body() dto: UbahRapatDto) {
@@ -51,7 +51,7 @@ export class MeetingController {
 
   // Token masuk room LiveKit (berlaku 6 jam)
   @Post(':id/token')
-  token(@CurrentUser('id_karyawan') id_karyawan: number, @Param('id', ParseIntPipe) id: number) { return this.meeting.token(id, id_karyawan); }
+  token(@CurrentUser() u: any, @Param('id', ParseIntPipe) id: number) { return this.meeting.token(id, u?.id_karyawan, MeetingService.pemantau(u)); }
 
   @Post(':id/kelola')
   kelola(@CurrentUser('id_karyawan') id_karyawan: number, @Param('id', ParseIntPipe) id: number, @Body() dto: KelolaDto) {

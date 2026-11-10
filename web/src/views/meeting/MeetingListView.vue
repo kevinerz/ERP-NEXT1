@@ -7,7 +7,7 @@ import KaryawanPicker from './KaryawanPicker.vue'
 
 interface RapatRingkas {
   id_rapat: number; judul: string; deskripsi: string | null; jadwal_at: string | null; status: string
-  mulai_at: string | null; selesai_at: string | null; created_at: string; pembuat: string; moderator: boolean
+  mulai_at: string | null; selesai_at: string | null; created_at: string; pembuat: string; moderator: boolean; diundang?: boolean
   peserta: { id_karyawan: number; nama: string; peran: string }[]; jumlah_hadir: number
 }
 
@@ -96,6 +96,7 @@ async function simpan() {
           <div class="rp-kartu-atas">
             <span class="badge" :class="KELAS[r.status]">{{ r.status === 'Berlangsung' ? '● Berlangsung' : r.status }}</span>
             <small v-if="r.moderator" class="muted">Moderator</small>
+            <small v-else-if="r.diundang === false" class="muted" title="Anda tidak diundang — terlihat karena akses Admin / Director">👁️ Pemantau</small>
           </div>
           <b class="rp-judul">{{ r.judul }}</b>
           <small class="muted">🕒 {{ waktu(r) }}</small>
@@ -113,7 +114,7 @@ async function simpan() {
           <tbody>
             <tr v-if="!riwayat.length"><td colspan="5" class="muted pusat">Belum ada riwayat.</td></tr>
             <tr v-baris v-for="r in riwayat" :key="r.id_rapat" class="klik" @click="router.push(`/meeting/${r.id_rapat}`)">
-              <td><b>{{ r.judul }}</b><br /><small class="muted">oleh {{ r.pembuat }}</small></td>
+              <td><b>{{ r.judul }}</b><br /><small class="muted">oleh {{ r.pembuat }}<template v-if="r.diundang === false"> · 👁️ pemantau</template></small></td>
               <td>{{ waktu(r) }}</td>
               <td><span class="badge" :class="KELAS[r.status]">{{ r.status }}</span></td>
               <td>{{ r.peserta.length }}</td>
