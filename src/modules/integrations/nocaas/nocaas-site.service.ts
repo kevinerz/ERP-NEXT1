@@ -200,4 +200,102 @@ export class NocaasSiteService {
     this.logger.log(`Sinkron massal NOCaaS oleh user ${u.id_user}: ${ditulis} perangkat, cadangan ${file}`);
     return { message: `${hitung.site} site diperbarui (${hitung.isi_kolom} kolom terisi, ${hitung.buat_perangkat} perangkat baru)`, data: { ...hitung, cadangan: path.relative(process.cwd(), file) } };
   }
+
+  // ─── Catat perangkat site sebagai aset (modul Aset) ─────────────────────────────
+  /**
+   * Perangkat site yang punya serial number tapi belum tertaut aset → dibuatkan aset berstatus Terpasang
+   * di site itu (atau ditautkan ke aset ber-SN sama yang sudah ada). Perangkat tanpa SN & site Dismantle dilewati.
+   */
+  async catatAset(mode: 'pratinjau' | 'terapkan', u: UserRingkas, id_site?: number) {
+    if (!this.bolehKelola(u)) throw new ForbiddenException('Pencatatan aset hanya untuk Admin / Director / Manager Ops');
+    const rows = await this.prisma.perangkatSite.findMany({
+      where: { id_aset: null, serial_number: { not: null }, ...(id_site ? { id_site } : {}) },
+      include: { site: { select: { nama_site: true, status_site: true } } },
+      orderBy: { id_perangkat: 'asc' },
+    });
+    const calon = rows.filter((p) => (p.serial_number ?? '').trim());
+    const dismantle = calon.filter((p) => p.site?.status_site === 'Dismantle').length;
+    const aktif = calon.filter((p) => p.site?.status_site !== 'Dismantle');
+    const snSemua = [...new Set(aktif.map((p) => p.serial_number!.trim().toUpperCase()))];
+    const ada = await this.prisma.gudangAset.findMany({ where: { serial_number: { in: snSemua } }, select: { id_aset: true, kode_aset: true, serial_number: true, status_aset: true, id_site: true } });
+    const adaBySn = new Map(ada.map((a) => [a.serial_number!.toUpperCase(), a]));
+    const dipakai = new Set<string>();
+    const buat: typeof aktif = [], tautkan: { p: (typeof aktif)[number]; a: (typeof ada)[number] }[] = [];
+    let snGanda = 0;
+    // SN sama dengan aset yang masih tercatat di gudang / di site lain → tidak diubah otomatis (stok gudang
+    // bisa salah atau SN salah ketik) — dilaporkan untuk dicek manual
+    const konflik: { id_perangkat: number; site: string; kode_aset: string; status_aset: string }[] = [];
+    for (const p of aktif) {
+      const sn = p.serial_number!.trim().toUpperCase();
+      if (dipakai.has(sn)) { snGanda++; continue; }
+      dipakai.add(sn);
+      const a = adaBySn.get(sn);
+      if (!a) buat.push(p);
+      else if (a.status_aset === 'Terpasang' && (a.id_site == null || a.id_site === p.id_site)) tautkan.push({ p, a });
+      else konflik.push({ id_perangkat: p.id_perangkat, site: p.site?.nama_site ?? String(p.id_site), kode_aset: (a as any).kode_aset, status_aset: a.status_aset });
+    }
+    const ringkas = { aset_baru: buat.length, ditautkan: tautkan.length, dilewati_dismantle: dismantle, dilewati_sn_ganda: snGanda, konflik, tanpa_sn: id_site ? undefined : await this.prisma.perangkatSite.count({ where: { id_aset: null, OR: [{ serial_number: null }, { serial_number: '' }] } }) };
+    if (mode === 'pratinjau') {
+      const perKategori: Record<string, number> = {};
+      for (const p of buat) { const k = this.kategoriAset(p.jenis_perangkat); perKategori[k] = (perKategori[k] ?? 0) + 1; }
+      return { data: { ...ringkas, per_kategori: Object.entries(perKategori).map(([k, n]) => ({ kategori: k, n })) } };
+    }
+
+    // Cadangan dulu
+    const dir = path.join(process.cwd(), 'storage', 'backup-sinkron-nocaas');
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, `catat-aset-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+    await fs.writeFile(file, JSON.stringify({ oleh: u.id_user, at: new Date(), buat: buat.map((p) => p.id_perangkat), tautkan: tautkan.map((x) => ({ id_perangkat: x.p.id_perangkat, id_aset: x.a.id_aset, status_lama: x.a.status_aset, site_lama: x.a.id_site })) }, null, 1));
+
+    // Aset ber-SN sama yang sudah ada → tautkan & samakan lokasinya dengan site
+    for (const { p, a } of tautkan) {
+      await this.prisma.$transaction([
+        this.prisma.perangkatSite.update({ where: { id_perangkat: p.id_perangkat }, data: { id_aset: a.id_aset } }),
+        this.prisma.gudangAset.update({ where: { id_aset: a.id_aset }, data: { status_aset: 'Terpasang', id_site: p.id_site, id_gudang: null } }),
+        this.prisma.gudangMutasiAset.create({ data: {
+          id_aset: a.id_aset, jenis_mutasi: 'Deploy', id_site_asal: a.id_site, id_site_tujuan: p.id_site, id_user: u.id_user,
+          keterangan: `Disesuaikan dengan data perangkat site ${p.site?.nama_site ?? p.id_site}`,
+        } }),
+      ]);
+    }
+
+    // Aset baru — kode AST-YYYYMM-XXXX berurutan, per batch 50
+    const now = new Date();
+    const prefix = `AST-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let dibuat = 0;
+    for (let i = 0; i < buat.length; i += 50) {
+      const batch = buat.slice(i, i + 50);
+      await this.prisma.$transaction(async (tx) => {
+        const last = await tx.gudangAset.findFirst({ where: { kode_aset: { startsWith: prefix } }, orderBy: { kode_aset: 'desc' }, select: { kode_aset: true } });
+        let seq = last ? (parseInt(last.kode_aset.split('-')[2], 10) || 0) : 0;
+        for (const p of batch) {
+          seq++;
+          const merk = p.merk?.trim() || null, tipe = p.tipe_model?.trim() || null;
+          const aset = await tx.gudangAset.create({ data: {
+            kode_aset: `${prefix}-${String(seq).padStart(4, '0')}`,
+            nama_perangkat: ([merk, tipe].filter(Boolean).join(' ') || p.jenis_perangkat).slice(0, 150),
+            merk, tipe_model: tipe, serial_number: p.serial_number!.trim(), is_serialized: true, stok_jumlah: 1,
+            kategori: this.kategoriAset(p.jenis_perangkat), kondisi: 'Baik', status_aset: 'Terpasang',
+            id_site: p.id_site, tgl_perolehan: p.tgl_pasang ?? undefined,
+            catatan: 'Dicatat dari data perangkat site (NOCaaS / lapangan)',
+          } });
+          await tx.gudangMutasiAset.create({ data: {
+            id_aset: aset.id_aset, jenis_mutasi: 'Deploy', id_site_tujuan: p.id_site, id_user: u.id_user,
+            keterangan: `Pencatatan awal aset terpasang di ${p.site?.nama_site ?? `site ${p.id_site}`}`,
+          } });
+          await tx.perangkatSite.update({ where: { id_perangkat: p.id_perangkat }, data: { id_aset: aset.id_aset } });
+          dibuat++;
+        }
+      }, { timeout: 60_000 });
+    }
+    this.logger.log(`Catat aset oleh user ${u.id_user}: ${dibuat} baru, ${tautkan.length} ditautkan, cadangan ${file}`);
+    return {
+      message: `${dibuat} aset baru dicatat${tautkan.length ? `, ${tautkan.length} ditautkan ke aset yang sudah ada` : ''}`,
+      data: { ...ringkas, aset_baru: dibuat, cadangan: path.relative(process.cwd(), file) },
+    };
+  }
+
+  private kategoriAset(jenis: string) {
+    return /modem/i.test(jenis) ? 'MODEM' : /sim/i.test(jenis) ? 'SIM' : 'Router';
+  }
 }

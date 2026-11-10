@@ -16,6 +16,33 @@ async function hitung() {
   catch (e: any) { toast(e.response?.data?.message || 'Gagal menghitung', 'danger'); buka.value = false }
   finally { memuat.value = false }
 }
+// ── Catat perangkat site sebagai aset ──
+const bukaAset = ref(false)
+const memuatAset = ref(false)
+const pratinjauAset = ref<any>(null)
+const hasilAset = ref<any>(null)
+async function hitungAset() {
+  bukaAset.value = true; memuatAset.value = true; hasilAset.value = null
+  try { pratinjauAset.value = (await api.get('/nocaas/catat-aset')).data.data }
+  catch (e: any) { toast(e.response?.data?.message || 'Gagal menghitung', 'danger'); bukaAset.value = false }
+  finally { memuatAset.value = false }
+}
+async function jalankanAset() {
+  const p = pratinjauAset.value
+  if (!(await confirmDialog({
+    title: `Catat ${p.aset_baru} perangkat sebagai aset?`,
+    message: `${p.aset_baru} aset baru berstatus Terpasang di site masing-masing${p.ditautkan ? `, ${p.ditautkan} ditautkan ke aset ber-SN sama yang sudah ada` : ''}. Cadangan disimpan dulu.`,
+    confirmLabel: 'Catat sebagai aset',
+  }))) return
+  memuatAset.value = true
+  try {
+    const r = await api.post('/nocaas/catat-aset')
+    hasilAset.value = r.data.data; pratinjauAset.value = null
+    toast(r.data.message)
+  } catch (e: any) { toast(e.response?.data?.message || 'Pencatatan gagal', 'danger') }
+  finally { memuatAset.value = false }
+}
+
 async function jalankan() {
   const p = pratinjau.value
   if (!(await confirmDialog({
@@ -36,8 +63,32 @@ async function jalankan() {
 
 <template>
   <div class="spn">
-    <button v-if="!buka" type="button" class="btn btn-ghost" @click="hitung">🔄 Sinkron data perangkat ke site</button>
-    <div v-else class="spn-kartu">
+    <div v-if="!buka && !bukaAset" class="spn-tombol">
+      <button type="button" class="btn btn-ghost" @click="hitung">🔄 Sinkron data perangkat ke site</button>
+      <button type="button" class="btn btn-ghost" @click="hitungAset">📦 Catat perangkat sebagai aset</button>
+    </div>
+    <div v-if="bukaAset" class="spn-kartu">
+      <div class="spn-judul">📦 Catat perangkat site sebagai aset <button type="button" class="spn-x" aria-label="Tutup" @click="bukaAset = false">✕</button></div>
+      <div v-if="memuatAset" class="spn-redup">Menghitung / mencatat…</div>
+      <template v-else-if="hasilAset">
+        <p>✅ <b>{{ hasilAset.aset_baru }}</b> aset baru dicatat<template v-if="hasilAset.ditautkan"> · {{ hasilAset.ditautkan }} ditautkan</template>. Lihat di menu <RouterLink to="/assets">Aset</RouterLink>.</p>
+        <small class="spn-redup">Cadangan: <code>{{ hasilAset.cadangan }}</code></small>
+      </template>
+      <template v-else-if="pratinjauAset">
+        <p v-if="!pratinjauAset.aset_baru && !pratinjauAset.ditautkan">👍 Semua perangkat ber-serial number sudah tercatat sebagai aset.</p>
+        <template v-else>
+          <p><b>{{ pratinjauAset.aset_baru }}</b> perangkat akan dicatat sebagai aset <b>Terpasang</b><template v-if="pratinjauAset.ditautkan"> · <b>{{ pratinjauAset.ditautkan }}</b> ditautkan ke aset yang sudah ada</template>.</p>
+          <ul class="spn-kolom"><li v-for="k in pratinjauAset.per_kategori" :key="k.kategori">{{ k.kategori }} <b>{{ k.n.toLocaleString('id-ID') }}</b></li></ul>
+          <small class="spn-redup">Dilewati: {{ pratinjauAset.tanpa_sn }} perangkat tanpa serial number · {{ pratinjauAset.dilewati_dismantle }} di site Dismantle<template v-if="pratinjauAset.dilewati_sn_ganda"> · {{ pratinjauAset.dilewati_sn_ganda }} SN ganda</template>.</small>
+          <div v-if="pratinjauAset.konflik?.length" class="spn-konflik">
+            ⚠️ {{ pratinjauAset.konflik.length }} perangkat dilewati karena serial number-nya sama dengan aset yang tercatat di gudang / site lain — cek manual:
+            <ul><li v-for="k in pratinjauAset.konflik" :key="k.id_perangkat">{{ k.site }} ↔ <RouterLink :to="`/assets?q=${k.kode_aset}`">{{ k.kode_aset }}</RouterLink> ({{ k.status_aset.replace('_', ' ') }})</li></ul>
+          </div>
+          <div class="spn-aksi"><button type="button" class="btn btn-primary" @click="jalankanAset">Catat sebagai aset</button></div>
+        </template>
+      </template>
+    </div>
+    <div v-if="buka" class="spn-kartu">
       <div class="spn-judul">🔄 Sinkron data perangkat dari NOCaaS <button type="button" class="spn-x" aria-label="Tutup" @click="buka = false">✕</button></div>
       <div v-if="memuat" class="spn-redup">Menghitung / menjalankan…</div>
       <template v-else-if="hasil">
@@ -60,6 +111,8 @@ async function jalankan() {
 </template>
 
 <style scoped>
+.spn-tombol { display: flex; gap: 8px; flex-wrap: wrap; }
+.spn-kartu + .spn-kartu, .spn-tombol + .spn-kartu { margin-top: 8px; }
 .spn-kartu { padding: 14px 16px; border-radius: 14px; border: 1.5px dashed #93c5fd; background: #f8fbff; max-width: 560px; }
 .spn-judul { display: flex; justify-content: space-between; font-weight: 800; margin-bottom: 8px; }
 .spn-x { border: 0; background: none; cursor: pointer; color: #64748b; }
@@ -68,4 +121,6 @@ async function jalankan() {
 .spn-kolom li { padding: 3px 10px; border-radius: 99px; background: #e8f1fd; color: #1c4f9c; font-size: 12.5px; }
 .spn-redup { color: #64748b; font-size: 12px; }
 .spn-aksi { margin-top: 10px; }
+.spn-konflik { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 12.5px; }
+.spn-konflik ul { margin: 4px 0 0; padding-left: 18px; }
 </style>

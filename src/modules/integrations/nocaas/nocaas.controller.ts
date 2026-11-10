@@ -32,6 +32,9 @@ export class NocaasController {
   @Post('site/:id/sinkron') terapkanSinkron(@Param('id', ParseIntPipe) id: number, @Body('timpa') timpa: boolean, @CurrentUser() u: any) {
     return this.siteSvc.terapkan(id, timpa === true, u);
   }
+  // Catat perangkat site (ber-SN) sebagai aset Terpasang — semua site, atau ?id_site=
+  @Get('catat-aset') pratinjauAset(@CurrentUser() u: any, @Query('id_site') id?: string) { return this.siteSvc.catatAset('pratinjau', u, Number(id) || undefined); }
+  @Post('catat-aset') @Roles('Admin', 'Director', 'Manager_Ops') catatAset(@CurrentUser() u: any, @Body('id_site') id?: number) { return this.siteSvc.catatAset('terapkan', u, Number(id) || undefined); }
   @Get('sinkron-perangkat') pratinjauMassal(@CurrentUser() u: any) { return this.siteSvc.massal('pratinjau', u); }
   @Post('sinkron-perangkat') @Roles('Admin', 'Director', 'Manager_Ops') terapkanMassal(@CurrentUser() u: any) { return this.siteSvc.massal('terapkan', u); }
 
