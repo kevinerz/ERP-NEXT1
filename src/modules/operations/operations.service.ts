@@ -22,7 +22,7 @@ const TICKET_INCLUDE = {
 const TICKET_DETAIL_INCLUDE = {
   site: {
     select: {
-      id_site: true, kode_site: true, nama_site: true, kota: true, alamat_lengkap: true,
+      id_site: true, kode_site: true, nama_site: true, kota: true, alamat_lengkap: true, koordinat_gps: true, id_pelanggan: true,
       pelanggan: { select: { nama_pelanggan: true, kode_pelanggan: true, no_telp: true, nama_pic_utama: true, no_hp_pic_utama: true } },
       layanan: { select: { kode_layanan: true, nama_layanan: true } },
       pic: {

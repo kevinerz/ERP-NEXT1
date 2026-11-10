@@ -1,21 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
+// Detail tiket gangguan — hero status live, stepper status, tab Ringkasan / Monitoring / Lapangan / Aktivitas,
+// sidebar site & kontak, catatan cepat, form "Tutup gangguan" (status + jenis + root cause sekaligus).
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useOperationsStore } from '@/stores/operations'
 import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import { printLaporanTiket } from '@/composables/usePrint'
 import { fmtDateTime as fmtDt, statusLabel, escapeHtml } from '@/composables/useFormat'
+import { confirmDialog, alertError, toast } from '@/composables/useDialog'
+import { useFilterUrl } from '@/composables/useFilterUrl'
+import { SERI } from '@/components/grafik/warna'
 import api from '@/services/api'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
-import markerIcon from 'leaflet/dist/images/marker-icon.png'
-import markerShadow from 'leaflet/dist/images/marker-shadow.png'
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow })
 
 const router = useRouter()
 const route = useRoute()
@@ -23,84 +21,113 @@ const ops = useOperationsStore()
 const proyek = useProyekStore()
 const auth = useAuthStore()
 const id = Number(route.params.id)
+const t = computed<any>(() => ops.current)
 
-const showEditModal = ref(false)
-const editForm = ref<any>({})
-const editSubmitting = ref(false)
-const editError = ref('')
+// ── Konstanta ────────────────────────────────────────────────────────────────
+const AKTIF = ['Open', 'In_Progress', 'Pending_Customer']
+const LANGKAH = [
+  { s: 'Open', label: 'Open', ikon: '🆕' },
+  { s: 'In_Progress', label: 'Dikerjakan', ikon: '🔧' },
+  { s: 'Pending_Customer', label: 'Menunggu pelanggan', ikon: '⏳' },
+  { s: 'Resolved', label: 'Selesai', ikon: '✅' },
+  { s: 'Closed', label: 'Ditutup', ikon: '🔒' },
+]
+const STATUS_WARNA: Record<string, string> = { Open: '#2563eb', In_Progress: '#d97706', Pending_Customer: '#7c3aed', Resolved: '#16a34a', Closed: '#64748b' }
+const PRIO: Record<string, { ikon: string; warna: string; sla: number }> = {
+  Critical: { ikon: '🔥', warna: '#dc2626', sla: 4 }, High: { ikon: '⚠️', warna: '#ea580c', sla: 8 },
+  Medium: { ikon: '🔷', warna: '#2563eb', sla: 24 }, Low: { ikon: '🌿', warna: '#64748b', sla: 72 },
+}
+const SUMBER_IKON: Record<string, string> = { PRTG: '📡', NOCaaS: '🛰️', Internal: '🏢', WhatsApp: '💬', WA: '💬', Email: '✉️', Telepon: '📞', Portal: '🌐', UptimeKuma: '📈' }
+const WO_STATUS_COLOR: Record<string, string> = { Open: '#64748b', Dispatch: '#2563eb', 'On-Site': '#d97706', Selesai: '#16a34a', Ditunda: '#ea580c', Dibatalkan: '#dc2626' }
+const JENIS_WO = ['Troubleshoot', 'Maintenance', 'Instalasi', 'Survey', 'Upgrade']
+const CATATAN_CEPAT = ['📞 Sudah menghubungi pelanggan', '🔄 Perangkat di-restart', '⏳ Menunggu konfirmasi pelanggan', '🏢 Eskalasi ke ISP / vendor', '🚗 Teknisi dalam perjalanan', '✅ Koneksi kembali normal']
+const TAB = [
+  { k: 'ringkasan', label: 'Ringkasan', ikon: '🧭' },
+  { k: 'monitoring', label: 'Monitoring', ikon: '📡' },
+  { k: 'lapangan', label: 'Lapangan', ikon: '🗺️' },
+  { k: 'aktivitas', label: 'Aktivitas', ikon: '💬' },
+]
+const tab = ref('ringkasan')
+useFilterUrl({ tab })
 
-const showLogModal = ref(false)
-const logForm = ref({ status_ke: '', catatan: '' })
-const logSubmitting = ref(false)
+// ── Jam berjalan ─────────────────────────────────────────────────────────────
+const sekarang = ref(Date.now())
+let tJam: ReturnType<typeof setInterval> | undefined
+function durasi(menit: number) {
+  if (menit < 1) return 'baru saja'
+  const h = Math.floor(menit / 1440), j = Math.floor((menit % 1440) / 60), m = Math.floor(menit % 60)
+  return h ? `${h} hari ${j} jam` : j ? `${j} jam ${m} mnt` : `${m} menit`
+}
+const aktif = computed(() => !!t.value && AKTIF.includes(t.value.status_tiket))
+const umurMenit = computed(() => {
+  if (!t.value) return 0
+  const akhir = !aktif.value && t.value.tgl_resolved ? +new Date(t.value.tgl_resolved) : sekarang.value
+  return (akhir - +new Date(t.value.tgl_open)) / 60000
+})
+const sla = computed(() => {
+  const x = t.value
+  if (!x) return { pct: 0, label: '—', nada: 'none', sub: '' }
+  if (!aktif.value) return x.sla_breached
+    ? { pct: 100, label: 'SLA terlewati', nada: 'telat', sub: x.sla_due ? `target ${fmtDt(x.sla_due)}` : '' }
+    : { pct: 100, label: 'SLA terpenuhi', nada: 'selesai', sub: x.sla_due ? `target ${fmtDt(x.sla_due)}` : '' }
+  if (!x.sla_due) return { pct: 0, label: 'Tanpa SLA', nada: 'none', sub: '' }
+  const mulai = +new Date(x.tgl_open), due = +new Date(x.sla_due)
+  const pct = Math.max(0, ((sekarang.value - mulai) / Math.max(1, due - mulai)) * 100)
+  const sisa = (due - sekarang.value) / 60000
+  if (sisa <= 0) return { pct: 100, label: `Lewat ${durasi(-sisa)}`, nada: 'lewat', sub: `target ${fmtDt(x.sla_due)}` }
+  return { pct, label: `Sisa ${durasi(sisa)}`, nada: pct >= 75 ? 'waspada' : 'aman', sub: `target ${fmtDt(x.sla_due)}` }
+})
+const inisial = (n?: string) => (n || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase()
+const warnaNama = (n?: string) => SERI[[...(n || '?')].reduce((s, c) => s + c.charCodeAt(0), 0) % SERI.length]
+const waLink = (no?: string | null) => (no ? `https://wa.me/${String(no).replace(/\D/g, '').replace(/^0/, '62')}` : '')
+const namaPic = computed(() => t.value?.teknisi?.nama_lengkap ?? t.value?.kontak_teknisi?.nama ?? null)
+const indeksLangkah = computed(() => LANGKAH.findIndex((l) => l.s === t.value?.status_tiket))
 
-const showWoModal = ref(false)
-const woForm = ref({ jenis_wo: 'Troubleshoot', tipe_eksekutor: 'Internal_NEXT1', id_teknisi_internal: 0, fee_vendor: 0, tgl_jadwal: '', deskripsi_tugas: '' })
-const woSubmitting = ref(false)
-const woError = ref('')
-
-const showTimeline = ref(false)
-const successMsg = ref('')
-const flashType = ref<'success' | 'error'>('success')
-
-// ── FOTOS ────────────────────────────────────────────────────
+// ── Foto ─────────────────────────────────────────────────────────────────────
 const fotos = ref<any[]>([])
-const previewUrl = ref('')
-
+const preview = ref<{ list: any[]; i: number } | null>(null)
 async function fetchFotos() {
-  try {
-    const { data } = await api.get(`/operations/${id}/fotos`)
-    fotos.value = data.data ?? []
-  } catch { /* silent */ }
+  try { const { data } = await api.get(`/operations/${id}/fotos`); fotos.value = data.data ?? [] } catch { /* opsional */ }
+}
+const fotosOf = (stage: string) => fotos.value.filter((f) => f.stage === stage)
+const stageLabel = (s: string) => (s === 'before' ? 'Sebelum' : s === 'proses' ? 'Proses' : s === 'after' ? 'Sesudah' : s)
+function bukaFoto(list: any[], f: any) { preview.value = { list, i: Math.max(0, list.indexOf(f)) } }
+function geserFoto(d: number) {
+  if (!preview.value) return
+  const n = preview.value.list.length
+  preview.value = { ...preview.value, i: (preview.value.i + d + n) % n }
 }
 
-function fotosOf(stage: string) { return fotos.value.filter(f => f.stage === stage) }
-function stageLabel(s: string) {
-  return s === 'before' ? 'Sebelum Pekerjaan' : s === 'proses' ? 'Proses Pengerjaan' : s === 'after' ? 'Sesudah Pekerjaan' : s
-}
-
-// ── ACTIVITY FEED (log + foto merged & sorted) ────────────────
+// ── Aktivitas & timeline ─────────────────────────────────────────────────────
 const activityFeed = computed(() => {
   const items: any[] = []
-  for (const log of ops.current?.logs || []) {
-    items.push({ kind: 'log', time: log.created_at, log })
-  }
+  for (const log of t.value?.logs || []) items.push({ kind: 'log', time: log.created_at, log })
   for (const stage of ['before', 'proses', 'after'] as const) {
-    const sf = fotos.value.filter(f => f.stage === stage)
-    if (sf.length) items.push({ kind: 'foto', time: sf[0].created_at, stage, fotos: sf, label: stageLabel(stage) })
+    const sf = fotosOf(stage)
+    if (sf.length) items.push({ kind: 'foto', time: sf[0].created_at, stage, fotos: sf, label: `Foto ${stageLabel(stage).toLowerCase()} pekerjaan` })
   }
-  return items.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+  return items.sort((a, b) => +new Date(b.time) - +new Date(a.time))
 })
-
-// ── TIMELINE POPUP EVENTS ─────────────────────────────────────
 const timelineEvents = computed(() => {
-  const t = ops.current
-  if (!t) return []
+  const x = t.value
+  if (!x) return []
   const seen = new Set<string>()
   const events: any[] = []
-
-  function push(e: any) {
-    const key = `${e.type}:${e.time}`
-    if (!seen.has(key)) { seen.add(key); events.push(e) }
+  const push = (e: any) => { const k = `${e.type}:${e.time}`; if (!seen.has(k)) { seen.add(k); events.push(e) } }
+  if (x.tgl_sensor_down) push({ type: 'down', time: x.tgl_sensor_down, title: 'Perangkat terdeteksi down', icon: '🔻', color: '#dc2626' })
+  push({ type: 'open', time: x.tgl_open, title: 'Tiket dibuka', desc: x.judul_tiket, icon: '📋', color: '#2563eb' })
+  if (x.tgl_berangkat) push({ type: 'berangkat', time: x.tgl_berangkat, title: 'Teknisi berangkat', desc: x.teknisi?.nama_lengkap, gps: teknisiLokasi.value, icon: '🚗', color: '#d97706' })
+  if (x.tgl_sampai) push({ type: 'sampai', time: x.tgl_sampai, title: 'Tiba di lokasi', desc: x.site?.nama_site, icon: '📍', color: '#7c3aed' })
+  for (const it of activityFeed.value) {
+    if (it.kind === 'log') push({ type: 'log', time: it.time, title: it.log.catatan || statusLabel(it.log.status_ke), statusKe: it.log.status_ke, by: it.log.user?.karyawan?.nama_lengkap || 'Sistem', icon: '💬', color: '#64748b' })
+    else push({ type: 'foto', time: it.time, title: it.label, fotos: it.fotos, icon: '📷', color: '#16a34a' })
   }
-
-  push({ type: 'open', time: t.tgl_open, title: 'Tiket Dibuka', desc: t.judul_tiket, icon: '📋', color: '#3b82f6' })
-  if (t.tgl_berangkat) push({ type: 'berangkat', time: t.tgl_berangkat, title: 'Teknisi Berangkat', desc: t.teknisi?.nama_lengkap, gps: teknisiLokasi.value, icon: '🚗', color: '#f59e0b' })
-  if (t.tgl_sampai) push({ type: 'sampai', time: t.tgl_sampai, title: 'Tiba di Lokasi', desc: t.site?.nama_site, icon: '📍', color: '#8b5cf6' })
-
-  for (const item of activityFeed.value) {
-    if (item.kind === 'log') {
-      push({ type: 'log', time: item.time, title: item.log.catatan || statusLabel(item.log.status_ke), statusKe: item.log.status_ke, by: item.log.user?.karyawan?.nama_lengkap || 'System', icon: '💬', color: '#64748b' })
-    } else {
-      push({ type: 'foto', time: item.time, title: item.label, fotos: item.fotos, icon: '📷', color: '#16a34a' })
-    }
-  }
-
-  if (t.tgl_resolved) push({ type: 'resolved', time: t.tgl_resolved, title: 'Tiket Diselesaikan', icon: '✅', color: '#16a34a' })
-
-  return events.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
+  if (x.tgl_resolved) push({ type: 'resolved', time: x.tgl_resolved, title: 'Tiket diselesaikan', icon: '✅', color: '#16a34a' })
+  return events.sort((a, b) => +new Date(a.time) - +new Date(b.time))
 })
+const showTimeline = ref(false)
 
-// ── NOCaaS (pembanding status router) ───────────────────────
+// ── NOCaaS ───────────────────────────────────────────────────────────────────
 const noc = ref<any>(null)
 const nocLoading = ref(false)
 const nocError = ref('')
@@ -108,36 +135,19 @@ const nocKejadian = ref<Record<string, any[] | 'memuat' | string>>({})
 const NOC_WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626', tidak_ada: '#64748b' }
 const NOC_KEJADIAN: Record<string, string> = { tunnel_up: 'VPN tersambung', tunnel_down: 'VPN putus', link_up: 'Port naik', link_down: 'Port turun', reboot: 'Reboot' }
 async function fetchNoc() {
-  nocLoading.value = true
-  nocError.value = ''
-  try {
-    const { data } = await api.get(`/nocaas/tiket/${id}`)
-    noc.value = data.data
-  } catch (e: any) {
-    nocError.value = e?.response?.data?.message || 'Gagal memuat status NOCaaS'
-  } finally {
-    nocLoading.value = false
-  }
+  nocLoading.value = true; nocError.value = ''
+  try { const { data } = await api.get(`/nocaas/tiket/${id}`); noc.value = data.data }
+  catch (e: any) { nocError.value = e?.response?.data?.message || 'Gagal memuat status NOCaaS' }
+  finally { nocLoading.value = false }
 }
 async function toggleNocKejadian(key: string) {
   if (nocKejadian.value[key]) { delete nocKejadian.value[key]; return }
   nocKejadian.value[key] = 'memuat'
-  try {
-    const { data } = await api.get(`/nocaas/router/${encodeURIComponent(key)}/kejadian`, { params: { jam: 72 } })
-    nocKejadian.value[key] = data.data
-  } catch (e: any) {
-    nocKejadian.value[key] = e?.response?.data?.message || 'Gagal memuat riwayat'
-  }
+  try { const { data } = await api.get(`/nocaas/router/${encodeURIComponent(key)}/kejadian`, { params: { jam: 72 } }); nocKejadian.value[key] = data.data }
+  catch (e: any) { nocKejadian.value[key] = e?.response?.data?.message || 'Gagal memuat riwayat' }
 }
-// Sesi VPN (NOCaaS) + ping dari ERP: sesi ada tapi ping gagal = jalur macet
-function tunnelKelas(sesi: boolean | null, p?: { diterima: number } | null) {
-  if (!sesi) return 'off'
-  return p && p.diterima === 0 ? 'macet' : 'on'
-}
-function tunnelJudul(sesi: boolean | null, p?: { diterima: number } | null) {
-  if (!sesi) return 'Sesi VPN putus'
-  return p && p.diterima === 0 ? 'Sesi VPN tersambung, tapi tidak bisa di-ping dari ERP' : 'Sesi VPN tersambung'
-}
+const tunnelKelas = (sesi: boolean | null, p?: { diterima: number } | null) => (!sesi ? 'off' : p && p.diterima === 0 ? 'macet' : 'on')
+const tunnelJudul = (sesi: boolean | null, p?: { diterima: number } | null) => (!sesi ? 'Sesi VPN putus' : p && p.diterima === 0 ? 'Sesi VPN tersambung, tapi tidak bisa di-ping dari ERP' : 'Sesi VPN tersambung')
 function pingTeks(p: { terkirim: number; diterima: number; rtt_ms: number | null }) {
   if (!p.diterima) return 'ping gagal'
   const hilang = Math.round((1 - p.diterima / p.terkirim) * 100)
@@ -146,1579 +156,1162 @@ function pingTeks(p: { terkirim: number; diterima: number; rtt_ms: number | null
 function nocSejak(d?: string | null) {
   if (!d) return ''
   const m = Math.round((Date.now() - new Date(d).getTime()) / 60000)
-  if (m < 1) return 'baru saja'
-  if (m < 60) return `${m} menit`
-  if (m < 48 * 60) return `${Math.floor(m / 60)} jam ${m % 60} menit`
-  return `${Math.floor(m / 1440)} hari`
+  return m < 1 ? 'baru saja' : m < 60 ? `${m} menit` : m < 2880 ? `${Math.floor(m / 60)} jam ${m % 60} menit` : `${Math.floor(m / 1440)} hari`
 }
 
-// ── PRTG ─────────────────────────────────────────────────────
+// ── PRTG ─────────────────────────────────────────────────────────────────────
 const prtgDeviceName = ref('')
 const prtgSensors = ref<any[]>([])
 const prtgLoading = ref(false)
 const prtgError = ref('')
 const selectedSensorId = ref<number | null>(null)
-const selectedGraphId = ref(0) // 0=live,1=48h,2=30d,3=365d
-const graphCacheKey = ref(Date.now())
+const selectedGraphId = ref(0)
 const graphBlobUrl = ref('')
 const graphLoading = ref(false)
 const graphLoadError = ref(false)
 let graphRefreshTimer: ReturnType<typeof setInterval> | null = null
-
-// Rincian waktu down-up untuk tiket ini
 const prtgEvents = ref<any>(null)
-
 async function fetchPrtgTicketEvents() {
-  try {
-    const { data } = await api.get(`/prtg/ticket/${id}/events`)
-    prtgEvents.value = data.data ?? null
-  } catch { /* silent */ }
+  try { const { data } = await api.get(`/prtg/ticket/${id}/events`); prtgEvents.value = data.data ?? null } catch { /* opsional */ }
 }
-
-// Downtime dari tgl_sensor_down (langsung di tiket) — tersedia meski webhook sudah dibersihkan
 const downtimeInfo = computed(() => {
-  const t = ops.current
-  if (!t || !['PRTG', 'NOCaaS'].includes(t.sumber_tiket)) return null
-  const waktuDown = prtgEvents.value?.waktu_down ?? (t as any).tgl_sensor_down ?? null
+  const x = t.value
+  if (!x || !['PRTG', 'NOCaaS'].includes(x.sumber_tiket)) return null
+  const waktuDown = prtgEvents.value?.waktu_down ?? x.tgl_sensor_down ?? null
   if (!waktuDown) return null
-  const waktuUp = prtgEvents.value?.waktu_up ?? t.tgl_resolved ?? null
-  const sudahUp = !!waktuUp && ['Resolved', 'Closed'].includes(t.status_tiket ?? '')
-  let durasiLabel = '—'
-  if (waktuDown && waktuUp && sudahUp) {
-    const totalSec = Math.floor((new Date(waktuUp).getTime() - new Date(waktuDown).getTime()) / 1000)
-    const jam = Math.floor(totalSec / 3600)
-    const menit = Math.floor((totalSec % 3600) / 60)
-    const dtk = totalSec % 60
-    durasiLabel = jam > 0 ? `${jam} jam ${menit > 0 ? menit + ' menit' : ''}`
-      : menit > 0 ? `${menit} menit ${dtk} detik` : `${dtk} detik`
-  }
-  return {
-    waktu_down: waktuDown,
-    waktu_up: waktuUp,
-    sudah_up: sudahUp,
-    durasi_label: durasiLabel,
-    pesan_down: prtgEvents.value?.pesan_down ?? null,
-    device_name: prtgEvents.value?.device_name ?? null,
-  }
+  const waktuUp = prtgEvents.value?.waktu_up ?? x.tgl_resolved ?? null
+  const sudahUp = !!waktuUp && ['Resolved', 'Closed'].includes(x.status_tiket ?? '')
+  const menit = ((sudahUp ? +new Date(waktuUp) : sekarang.value) - +new Date(waktuDown)) / 60000
+  return { waktu_down: waktuDown, waktu_up: waktuUp, sudah_up: sudahUp, durasi_label: durasi(menit), pesan_down: prtgEvents.value?.pesan_down ?? null }
 })
-
 async function fetchPrtgSensors() {
-  const siteId = ops.current?.site?.id_site
+  const siteId = t.value?.site?.id_site
   if (!siteId) return
-  prtgLoading.value = true
-  prtgError.value = ''
+  prtgLoading.value = true; prtgError.value = ''
   try {
     const { data } = await api.get(`/prtg/site/${siteId}/sensors`)
-    const results: any[] = Array.isArray(data.data) ? data.data : (data.data ? [data.data] : [])
+    const results: any[] = Array.isArray(data.data) ? data.data : data.data ? [data.data] : []
     prtgDeviceName.value = results.map((r: any) => r.device_name).filter(Boolean).join(', ')
     prtgSensors.value = results.flatMap((r: any) => r.sensors || [])
     if (prtgSensors.value.length && !selectedSensorId.value) {
       const ping = prtgSensors.value.find((s: any) => s.sensor?.toLowerCase().includes('ping'))
       selectedSensorId.value = ping?.objid ?? prtgSensors.value[0]?.objid
     }
-    if (selectedSensorId.value) loadGraphBlob(selectedSensorId.value, selectedGraphId.value)
-  } catch (e: any) {
-    prtgError.value = e?.response?.data?.message || 'Gagal memuat sensor'
-  } finally {
-    prtgLoading.value = false
-  }
+    if (selectedSensorId.value && tab.value === 'monitoring') loadGraphBlob(selectedSensorId.value, selectedGraphId.value)
+  } catch (e: any) { prtgError.value = e?.response?.data?.message || 'Gagal memuat sensor' }
+  finally { prtgLoading.value = false }
 }
-
-function prtgStatusColor(raw: number) {
-  return { 3: '#16a34a', 4: '#f59e0b', 5: '#ef4444', 13: '#f97316', 14: '#f97316' }[raw] ?? '#64748b'
-}
-function prtgStatusLabel(raw: number) {
-  return { 3: 'Up', 4: 'Warning', 5: 'Down', 13: 'Down (Ack)', 14: 'Partial Down' }[raw] ?? '?'
-}
+const prtgStatusColor = (raw: number) => ({ 3: '#16a34a', 4: '#f59e0b', 5: '#ef4444', 13: '#f97316', 14: '#f97316' } as Record<number, string>)[raw] ?? '#64748b'
+const prtgStatusLabel = (raw: number) => ({ 3: 'Up', 4: 'Warning', 5: 'Down', 13: 'Down (Ack)', 14: 'Partial Down' } as Record<number, string>)[raw] ?? '?'
+const sensorDown = computed(() => prtgSensors.value.filter((s) => [5, 13, 14].includes(s.status_raw)).length)
 async function loadGraphBlob(sensorId: number, graphId: number) {
   if (!sensorId) return
-  graphLoading.value = true
-  graphLoadError.value = false
+  graphLoading.value = true; graphLoadError.value = false
   if (graphBlobUrl.value) { URL.revokeObjectURL(graphBlobUrl.value); graphBlobUrl.value = '' }
   try {
-    const resp = await api.get(`/prtg/sensor/${sensorId}/graph.png`, {
-      params: { graphid: graphId },
-      responseType: 'blob',
-      timeout: 20000,
-    })
+    const resp = await api.get(`/prtg/sensor/${sensorId}/graph.png`, { params: { graphid: graphId }, responseType: 'blob', timeout: 20000 })
     if (unmounted) return
     graphBlobUrl.value = URL.createObjectURL(resp.data)
-  } catch {
-    graphLoadError.value = true
-  } finally {
-    graphLoading.value = false
-  }
+  } catch { graphLoadError.value = true }
+  finally { graphLoading.value = false }
 }
+function pilihSensor(s: any) { selectedSensorId.value = s.objid; loadGraphBlob(s.objid, selectedGraphId.value) }
 
-function refreshGraph() {
-  graphCacheKey.value = Date.now()
-  if (selectedSensorId.value) loadGraphBlob(selectedSensorId.value, selectedGraphId.value)
-}
-
-function startGraphRefresh() {
-  if (graphRefreshTimer) clearInterval(graphRefreshTimer)
-  graphRefreshTimer = setInterval(() => {
-    if (selectedGraphId.value === 0 && selectedSensorId.value) loadGraphBlob(selectedSensorId.value, 0)
-  }, 60_000)
-}
-
-// ── MAP ──────────────────────────────────────────────────────
+// ── Peta ─────────────────────────────────────────────────────────────────────
 const mapContainer = ref<HTMLDivElement | null>(null)
 let mapInstance: L.Map | null = null
 let teknisiMarker: L.Marker | null = null
-let siteMarker: L.Marker | null = null
 let polyline: L.Polyline | null = null
 const teknisiLokasi = ref<any>(null)
 let lokasiInterval: ReturnType<typeof setInterval> | null = null
-
-const iconTeknisi = L.divIcon({
-  html: `<div style="background:#16a34a;width:14px;height:14px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px #16a34a,0 2px 6px rgba(0,0,0,0.3)"></div>`,
-  className: '', iconSize: [14, 14], iconAnchor: [7, 7],
+const ikon = (warna: string, emoji: string) => L.divIcon({ className: 'td-pin', html: `<span style="--w:${warna}">${emoji}</span>`, iconSize: [34, 34], iconAnchor: [17, 30] })
+function parseLatLng(k?: string | null): [number, number] | null {
+  if (!k) return null
+  const p = k.split(',').map((s) => parseFloat(s.trim()))
+  return p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]) ? [p[0]!, p[1]!] : null
+}
+const siteLatLng = computed(() => parseLatLng(t.value?.site?.koordinat_gps))
+const jarakKm = computed(() => {
+  const a = siteLatLng.value, l = teknisiLokasi.value
+  if (!a || !l) return null
+  return L.latLng(a).distanceTo(L.latLng(Number(l.latitude), Number(l.longitude))) / 1000
 })
-const iconSite = L.divIcon({
-  html: `<div style="background:#3b82f6;width:14px;height:14px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px #3b82f6,0 2px 6px rgba(0,0,0,0.3)"></div>`,
-  className: '', iconSize: [14, 14], iconAnchor: [7, 7],
-})
-
+function initMap() {
+  if (!mapContainer.value || mapInstance) return
+  const ll = siteLatLng.value
+  mapInstance = L.map(mapContainer.value, { zoomControl: true, scrollWheelZoom: false }).setView(ll ?? [-6.2, 106.8], ll ? 15 : 10)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(mapInstance)
+  if (ll) L.marker(ll, { icon: ikon('#2563eb', '📍') }).addTo(mapInstance).bindPopup(`<b>${escapeHtml(t.value?.site?.nama_site)}</b><br>${escapeHtml(t.value?.site?.kota)}`)
+  if (teknisiLokasi.value) updateTeknisiMarker(teknisiLokasi.value.latitude, teknisiLokasi.value.longitude)
+}
 async function fetchTeknisiLokasi() {
-  if (!ops.current?.teknisi) return
+  if (!t.value?.teknisi) return
   try {
     const { data } = await api.get('/mobile/lokasi/all')
     const list: any[] = data.data ?? data
-    const match = list.find((l: any) => l.id_karyawan === ops.current!.teknisi!.id_karyawan)
-    if (match) {
-      teknisiLokasi.value = { ...match, ...match.karyawan }
-      updateTeknisiMarker(match.latitude, match.longitude)
-    }
-  } catch { /* silent */ }
+    const match = list.find((l: any) => l.id_karyawan === t.value!.teknisi!.id_karyawan)
+    if (match) { teknisiLokasi.value = { ...match, ...match.karyawan }; updateTeknisiMarker(match.latitude, match.longitude) }
+  } catch { /* opsional */ }
 }
-
-function initMap() {
-  if (!mapContainer.value || mapInstance) return
-  const site = ops.current?.site
-  const siteLatLng = parseSiteLatLng(site?.koordinat_gps)
-  const center = siteLatLng ?? [-6.2, 106.8]
-  mapInstance = L.map(mapContainer.value, { zoomControl: true, scrollWheelZoom: true }).setView(center, 13)
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(mapInstance)
-  if (siteLatLng) {
-    siteMarker = L.marker(siteLatLng, { icon: iconSite }).addTo(mapInstance).bindPopup(`<b>${escapeHtml(site?.nama_site)}</b><br>${escapeHtml(site?.kota)}`)
-  }
-}
-
-function parseSiteLatLng(koordinat?: string): [number, number] | null {
-  if (!koordinat) return null
-  const parts = koordinat.split(',').map(s => parseFloat(s.trim()))
-  if (parts.length === 2 && !isNaN(parts[0]!) && !isNaN(parts[1]!)) return [parts[0]!, parts[1]!]
-  return null
-}
-
 function updateTeknisiMarker(lat: number, lng: number) {
   if (!mapInstance) return
-  const latlng: L.LatLngExpression = [lat, lng]
+  const latlng: L.LatLngExpression = [Number(lat), Number(lng)]
   if (teknisiMarker) teknisiMarker.setLatLng(latlng)
-  else teknisiMarker = L.marker(latlng, { icon: iconTeknisi }).addTo(mapInstance).bindPopup(`<b>${escapeHtml(ops.current?.teknisi?.nama_lengkap)}</b><br>Lokasi Teknisi`)
-  const siteLatLng = parseSiteLatLng(ops.current?.site?.koordinat_gps)
-  if (siteLatLng) {
-    if (polyline) polyline.setLatLngs([latlng, siteLatLng])
-    else polyline = L.polyline([latlng, siteLatLng], { color: '#16a34a', weight: 2, dashArray: '6 4', opacity: 0.6 }).addTo(mapInstance)
-    mapInstance.fitBounds(L.latLngBounds([latlng, siteLatLng]).pad(0.2))
-  } else {
-    mapInstance.setView(latlng, 14)
-  }
+  else teknisiMarker = L.marker(latlng, { icon: ikon('#16a34a', '🛵') }).addTo(mapInstance).bindPopup(`<b>${escapeHtml(t.value?.teknisi?.nama_lengkap)}</b><br>Lokasi teknisi`)
+  const s = siteLatLng.value
+  if (s) {
+    if (polyline) polyline.setLatLngs([latlng, s])
+    else polyline = L.polyline([latlng, s], { color: '#16a34a', weight: 3, dashArray: '6 6', opacity: 0.7 }).addTo(mapInstance)
+    mapInstance.fitBounds(L.latLngBounds([latlng, s]).pad(0.25))
+  } else mapInstance.setView(latlng, 14)
 }
-
 function destroyMap() {
   if (lokasiInterval) clearInterval(lokasiInterval)
   if (mapInstance) { mapInstance.remove(); mapInstance = null }
-  teknisiMarker = null; siteMarker = null; polyline = null
+  teknisiMarker = null; polyline = null
 }
-
-const STATUS_LIST = ['Open', 'In_Progress', 'Pending_Customer', 'Resolved', 'Closed']
-const PRIORITAS_LIST = ['Low', 'Medium', 'High', 'Critical']
-const JENIS_WO = ['Troubleshoot', 'Maintenance', 'Instalasi', 'Survey', 'Upgrade']
-const jenisGangguanList = ref<string[]>([])
-const jenisGangguanError = ref('')
-async function fetchJenisGangguan() {
-  jenisGangguanError.value = ''
-  try {
-    const r = await api.get('/master/jenis-gangguan', { params: { is_aktif: 'true' } })
-    jenisGangguanList.value = (r.data.data as any[]).map((j) => j.nama)
-  } catch (e: any) {
-    jenisGangguanError.value = e?.response?.data?.message || 'Gagal memuat daftar jenis gangguan'
-  }
-}
-const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
-  Open:             { bg: '#eff6ff', color: '#1d4ed8' },
-  In_Progress:      { bg: '#fef9c3', color: '#a16207' },
-  Pending_Customer: { bg: '#fff7ed', color: '#c2410c' },
-  Resolved:         { bg: '#f0fdf4', color: '#15803d' },
-  Closed:           { bg: '#f1f5f9', color: '#64748b' },
-}
-const PRIORITAS_COLOR: Record<string, string> = {
-  Low: '#64748b', Medium: '#3b82f6', High: '#f97316', Critical: '#ef4444',
-}
-const WO_STATUS_COLOR: Record<string, string> = {
-  Open: '#64748b', Dispatch: '#3b82f6', 'On-Site': '#f59e0b',
-  Selesai: '#22c55e', Ditunda: '#f97316', Dibatalkan: '#ef4444',
-}
-
-let unmounted = false
-
-onMounted(async () => {
-  ops.current = null
-  await Promise.all([ops.fetchOne(id), ops.fetchTeknisiList(), ops.fetchKontakTeknisiList(), proyek.fetchSiteList(), fetchJenisGangguan()])
-  if (unmounted) return
-  await fetchFotos()
-  if (unmounted) return
-  await nextTick()
-  if (unmounted) return
-  initMap()
-  await fetchTeknisiLokasi()
-  if (unmounted) return
-  lokasiInterval = setInterval(fetchTeknisiLokasi, 15000)
-  await Promise.all([fetchPrtgSensors(), fetchPrtgTicketEvents(), fetchNoc()])
-  if (unmounted) return
-  startGraphRefresh()
+watch(tab, async (v) => {
+  if (v === 'lapangan') { await nextTick(); if (!mapInstance) initMap(); setTimeout(() => mapInstance?.invalidateSize(), 60) }
+  if (v === 'monitoring' && selectedSensorId.value && !graphBlobUrl.value && !graphLoading.value) loadGraphBlob(selectedSensorId.value, selectedGraphId.value)
 })
 
+// ── Muat data ────────────────────────────────────────────────────────────────
+const jenisGangguanList = ref<string[]>([])
+async function fetchJenisGangguan() {
+  try { const r = await api.get('/master/jenis-gangguan', { params: { is_aktif: 'true' } }); jenisGangguanList.value = (r.data.data as any[]).map((j) => j.nama) } catch { /* opsional */ }
+}
+async function muatUlang() { await ops.fetchOne(id) }
+let unmounted = false
+onMounted(async () => {
+  ops.current = null
+  window.addEventListener('keydown', tombol)
+  tJam = setInterval(() => { sekarang.value = Date.now() }, 15_000)
+  await Promise.all([ops.fetchOne(id), ops.fetchTeknisiList(), ops.fetchKontakTeknisiList(), fetchJenisGangguan()])
+  if (unmounted || !t.value) return
+  fetchFotos()
+  fetchTeknisiLokasi()
+  lokasiInterval = setInterval(fetchTeknisiLokasi, 15000)
+  await nextTick()
+  if (tab.value === 'lapangan') initMap()
+  await Promise.all([fetchPrtgSensors(), fetchPrtgTicketEvents(), fetchNoc()])
+  if (unmounted) return
+  graphRefreshTimer = setInterval(() => { if (tab.value === 'monitoring' && selectedGraphId.value === 0 && selectedSensorId.value) loadGraphBlob(selectedSensorId.value, 0) }, 60_000)
+})
 onUnmounted(() => {
   unmounted = true
   destroyMap()
+  clearInterval(tJam)
   if (graphRefreshTimer) clearInterval(graphRefreshTimer)
   if (graphBlobUrl.value) URL.revokeObjectURL(graphBlobUrl.value)
+  window.removeEventListener('keydown', tombol)
 })
 
+// ── Aksi status ──────────────────────────────────────────────────────────────
+const sibuk = ref(false)
+async function keStatus(s: string) {
+  const x = t.value
+  if (!x || x.status_tiket === s || sibuk.value) return
+  if (s === 'Resolved' || (s === 'Closed' && x.status_tiket !== 'Resolved')) return bukaTutup(s)
+  if (!(await confirmDialog({ title: `Ubah status ke "${statusLabel(s)}"?`, message: 'Pelanggan menerima notifikasi WhatsApp perubahan status.', confirmLabel: statusLabel(s) }))) return
+  sibuk.value = true
+  try { await ops.update(id, { status_tiket: s }); await muatUlang(); toast(`Status → ${statusLabel(s)}`) }
+  catch (e) { alertError(e, 'Gagal mengubah status') }
+  finally { sibuk.value = false }
+}
+async function handleTangani() {
+  if (!auth.user?.id_karyawan) return alertError(null, 'Akun Anda belum terhubung ke data karyawan')
+  sibuk.value = true
+  try {
+    await ops.update(id, { id_teknisi_pic: auth.user.id_karyawan, ...(t.value?.status_tiket === 'Open' ? { status_tiket: 'In_Progress' } : {}) })
+    await muatUlang(); toast('Tiket sekarang milik Anda 💪')
+    fetchTeknisiLokasi()
+  } catch (e) { alertError(e, 'Gagal menangani tiket') }
+  finally { sibuk.value = false }
+}
+
+// Tutup gangguan: status + jenis + root cause + catatan sekaligus
+const tutup = ref({ buka: false, status: 'Resolved', jenis: '', root_cause: '', catatan: '', simpan: false })
+function bukaTutup(s = 'Resolved') {
+  tutup.value = { buka: true, status: s, jenis: t.value?.jenis_gangguan || '', root_cause: t.value?.root_cause || '', catatan: '', simpan: false }
+}
+async function simpanTutup() {
+  if (!tutup.value.root_cause.trim()) return alertError(null, 'Isi root cause / tindakan perbaikan dulu — penting untuk laporan RCA')
+  tutup.value.simpan = true
+  try {
+    await ops.update(id, { status_tiket: tutup.value.status, root_cause: tutup.value.root_cause.trim(), ...(tutup.value.jenis ? { jenis_gangguan: tutup.value.jenis } : {}) })
+    if (tutup.value.catatan.trim()) await ops.addLog({ id_ticket: id, catatan: tutup.value.catatan.trim() })
+    await muatUlang()
+    tutup.value.buka = false
+    toast('🎉 Gangguan ditutup — kerja bagus!')
+  } catch (e) { alertError(e, 'Gagal menutup tiket') }
+  finally { tutup.value.simpan = false }
+}
+
+// ── Catatan cepat (composer) ─────────────────────────────────────────────────
+const catatan = ref('')
+const catatanStatus = ref('')
+const kirimLog = ref(false)
+const inputCatatan = ref<HTMLTextAreaElement | null>(null)
+async function kirimCatatan() {
+  if (!catatan.value.trim() && !catatanStatus.value) return
+  if (catatanStatus.value === 'Resolved') { bukaTutup('Resolved'); tutup.value.catatan = catatan.value; return }
+  kirimLog.value = true
+  try {
+    await ops.addLog({ id_ticket: id, status_ke: catatanStatus.value || undefined, catatan: catatan.value.trim() || undefined })
+    catatan.value = ''; catatanStatus.value = ''
+    await muatUlang(); toast('Catatan ditambahkan', 'success', 2500)
+  } catch (e) { alertError(e, 'Gagal menambah catatan') }
+  finally { kirimLog.value = false }
+}
+
+// ── Edit ─────────────────────────────────────────────────────────────────────
+const edit = ref<any>({ buka: false })
+const editSimpan = ref(false)
 function openEdit() {
-  const t = ops.current!
-  const tipeAssign = t.kontak_teknisi ? 'vendor' : 'internal'
-  editForm.value = {
-    judul_tiket: t.judul_tiket,
-    deskripsi_masalah: t.deskripsi_masalah || '',
-    prioritas: t.prioritas,
-    status_tiket: t.status_tiket,
-    tipe_assign: tipeAssign,
-    id_teknisi_pic: tipeAssign === 'internal' ? (t.teknisi?.id_karyawan || 0) : 0,
-    id_kontak_teknisi: tipeAssign === 'vendor' ? (t.kontak_teknisi?.id_kontak || 0) : 0,
-    jenis_gangguan: (t as any).jenis_gangguan || '',
-    root_cause: (t as any).root_cause || '',
+  const x = t.value!
+  const tipe = x.kontak_teknisi ? 'vendor' : 'internal'
+  edit.value = {
+    buka: true, judul_tiket: x.judul_tiket, deskripsi_masalah: x.deskripsi_masalah || '', prioritas: x.prioritas, tipe_assign: tipe,
+    id_teknisi_pic: tipe === 'internal' ? x.teknisi?.id_karyawan || 0 : 0, id_kontak_teknisi: tipe === 'vendor' ? x.kontak_teknisi?.id_kontak || 0 : 0,
+    jenis_gangguan: x.jenis_gangguan || '', root_cause: x.root_cause || '',
   }
-  editError.value = ''; showEditModal.value = true
 }
-
-async function handleEdit() {
-  editSubmitting.value = true; editError.value = ''
+async function simpanEdit() {
+  editSimpan.value = true
   try {
-    const payload: any = {
-      judul_tiket: editForm.value.judul_tiket,
-      deskripsi_masalah: editForm.value.deskripsi_masalah,
-      prioritas: editForm.value.prioritas,
-      status_tiket: editForm.value.status_tiket,
-      jenis_gangguan: editForm.value.jenis_gangguan || undefined,
-      root_cause: editForm.value.root_cause || undefined,
-    }
-    if (editForm.value.tipe_assign === 'internal') {
-      payload.id_teknisi_pic = editForm.value.id_teknisi_pic || null
-    } else {
-      payload.id_kontak_teknisi = editForm.value.id_kontak_teknisi || null
-    }
+    const e = edit.value
+    const payload: any = { judul_tiket: e.judul_tiket, deskripsi_masalah: e.deskripsi_masalah, prioritas: e.prioritas, jenis_gangguan: e.jenis_gangguan || undefined, root_cause: e.root_cause || undefined }
+    if (e.tipe_assign === 'internal') payload.id_teknisi_pic = e.id_teknisi_pic || null
+    else payload.id_kontak_teknisi = e.id_kontak_teknisi || null
     await ops.update(id, payload)
-    await ops.fetchOne(id)
-    showEditModal.value = false; flash('Tiket diperbarui')
-  } catch (e: any) { editError.value = e.response?.data?.message || 'Gagal' }
-  finally { editSubmitting.value = false }
+    await muatUlang(); edit.value.buka = false; toast('Tiket diperbarui')
+  } catch (err) { alertError(err, 'Gagal menyimpan') }
+  finally { editSimpan.value = false }
 }
 
-async function handleAddLog() {
-  if (!logForm.value.status_ke && !logForm.value.catatan?.trim()) {
-    flash('Isi status atau catatan terlebih dahulu', 'error'); return
-  }
-  logSubmitting.value = true
-  try {
-    await ops.addLog({ id_ticket: id, status_ke: logForm.value.status_ke || undefined, catatan: logForm.value.catatan || undefined })
-    await ops.fetchOne(id)
-    showLogModal.value = false
-    logForm.value = { status_ke: '', catatan: '' }
-    flash('Log ditambahkan')
-  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal tambah log', 'error') }
-  finally { logSubmitting.value = false }
-}
-
-async function handleAddWo() {
-  if (!woForm.value.tgl_jadwal || !woForm.value.deskripsi_tugas) {
-    woError.value = 'Jadwal dan deskripsi wajib diisi'; return
-  }
-  woSubmitting.value = true; woError.value = ''
+// ── Surat tugas & visit ──────────────────────────────────────────────────────
+const wo = ref({ buka: false, jenis_wo: 'Troubleshoot', tipe_eksekutor: 'Internal_NEXT1', id_teknisi_internal: 0, fee_vendor: 0, tgl_jadwal: '', deskripsi_tugas: '', simpan: false })
+function bukaWo() { wo.value = { buka: true, jenis_wo: 'Troubleshoot', tipe_eksekutor: 'Internal_NEXT1', id_teknisi_internal: t.value?.teknisi?.id_karyawan || 0, fee_vendor: 0, tgl_jadwal: '', deskripsi_tugas: t.value?.judul_tiket || '', simpan: false } }
+async function simpanWo() {
+  const w = wo.value
+  if (!w.tgl_jadwal || !w.deskripsi_tugas.trim()) return alertError(null, 'Jadwal dan deskripsi tugas wajib diisi')
+  w.simpan = true
   try {
     await proyek.createWo({
-      jenis_wo: woForm.value.jenis_wo,
-      id_ticket: id,
-      id_site: ops.current!.site!.id_site,
-      tipe_eksekutor: woForm.value.tipe_eksekutor,
-      id_teknisi_internal: woForm.value.tipe_eksekutor === 'Internal_NEXT1' && woForm.value.id_teknisi_internal ? woForm.value.id_teknisi_internal : undefined,
-      fee_vendor: woForm.value.fee_vendor || undefined,
-      tgl_jadwal: new Date(woForm.value.tgl_jadwal).toISOString(),
-      deskripsi_tugas: woForm.value.deskripsi_tugas,
+      jenis_wo: w.jenis_wo, id_ticket: id, id_site: t.value!.site!.id_site, tipe_eksekutor: w.tipe_eksekutor,
+      id_teknisi_internal: w.tipe_eksekutor === 'Internal_NEXT1' && w.id_teknisi_internal ? w.id_teknisi_internal : undefined,
+      fee_vendor: w.fee_vendor || undefined, tgl_jadwal: new Date(w.tgl_jadwal).toISOString(), deskripsi_tugas: w.deskripsi_tugas,
     })
-    await ops.fetchOne(id)
-    showWoModal.value = false
-    woForm.value = { jenis_wo: 'Troubleshoot', tipe_eksekutor: 'Internal_NEXT1', id_teknisi_internal: 0, fee_vendor: 0, tgl_jadwal: '', deskripsi_tugas: '' }
-    flash('Work Order dibuat')
-  } catch (e: any) { woError.value = e.response?.data?.message || 'Gagal' }
-  finally { woSubmitting.value = false }
+    await muatUlang(); w.buka = false; toast('Surat tugas dibuat')
+  } catch (e) { alertError(e, 'Gagal membuat surat tugas') }
+  finally { w.simpan = false }
 }
-
 const antreVisitProses = ref(false)
 async function antreVisit() {
-  const t = ops.current
-  if (!t?.site?.id_site) { flash('Tiket belum terhubung ke site', 'error'); return }
+  const x = t.value
+  if (!x?.site?.id_site) return
   antreVisitProses.value = true
   try {
-    const { data } = await api.post('/visit', {
-      id_site: t.site.id_site, id_ticket: id, jenis_wo: 'Perbaikan',
-      prioritas: ['Critical', 'High'].includes(t.prioritas as string) ? 'Tinggi' : 'Normal',
-      deskripsi_tugas: t.judul_tiket,
-    })
-    await ops.fetchOne(id)
-    flash(`${data.message} — masuk antrean Jadwal Visit`)
-  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal', 'error') }
+    const { data } = await api.post('/visit', { id_site: x.site.id_site, id_ticket: id, jenis_wo: 'Perbaikan', prioritas: ['Critical', 'High'].includes(x.prioritas) ? 'Tinggi' : 'Normal', deskripsi_tugas: x.judul_tiket })
+    await muatUlang(); toast(`${data.message} — masuk antrean Jadwal Visit`)
+  } catch (e) { alertError(e, 'Gagal memasukkan ke antrean visit') }
   finally { antreVisitProses.value = false }
 }
-
-function flash(msg: string, type: 'success' | 'error' = 'success') {
-  successMsg.value = msg; flashType.value = type
-  setTimeout(() => successMsg.value = '', type === 'error' ? 5000 : 3000)
-}
-
-const tanganiLoading = ref(false)
-
-async function handleTangani() {
-  if (!auth.user?.id_karyawan) { flash('Akun tidak terhubung ke data karyawan', 'error'); return }
-  tanganiLoading.value = true
-  try {
-    const payload: any = { id_teknisi_pic: auth.user.id_karyawan }
-    if (ops.current?.status_tiket === 'Open') payload.status_tiket = 'In_Progress'
-    await ops.update(id, payload)
-    await ops.fetchOne(id)
-    flash('Tiket berhasil ditangani')
-  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal', 'error') }
-  finally { tanganiLoading.value = false }
-}
-
-const confirmHapusTiket = ref(false)
-const hapusTiketError = ref('')
-const hapusLoading = ref(false)
-
-function hapusTiket() { hapusTiketError.value = ''; confirmHapusTiket.value = true }
-
-async function doHapusTiket() {
-  if (hapusLoading.value) return
-  confirmHapusTiket.value = false
-  hapusLoading.value = true
-  try {
-    await api.delete(`/operations/${id}`)
-    router.push('/operations')
-  } catch (e: any) { hapusTiketError.value = e?.response?.data?.message || 'Gagal menghapus tiket' }
-  finally { hapusLoading.value = false }
-}
-
-function slaInfo(t: any): { label: string; cls: string } {
-  if (['Resolved', 'Closed'].includes(t.status_tiket)) {
-    return t.sla_breached ? { label: 'Selesai (telat)', cls: 'sla-late-done' } : { label: 'Terpenuhi ✓', cls: 'sla-ok' }
-  }
-  if (!t.sla_due) return { label: '—', cls: 'sla-none' }
-  const sisaMs = new Date(t.sla_due).getTime() - Date.now()
-  if (sisaMs <= 0) {
-    const jam = Math.floor(-sisaMs / 3600_000)
-    return { label: `TELAT ${jam >= 1 ? jam + ' jam' : '<1 jam'}`, cls: 'sla-late' }
-  }
-  const jam = Math.floor(sisaMs / 3600_000)
-  const menit = Math.floor((sisaMs % 3600_000) / 60_000)
-  return { label: `sisa ${jam >= 1 ? jam + 'j ' : ''}${menit}m`, cls: sisaMs < 2 * 3600_000 ? 'sla-warning' : 'sla-safe' }
-}
-
-function ageHours(d: string) {
-  const t = ops.current
-  const endMs = (t && (t.status_tiket === 'Resolved' || t.status_tiket === 'Closed') && t.tgl_resolved)
-    ? new Date(t.tgl_resolved).getTime()
-    : Date.now()
-  const totalMs = endMs - new Date(d).getTime()
-  const h = Math.floor(totalMs / 3600000)
-  if (h === 0) {
-    const m = Math.floor(totalMs / 60000)
-    return m < 1 ? '<1 menit' : `${m} menit`
-  }
-  return h < 24 ? `${h} jam` : `${Math.floor(h / 24)} hari`
-}
-
-function journeyStep(t: any) {
-  if (t.tgl_resolved || t.status_tiket === 'Resolved' || t.status_tiket === 'Closed') return 3
-  if (t.tgl_sampai) return 2
-  if (t.tgl_berangkat) return 1
-  return 0
-}
-
 const journeySaving = ref(false)
-
 async function setJourneyTime(field: 'tgl_berangkat' | 'tgl_sampai') {
   if (journeySaving.value) return
   journeySaving.value = true
-  try {
-    await ops.update(id, { [field]: new Date().toISOString() })
-    await ops.fetchOne(id)
-    flash(field === 'tgl_berangkat' ? 'Waktu berangkat dicatat' : 'Waktu tiba dicatat')
-  } catch (e: any) { flash(e?.response?.data?.message || 'Gagal mencatat waktu', 'error') }
+  try { await ops.update(id, { [field]: new Date().toISOString() }); await muatUlang(); toast(field === 'tgl_berangkat' ? '🚗 Waktu berangkat dicatat' : '📍 Waktu tiba dicatat') }
+  catch (e) { alertError(e, 'Gagal mencatat waktu') }
   finally { journeySaving.value = false }
+}
+const journeyStep = computed(() => {
+  const x = t.value
+  if (!x) return 0
+  if (x.tgl_resolved || !AKTIF.includes(x.status_tiket)) return 3
+  return x.tgl_sampai ? 2 : x.tgl_berangkat ? 1 : 0
+})
+
+// ── Lain-lain ────────────────────────────────────────────────────────────────
+async function hapusTiket() {
+  if (!(await confirmDialog({ title: `Hapus tiket ${t.value?.nomor_tiket}?`, message: 'Semua log & data terkait tiket ini ikut terhapus dan tidak bisa dikembalikan.', confirmLabel: 'Ya, hapus', variant: 'danger' }))) return
+  try { await api.delete(`/operations/${id}`); toast('Tiket dihapus'); router.push('/operations') }
+  catch (e) { alertError(e, 'Gagal menghapus tiket') }
+}
+async function salin(teks: string, pesan = 'Disalin') {
+  try { await navigator.clipboard.writeText(teks); toast(pesan, 'default', 2000) } catch { /* abaikan */ }
+}
+const ringkasanTeks = computed(() => {
+  const x = t.value
+  if (!x) return ''
+  return [`🎫 ${x.nomor_tiket} — ${x.judul_tiket}`, `📍 ${x.site?.nama_site ?? '-'} (${x.site?.pelanggan?.nama_pelanggan ?? '-'})`,
+    `⚡ ${x.prioritas} · ${statusLabel(x.status_tiket)} · ${durasi(umurMenit.value)}`, `👷 PIC: ${namaPic.value ?? 'belum ada'}`, `🔗 ${asal}/operations/${x.id_ticket}`].join('\n')
+})
+const menuLain = ref(false)
+const asal = window.location.origin
+function bukaTiketLain(idLain: number) { window.location.assign(`/operations/${idLain}`) }
+function tombol(e: KeyboardEvent) {
+  const el = e.target as HTMLElement
+  if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (preview.value) {
+    if (e.key === 'ArrowRight') geserFoto(1)
+    else if (e.key === 'ArrowLeft') geserFoto(-1)
+    else if (e.key === 'Escape') preview.value = null
+    return
+  }
+  if (document.querySelector('.modal-overlay, .dh-overlay')) return
+  if (e.key === 'e') { e.preventDefault(); openEdit() }
+  else if (e.key === 'c') { e.preventDefault(); tab.value = 'aktivitas'; nextTick(() => inputCatatan.value?.focus()) }
+  else if (e.key === 't') { e.preventDefault(); showTimeline.value = true }
+  else if (/^[1-4]$/.test(e.key)) tab.value = TAB[Number(e.key) - 1]!.k
 }
 </script>
 
 <template>
-  <div class="page">
-    <ConfirmDialog
-      v-model="confirmHapusTiket"
-      :title="`Hapus Tiket ${ops.current?.nomor_tiket}?`"
-      message="Tindakan ini tidak bisa dibatalkan. Semua log dan data terkait tiket ini akan hilang."
-      confirm-label="Ya, Hapus"
-      variant="danger"
-      @confirm="doHapusTiket"
-      @cancel="confirmHapusTiket = false"
-    />
-    <div v-if="hapusTiketError" class="alert-error">{{ hapusTiketError }}</div>
+  <div class="page td">
+    <div v-if="ops.loading && !t" class="td-skeleton"><div class="sk h" /><div class="sk" /><div class="sk" /></div>
+    <div v-else-if="ops.error" class="alert alert-danger">{{ ops.error }} <RouterLink to="/operations">← Kembali</RouterLink></div>
 
-    <div v-if="ops.loading && !ops.current" class="loading-page">Memuat...</div>
-    <div v-else-if="ops.error" class="alert-error">{{ ops.error }}</div>
-    <template v-else-if="ops.current">
+    <template v-else-if="t">
+      <!-- ── HERO ─────────────────────────────────────────────────────── -->
+      <section class="td-hero" :style="{ '--st': STATUS_WARNA[t.status_tiket] ?? '#64748b', '--pr': PRIO[t.prioritas]?.warna ?? '#64748b' }">
+        <div class="td-hero-atas">
+          <button type="button" class="td-kembali" @click="router.push('/operations')">← Pusat Gangguan</button>
+          <div class="td-hero-aksi-kecil">
+            <button type="button" title="Salin ringkasan untuk dibagikan" @click="salin(ringkasanTeks, 'Ringkasan tiket disalin 📋')">📋</button>
+            <button type="button" title="Timeline lengkap (T)" @click="showTimeline = true">🕒</button>
+            <button type="button" title="Cetak laporan" @click="printLaporanTiket(t)">🖨️</button>
+            <button type="button" title="Muat ulang" @click="muatUlang(); fetchNoc(); fetchFotos()">🔄</button>
+          </div>
+        </div>
+        <div class="td-hero-isi">
+          <div class="td-hero-kiri">
+            <div class="td-chips">
+              <span class="td-chip prio" :class="{ denyut: t.prioritas === 'Critical' && aktif }">{{ PRIO[t.prioritas]?.ikon }} {{ t.prioritas }}</span>
+              <span class="td-chip">{{ SUMBER_IKON[t.sumber_tiket] ?? '•' }} {{ t.sumber_tiket }}</span>
+              <span v-if="t.jenis_gangguan" class="td-chip">🧩 {{ t.jenis_gangguan }}</span>
+              <button type="button" class="td-chip nomor" title="Salin nomor tiket" @click="salin(t.nomor_tiket, 'Nomor tiket disalin')">{{ t.nomor_tiket }} ⧉</button>
+            </div>
+            <h1>{{ t.judul_tiket }}</h1>
+            <p class="td-hero-site">
+              <RouterLink v-if="t.site" :to="`/master/site/${t.site.id_site}`">📍 {{ t.site.nama_site }}</RouterLink>
+              <span v-if="t.site?.pelanggan"> · 🏢 {{ t.site.pelanggan.nama_pelanggan }}</span>
+              <span v-if="t.site?.kota"> · {{ t.site.kota }}</span>
+            </p>
+          </div>
+          <div class="td-hero-angka">
+            <div class="td-durasi">
+              <small>{{ aktif ? 'Sudah berlangsung' : 'Total durasi' }}</small>
+              <b>{{ durasi(umurMenit) }}</b>
+              <em>dibuka {{ fmtDt(t.tgl_open) }}</em>
+            </div>
+            <div class="td-sla" :class="`s-${sla.nada}`">
+              <small>SLA {{ PRIO[t.prioritas]?.sla }} jam</small>
+              <b>{{ sla.nada === 'lewat' ? '⏰ ' : sla.nada === 'selesai' ? '✓ ' : '' }}{{ sla.label }}</b>
+              <span class="trek"><i :style="{ width: `${Math.min(100, sla.pct)}%` }" /></span>
+              <em>{{ sla.sub }}</em>
+            </div>
+          </div>
+        </div>
 
-      <!-- Header -->
-      <div class="page-header">
-        <div>
-          <button class="btn-back" @click="router.push('/operations')">← Operasional</button>
-          <h2>{{ ops.current.nomor_tiket }}</h2>
-          <p class="sub">{{ ops.current.judul_tiket }}</p>
+        <!-- Stepper status -->
+        <div class="td-stepper" role="group" aria-label="Status tiket">
+          <button v-for="(l, i) in LANGKAH" :key="l.s" type="button" class="td-step"
+            :class="{ lewat: i < indeksLangkah, kini: i === indeksLangkah }" :disabled="sibuk || i === indeksLangkah"
+            :title="i === indeksLangkah ? 'Status saat ini' : `Ubah ke ${l.label}`" @click="keStatus(l.s)">
+            <span class="td-step-bulat">{{ i < indeksLangkah ? '✓' : l.ikon }}</span>
+            <span class="td-step-label">{{ l.label }}</span>
+          </button>
         </div>
-        <div class="header-right">
-          <span :class="['sla-badge-lg', slaInfo(ops.current).cls]">SLA: {{ slaInfo(ops.current).label }}</span>
-          <span class="prioritas-badge" :style="{ color: PRIORITAS_COLOR[ops.current.prioritas], background: PRIORITAS_COLOR[ops.current.prioritas] + '20' }">
-            ● {{ ops.current.prioritas }}
-          </span>
-          <span class="status-big" :style="{ background: STATUS_COLOR[ops.current.status_tiket]?.bg, color: STATUS_COLOR[ops.current.status_tiket]?.color }">
-            {{ statusLabel(ops.current.status_tiket) }}
-          </span>
-          <button class="btn-timeline" @click="showTimeline = true">📊 Timeline</button>
-          <button class="btn-print" @click="printLaporanTiket(ops.current)">🖨 Laporan</button>
-          <button
-            v-if="auth.user?.id_karyawan && !['Resolved','Closed'].includes(ops.current.status_tiket)"
-            class="btn-tangani"
-            :disabled="tanganiLoading"
-            @click="handleTangani"
-          >{{ tanganiLoading ? '...' : '⚡ Tangani' }}</button>
-          <button class="btn-edit" @click="openEdit">Edit</button>
-          <button v-if="auth.hasRole('Admin')" class="btn-hapus-tiket" :disabled="hapusLoading" @click="hapusTiket">{{ hapusLoading ? 'Menghapus...' : '🗑 Hapus' }}</button>
-        </div>
-      </div>
 
-      <div v-if="successMsg" :class="flashType === 'error' ? 'alert-error' : 'alert-success'">{{ successMsg }}</div>
-
-      <!-- Info bar -->
-      <div class="info-bar">
-        <div class="info-chip">
-          <span class="ic-label">Pelanggan</span>
-          <span class="ic-value fw">{{ ops.current.site?.pelanggan?.nama_pelanggan }}</span>
-        </div>
-        <div class="info-chip">
-          <span class="ic-label">Site</span>
-          <span class="ic-value">{{ ops.current.site?.nama_site }}<span v-if="ops.current.site?.kota" class="text-gray"> · {{ ops.current.site?.kota }}</span></span>
-        </div>
-        <div class="info-chip">
-          <span class="ic-label">Layanan</span>
-          <span class="ic-value">{{ ops.current.site?.layanan?.nama_layanan || '—' }}</span>
-        </div>
-        <div class="info-chip">
-          <span class="ic-label">Teknisi PIC</span>
-          <span class="ic-value fw" v-if="ops.current.teknisi">{{ ops.current.teknisi.nama_lengkap }}</span>
-          <span class="ic-value fw vendor-pic" v-else-if="ops.current.kontak_teknisi">
-            {{ ops.current.kontak_teknisi.nama }}
-            <span class="vendor-tag">Vendor</span>
-          </span>
-          <span class="ic-value text-gray" v-else>Belum di-assign</span>
-        </div>
-        <div class="info-chip">
-          <span class="ic-label">Durasi</span>
-          <span class="ic-value" style="color:#f97316;font-weight:700">{{ ageHours(ops.current.tgl_open) }}</span>
-        </div>
-        <div class="info-chip">
-          <span class="ic-label">Sumber</span>
-          <span class="ic-value">{{ ops.current.sumber_tiket }}</span>
-        </div>
-      </div>
-
-      <div v-if="ops.current.deskripsi_masalah" class="deskripsi-box">
-        <strong>Deskripsi:</strong> {{ ops.current.deskripsi_masalah }}
-      </div>
-
-      <div v-if="(ops.current as any).jenis_gangguan || (ops.current as any).root_cause" class="rca-box">
-        <div v-if="(ops.current as any).jenis_gangguan" class="rca-row">
-          <span class="rca-label">Jenis Gangguan</span>
-          <span class="rca-badge">{{ (ops.current as any).jenis_gangguan }}</span>
-        </div>
-        <div v-if="(ops.current as any).root_cause" class="rca-row">
-          <span class="rca-label">Root Cause</span>
-          <span class="rca-text">{{ (ops.current as any).root_cause }}</span>
-        </div>
-      </div>
-
-      <!-- ── KONTAK & PROVIDER ─────────────────────────────── -->
-      <div class="kontak-grid">
-
-        <!-- Kontak PIC Site -->
-        <div class="kontak-card">
-          <div class="kontak-card-title">📞 Kontak Site</div>
-
-          <!-- PIC Pelanggan Utama -->
-          <div v-if="ops.current.site?.pelanggan?.nama_pic_utama || ops.current.site?.pelanggan?.no_hp_pic_utama || ops.current.site?.pelanggan?.no_telp" class="kontak-group">
-            <div class="kontak-group-label">PIC Pelanggan</div>
-            <div class="kontak-row">
-              <span class="kontak-name">{{ ops.current.site?.pelanggan?.nama_pic_utama || ops.current.site?.pelanggan?.nama_pelanggan }}</span>
-              <div class="kontak-actions">
-                <a v-if="ops.current.site?.pelanggan?.no_hp_pic_utama"
-                   :href="`https://wa.me/${ops.current.site.pelanggan.no_hp_pic_utama.replace(/\D/g,'').replace(/^0/,'62')}`"
-                   target="_blank" class="kontak-btn wa" title="WhatsApp">
-                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.12.554 4.107 1.523 5.83L.057 23.5l5.83-1.466A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.794 9.794 0 01-5.007-1.376l-.36-.214-3.717.937.98-3.607-.234-.373A9.794 9.794 0 012.182 12c0-5.415 4.403-9.818 9.818-9.818 5.415 0 9.818 4.403 9.818 9.818 0 5.415-4.403 9.818-9.818 9.818z"/></svg>
-                  {{ ops.current.site.pelanggan.no_hp_pic_utama }}
-                </a>
-                <a v-if="ops.current.site?.pelanggan?.no_telp"
-                   :href="`tel:${ops.current.site.pelanggan.no_telp}`"
-                   class="kontak-btn tel" title="Telpon">
-                  📲 {{ ops.current.site.pelanggan.no_telp }}
-                </a>
+        <!-- Aksi utama -->
+        <div class="td-aksi">
+          <div class="td-pic">
+            <span class="ava" :style="{ background: namaPic ? warnaNama(namaPic) : '#94a3b8' }">{{ namaPic ? inisial(namaPic) : '?' }}</span>
+            <span><small>PIC</small><b>{{ namaPic ?? 'Belum ada' }}</b><em v-if="t.kontak_teknisi">{{ t.kontak_teknisi.asal_vendor || 'vendor' }}</em></span>
+          </div>
+          <div class="td-aksi-tombol">
+            <button v-if="aktif && auth.user?.id_karyawan && t.teknisi?.id_karyawan !== auth.user.id_karyawan" type="button" class="td-btn ungu" :disabled="sibuk" @click="handleTangani">🙋 Tangani</button>
+            <button v-if="aktif" type="button" class="td-btn hijau" :disabled="sibuk" @click="bukaTutup('Resolved')">✅ Tutup gangguan</button>
+            <button type="button" class="td-btn" @click="tab = 'aktivitas'; $nextTick(() => inputCatatan?.focus())">💬 Catatan <kbd>C</kbd></button>
+            <button type="button" class="td-btn" @click="openEdit">✏️ Edit <kbd>E</kbd></button>
+            <div class="td-menu">
+              <button type="button" class="td-btn" :aria-expanded="menuLain" @click="menuLain = !menuLain">⋯</button>
+              <div v-if="menuLain" class="td-menu-isi" @click="menuLain = false">
+                <button type="button" @click="bukaWo">🛠️ Buat surat tugas</button>
+                <button type="button" :disabled="antreVisitProses" @click="antreVisit">🗓️ Masukkan antrean visit</button>
+                <button type="button" @click="salin(`${asal}/operations/${t.id_ticket}`, 'Tautan disalin')">🔗 Salin tautan</button>
+                <button type="button" @click="printLaporanTiket(t)">🖨️ Cetak laporan</button>
+                <button v-if="auth.hasRole('Admin')" type="button" class="bahaya" @click="hapusTiket">🗑️ Hapus tiket</button>
               </div>
             </div>
           </div>
+        </div>
+      </section>
 
-          <!-- PIC Site (list) -->
-          <div v-if="(ops.current.site as any)?.pic?.length" class="kontak-group">
-            <div class="kontak-group-label">PIC Site</div>
-            <div v-for="p in (ops.current.site as any).pic" :key="p.id_pic" class="kontak-row">
-              <div class="kontak-name-wrap">
-                <span class="kontak-name">{{ p.nama_pic }}</span>
-                <span v-if="p.is_utama" class="kontak-badge-utama">Utama</span>
-                <span v-if="p.jabatan" class="kontak-jabatan">{{ p.jabatan }}</span>
+      <div class="td-grid">
+        <!-- ── KOLOM UTAMA ─────────────────────────────────────────────── -->
+        <main class="td-utama">
+          <nav class="td-tab" role="tablist">
+            <button v-for="(x, i) in TAB" :key="x.k" type="button" role="tab" :aria-selected="tab === x.k" :class="{ on: tab === x.k }" :title="`Pintasan: ${i + 1}`" @click="tab = x.k">
+              {{ x.ikon }} {{ x.label }}
+              <span v-if="x.k === 'aktivitas' && activityFeed.length" class="td-tab-n">{{ activityFeed.length }}</span>
+              <span v-if="x.k === 'monitoring' && sensorDown" class="td-tab-n merah">{{ sensorDown }}</span>
+              <span v-if="x.k === 'lapangan' && fotos.length" class="td-tab-n">📷 {{ fotos.length }}</span>
+            </button>
+          </nav>
+
+          <!-- RINGKASAN -->
+          <div v-show="tab === 'ringkasan'" class="td-panel">
+            <div v-if="noc" class="td-kesimpulan" :style="{ '--nw': NOC_WARNA[noc.kesimpulan.status] ?? '#64748b' }">
+              <span class="td-kesimpulan-ikon">🛰️</span>
+              <div>
+                <small>Kondisi router sekarang (NOCaaS)</small>
+                <b>{{ noc.kesimpulan.label }}</b>
+                <p>{{ noc.kesimpulan.saran }}</p>
               </div>
-              <div class="kontak-actions">
-                <a v-if="p.no_kontak"
-                   :href="`https://wa.me/${String(p.no_kontak).replace(/\D/g,'').replace(/^0/,'62')}`"
-                   target="_blank" class="kontak-btn wa" title="WhatsApp">
-                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.12.554 4.107 1.523 5.83L.057 23.5l5.83-1.466A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.794 9.794 0 01-5.007-1.376l-.36-.214-3.717.937.98-3.607-.234-.373A9.794 9.794 0 012.182 12c0-5.415 4.403-9.818 9.818-9.818 5.415 0 9.818 4.403 9.818 9.818 0 5.415-4.403 9.818-9.818 9.818z"/></svg>
-                  {{ p.no_kontak }}
-                </a>
-                <a v-if="p.email" :href="`mailto:${p.email}`" class="kontak-btn email" title="Email">✉ {{ p.email }}</a>
+              <button type="button" class="td-link" @click="tab = 'monitoring'">Detail →</button>
+            </div>
+
+            <div v-if="downtimeInfo" class="td-kartu td-downtime">
+              <div class="td-dt-titik">
+                <span class="bulat merah">▼</span>
+                <div><small>Mulai down</small><b>{{ fmtDt(downtimeInfo.waktu_down) }}</b><em v-if="downtimeInfo.pesan_down" :title="downtimeInfo.pesan_down">{{ downtimeInfo.pesan_down }}</em></div>
+              </div>
+              <div class="td-dt-garis" :class="{ hidup: !downtimeInfo.sudah_up }"><span>{{ downtimeInfo.durasi_label }}</span></div>
+              <div class="td-dt-titik">
+                <span class="bulat" :class="downtimeInfo.sudah_up ? 'hijau' : 'abu'">{{ downtimeInfo.sudah_up ? '▲' : '…' }}</span>
+                <div><small>{{ downtimeInfo.sudah_up ? 'Kembali up' : 'Belum up' }}</small><b>{{ downtimeInfo.sudah_up ? fmtDt(downtimeInfo.waktu_up) : 'masih down' }}</b></div>
               </div>
             </div>
-          </div>
 
-          <div v-if="!ops.current.site?.pelanggan?.no_hp_pic_utama && !ops.current.site?.pelanggan?.no_telp && !(ops.current.site as any)?.pic?.length" class="kontak-empty">
-            Belum ada kontak PIC di data site
-          </div>
-        </div>
+            <div class="td-dua">
+              <div class="td-kartu">
+                <h4>📝 Deskripsi masalah</h4>
+                <p class="td-teks">{{ t.deskripsi_masalah || 'Belum ada deskripsi.' }}</p>
+              </div>
+              <div class="td-kartu" :class="{ kosong: !t.root_cause }">
+                <h4>🔬 Analisis (RCA)</h4>
+                <div class="td-rca">
+                  <span><small>Jenis gangguan</small><b>{{ t.jenis_gangguan || '—' }}</b></span>
+                  <span><small>Root cause / tindakan</small><b class="td-teks">{{ t.root_cause || 'Belum diisi' }}</b></span>
+                </div>
+                <button v-if="!t.root_cause" type="button" class="td-link" @click="aktif ? bukaTutup('Resolved') : openEdit()">+ Isi analisis</button>
+              </div>
+            </div>
 
-        <!-- Provider / ISP -->
-        <div class="kontak-card">
-          <div class="kontak-card-title">🌐 Provider / ISP</div>
-
-          <template v-if="(ops.current.site as any)?.sumber_internet?.length">
-            <div v-for="isp in (ops.current.site as any).sumber_internet" :key="isp.id_sumber" class="isp-row">
-              <div class="isp-header">
-                <span class="isp-link-type" :class="isp.peruntukan_link === 'Main' ? 'isp-main' : 'isp-backup'">
-                  {{ isp.peruntukan_link === 'Main' ? '▶ Main' : '⬡ Backup' }}
+            <div class="td-kartu">
+              <div class="td-kartu-kepala">
+                <h4>🛠️ Surat tugas <span class="muted">({{ t.work_orders?.length ?? 0 }})</span></h4>
+                <span class="td-kanan">
+                  <button type="button" class="td-btn kecil" :disabled="antreVisitProses" @click="antreVisit">🗓️ Perlu visit</button>
+                  <button type="button" class="td-btn kecil biru" @click="bukaWo">＋ Surat tugas</button>
                 </span>
-                <span class="isp-vendor-name">{{ isp.vendor?.nama_vendor || '—' }}</span>
-                <span v-if="isp.bandwidth_mbps" class="isp-bw">{{ isp.bandwidth_mbps }} Mbps</span>
               </div>
-              <div v-if="isp.nomor_pelanggan_isp" class="isp-pelno">
-                No. Pelanggan ISP: <strong>{{ isp.nomor_pelanggan_isp }}</strong>
-              </div>
-              <div class="kontak-actions" v-if="isp.vendor?.no_telp || isp.vendor?.kontak_pic || isp.vendor?.email_pic">
-                <span v-if="isp.vendor?.kontak_pic" class="isp-pic-name">PIC: {{ isp.vendor.kontak_pic }}</span>
-                <a v-if="isp.vendor?.no_telp"
-                   :href="`https://wa.me/${String(isp.vendor.no_telp).replace(/\D/g,'').replace(/^0/,'62')}`"
-                   target="_blank" class="kontak-btn wa" title="WA Vendor">
-                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.12.554 4.107 1.523 5.83L.057 23.5l5.83-1.466A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.794 9.794 0 01-5.007-1.376l-.36-.214-3.717.937.98-3.607-.234-.373A9.794 9.794 0 012.182 12c0-5.415 4.403-9.818 9.818-9.818 5.415 0 9.818 4.403 9.818 9.818 0 5.415-4.403 9.818-9.818 9.818z"/></svg>
-                  {{ isp.vendor.no_telp }}
-                </a>
-                <a v-if="isp.vendor?.email_pic" :href="`mailto:${isp.vendor.email_pic}`" class="kontak-btn email">✉ {{ isp.vendor.email_pic }}</a>
-              </div>
+              <div v-if="!t.work_orders?.length" class="td-kosong-kecil">Belum ada surat tugas — buat bila perlu kunjungan teknisi.</div>
+              <button v-for="w in t.work_orders" :key="w.id_wo" type="button" class="td-wo" @click="router.push({ path: '/jadwal-visit', query: { wo: w.id_wo } })">
+                <span class="td-wo-ikon">🛠️</span>
+                <span class="td-wo-isi"><b>{{ w.nomor_wo }} · {{ w.jenis_wo }}</b><small>{{ w.deskripsi_tugas }}</small><small>{{ w.tgl_jadwal ? fmtDt(w.tgl_jadwal) : 'Antrean visit' }} · {{ w.teknisi?.nama_lengkap || w.vendor?.nama_vendor || 'belum ada eksekutor' }}</small></span>
+                <span class="td-wo-st" :style="{ color: WO_STATUS_COLOR[w.status_wo], borderColor: WO_STATUS_COLOR[w.status_wo] }">{{ w.status_wo }}</span>
+              </button>
             </div>
-          </template>
 
-          <div v-else class="kontak-empty">Belum ada data provider / ISP di site ini</div>
-        </div>
-
-      </div>
-
-      <!-- ── MAIN GRID 2-COL ────────────────────────────────── -->
-      <div class="main-grid">
-
-        <!-- LEFT: Map + Foto -->
-        <div class="col-left">
-
-          <!-- Peta Lokasi -->
-          <div class="map-card">
-            <div class="map-header">
-              <div class="map-title"><span>📍</span> Lokasi Real-time</div>
-              <div class="map-legend">
-                <span class="legend-item"><span class="dot green"></span> Teknisi</span>
-                <span class="legend-item"><span class="dot blue"></span> Site</span>
-                <span v-if="teknisiLokasi" class="map-lastseen">Diperbarui: {{ fmtDt(teknisiLokasi.updated_at) }}</span>
-                <span v-else-if="ops.current.teknisi" class="map-nodata">Belum ada GPS teknisi</span>
-                <span v-else class="map-nodata">Belum ada teknisi</span>
-              </div>
-            </div>
-            <div ref="mapContainer" class="map-container" />
-            <div v-if="ops.current.site?.koordinat_gps" class="map-footer">
-              <a :href="`https://maps.google.com/?q=${ops.current.site.koordinat_gps}`" target="_blank" class="map-link">🗺 Google Maps</a>
-              <span class="map-coords">{{ ops.current.site.koordinat_gps }}</span>
+            <div class="td-kartu">
+              <div class="td-kartu-kepala"><h4>💬 Aktivitas terbaru</h4><button type="button" class="td-link" @click="tab = 'aktivitas'">Semua ({{ activityFeed.length }}) →</button></div>
+              <div v-if="!activityFeed.length" class="td-kosong-kecil">Belum ada aktivitas.</div>
+              <ul class="td-feed mini">
+                <li v-for="it in activityFeed.slice(0, 3)" :key="it.kind === 'log' ? `l${it.log.id_log}` : `f${it.stage}`">
+                  <span class="td-feed-titik" :style="{ background: it.kind === 'foto' ? '#16a34a' : STATUS_WARNA[it.log.status_ke] ?? '#94a3b8' }" />
+                  <div>
+                    <b>{{ it.kind === 'log' ? it.log.catatan || statusLabel(it.log.status_ke) : `📷 ${it.label}` }}</b>
+                    <small>{{ it.kind === 'log' ? it.log.user?.karyawan?.nama_lengkap || 'Sistem' : `${it.fotos.length} foto` }} · {{ fmtDt(it.time) }}</small>
+                  </div>
+                </li>
+              </ul>
             </div>
           </div>
 
-          <!-- Foto Gallery -->
-          <div class="foto-card" v-if="fotos.length">
-            <div class="foto-card-header">
-              <span class="foto-card-title">📷 Dokumentasi Foto</span>
-              <span class="foto-badge">{{ fotos.length }} foto</span>
-            </div>
-            <div class="foto-stages-grid">
-              <template v-for="stage in ['before','proses','after']" :key="stage">
-                <div v-if="fotosOf(stage).length" class="foto-stage-col">
-                  <div class="stage-label">{{ stageLabel(stage) }}</div>
-                  <div class="stage-row-grid">
-                    <div v-baris v-for="f in fotosOf(stage)" :key="f.id_foto" class="foto-thumb-wrap" @click="previewUrl = f.url">
-                      <img :src="f.url" class="foto-thumb" loading="lazy" :alt="`Foto ${stageLabel(stage)} ${fmtDt(f.created_at)}`" />
-                      <div class="foto-time">{{ fmtDt(f.created_at) }}</div>
+          <!-- MONITORING -->
+          <div v-show="tab === 'monitoring'" class="td-panel">
+            <div class="td-kartu">
+              <div class="td-kartu-kepala">
+                <h4>🛰️ Pembanding NOCaaS</h4>
+                <button type="button" class="td-ikon-btn" :disabled="nocLoading" title="Muat ulang" @click="fetchNoc"><span :class="{ putar: nocLoading }">↻</span></button>
+              </div>
+              <small class="muted">Status router dari NOCaaS (VPN NS/UN + heartbeat syslog) + ping tunnel dari ERP</small>
+              <div v-if="nocLoading && !noc" class="td-kosong-kecil">Memuat status NOCaaS…</div>
+              <div v-else-if="nocError" class="alert alert-danger">{{ nocError }}</div>
+              <template v-else-if="noc">
+                <div class="td-kesimpulan datar" :style="{ '--nw': NOC_WARNA[noc.kesimpulan.status] ?? '#64748b' }">
+                  <div><b>{{ noc.kesimpulan.label }}</b><p>{{ noc.kesimpulan.saran }}</p></div>
+                </div>
+                <RouterLink v-if="!noc.routers.length" to="/nocaas" class="td-link">Petakan router ke site ini →</RouterLink>
+                <div v-for="r in noc.routers" :key="r.site_key" class="td-router">
+                  <div class="td-router-baris">
+                    <span class="td-router-dot" :style="{ background: NOC_WARNA[r.status] }" />
+                    <div class="td-router-info">
+                      <b>{{ r.site_key }}<span v-if="r.jenis && r.jenis !== 'mikrotik'" class="td-tag">{{ r.jenis.toUpperCase() }}{{ r.model ? ` · ${r.model}` : '' }}</span></b>
+                      <small><b :style="{ color: NOC_WARNA[r.status] }">{{ r.label }}</b> · sejak {{ nocSejak(r.status === 'macet' ? r.macet_sejak : r.status === 'offline' && r.offline_since ? r.offline_since : r.status_sejak) }}</small>
+                      <div class="td-tunnel">
+                        <span v-if="r.ns_ip" :class="tunnelKelas(r.ns_online, r.ping?.ns)" :title="tunnelJudul(r.ns_online, r.ping?.ns)">NS {{ r.ns_ip }}<small v-if="r.ping?.ns"> · {{ pingTeks(r.ping.ns) }}</small></span>
+                        <span v-if="r.un_ip" :class="tunnelKelas(r.un_online, r.ping?.un)" :title="tunnelJudul(r.un_online, r.ping?.un)">UN {{ r.un_ip }}<small v-if="r.ping?.un"> · {{ pingTeks(r.ping.un) }}</small></span>
+                      </div>
+                      <small>🌐 {{ r.access_isp || '—' }}<template v-if="r.public_ip"> · {{ r.public_ip }}</template><template v-if="r.hb_at"> · heartbeat {{ nocSejak(r.hb_at) }} lalu</template></small>
+                      <small>📉 Putus 7 hari: <b>{{ r.downs7 }}×</b> · flapping 24 jam: <b>{{ r.flaps24 }}×</b></small>
                     </div>
+                    <button v-if="r.nama_utama" type="button" class="td-btn kecil" @click="toggleNocKejadian(r.site_key)">{{ nocKejadian[r.site_key] ? 'Tutup' : '📜 Riwayat 72 jam' }}</button>
+                  </div>
+                  <div v-if="nocKejadian[r.site_key]" class="td-kejadian">
+                    <div v-if="nocKejadian[r.site_key] === 'memuat'" class="td-kosong-kecil">Memuat…</div>
+                    <div v-else-if="typeof nocKejadian[r.site_key] === 'string'" class="alert alert-danger">{{ nocKejadian[r.site_key] }}</div>
+                    <div v-else-if="!(nocKejadian[r.site_key] as any[]).length" class="td-kosong-kecil">Tidak ada kejadian dalam 72 jam.</div>
+                    <template v-else>
+                      <div v-for="(k, i) in (nocKejadian[r.site_key] as any[])" :key="i" class="td-kj">
+                        <span class="at">{{ fmtDt(k.at) }}</span>
+                        <span :class="['jenis', /down/.test(k.kind) ? 'off' : 'on']">{{ NOC_KEJADIAN[k.kind] || k.kind }}</span>
+                        <span class="det">{{ k.iface }}{{ k.detail ? ` · ${k.detail}` : '' }}</span>
+                      </div>
+                    </template>
                   </div>
                 </div>
+                <div v-if="noc.sinkron && !noc.sinkron.ok" class="alert alert-danger">Sinkron NOCaaS terakhir gagal: {{ noc.sinkron.pesan }}</div>
+              </template>
+            </div>
+
+            <div class="td-kartu">
+              <div class="td-kartu-kepala">
+                <h4>📡 Sensor PRTG <small v-if="prtgDeviceName" class="muted">· {{ prtgDeviceName }}</small></h4>
+                <button type="button" class="td-ikon-btn" :disabled="prtgLoading" title="Muat ulang" @click="fetchPrtgSensors"><span :class="{ putar: prtgLoading }">↻</span></button>
+              </div>
+              <div v-if="prtgLoading" class="td-kosong-kecil">Memuat sensor PRTG…</div>
+              <div v-else-if="prtgError" class="alert alert-danger">{{ prtgError }}</div>
+              <div v-else-if="!prtgSensors.length" class="td-kosong-kecil">Belum ada device PRTG yang dipetakan ke site ini.</div>
+              <div v-else class="td-sensor-grid">
+                <button v-for="s in prtgSensors" :key="s.objid" type="button" class="td-sensor" :class="{ on: selectedSensorId === s.objid }" :style="{ '--sw': prtgStatusColor(s.status_raw) }" @click="pilihSensor(s)">
+                  <span class="dot" />
+                  <span class="isi"><b>{{ s.sensor }}</b><small>{{ s.device }}</small><small v-if="s.message_raw" class="pesan">{{ s.message_raw }}</small></span>
+                  <span class="lbl">{{ prtgStatusLabel(s.status_raw) }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="selectedSensorId && prtgSensors.length" class="td-kartu">
+              <div class="td-kartu-kepala">
+                <h4>📊 Grafik · {{ prtgSensors.find((s) => s.objid === selectedSensorId)?.sensor }} <span v-if="selectedGraphId === 0" class="td-live">● Live</span></h4>
+                <div class="td-seg">
+                  <button v-for="(lbl, gid) in ['Live', '48 Jam', '30 Hari', '365 Hari']" :key="gid" type="button" :class="{ on: selectedGraphId === gid }" @click="selectedGraphId = gid; loadGraphBlob(selectedSensorId!, gid)">{{ lbl }}</button>
+                </div>
+              </div>
+              <div class="td-grafik">
+                <div v-if="graphLoading" class="td-kosong-kecil">⏳ Memuat grafik…</div>
+                <img v-else-if="graphBlobUrl && !graphLoadError" :src="graphBlobUrl" alt="Grafik sensor PRTG" />
+                <div v-else class="td-kosong-kecil">Gagal memuat grafik — sensor mungkin tidak aktif atau PRTG belum terkonfigurasi.</div>
+              </div>
+              <small class="muted">Sensor ID {{ selectedSensorId }}<template v-if="selectedGraphId === 0"> · diperbarui otomatis tiap 60 detik</template></small>
+            </div>
+          </div>
+
+          <!-- LAPANGAN -->
+          <div v-show="tab === 'lapangan'" class="td-panel">
+            <div class="td-kartu td-journey">
+              <div class="td-kartu-kepala"><h4>🚦 Perjalanan teknisi</h4><button type="button" class="td-link" @click="showTimeline = true">Timeline lengkap →</button></div>
+              <div class="td-jalan">
+                <div v-for="(j, i) in [
+                  { ikon: '📋', label: 'Tiket dibuka', waktu: t.tgl_open },
+                  { ikon: '🚗', label: 'Berangkat', waktu: t.tgl_berangkat, aksi: 'tgl_berangkat' },
+                  { ikon: '📍', label: 'Tiba di lokasi', waktu: t.tgl_sampai, aksi: 'tgl_sampai' },
+                  { ikon: '✅', label: 'Selesai', waktu: t.tgl_resolved },
+                ]" :key="j.label" class="td-jalan-step" :class="{ lewat: i <= journeyStep, kini: i === journeyStep && aktif }">
+                  <span class="bulat">{{ j.ikon }}</span>
+                  <b>{{ j.label }}</b>
+                  <small>{{ j.waktu ? fmtDt(j.waktu) : '—' }}</small>
+                  <button v-if="!j.waktu && j.aksi && aktif && (j.aksi === 'tgl_berangkat' || t.tgl_berangkat)" type="button" class="td-btn kecil biru" :disabled="journeySaving" @click="setJourneyTime(j.aksi as any)">Catat sekarang</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="td-kartu td-peta-kartu">
+              <div class="td-kartu-kepala">
+                <h4>🗺️ Lokasi</h4>
+                <small class="muted">
+                  <template v-if="teknisiLokasi">🛵 teknisi diperbarui {{ fmtDt(teknisiLokasi.updated_at) }}<template v-if="jarakKm != null"> · <b>{{ jarakKm.toFixed(1) }} km</b> dari site</template></template>
+                  <template v-else-if="t.teknisi">GPS teknisi belum tersedia</template>
+                  <template v-else>Belum ada teknisi</template>
+                </small>
+              </div>
+              <div ref="mapContainer" class="td-peta" />
+              <div class="td-peta-kaki">
+                <span v-if="t.site?.koordinat_gps" class="muted">📍 {{ t.site.koordinat_gps }}</span>
+                <span v-else class="muted">Koordinat site belum diisi — <RouterLink :to="`/master/site/${t.site?.id_site}`">lengkapi di data site</RouterLink></span>
+                <a v-if="t.site?.koordinat_gps" :href="`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(t.site.koordinat_gps)}`" target="_blank" rel="noopener" class="td-btn kecil biru">🧭 Rute ke site</a>
+              </div>
+            </div>
+
+            <div class="td-kartu">
+              <div class="td-kartu-kepala"><h4>📷 Dokumentasi foto <span class="muted">({{ fotos.length }})</span></h4></div>
+              <div v-if="!fotos.length" class="td-kosong-kecil">Belum ada foto — teknisi mengunggah lewat aplikasi mobile.</div>
+              <template v-else>
+              <div v-for="stage in ['before', 'proses', 'after']" :key="stage">
+                <div v-if="fotosOf(stage).length" class="td-foto-grup">
+                  <small class="td-foto-lbl">{{ stageLabel(stage) }} pekerjaan</small>
+                  <div class="td-foto-grid">
+                    <button v-for="f in fotosOf(stage)" :key="f.id_foto" type="button" class="td-foto" @click="bukaFoto(fotos, f)">
+                      <img :src="f.url" loading="lazy" :alt="`Foto ${stageLabel(stage)} ${fmtDt(f.created_at)}`" />
+                      <small>{{ fmtDt(f.created_at) }}</small>
+                    </button>
+                  </div>
+                </div>
+              </div>
               </template>
             </div>
           </div>
 
-          <!-- Work Orders -->
-          <div class="section-card">
-            <div class="section-header">
-              <span class="card-title">Surat Tugas ({{ ops.current.work_orders?.length ?? 0 }})</span>
-              <span>
-                <button class="btn-add-small" :disabled="antreVisitProses" title="Masukkan ke antrean Jadwal Visit (teknisi & tanggal diatur di papan)" @click="antreVisit">🗓️ Perlu visit</button>
-                <button class="btn-add-small" @click="showWoModal = true; woError = ''">+ Surat Tugas</button>
-              </span>
+          <!-- AKTIVITAS -->
+          <div v-show="tab === 'aktivitas'" class="td-panel">
+            <div class="td-kartu td-composer">
+              <textarea ref="inputCatatan" v-model="catatan" rows="2" placeholder="Tulis update pekerjaan… (Ctrl+Enter untuk kirim)" @keydown.ctrl.enter="kirimCatatan" @keydown.meta.enter="kirimCatatan" />
+              <div class="td-cepat">
+                <button v-for="c in CATATAN_CEPAT" :key="c" type="button" @click="catatan = catatan ? `${catatan}\n${c}` : c">{{ c }}</button>
+              </div>
+              <div class="td-composer-bawah">
+                <select v-model="catatanStatus" class="form-select" aria-label="Ubah status bersama catatan">
+                  <option value="">Status tetap ({{ statusLabel(t.status_tiket) }})</option>
+                  <option v-for="l in LANGKAH.filter((x) => x.s !== t.status_tiket)" :key="l.s" :value="l.s">→ {{ l.ikon }} {{ l.label }}</option>
+                </select>
+                <button type="button" class="td-btn biru" :disabled="kirimLog || (!catatan.trim() && !catatanStatus)" @click="kirimCatatan">{{ kirimLog ? 'Mengirim…' : '📨 Kirim' }}</button>
+              </div>
             </div>
-            <div v-if="!ops.current.work_orders?.length" class="empty-section">Belum ada surat tugas</div>
-            <div v-baris v-for="wo in ops.current.work_orders" :key="wo.id_wo" class="wo-item" style="cursor: pointer" title="Buka di Jadwal Visit" @click="router.push({ path: '/jadwal-visit', query: { wo: wo.id_wo } })">
-              <div class="wo-left">
-                <div class="wo-nomor">{{ wo.nomor_wo }}</div>
-                <div class="wo-jenis">{{ wo.jenis_wo }}</div>
-                <div class="wo-date">{{ wo.tgl_jadwal ? fmtDt(wo.tgl_jadwal) : 'Antrean visit' }}</div>
-              </div>
-              <div class="wo-mid">
-                <div class="wo-desc">{{ wo.deskripsi_tugas }}</div>
-                <div class="wo-exec text-gray">{{ wo.teknisi?.nama_lengkap || wo.vendor?.nama_vendor || '—' }}</div>
-              </div>
-              <div class="wo-status" :style="{ color: WO_STATUS_COLOR[wo.status_wo] }">{{ wo.status_wo }}</div>
-            </div>
-          </div>
-
-          <!-- ── PEMBANDING NOCaaS ───────────────────────────── -->
-          <div class="prtg-card noc-card">
-            <div class="prtg-hdr">
-              <div class="prtg-hdr-left">
-                <span class="prtg-icon">🛰️</span>
-                <div>
-                  <div class="prtg-title">Pembanding NOCaaS</div>
-                  <div class="prtg-device-name text-gray">Status router dari NOCaaS (VPN NS/UN + heartbeat syslog) + ping tunnel dari ERP</div>
-                </div>
-              </div>
-              <button class="btn-refresh-prtg" @click="fetchNoc" :disabled="nocLoading" title="Refresh">
-                <span :class="{ spinning: nocLoading }">↻</span>
-              </button>
-            </div>
-            <div v-if="nocLoading && !noc" class="prtg-loading">Memuat status NOCaaS...</div>
-            <div v-else-if="nocError" class="prtg-err">{{ nocError }}</div>
-            <template v-else-if="noc">
-              <div class="noc-kesimpulan" :style="{ borderColor: NOC_WARNA[noc.kesimpulan.status], background: NOC_WARNA[noc.kesimpulan.status] + '12' }">
-                <b :style="{ color: NOC_WARNA[noc.kesimpulan.status] }">{{ noc.kesimpulan.label }}</b>
-                <span>{{ noc.kesimpulan.saran }}</span>
-              </div>
-              <router-link v-if="!noc.routers.length" to="/nocaas" class="noc-link">Petakan router ke site ini →</router-link>
-              <div v-for="r in noc.routers" :key="r.site_key" class="noc-router">
-                <div class="noc-baris">
-                  <span class="noc-dot" :style="{ background: NOC_WARNA[r.status] }"></span>
-                  <div class="noc-info">
-                    <div class="noc-nama">{{ r.site_key }}<span v-if="r.jenis && r.jenis !== 'mikrotik'" class="noc-jenis">{{ r.jenis.toUpperCase() }}{{ r.model ? ' · ' + r.model : '' }}</span></div>
-                    <div class="noc-sub">
-                      <b :style="{ color: NOC_WARNA[r.status] }">{{ r.label }}</b> · sejak {{ nocSejak(r.status === 'macet' ? r.macet_sejak : r.status === 'offline' && r.offline_since ? r.offline_since : r.status_sejak) }}
+            <div class="td-kartu">
+              <div v-if="!activityFeed.length" class="td-kosong-kecil">Belum ada aktivitas.</div>
+              <ul class="td-feed">
+                <li v-for="it in activityFeed" :key="it.kind === 'log' ? `l${it.log.id_log}` : `f${it.stage}`">
+                  <span class="td-feed-titik" :style="{ background: it.kind === 'foto' ? '#16a34a' : STATUS_WARNA[it.log.status_ke] ?? '#94a3b8' }">{{ it.kind === 'foto' ? '📷' : it.log.status_ke ? '🔁' : '💬' }}</span>
+                  <div class="td-feed-isi">
+                    <div class="td-feed-atas">
+                      <b>{{ it.kind === 'log' ? it.log.user?.karyawan?.nama_lengkap || 'Sistem' : it.label }}</b>
+                      <small>{{ fmtDt(it.time) }}</small>
                     </div>
-                    <div class="noc-tunnel">
-                      <span v-if="r.ns_ip" :class="tunnelKelas(r.ns_online, r.ping?.ns)" :title="tunnelJudul(r.ns_online, r.ping?.ns)">NS {{ r.ns_ip }}<small v-if="r.ping?.ns"> · {{ pingTeks(r.ping.ns) }}</small></span>
-                      <span v-if="r.un_ip" :class="tunnelKelas(r.un_online, r.ping?.un)" :title="tunnelJudul(r.un_online, r.ping?.un)">UN {{ r.un_ip }}<small v-if="r.ping?.un"> · {{ pingTeks(r.ping.un) }}</small></span>
-                    </div>
-                    <div class="noc-sub">
-                      Internet: {{ r.access_isp || '—' }}<template v-if="r.public_ip"> · {{ r.public_ip }}</template>
-                      <template v-if="r.hb_at"> · heartbeat {{ nocSejak(r.hb_at) }} lalu</template>
-                    </div>
-                    <div class="noc-sub">Putus 7 hari: {{ r.downs7 }}× · flapping 24 jam: {{ r.flaps24 }}×</div>
-                  </div>
-                  <button v-if="r.nama_utama" type="button" class="noc-btn" @click="toggleNocKejadian(r.site_key)">{{ nocKejadian[r.site_key] ? 'Tutup' : 'Riwayat 72 jam' }}</button>
-                </div>
-                <div v-if="nocKejadian[r.site_key]" class="noc-kejadian">
-                  <div v-if="nocKejadian[r.site_key] === 'memuat'" class="prtg-loading">Memuat…</div>
-                  <div v-else-if="typeof nocKejadian[r.site_key] === 'string'" class="prtg-err">{{ nocKejadian[r.site_key] }}</div>
-                  <div v-else-if="!(nocKejadian[r.site_key] as any[]).length" class="prtg-empty">Tidak ada kejadian dalam 72 jam.</div>
-                  <div v-else v-for="(k, i) in (nocKejadian[r.site_key] as any[])" :key="i" class="noc-kj">
-                    <span class="noc-kj-at">{{ fmtDt(k.at) }}</span>
-                    <span :class="['noc-kj-jenis', /down/.test(k.kind) ? 'off' : 'on']">{{ NOC_KEJADIAN[k.kind] || k.kind }}</span>
-                    <span class="noc-kj-det">{{ k.iface }}{{ k.detail ? ' · ' + k.detail : '' }}</span>
-                  </div>
-                </div>
-              </div>
-              <div v-if="noc.sinkron && !noc.sinkron.ok" class="prtg-err">Sinkron NOCaaS terakhir gagal: {{ noc.sinkron.pesan }}</div>
-            </template>
-          </div>
-
-          <!-- ── PRTG SENSOR STATUS ───────────────────────────── -->
-          <div class="prtg-card">
-            <div class="prtg-hdr">
-              <div class="prtg-hdr-left">
-                <span class="prtg-icon">📡</span>
-                <div>
-                  <div class="prtg-title">Status Sensor Perangkat</div>
-                  <div class="prtg-device-name" v-if="prtgDeviceName">{{ prtgDeviceName }}</div>
-                  <div class="prtg-device-name text-gray" v-else-if="!prtgLoading">Belum ada mapping device untuk site ini</div>
-                </div>
-              </div>
-              <button class="btn-refresh-prtg" @click="fetchPrtgSensors" :disabled="prtgLoading" title="Refresh">
-                <span :class="{ spinning: prtgLoading }">↻</span>
-              </button>
-            </div>
-            <div v-if="prtgLoading" class="prtg-loading">Memuat data sensor PRTG...</div>
-            <div v-else-if="prtgError" class="prtg-err">{{ prtgError }}</div>
-            <div v-else-if="!prtgSensors.length" class="prtg-empty">Tidak ada sensor ditemukan untuk device ini</div>
-            <div v-else class="sensor-grid">
-              <div v-baris
-                v-for="s in prtgSensors"
-                :key="s.objid"
-                class="sensor-card"
-                :class="{ 'sensor-selected': selectedSensorId === s.objid }"
-                @click="selectedSensorId = s.objid; loadGraphBlob(s.objid, selectedGraphId)"
-              >
-                <div class="sensor-status-dot" :style="{ background: prtgStatusColor(s.status_raw) }"></div>
-                <div class="sensor-body">
-                  <div class="sensor-name">{{ s.sensor }}</div>
-                  <div class="sensor-device text-gray">{{ s.device }}</div>
-                  <div v-if="s.message_raw" class="sensor-msg">{{ s.message_raw }}</div>
-                </div>
-                <div class="sensor-badge" :style="{ background: prtgStatusColor(s.status_raw) + '20', color: prtgStatusColor(s.status_raw) }">
-                  {{ prtgStatusLabel(s.status_raw) }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ── PRTG GRAPH LIVE ─────────────────────────────── -->
-          <div v-if="selectedSensorId && prtgSensors.length" class="prtg-graph-card">
-            <div class="prtg-graph-hdr">
-              <div class="prtg-graph-title">
-                📊 PRTG Graph —
-                <span class="prtg-live-dot" v-if="selectedGraphId === 0"><span class="blink-dot"></span> Live</span>
-                <span v-else>{{ ['Live','48 Jam','30 Hari','365 Hari'][selectedGraphId] }}</span>
-                <span class="prtg-sensor-lbl">· {{ prtgSensors.find(s => s.objid === selectedSensorId)?.sensor }}</span>
-              </div>
-              <div class="prtg-graph-tabs">
-                <button v-for="(lbl, gid) in ['Live','48 Jam','30 Hari','365 Hari']" :key="gid"
-                  :class="['prtg-tab', { active: selectedGraphId === gid }]"
-                  @click="selectedGraphId = gid; loadGraphBlob(selectedSensorId!, gid)">{{ lbl }}</button>
-                <button class="prtg-refresh-btn" @click="refreshGraph" title="Refresh grafik">↻</button>
-              </div>
-            </div>
-            <div class="prtg-graph-wrap">
-              <div v-if="graphLoading" class="prtg-graph-spinner">
-                <svg class="spin-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#3b82f6" stroke-width="3" stroke-dasharray="31" stroke-dashoffset="10"/></svg>
-                Memuat grafik...
-              </div>
-              <img
-                v-else-if="graphBlobUrl && !graphLoadError"
-                :src="graphBlobUrl"
-                class="prtg-graph-img"
-                alt="PRTG Graph"
-              />
-              <div v-else class="prtg-graph-err">
-                Gagal memuat grafik — sensor mungkin tidak aktif atau PRTG tidak terkonfigurasi
-              </div>
-            </div>
-            <div class="prtg-graph-footer">
-              <span class="prtg-graph-id">Sensor ID: {{ selectedSensorId }}</span>
-              <span v-if="selectedGraphId === 0" class="prtg-auto-refresh">Auto-refresh setiap 60 detik</span>
-            </div>
-
-          </div>
-
-          <!-- ── Rincian Downtime ──────────────────────────── -->
-          <div v-if="downtimeInfo" class="prtg-downup">
-            <div class="pdu-section-title">⏱ Rincian Downtime Tiket Ini</div>
-            <div class="prtg-downup-row">
-              <div class="prtg-downup-item">
-                <div class="pdu-icon down">▼</div>
-                <div>
-                  <div class="pdu-label">Mulai Down</div>
-                  <div class="pdu-val">{{ fmtDt(downtimeInfo.waktu_down) }}</div>
-                  <div v-if="downtimeInfo.pesan_down" class="pdu-msg" :title="downtimeInfo.pesan_down">{{ downtimeInfo.pesan_down }}</div>
-                </div>
-              </div>
-              <div class="prtg-downup-arrow">→</div>
-              <div class="prtg-downup-item">
-                <div class="pdu-icon" :class="downtimeInfo.sudah_up ? 'up' : 'pending'">
-                  {{ downtimeInfo.sudah_up ? '▲' : '?' }}
-                </div>
-                <div>
-                  <div class="pdu-label">{{ downtimeInfo.sudah_up ? 'Kembali Up' : 'Belum Up' }}</div>
-                  <div class="pdu-val">{{ downtimeInfo.sudah_up ? fmtDt(downtimeInfo.waktu_up) : '—' }}</div>
-                </div>
-              </div>
-              <div class="prtg-downup-duration" :class="downtimeInfo.sudah_up ? 'dur-card-done' : 'dur-card-live'">
-                <div class="pdu-dur-label">Total Downtime</div>
-                <div class="pdu-dur-val" :class="downtimeInfo.sudah_up ? 'dur-done' : 'dur-live'">
-                  {{ downtimeInfo.sudah_up ? downtimeInfo.durasi_label : 'Masih down...' }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        <!-- RIGHT: Journey + Activity Feed -->
-        <div class="col-right">
-
-          <!-- Journey Progress Card -->
-          <div class="journey-card">
-            <div class="journey-header">
-              <span class="journey-title">🚦 Perjalanan Teknisi</span>
-              <button class="btn-timeline-sm" @click="showTimeline = true">Lihat Lengkap →</button>
-            </div>
-            <div class="journey-steps">
-              <div class="journey-step" :class="{ done: journeyStep(ops.current) >= 0, active: journeyStep(ops.current) === 0 }">
-                <div class="jstep-dot"><span>📋</span></div>
-                <div class="jstep-body">
-                  <div class="jstep-label">Tiket Dibuka</div>
-                  <div class="jstep-time">{{ fmtDt(ops.current.tgl_open) }}</div>
-                </div>
-              </div>
-              <div class="journey-line" :class="{ done: journeyStep(ops.current) >= 1 }"></div>
-              <div class="journey-step" :class="{ done: journeyStep(ops.current) >= 1, active: journeyStep(ops.current) === 1 }">
-                <div class="jstep-dot"><span>🚗</span></div>
-                <div class="jstep-body">
-                  <div class="jstep-label">Berangkat</div>
-                  <div class="jstep-time" v-if="ops.current.tgl_berangkat">{{ fmtDt(ops.current.tgl_berangkat) }}</div>
-                  <template v-else>
-                    <div class="jstep-time pending">—</div>
-                    <button v-if="!['Resolved','Closed'].includes(ops.current.status_tiket)" class="btn-journey" :disabled="journeySaving" @click="setJourneyTime('tgl_berangkat')">{{ journeySaving ? 'Menyimpan...' : 'Catat Berangkat' }}</button>
-                  </template>
-                  <div v-if="teknisiLokasi && ops.current.tgl_berangkat" class="jstep-gps">
-                    📡 {{ Number(teknisiLokasi.latitude).toFixed(5) }}, {{ Number(teknisiLokasi.longitude).toFixed(5) }}
-                  </div>
-                </div>
-              </div>
-              <div class="journey-line" :class="{ done: journeyStep(ops.current) >= 2 }"></div>
-              <div class="journey-step" :class="{ done: journeyStep(ops.current) >= 2, active: journeyStep(ops.current) === 2 }">
-                <div class="jstep-dot"><span>📍</span></div>
-                <div class="jstep-body">
-                  <div class="jstep-label">Tiba di Lokasi</div>
-                  <div class="jstep-time" v-if="ops.current.tgl_sampai">{{ fmtDt(ops.current.tgl_sampai) }}</div>
-                  <template v-else>
-                    <div class="jstep-time pending">—</div>
-                    <button v-if="ops.current.tgl_berangkat && !['Resolved','Closed'].includes(ops.current.status_tiket)" class="btn-journey" :disabled="journeySaving" @click="setJourneyTime('tgl_sampai')">{{ journeySaving ? 'Menyimpan...' : 'Catat Tiba' }}</button>
-                  </template>
-                </div>
-              </div>
-              <div class="journey-line" :class="{ done: journeyStep(ops.current) >= 3 }"></div>
-              <div class="journey-step" :class="{ done: journeyStep(ops.current) >= 3, active: journeyStep(ops.current) === 3 }">
-                <div class="jstep-dot"><span>✅</span></div>
-                <div class="jstep-body">
-                  <div class="jstep-label">Selesai</div>
-                  <div class="jstep-time" v-if="ops.current.tgl_resolved">{{ fmtDt(ops.current.tgl_resolved) }}</div>
-                  <div class="jstep-time pending" v-else>—</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Activity Feed (Log + Foto merged) -->
-          <div class="section-card feed-card">
-            <div class="section-header">
-              <span class="card-title">Log Aktivitas ({{ activityFeed.length }})</span>
-              <button class="btn-add-small" @click="showLogModal = true">+ Log</button>
-            </div>
-            <div v-if="!activityFeed.length" class="empty-section">Belum ada aktivitas</div>
-            <div class="feed-list">
-              <div v-for="item in activityFeed" :key="item.kind === 'log' ? 'log:' + item.log.id_log : 'foto:' + item.stage" class="feed-item">
-                <!-- Log entry -->
-                <template v-if="item.kind === 'log'">
-                  <div class="feed-dot log-dot-c" :style="{ background: item.log.status_ke ? STATUS_COLOR[item.log.status_ke]?.color || '#64748b' : '#94a3b8' }"></div>
-                  <div class="feed-body">
-                    <div v-if="item.log.status_ke" class="feed-badge-row">
-                      <span class="log-badge" :style="{ background: STATUS_COLOR[item.log.status_ke]?.bg, color: STATUS_COLOR[item.log.status_ke]?.color }">
-                        {{ statusLabel(item.log.status_ke) }}
-                      </span>
-                    </div>
-                    <div v-if="item.log.catatan" class="feed-text">{{ item.log.catatan }}</div>
-                    <div class="feed-meta">{{ item.log.user?.karyawan?.nama_lengkap || 'System' }} · {{ fmtDt(item.time) }}</div>
-                  </div>
-                </template>
-                <!-- Foto entry -->
-                <template v-else>
-                  <div class="feed-dot foto-dot-c"></div>
-                  <div class="feed-body">
-                    <div class="feed-foto-label">📷 {{ item.label }}</div>
-                    <div class="feed-meta">{{ fmtDt(item.time) }}</div>
-                    <div class="feed-thumbs">
-                      <img v-for="f in item.fotos" :key="f.id_foto" :src="f.url" class="feed-thumb" @click="previewUrl = f.url" loading="lazy" alt="Foto lampiran" />
+                    <span v-if="it.kind === 'log' && it.log.status_ke" class="td-status-kecil" :style="{ '--st': STATUS_WARNA[it.log.status_ke] ?? '#64748b' }">{{ it.log.status_dari ? `${statusLabel(it.log.status_dari)} → ` : '' }}{{ statusLabel(it.log.status_ke) }}</span>
+                    <p v-if="it.kind === 'log' && it.log.catatan" class="td-teks">{{ it.log.catatan }}</p>
+                    <div v-if="it.kind === 'foto'" class="td-foto-mini">
+                      <img v-for="f in it.fotos" :key="f.id_foto" :src="f.url" loading="lazy" alt="Foto lampiran" @click="bukaFoto(it.fotos, f)" />
                     </div>
                   </div>
-                </template>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </main>
+
+        <!-- ── SIDEBAR ─────────────────────────────────────────────────── -->
+        <aside class="td-samping">
+          <div class="td-kartu td-site">
+            <h4>🏢 Pelanggan & site</h4>
+            <dl>
+              <dt>Pelanggan</dt><dd><b>{{ t.site?.pelanggan?.nama_pelanggan || '—' }}</b><small v-if="t.site?.pelanggan?.kode_pelanggan"> {{ t.site.pelanggan.kode_pelanggan }}</small></dd>
+              <dt>Site</dt><dd><RouterLink v-if="t.site" :to="`/master/site/${t.site.id_site}`">{{ t.site.nama_site }}</RouterLink><small v-if="t.site?.kode_site"> {{ t.site.kode_site }}</small></dd>
+              <dt>Layanan</dt><dd>{{ t.site?.layanan?.nama_layanan || '—' }}</dd>
+              <dt v-if="t.site?.alamat_lengkap">Alamat</dt><dd v-if="t.site?.alamat_lengkap" class="td-teks">{{ t.site.alamat_lengkap }}</dd>
+            </dl>
+          </div>
+
+          <div class="td-kartu">
+            <h4>📞 Kontak cepat</h4>
+            <div v-if="t.site?.pelanggan?.no_hp_pic_utama || t.site?.pelanggan?.no_telp" class="td-kontak">
+              <span class="ava kecil" :style="{ background: warnaNama(t.site.pelanggan.nama_pic_utama) }">{{ inisial(t.site.pelanggan.nama_pic_utama || t.site.pelanggan.nama_pelanggan) }}</span>
+              <span class="nm"><b>{{ t.site.pelanggan.nama_pic_utama || t.site.pelanggan.nama_pelanggan }}</b><small>PIC pelanggan</small></span>
+              <a v-if="t.site.pelanggan.no_hp_pic_utama" :href="waLink(t.site.pelanggan.no_hp_pic_utama)" target="_blank" rel="noopener" class="td-k wa" :title="`WhatsApp ${t.site.pelanggan.no_hp_pic_utama}`">💬</a>
+              <a v-if="t.site.pelanggan.no_telp || t.site.pelanggan.no_hp_pic_utama" :href="`tel:${t.site.pelanggan.no_telp || t.site.pelanggan.no_hp_pic_utama}`" class="td-k tel" title="Telepon">📞</a>
+            </div>
+            <div v-for="p in t.site?.pic ?? []" :key="p.id_pic" class="td-kontak">
+              <span class="ava kecil" :style="{ background: warnaNama(p.nama_pic) }">{{ inisial(p.nama_pic) }}</span>
+              <span class="nm"><b>{{ p.nama_pic }} <em v-if="p.is_utama">utama</em></b><small>{{ p.jabatan || 'PIC site' }}<template v-if="p.no_kontak"> · {{ p.no_kontak }}</template></small></span>
+              <a v-if="p.no_kontak" :href="waLink(p.no_kontak)" target="_blank" rel="noopener" class="td-k wa" title="WhatsApp">💬</a>
+              <a v-if="p.no_kontak" :href="`tel:${p.no_kontak}`" class="td-k tel" title="Telepon">📞</a>
+              <a v-if="p.email" :href="`mailto:${p.email}`" class="td-k mail" :title="p.email">✉️</a>
+            </div>
+            <div v-if="t.kontak_teknisi" class="td-kontak">
+              <span class="ava kecil" :style="{ background: warnaNama(t.kontak_teknisi.nama) }">{{ inisial(t.kontak_teknisi.nama) }}</span>
+              <span class="nm"><b>{{ t.kontak_teknisi.nama }}</b><small>Teknisi vendor · {{ t.kontak_teknisi.asal_vendor || '-' }}</small></span>
+              <a v-if="t.kontak_teknisi.no_hp" :href="waLink(t.kontak_teknisi.no_hp)" target="_blank" rel="noopener" class="td-k wa" title="WhatsApp">💬</a>
+            </div>
+            <div v-if="!t.site?.pelanggan?.no_hp_pic_utama && !t.site?.pelanggan?.no_telp && !t.site?.pic?.length" class="td-kosong-kecil">Belum ada kontak PIC di data site.</div>
+          </div>
+
+          <div class="td-kartu">
+            <h4>🌐 Provider / ISP</h4>
+            <div v-if="!t.site?.sumber_internet?.length" class="td-kosong-kecil">Belum ada data ISP aktif.</div>
+            <div v-for="isp in t.site?.sumber_internet ?? []" :key="isp.id_sumber" class="td-isp">
+              <div class="td-isp-atas">
+                <span class="td-tag" :class="isp.peruntukan_link === 'Main' ? 'main' : 'backup'">{{ isp.peruntukan_link === 'Main' ? '▶ Main' : '⬡ Backup' }}</span>
+                <b>{{ isp.vendor?.nama_vendor || '—' }}</b>
+                <small v-if="isp.bandwidth_mbps">{{ isp.bandwidth_mbps }} Mbps</small>
+              </div>
+              <small v-if="isp.nomor_pelanggan_isp" class="td-isp-no">
+                No. pelanggan ISP: <b>{{ isp.nomor_pelanggan_isp }}</b>
+                <button type="button" class="td-salin" title="Salin" @click="salin(isp.nomor_pelanggan_isp, 'Nomor pelanggan ISP disalin')">⧉</button>
+              </small>
+              <div v-if="isp.vendor?.no_telp || isp.vendor?.email_pic" class="td-isp-kontak">
+                <small v-if="isp.vendor?.kontak_pic">PIC {{ isp.vendor.kontak_pic }}</small>
+                <a v-if="isp.vendor?.no_telp" :href="waLink(isp.vendor.no_telp)" target="_blank" rel="noopener" class="td-k wa" title="WhatsApp vendor">💬</a>
+                <a v-if="isp.vendor?.no_telp" :href="`tel:${isp.vendor.no_telp}`" class="td-k tel" title="Telepon vendor">📞</a>
+                <a v-if="isp.vendor?.email_pic" :href="`mailto:${isp.vendor.email_pic}`" class="td-k mail" :title="isp.vendor.email_pic">✉️</a>
               </div>
             </div>
           </div>
 
-          <!-- Tiket Lain di Site -->
-          <template v-if="ops.current.related_tickets?.length">
-            <div class="section-card">
-              <div class="section-header">
-                <span class="card-title">Tiket lain di {{ ops.current.site?.nama_site }}</span>
-              </div>
-              <div v-baris v-for="t in ops.current.related_tickets" :key="t.id_ticket"
-                class="related-item" @click="router.push(`/operations/${t.id_ticket}`)">
-                <div class="rel-left">
-                  <div class="rel-nomor">{{ t.nomor_tiket }}</div>
-                  <div class="rel-judul">{{ t.judul_tiket }}</div>
-                </div>
-                <div class="rel-right">
-                  <span class="prio-dot" :style="{ color: PRIORITAS_COLOR[t.prioritas] }">● {{ t.prioritas }}</span>
-                  <span class="rel-status" :style="{ background: STATUS_COLOR[t.status_tiket]?.bg, color: STATUS_COLOR[t.status_tiket]?.color }">{{ statusLabel(t.status_tiket) }}</span>
-                  <span class="rel-arrow">›</span>
-                </div>
-              </div>
-            </div>
-          </template>
-        </div>
+          <div v-if="t.related_tickets?.length" class="td-kartu">
+            <h4>🔁 Riwayat gangguan site ini</h4>
+            <button v-for="rt in t.related_tickets" :key="rt.id_ticket" type="button" class="td-rel" @click="bukaTiketLain(rt.id_ticket)">
+              <span class="td-rel-dot" :style="{ background: STATUS_WARNA[rt.status_tiket] ?? '#94a3b8' }" />
+              <span class="isi"><b>{{ rt.judul_tiket }}</b><small>{{ rt.nomor_tiket }} · {{ fmtDt(rt.tgl_open) }}</small></span>
+              <span class="prio" :style="{ color: PRIO[rt.prioritas]?.warna }">{{ PRIO[rt.prioritas]?.ikon }}</span>
+            </button>
+          </div>
+        </aside>
       </div>
 
-      <!-- ── MODAL PREVIEW FOTO ─────────────────────────────── -->
-      <div v-if="previewUrl" class="modal-overlay" @click.self="previewUrl = ''" style="z-index:3000">
-        <div class="foto-preview-modal">
-          <button type="button" class="foto-preview-close" aria-label="Tutup" @click="previewUrl = ''">✕</button>
-          <img :src="previewUrl" class="foto-preview-img" alt="Pratinjau foto" />
-        </div>
+      <!-- ── PREVIEW FOTO ──────────────────────────────────────────────── -->
+      <div v-if="preview" class="td-lightbox" @click.self="preview = null">
+        <button type="button" class="td-lb-x" aria-label="Tutup" @click="preview = null">✕</button>
+        <button v-if="preview.list.length > 1" type="button" class="td-lb-nav kiri" aria-label="Sebelumnya" @click="geserFoto(-1)">‹</button>
+        <figure>
+          <img :src="preview.list[preview.i]?.url" alt="Pratinjau foto" />
+          <figcaption>{{ stageLabel(preview.list[preview.i]?.stage) }} · {{ fmtDt(preview.list[preview.i]?.created_at) }} · {{ preview.i + 1 }}/{{ preview.list.length }}</figcaption>
+        </figure>
+        <button v-if="preview.list.length > 1" type="button" class="td-lb-nav kanan" aria-label="Berikutnya" @click="geserFoto(1)">›</button>
       </div>
 
-      <!-- ── MODAL TIMELINE ─────────────────────────────────── -->
-      <div v-if="showTimeline" class="modal-overlay" @click.self="showTimeline = false" style="z-index:2500">
-        <div class="timeline-modal">
-          <div class="tl-header">
-            <div>
-              <div class="tl-title">📊 Timeline Lengkap</div>
-              <div class="tl-sub">{{ ops.current.nomor_tiket }} · {{ ops.current.judul_tiket }}</div>
-            </div>
-            <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showTimeline = false">✕</button>
-          </div>
-          <div class="tl-body">
-            <div class="tl-list">
-              <div v-for="(ev, idx) in timelineEvents" :key="ev.type + ':' + ev.time" class="tl-item">
-                <div class="tl-line-wrap">
-                  <div class="tl-dot" :style="{ background: ev.color }">{{ ev.icon }}</div>
-                  <div class="tl-connector" v-if="idx < timelineEvents.length - 1"></div>
-                </div>
-                <div class="tl-content">
-                  <div class="tl-ev-title">{{ ev.title }}</div>
-                  <div class="tl-ev-time">{{ fmtDt(ev.time) }}</div>
-                  <div v-if="ev.desc" class="tl-ev-desc">{{ ev.desc }}</div>
-                  <div v-if="ev.by" class="tl-ev-by">oleh {{ ev.by }}</div>
-                  <div v-if="ev.statusKe" class="tl-badge-wrap">
-                    <span class="log-badge" :style="{ background: STATUS_COLOR[ev.statusKe]?.bg, color: STATUS_COLOR[ev.statusKe]?.color }">
-                      {{ statusLabel(ev.statusKe) }}
-                    </span>
-                  </div>
-                  <!-- GPS info on berangkat -->
-                  <div v-if="ev.type === 'berangkat' && ev.gps" class="tl-gps-card">
-                    <div class="tl-gps-row">
-                      <span class="tl-gps-label">📡 Lokasi Terakhir GPS</span>
-                    </div>
-                    <div class="tl-gps-row">
-                      <span class="tl-gps-coord">{{ Number(ev.gps.latitude).toFixed(6) }}, {{ Number(ev.gps.longitude).toFixed(6) }}</span>
-                    </div>
-                    <div v-if="ev.gps.akurasi" class="tl-gps-row">
-                      <span class="tl-gps-acc">Akurasi ±{{ ev.gps.akurasi }}m</span>
-                    </div>
-                    <div class="tl-gps-row">
-                      <a :href="`https://maps.google.com/?q=${ev.gps.latitude},${ev.gps.longitude}`" target="_blank" class="tl-gps-link">Buka di Maps ↗</a>
-                    </div>
-                  </div>
-                  <!-- Fotos in timeline -->
-                  <div v-if="ev.type === 'foto' && ev.fotos?.length" class="tl-fotos">
-                    <img v-for="f in ev.fotos" :key="f.id_foto" :src="f.url" class="tl-foto-thumb" @click="previewUrl = f.url; showTimeline = false" loading="lazy" alt="Foto lampiran" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── MODAL EDIT ──────────────────────────────────────── -->
-      <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-        <div class="modal" v-focus-trap>
-          <div class="modal-header">
-            <span class="modal-title">Edit Tiket</span>
-            <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showEditModal = false">✕</button>
-          </div>
+      <!-- ── TIMELINE ──────────────────────────────────────────────────── -->
+      <div v-if="showTimeline" class="modal-overlay" @click.self="showTimeline = false">
+        <div class="modal td-modal" v-focus-trap>
+          <div class="td-modal-kepala"><div><h3>🕒 Timeline lengkap</h3><small>{{ t.nomor_tiket }} · {{ t.judul_tiket }}</small></div><button type="button" class="btn-modal-close" aria-label="Tutup" @click="showTimeline = false">✕</button></div>
           <div class="modal-body">
-          <div class="form-grid">
-            <div class="field full"><label>Judul Tiket</label><input v-model="editForm.judul_tiket" /></div>
-            <div class="field">
-              <label>Status</label>
-              <select v-model="editForm.status_tiket">
-                <option v-for="s in STATUS_LIST" :key="s" :value="s">{{ statusLabel(s) }}</option>
-              </select>
+            <ol class="td-tl">
+              <li v-for="ev in timelineEvents" :key="`${ev.type}:${ev.time}`" :style="{ '--tc': ev.color }">
+                <span class="td-tl-ikon">{{ ev.icon }}</span>
+                <div>
+                  <b>{{ ev.title }}</b>
+                  <small>{{ fmtDt(ev.time) }}<template v-if="ev.by"> · {{ ev.by }}</template></small>
+                  <p v-if="ev.desc" class="td-teks">{{ ev.desc }}</p>
+                  <span v-if="ev.statusKe" class="td-status-kecil" :style="{ '--st': STATUS_WARNA[ev.statusKe] ?? '#64748b' }">{{ statusLabel(ev.statusKe) }}</span>
+                  <a v-if="ev.type === 'berangkat' && ev.gps" :href="`https://maps.google.com/?q=${ev.gps.latitude},${ev.gps.longitude}`" target="_blank" rel="noopener" class="td-link">📡 {{ Number(ev.gps.latitude).toFixed(5) }}, {{ Number(ev.gps.longitude).toFixed(5) }} ↗</a>
+                  <div v-if="ev.type === 'foto'" class="td-foto-mini"><img v-for="f in ev.fotos" :key="f.id_foto" :src="f.url" loading="lazy" alt="Foto" @click="showTimeline = false; bukaFoto(ev.fotos, f)" /></div>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── TUTUP GANGGUAN ────────────────────────────────────────────── -->
+      <div v-if="tutup.buka" class="modal-overlay" @click.self="tutup.buka = false">
+        <div class="modal td-modal" v-focus-trap>
+          <div class="td-modal-kepala hijau"><div><h3>✅ Tutup gangguan</h3><small>{{ t.nomor_tiket }} · {{ t.site?.nama_site }} · {{ durasi(umurMenit) }}</small></div><button type="button" class="btn-modal-close" aria-label="Tutup" @click="tutup.buka = false">✕</button></div>
+          <div class="modal-body td-form">
+            <div class="td-seg lebar">
+              <button type="button" :class="{ on: tutup.status === 'Resolved' }" @click="tutup.status = 'Resolved'">✅ Selesai (Resolved)</button>
+              <button type="button" :class="{ on: tutup.status === 'Closed' }" @click="tutup.status = 'Closed'">🔒 Tutup permanen (Closed)</button>
             </div>
-            <div class="field">
-              <label>Prioritas</label>
-              <select v-model="editForm.prioritas">
-                <option v-for="p in PRIORITAS_LIST" :key="p" :value="p">{{ p }}</option>
-              </select>
-            </div>
-            <div class="field">
-              <label>Tipe Assign</label>
-              <select v-model="editForm.tipe_assign">
-                <option value="internal">Teknisi Internal</option>
-                <option value="vendor">Vendor / Kontak Eksternal</option>
-              </select>
-            </div>
-            <div class="field" v-if="editForm.tipe_assign === 'internal'">
-              <label>Teknisi Internal</label>
-              <select v-model="editForm.id_teknisi_pic">
-                <option :value="0">— Belum di-assign —</option>
-                <option v-for="t in ops.teknisiList" :key="t.id_karyawan" :value="t.id_karyawan">{{ t.nama_lengkap }}</option>
-              </select>
-            </div>
-            <div class="field" v-else>
-              <label>Vendor / Kontak Teknisi</label>
-              <select v-model="editForm.id_kontak_teknisi">
-                <option :value="0">— Belum di-assign —</option>
-                <option v-for="k in ops.kontakTeknisiList" :key="k.id_kontak" :value="k.id_kontak">
-                  {{ k.nama }}{{ k.asal_vendor ? ' · ' + k.asal_vendor : '' }}
-                </option>
-              </select>
-            </div>
-            <div class="field full"><label>Deskripsi Masalah</label><textarea v-model="editForm.deskripsi_masalah" rows="3"></textarea></div>
-            <div class="field">
-              <label>Jenis Gangguan</label>
-              <select v-model="editForm.jenis_gangguan">
+            <label><span class="form-label">Jenis gangguan</span>
+              <select v-model="tutup.jenis" class="form-select">
                 <option value="">— Belum dikategorikan —</option>
                 <option v-for="j in jenisGangguanList" :key="j" :value="j">{{ j }}</option>
+                <option v-if="tutup.jenis && !jenisGangguanList.includes(tutup.jenis)" :value="tutup.jenis">{{ tutup.jenis }}</option>
               </select>
-              <p v-if="jenisGangguanError" class="form-error">
-                {{ jenisGangguanError }} <button type="button" class="btn btn-ghost btn-sm" @click="fetchJenisGangguan">Coba lagi</button>
-              </p>
-            </div>
-            <div class="field full">
-              <label>Root Cause / Catatan Teknis</label>
-              <textarea v-model="editForm.root_cause" rows="3" placeholder="Jelaskan penyebab gangguan, tindakan yang dilakukan, dll..."></textarea>
-            </div>
-          </div>
-          <p v-if="editError" class="form-error-box">{{ editError }}</p>
+            </label>
+            <label><span class="form-label form-required">Root cause / tindakan perbaikan</span>
+              <textarea v-model="tutup.root_cause" class="form-textarea" rows="3" placeholder="Contoh: Adaptor modem rusak, sudah diganti unit baru. Koneksi normal kembali." />
+            </label>
+            <label><span class="form-label">Catatan tambahan (opsional)</span>
+              <textarea v-model="tutup.catatan" class="form-textarea" rows="2" placeholder="Masuk ke log aktivitas" />
+            </label>
+            <p class="td-info">📱 Pelanggan akan menerima notifikasi WhatsApp bahwa gangguan telah {{ tutup.status === 'Closed' ? 'ditutup' : 'diselesaikan' }}.</p>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" @click="showEditModal = false">Batal</button>
-            <button type="button" class="btn btn-primary" @click="handleEdit" :disabled="editSubmitting">{{ editSubmitting ? 'Menyimpan...' : 'Simpan' }}</button>
+            <button type="button" class="btn btn-secondary" @click="tutup.buka = false">Batal</button>
+            <button type="button" class="btn btn-success" :disabled="tutup.simpan" @click="simpanTutup">{{ tutup.simpan ? 'Menyimpan…' : '🎉 Tutup gangguan' }}</button>
           </div>
         </div>
       </div>
 
-      <!-- ── MODAL LOG ───────────────────────────────────────── -->
-      <div v-if="showLogModal" class="modal-overlay" @click.self="showLogModal = false">
-        <div class="modal" v-focus-trap>
-          <div class="modal-header">
-            <span class="modal-title">Tambah Log</span>
-            <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showLogModal = false">✕</button>
-          </div>
-          <div class="modal-body">
-          <div class="form-grid">
-            <div class="field full">
-              <label>Update Status (opsional)</label>
-              <select v-model="logForm.status_ke">
-                <option value="">— Tidak ubah status —</option>
-                <option v-for="s in STATUS_LIST" :key="s" :value="s">{{ statusLabel(s) }}</option>
+      <!-- ── EDIT ──────────────────────────────────────────────────────── -->
+      <div v-if="edit.buka" class="modal-overlay" @click.self="edit.buka = false">
+        <div class="modal td-modal" v-focus-trap>
+          <div class="td-modal-kepala"><div><h3>✏️ Edit tiket</h3><small>{{ t.nomor_tiket }}</small></div><button type="button" class="btn-modal-close" aria-label="Tutup" @click="edit.buka = false">✕</button></div>
+          <div class="modal-body td-form">
+            <label><span class="form-label">Judul</span><input v-model="edit.judul_tiket" class="form-input" maxlength="255" /></label>
+            <div class="td-field"><span class="form-label">Prioritas</span>
+              <div class="td-prio-pilih">
+                <button v-for="(p, k) in PRIO" :key="k" type="button" :class="{ on: edit.prioritas === k }" :style="{ '--pw': p.warna }" @click="edit.prioritas = k"><span>{{ p.ikon }}</span><b>{{ k }}</b><small>SLA {{ p.sla }} jam</small></button>
+              </div>
+            </div>
+            <div class="td-field"><span class="form-label">Ditangani oleh</span>
+              <div class="td-seg lebar">
+                <button type="button" :class="{ on: edit.tipe_assign === 'internal' }" @click="edit.tipe_assign = 'internal'">👷 Teknisi internal</button>
+                <button type="button" :class="{ on: edit.tipe_assign === 'vendor' }" @click="edit.tipe_assign = 'vendor'">🤝 Vendor / mitra</button>
+              </div>
+              <select v-if="edit.tipe_assign === 'internal'" v-model="edit.id_teknisi_pic" class="form-select">
+                <option :value="0">— Belum ditugaskan —</option>
+                <option v-for="k in ops.teknisiList" :key="k.id_karyawan" :value="k.id_karyawan">{{ k.nama_lengkap }}</option>
+              </select>
+              <select v-else v-model="edit.id_kontak_teknisi" class="form-select">
+                <option :value="0">— Belum ditugaskan —</option>
+                <option v-for="k in ops.kontakTeknisiList" :key="k.id_kontak" :value="k.id_kontak">{{ k.nama }}{{ k.asal_vendor ? ` · ${k.asal_vendor}` : '' }}</option>
               </select>
             </div>
-            <div class="field full"><label>Catatan</label><textarea v-model="logForm.catatan" rows="3" placeholder="Update kondisi, tindakan yang dilakukan..."></textarea></div>
-          </div>
+            <label><span class="form-label">Deskripsi masalah</span><textarea v-model="edit.deskripsi_masalah" class="form-textarea" rows="3" /></label>
+            <label><span class="form-label">Jenis gangguan</span>
+              <select v-model="edit.jenis_gangguan" class="form-select">
+                <option value="">— Belum dikategorikan —</option>
+                <option v-for="j in jenisGangguanList" :key="j" :value="j">{{ j }}</option>
+                <option v-if="edit.jenis_gangguan && !jenisGangguanList.includes(edit.jenis_gangguan)" :value="edit.jenis_gangguan">{{ edit.jenis_gangguan }}</option>
+              </select>
+            </label>
+            <label><span class="form-label">Root cause / catatan teknis</span><textarea v-model="edit.root_cause" class="form-textarea" rows="3" /></label>
+            <p class="td-info">Status diubah lewat langkah status di bagian atas halaman.</p>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" @click="showLogModal = false">Batal</button>
-            <button type="button" class="btn btn-primary" @click="handleAddLog" :disabled="logSubmitting">{{ logSubmitting ? 'Menyimpan...' : 'Tambah' }}</button>
+            <button type="button" class="btn btn-secondary" @click="edit.buka = false">Batal</button>
+            <button type="button" class="btn btn-primary" :disabled="editSimpan" @click="simpanEdit">{{ editSimpan ? 'Menyimpan…' : 'Simpan' }}</button>
           </div>
         </div>
       </div>
 
-      <!-- ── MODAL SURAT TUGAS ────────────────────────────────── -->
-      <div v-if="showWoModal" class="modal-overlay" @click.self="showWoModal = false">
-        <div class="modal" v-focus-trap>
-          <div class="modal-header">
-            <span class="modal-title">Buat Surat Tugas</span>
-            <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showWoModal = false">✕</button>
-          </div>
-          <div class="modal-body">
-          <div class="form-grid">
-            <div class="field">
-              <label>Jenis Tugas</label>
-              <select v-model="woForm.jenis_wo">
-                <option v-for="j in JENIS_WO" :key="j" :value="j">{{ j }}</option>
-              </select>
+      <!-- ── SURAT TUGAS ───────────────────────────────────────────────── -->
+      <div v-if="wo.buka" class="modal-overlay" @click.self="wo.buka = false">
+        <div class="modal td-modal" v-focus-trap>
+          <div class="td-modal-kepala"><div><h3>🛠️ Surat tugas baru</h3><small>{{ t.site?.nama_site }}</small></div><button type="button" class="btn-modal-close" aria-label="Tutup" @click="wo.buka = false">✕</button></div>
+          <div class="modal-body td-form">
+            <div class="td-dua">
+              <label><span class="form-label">Jenis tugas</span><select v-model="wo.jenis_wo" class="form-select"><option v-for="j in JENIS_WO" :key="j" :value="j">{{ j }}</option></select></label>
+              <label><span class="form-label">Eksekutor</span><select v-model="wo.tipe_eksekutor" class="form-select"><option value="Internal_NEXT1">Internal NEXT1</option><option value="Vendor_Ketiga">Vendor ketiga</option></select></label>
             </div>
-            <div class="field">
-              <label>Eksekutor</label>
-              <select v-model="woForm.tipe_eksekutor">
-                <option value="Internal_NEXT1">Internal NEXT1</option>
-                <option value="Vendor_Ketiga">Vendor Ketiga</option>
-              </select>
-            </div>
-            <div class="field" v-if="woForm.tipe_eksekutor === 'Internal_NEXT1'">
-              <label>Teknisi</label>
-              <select v-model="woForm.id_teknisi_internal">
-                <option :value="0">— Pilih —</option>
-                <option v-for="t in ops.teknisiList" :key="t.id_karyawan" :value="t.id_karyawan">{{ t.nama_lengkap }}</option>
-              </select>
-            </div>
-            <div class="field" v-if="woForm.tipe_eksekutor === 'Vendor_Ketiga'">
-              <label>Fee Vendor (Rp)</label>
-              <input v-model.number="woForm.fee_vendor" type="number" placeholder="0" />
-            </div>
-            <div class="field full"><label>Jadwal <span class="req">*</span></label><input v-model="woForm.tgl_jadwal" type="datetime-local" /></div>
-            <div class="field full"><label>Deskripsi Tugas <span class="req">*</span></label><textarea v-model="woForm.deskripsi_tugas" rows="3" placeholder="Tugas teknisi..."></textarea></div>
-          </div>
-          <p v-if="woError" class="form-error-box">{{ woError }}</p>
+            <label v-if="wo.tipe_eksekutor === 'Internal_NEXT1'"><span class="form-label">Teknisi</span>
+              <select v-model="wo.id_teknisi_internal" class="form-select"><option :value="0">— Pilih —</option><option v-for="k in ops.teknisiList" :key="k.id_karyawan" :value="k.id_karyawan">{{ k.nama_lengkap }}</option></select>
+            </label>
+            <label v-else><span class="form-label">Fee vendor (Rp)</span><input v-model.number="wo.fee_vendor" type="number" min="0" class="form-input" /></label>
+            <label><span class="form-label form-required">Jadwal</span><input v-model="wo.tgl_jadwal" type="datetime-local" class="form-input" /></label>
+            <label><span class="form-label form-required">Deskripsi tugas</span><textarea v-model="wo.deskripsi_tugas" class="form-textarea" rows="3" /></label>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" @click="showWoModal = false">Batal</button>
-            <button type="button" class="btn btn-primary" @click="handleAddWo" :disabled="woSubmitting">{{ woSubmitting ? 'Membuat...' : 'Buat Surat Tugas' }}</button>
+            <button type="button" class="btn btn-secondary" @click="wo.buka = false">Batal</button>
+            <button type="button" class="btn btn-primary" :disabled="wo.simpan" @click="simpanWo">{{ wo.simpan ? 'Membuat…' : 'Buat surat tugas' }}</button>
           </div>
         </div>
       </div>
-
     </template>
   </div>
 </template>
 
 <style scoped>
-.loading-page { padding: 60px; text-align: center; color: var(--text-muted); }
-.alert-error { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13.5px; padding: 12px 16px; margin-bottom: 14px; }
-.alert-success { background: var(--success-light); border: 1px solid #bbf7d0; border-radius: var(--r); color: #15803d; font-size: 13.5px; padding: 12px 16px; margin-bottom: 14px; }
+.td { padding-bottom: 40px; }
+.muted { color: #94a3b8; }
+kbd { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 4px; border: 1px solid #cbd5e1; border-bottom-width: 2px; font: 700 10px/14px ui-monospace, monospace; color: #475569; background: #fff; margin-left: 2px; }
+.td-teks { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.ava { width: 34px; height: 34px; border-radius: 50%; color: #fff; font-weight: 800; font-size: 12px; display: inline-grid; place-items: center; flex-shrink: 0; box-shadow: 0 0 0 2px #fff; }
+.ava.kecil { width: 28px; height: 28px; font-size: 10.5px; }
 
-/* ── HEADER ─────────────────────────────────── */
-.btn-back { background: none; border: none; color: var(--primary-hover); font-size: 13px; font-weight: 600; cursor: pointer; padding: 0; display: block; margin-bottom: 4px; }
-.btn-back:hover { text-decoration: underline; }
-.page-header { margin-bottom: 16px; }
-.page-header > div:first-child { min-width: 0; }
-.page-header h2 { margin: 0 0 4px; font-size: 22px; color: var(--text-1); }
-.sub { margin: 0; font-size: 13px; color: var(--text-3); overflow-wrap: anywhere; }
-.header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.sla-badge-lg { padding: 5px 12px; border-radius: var(--r-sm); font-size: 12px; font-weight: 700; white-space: nowrap; }
-.sla-safe { background: #f0fdf4; color: #15803d; }
-.sla-warning { background: #fefce8; color: #a16207; }
-.sla-late { background: #dc2626; color: #fff; animation: slaPulse 1.2s infinite; }
-.sla-late-done { background: #fef2f2; color: #dc2626; }
-.sla-ok { background: #f0fdf4; color: #15803d; }
-.sla-none { background: var(--border-light); color: var(--text-3); }
-@keyframes slaPulse { 50% { opacity: 0.6; } }
-@media (prefers-reduced-motion: reduce) {
-  .sla-late, .blink-dot, .spinning, .spin-svg { animation: none !important; }
-}
-.prioritas-badge { padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; }
-.status-big { padding: 5px 14px; border-radius: 20px; font-size: 14px; font-weight: 700; }
-.btn-timeline, .btn-print, .btn-edit, .btn-tangani, .btn-hapus-tiket {
-  padding: 8px 14px; border-radius: var(--r); font-size: 13px; font-weight: 600;
-  cursor: pointer; white-space: nowrap; line-height: 1.2; border: 1px solid transparent;
-  transition: background 0.15s, border-color 0.15s;
-}
-.btn-timeline { background: #ede9fe; color: #6d28d9; }
-.btn-timeline:hover { background: #ddd6fe; }
-.btn-print { background: var(--success-light); color: #15803d; border-color: #bbf7d0; }
-.btn-print:hover { background: #dcfce7; }
-.btn-edit { background: var(--surface); color: var(--text-2); border-color: var(--border); }
-.btn-edit:hover { background: #f8fafc; border-color: #cbd5e1; }
-.btn-tangani { background: var(--primary); color: #fff; font-weight: 700; }
-.btn-tangani:hover:not(:disabled) { background: #1e40af; }
-.btn-tangani:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn-hapus-tiket { background: var(--danger-light); color: var(--danger); border-color: #fecaca; }
-.btn-hapus-tiket:hover:not(:disabled) { background: #fee2e2; border-color: #f87171; }
-.btn-hapus-tiket:disabled { opacity: 0.6; cursor: not-allowed; }
+/* SKELETON */
+.td-skeleton { display: flex; flex-direction: column; gap: 12px; }
+.sk { height: 120px; border-radius: 18px; background: linear-gradient(90deg, #f1f5f9 25%, #fafafa 50%, #f1f5f9 75%); background-size: 200% 100%; animation: td-kilau 1.2s infinite; }
+.sk.h { height: 230px; }
+@keyframes td-kilau { to { background-position: -200% 0; } }
 
-/* ── INFO BAR ────────────────────────────────── */
-.info-bar { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
-.info-chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 14px; box-shadow: var(--shadow-xs); min-width: 0; overflow-wrap: anywhere; }
-.ic-label { display: block; font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.4px; }
-.ic-value { font-size: 13px; color: #0f172a; }
-.vendor-pic { display: flex; align-items: center; gap: 6px; }
-.vendor-tag { background: #fef3c7; color: #92400e; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; }
-.fw { font-weight: 700; }
-.text-gray { color: #64748b; }
+/* HERO */
+.td-hero { --st: #2563eb; --pr: #dc2626; position: relative; overflow: hidden; border-radius: 22px; padding: 16px 22px 18px; color: #fff; margin-bottom: 16px;
+  background: radial-gradient(circle at 90% -10%, rgba(255, 255, 255, .22), transparent 45%), linear-gradient(125deg, color-mix(in srgb, var(--pr) 85%, #000) 0%, var(--pr) 35%, color-mix(in srgb, var(--st) 80%, var(--pr)) 100%);
+  box-shadow: 0 16px 36px -18px var(--pr); animation: td-muncul .4s both; }
+.td-hero-atas { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.td-kembali { border: 0; background: rgba(255, 255, 255, .16); color: #fff; font-weight: 700; font-size: 12.5px; padding: 5px 12px; border-radius: 99px; cursor: pointer; }
+.td-kembali:hover { background: rgba(255, 255, 255, .28); }
+.td-hero-aksi-kecil { display: flex; gap: 6px; }
+.td-hero-aksi-kecil button { width: 34px; height: 34px; border-radius: 11px; border: 1px solid rgba(255, 255, 255, .3); background: rgba(255, 255, 255, .14); cursor: pointer; font-size: 14px; transition: transform .15s, background .15s; }
+.td-hero-aksi-kecil button:hover { background: rgba(255, 255, 255, .3); transform: translateY(-2px); }
+.td-hero-isi { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; margin-top: 12px; }
+.td-hero-kiri { flex: 1 1 380px; min-width: 0; }
+.td-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.td-chip { border: 0; font: inherit; display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 800; background: rgba(255, 255, 255, .18); color: #fff; }
+.td-chip.prio { background: #fff; color: var(--pr); }
+.td-chip.nomor { font-family: ui-monospace, monospace; cursor: pointer; }
+.td-chip.denyut { animation: td-denyut 1.5s infinite; }
+@keyframes td-denyut { 50% { box-shadow: 0 0 0 5px rgba(255, 255, 255, .3); } }
+.td-hero h1 { margin: 10px 0 4px; font-size: 23px; font-weight: 900; line-height: 1.25; letter-spacing: -.4px; color: #fff; overflow-wrap: anywhere; }
+.td-hero-site { margin: 0; font-size: 13px; opacity: .95; }
+.td-hero-site a { color: #fff; font-weight: 800; text-decoration: underline; text-decoration-color: rgba(255, 255, 255, .4); text-underline-offset: 3px; }
+.td-hero-angka { display: flex; gap: 10px; flex-wrap: wrap; }
+.td-durasi, .td-sla { background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .25); border-radius: 16px; padding: 10px 14px; display: flex; flex-direction: column; min-width: 170px; backdrop-filter: blur(6px); }
+.td-durasi small, .td-sla small { font-size: 11px; opacity: .85; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.td-durasi b, .td-sla b { font-size: 20px; font-weight: 900; line-height: 1.2; }
+.td-durasi em, .td-sla em { font-style: normal; font-size: 11px; opacity: .8; }
+.td-sla .trek { height: 7px; border-radius: 99px; background: rgba(255, 255, 255, .25); overflow: hidden; margin: 5px 0 3px; }
+.td-sla .trek i { display: block; height: 100%; border-radius: 99px; background: #fff; transition: width .6s; }
+.td-sla.s-lewat { background: rgba(0, 0, 0, .22); }
+.td-sla.s-lewat .trek i { background: repeating-linear-gradient(45deg, #fff 0 6px, #fecaca 6px 12px); }
+.td-sla.s-waspada .trek i { background: #fde68a; }
 
-.deskripsi-box { background: #f8fafc; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #475569; margin-bottom: 14px; }
-.rca-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
-.rca-row { display: flex; align-items: baseline; gap: 10px; }
-.rca-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #9a3412; letter-spacing: 0.4px; white-space: nowrap; }
-.rca-badge { background: #ea580c; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
-.rca-text { font-size: 13px; color: #7c2d12; }
+.td-stepper { display: flex; gap: 0; margin-top: 16px; background: rgba(0, 0, 0, .14); border-radius: 16px; padding: 4px; overflow-x: auto; }
+.td-step { flex: 1; min-width: 110px; border: 0; background: none; color: rgba(255, 255, 255, .75); display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 700; transition: background .15s, color .15s; }
+.td-step:hover:not(:disabled) { background: rgba(255, 255, 255, .14); color: #fff; }
+.td-step:disabled { cursor: default; }
+.td-step-bulat { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .16); font-size: 12px; flex-shrink: 0; }
+.td-step.lewat { color: #fff; }
+.td-step.lewat .td-step-bulat { background: rgba(255, 255, 255, .9); color: var(--pr); font-weight: 900; }
+.td-step.kini { background: #fff; color: var(--st); box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .4); }
+.td-step.kini .td-step-bulat { background: color-mix(in srgb, var(--st) 14%, #fff); }
+.td-step-label { white-space: nowrap; }
 
-/* ── MAIN GRID ───────────────────────────────── */
-.main-grid { display: grid; grid-template-columns: 1fr 400px; gap: 16px; align-items: start; }
-.col-left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.col-right { display: flex; flex-direction: column; gap: 16px; }
+.td-aksi { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; }
+.td-pic { display: flex; align-items: center; gap: 9px; }
+.td-pic > span:last-child { display: flex; flex-direction: column; line-height: 1.2; }
+.td-pic small { font-size: 10.5px; opacity: .8; text-transform: uppercase; font-weight: 700; }
+.td-pic b { font-size: 14px; }
+.td-pic em { font-style: normal; font-size: 11px; opacity: .8; }
+.td-aksi-tombol { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.td-btn { border: 1px solid #e2e8f0; background: #fff; color: #0f172a; border-radius: 11px; padding: 8px 13px; font-weight: 800; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: transform .15s, box-shadow .15s, background .15s; white-space: nowrap; text-decoration: none; }
+.td-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px -8px rgba(15, 23, 42, .4); }
+.td-btn:disabled { opacity: .55; cursor: not-allowed; }
+.td-btn.hijau { background: #16a34a; border-color: #16a34a; color: #fff; }
+.td-btn.ungu { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.td-btn.biru { background: #2563eb; border-color: #2563eb; color: #fff; }
+.td-btn.kecil { padding: 5px 10px; font-size: 12px; border-radius: 9px; }
+.td-hero .td-btn:not(.hijau):not(.ungu) { background: rgba(255, 255, 255, .92); border-color: transparent; }
+.td-menu { position: relative; }
+.td-menu-isi { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; background: #fff; border-radius: 14px; box-shadow: 0 18px 40px -12px rgba(15, 23, 42, .4); padding: 6px; min-width: 220px; display: flex; flex-direction: column; animation: td-muncul .15s both; }
+.td-menu-isi button { border: 0; background: none; text-align: left; padding: 9px 12px; border-radius: 9px; font-size: 13px; font-weight: 600; color: #0f172a; cursor: pointer; }
+.td-menu-isi button:hover { background: #f1f5f9; }
+.td-menu-isi .bahaya { color: #dc2626; }
 
-/* ── MAP ─────────────────────────────────────── */
-.map-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
-.map-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px 8px; flex-wrap: wrap; gap: 8px; }
-.map-title { font-size: 13px; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 6px; }
-.map-legend { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #64748b; }
-.dot { width: 10px; height: 10px; border-radius: 50%; }
-.dot.green { background: #16a34a; }
-.dot.blue  { background: #3b82f6; }
-.map-lastseen { font-size: 11px; color: #64748b; }
-.map-nodata { font-size: 11px; color: #94a3b8; font-style: italic; }
-/* Stacking context sendiri agar pane Leaflet (z-index 400–1000) tidak menimpa header/dropdown layout */
-.map-container { height: 280px; width: 100%; position: relative; z-index: 0; }
-.map-footer { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; padding: 8px 16px; background: #f8fafc; border-top: 1px solid var(--border); }
-.map-link { font-size: 12px; color: #3b82f6; text-decoration: none; font-weight: 600; }
-.map-link:hover { text-decoration: underline; }
-.map-coords { font-size: 11px; color: #94a3b8; font-family: monospace; }
+/* GRID */
+.td-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.td-utama { min-width: 0; }
+.td-samping { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 12px; }
+.td-tab { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 12px; scrollbar-width: none; }
+.td-tab button { border: 1px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 9px 14px; font-weight: 800; font-size: 13px; color: #475569; cursor: pointer; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; transition: all .15s; }
+.td-tab button:hover { color: #0f172a; border-color: #cbd5e1; }
+.td-tab button.on { background: #0f172a; color: #fff; border-color: #0f172a; box-shadow: 0 8px 18px -10px rgba(15, 23, 42, .6); }
+.td-tab-n { font-size: 10.5px; padding: 0 6px; border-radius: 99px; background: #f1f5f9; color: #334155; line-height: 17px; }
+.td-tab button.on .td-tab-n { background: rgba(255, 255, 255, .2); color: #fff; }
+.td-tab-n.merah { background: #dc2626 !important; color: #fff !important; }
+.td-panel { display: flex; flex-direction: column; gap: 12px; animation: td-muncul .3s both; }
+@keyframes td-muncul { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-/* ── FOTO GALLERY ────────────────────────────── */
-.foto-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
-.foto-card-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 10px; }
-.foto-card-title { font-size: 13px; font-weight: 700; color: #0f172a; }
-.foto-badge { background: #f0fdf4; color: #15803d; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
-.foto-stages-grid { padding: 0 16px 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.foto-stage-col { min-width: 0; }
-.stage-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 6px; }
-.stage-row-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-.foto-thumb-wrap { cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.foto-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 2px solid #e2e8f0; transition: transform 0.15s, border-color 0.15s; }
-.foto-thumb:hover { transform: scale(1.06); border-color: #3b82f6; }
-.foto-time { font-size: 10px; color: #94a3b8; }
+.td-kartu { background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 14px 16px; min-width: 0; }
+.td-kartu h4 { margin: 0 0 8px; font-size: 14px; font-weight: 800; color: #0f172a; }
+.td-kartu.kosong { border-style: dashed; border-color: #fdba74; background: #fffbf5; }
+.td-kartu-kepala { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.td-kartu-kepala h4 { margin: 0; }
+.td-kanan { display: flex; gap: 6px; }
+.td-kosong-kecil { padding: 18px 6px; text-align: center; color: #94a3b8; font-size: 12.5px; }
+.td-link { border: 0; background: none; color: #2563eb; font-weight: 700; font-size: 12.5px; cursor: pointer; padding: 0; text-decoration: none; }
+.td-link:hover { text-decoration: underline; }
+.td-dua { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.td-ikon-btn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid #e2e8f0; background: #fff; cursor: pointer; font-size: 15px; }
+.putar { display: inline-block; animation: td-putar .8s linear infinite; }
+@keyframes td-putar { to { transform: rotate(360deg); } }
+.td-tag { display: inline-block; font-size: 10px; font-weight: 800; padding: 1px 7px; border-radius: 6px; background: #f1f5f9; color: #475569; margin-left: 6px; }
+.td-tag.main { background: #dbeafe; color: #1d4ed8; margin-left: 0; } .td-tag.backup { background: #f1f5f9; color: #64748b; margin-left: 0; }
 
-.foto-preview-modal { position: relative; max-width: 90vw; max-height: 90vh; }
-.foto-preview-img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 12px; display: block; }
-.foto-preview-close { position: absolute; top: -14px; right: -14px; width: 32px; height: 32px; border-radius: 50%; background: #fff; border: none; cursor: pointer; font-size: 16px; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,0.2); z-index: 1; }
+.td-kesimpulan { --nw: #64748b; display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 18px; border: 1.5px solid color-mix(in srgb, var(--nw) 40%, #fff); background: linear-gradient(120deg, color-mix(in srgb, var(--nw) 12%, #fff), #fff); }
+.td-kesimpulan.datar { margin: 10px 0; padding: 10px 12px; border-radius: 12px; }
+.td-kesimpulan-ikon { font-size: 26px; }
+.td-kesimpulan > div { flex: 1; min-width: 0; }
+.td-kesimpulan small { font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.td-kesimpulan b { display: block; color: var(--nw); font-size: 16px; font-weight: 900; }
+.td-kesimpulan p { margin: 2px 0 0; font-size: 12.5px; color: #334155; }
 
-/* ── SECTION CARD ────────────────────────────── */
-.section-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--shadow-sm); }
-.section-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
-.card-title { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
-.btn-add-small { padding: 4px 10px; background: #eff6ff; color: #1d4ed8; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.empty-section { color: #94a3b8; font-size: 13px; padding: 10px 0; }
+.td-downtime { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.td-dt-titik { display: flex; gap: 9px; align-items: center; min-width: 0; }
+.td-dt-titik > div { display: flex; flex-direction: column; min-width: 0; }
+.td-dt-titik small { font-size: 11px; color: #64748b; font-weight: 700; }
+.td-dt-titik b { font-size: 13.5px; }
+.td-dt-titik em { font-style: normal; font-size: 11px; color: #94a3b8; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bulat { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 900; flex-shrink: 0; }
+.bulat.merah { background: #fee2e2; color: #dc2626; } .bulat.hijau { background: #dcfce7; color: #16a34a; } .bulat.abu { background: #f1f5f9; color: #94a3b8; }
+.td-dt-garis { flex: 1; min-width: 100px; height: 4px; border-radius: 99px; background: linear-gradient(90deg, #dc2626, #16a34a); position: relative; }
+.td-dt-garis.hidup { background: repeating-linear-gradient(90deg, #dc2626 0 10px, #fecaca 10px 20px); background-size: 20px 4px; animation: td-alir 1s linear infinite; }
+@keyframes td-alir { to { background-position: 20px 0; } }
+.td-dt-garis span { position: absolute; left: 50%; top: -24px; transform: translateX(-50%); background: #0f172a; color: #fff; font-size: 11.5px; font-weight: 800; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
 
-/* ── WORK ORDERS ─────────────────────────────── */
-.wo-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; }
-.wo-left { min-width: 110px; }
-.wo-nomor { font-size: 12px; font-weight: 700; color: #1d4ed8; }
-.wo-jenis { font-size: 11px; color: #64748b; }
-.wo-date { font-size: 11px; color: #94a3b8; }
-.wo-mid { flex: 1; min-width: 0; }
-.wo-desc { font-size: 13px; color: #0f172a; margin-bottom: 2px; }
-.wo-exec { font-size: 11px; }
-.wo-status { font-size: 12px; font-weight: 700; min-width: 60px; text-align: right; flex-shrink: 0; }
+.td-rca { display: flex; flex-direction: column; gap: 8px; }
+.td-rca span { display: flex; flex-direction: column; }
+.td-rca small { font-size: 11px; color: #94a3b8; font-weight: 700; }
+.td-rca b { font-size: 13px; font-weight: 600; color: #0f172a; }
 
-/* ── JOURNEY CARD ────────────────────────────── */
-.journey-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--shadow-sm); }
-.journey-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.journey-title { font-size: 13px; font-weight: 700; color: #0f172a; }
-.btn-timeline-sm { font-size: 12px; color: #6d28d9; background: none; border: none; cursor: pointer; font-weight: 600; padding: 0; }
-.btn-timeline-sm:hover { text-decoration: underline; }
+.td-wo { width: 100%; display: flex; gap: 10px; align-items: center; border: 1px solid #f1f5f9; background: #fafafa; border-radius: 13px; padding: 9px 11px; margin-top: 6px; cursor: pointer; font: inherit; text-align: left; transition: background .15s, transform .15s; }
+.td-wo:hover { background: #f1f5f9; transform: translateX(2px); }
+.td-wo-ikon { font-size: 20px; }
+.td-wo-isi { flex: 1; display: flex; flex-direction: column; min-width: 0; font-size: 12.5px; }
+.td-wo-isi small { color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-wo-st { font-size: 11px; font-weight: 800; border: 1.5px solid; border-radius: 99px; padding: 2px 9px; white-space: nowrap; }
 
-.journey-steps { display: flex; flex-direction: column; gap: 0; }
-.journey-step { display: flex; gap: 12px; align-items: flex-start; }
-.jstep-dot { width: 36px; height: 36px; border-radius: 50%; background: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; border: 2px solid #e2e8f0; transition: all 0.2s; }
-.journey-step.done .jstep-dot { background: #f0fdf4; border-color: #16a34a; }
-.journey-step.active .jstep-dot { background: #eff6ff; border-color: #3b82f6; box-shadow: 0 0 0 3px #bfdbfe; }
-.jstep-body { padding: 6px 0 4px; flex: 1; }
-.jstep-label { font-size: 13px; font-weight: 600; color: #374151; }
-.jstep-time { font-size: 11px; color: #64748b; margin-top: 1px; }
-.jstep-time.pending { color: #cbd5e1; }
-.jstep-gps { font-size: 10px; color: #94a3b8; font-family: monospace; margin-top: 2px; }
-.btn-journey { margin-top: 4px; padding: 3px 10px; font-size: 11px; border: 1px solid #3b82f6; color: #3b82f6; background: transparent; border-radius: 4px; cursor: pointer; }
-.btn-journey:hover { background: #eff6ff; }
-.btn-journey:disabled { opacity: .5; cursor: not-allowed; }
+.td-feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.td-feed li { display: flex; gap: 11px; position: relative; padding-bottom: 14px; }
+.td-feed li:not(:last-child)::before { content: ''; position: absolute; left: 14px; top: 30px; bottom: 0; width: 2px; background: #f1f5f9; }
+.td-feed-titik { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; flex-shrink: 0; color: #fff; box-shadow: 0 0 0 3px #fff; }
+.td-feed.mini li { padding-bottom: 8px; gap: 9px; }
+.td-feed.mini li::before { display: none; }
+.td-feed.mini .td-feed-titik { width: 9px; height: 9px; margin-top: 5px; }
+.td-feed.mini b { display: block; font-size: 12.5px; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.td-feed.mini small { font-size: 11px; color: #94a3b8; }
+.td-feed-isi { flex: 1; min-width: 0; background: #f8fafc; border-radius: 13px; padding: 9px 12px; }
+.td-feed-atas { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.td-feed-atas b { font-size: 12.5px; }
+.td-feed-atas small { font-size: 11px; color: #94a3b8; }
+.td-feed-isi p { font-size: 13px; color: #334155; margin-top: 4px; }
+.td-status-kecil { --st: #64748b; display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 800; padding: 1px 9px; border-radius: 99px; background: color-mix(in srgb, var(--st) 12%, #fff); color: var(--st); }
+.td-foto-mini { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.td-foto-mini img { width: 64px; height: 64px; object-fit: cover; border-radius: 9px; cursor: zoom-in; transition: transform .15s; }
+.td-foto-mini img:hover { transform: scale(1.06); }
 
-.journey-line { width: 2px; height: 20px; background: #e2e8f0; margin: 2px 0 2px 17px; transition: background 0.2s; border-radius: 2px; }
-.journey-line.done { background: #86efac; }
+.td-composer textarea { width: 100%; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 13.5px; resize: vertical; box-sizing: border-box; outline: none; transition: border-color .15s, box-shadow .15s; }
+.td-composer textarea:focus { border-color: #93c5fd; box-shadow: 0 0 0 4px rgba(59, 130, 246, .12); }
+.td-cepat { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; }
+.td-cepat button { border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 99px; padding: 3px 10px; font-size: 11.5px; font-weight: 600; color: #334155; cursor: pointer; transition: all .12s; }
+.td-cepat button:hover { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+.td-composer-bawah { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+.td-composer-bawah select { max-width: 280px; }
 
-/* ── ACTIVITY FEED ───────────────────────────── */
-.feed-card { }
-.feed-list { display: flex; flex-direction: column; gap: 0; max-height: 520px; overflow-y: auto; }
-.feed-item { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
-.feed-item:last-child { border-bottom: none; }
-.feed-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
-.log-dot-c { }
-.foto-dot-c { background: #16a34a; }
-.feed-body { flex: 1; min-width: 0; }
-.feed-badge-row { margin-bottom: 3px; }
-.log-badge { padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; }
-.feed-text { font-size: 13px; color: #374151; margin-bottom: 2px; }
-.feed-meta { font-size: 11px; color: #94a3b8; }
-.feed-foto-label { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 2px; }
-.feed-thumbs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-.feed-thumb { width: 58px; height: 58px; object-fit: cover; border-radius: 6px; border: 1.5px solid #e2e8f0; cursor: pointer; transition: transform 0.15s; }
-.feed-thumb:hover { transform: scale(1.07); border-color: #3b82f6; }
+/* Monitoring */
+.td-router { border: 1px solid #f1f5f9; border-radius: 14px; padding: 10px 12px; margin-top: 8px; }
+.td-router-baris { display: flex; gap: 10px; align-items: flex-start; }
+.td-router-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 0%, #f1f5f9); }
+.td-router-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.td-router-info small { font-size: 11.5px; color: #64748b; }
+.td-tunnel { display: flex; flex-wrap: wrap; gap: 5px; margin: 3px 0; }
+.td-tunnel span { font: 700 11px ui-monospace, monospace; padding: 2px 8px; border-radius: 7px; }
+.td-tunnel .on { background: #dcfce7; color: #15803d; } .td-tunnel .off { background: #fee2e2; color: #b91c1c; } .td-tunnel .macet { background: #ffedd5; color: #c2410c; }
+.td-tunnel small { font-weight: 500; }
+.td-kejadian { margin-top: 8px; max-height: 260px; overflow-y: auto; border-top: 1px dashed #e2e8f0; padding-top: 6px; }
+.td-kj { display: grid; grid-template-columns: 130px 110px 1fr; gap: 8px; font-size: 11.5px; padding: 3px 0; align-items: center; }
+.td-kj .at { color: #64748b; }
+.td-kj .jenis { font-weight: 800; padding: 1px 7px; border-radius: 6px; text-align: center; }
+.td-kj .jenis.on { background: #dcfce7; color: #15803d; } .td-kj .jenis.off { background: #fee2e2; color: #b91c1c; }
+.td-kj .det { color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-sensor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.td-sensor { --sw: #64748b; display: flex; gap: 9px; align-items: flex-start; border: 1.5px solid #e2e8f0; background: #fff; border-radius: 13px; padding: 9px 11px; cursor: pointer; font: inherit; text-align: left; transition: all .15s; }
+.td-sensor:hover { border-color: var(--sw); }
+.td-sensor.on { border-color: var(--sw); background: color-mix(in srgb, var(--sw) 7%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sw) 15%, transparent); }
+.td-sensor .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--sw); margin-top: 4px; flex-shrink: 0; }
+.td-sensor .isi { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 12.5px; }
+.td-sensor .isi small { color: #94a3b8; font-size: 11px; }
+.td-sensor .isi .pesan { color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-sensor .lbl { font-size: 10.5px; font-weight: 800; color: var(--sw); background: color-mix(in srgb, var(--sw) 12%, #fff); border-radius: 99px; padding: 1px 8px; white-space: nowrap; }
+.td-seg { display: inline-flex; background: #f1f5f9; border-radius: 11px; padding: 3px; gap: 2px; }
+.td-seg button { border: 0; background: none; border-radius: 8px; padding: 5px 11px; font-size: 12px; font-weight: 700; color: #64748b; cursor: pointer; }
+.td-seg button.on { background: #fff; color: #0f172a; box-shadow: 0 1px 4px rgba(15, 23, 42, .12); }
+.td-seg.lebar { display: flex; }
+.td-seg.lebar button { flex: 1; padding: 9px; font-size: 12.5px; }
+.td-live { color: #dc2626; font-size: 11.5px; animation: td-kedip 1.2s infinite; }
+@keyframes td-kedip { 50% { opacity: .3; } }
+.td-grafik { background: #f8fafc; border-radius: 12px; min-height: 180px; display: grid; place-items: center; margin-bottom: 6px; overflow: hidden; }
+.td-grafik img { max-width: 100%; display: block; }
 
-/* ── RELATED TICKETS ─────────────────────────── */
-.related-item { display: flex; align-items: center; gap: 14px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; cursor: pointer; transition: border-color 0.15s; margin-bottom: 6px; }
-.related-item:last-child { margin-bottom: 0; }
-.related-item:hover { border-color: #3b82f6; }
-.rel-left { flex: 1; min-width: 0; }
-.rel-nomor { font-size: 13px; font-weight: 700; color: #0f172a; }
-.rel-judul { font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rel-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.prio-dot { font-size: 11px; font-weight: 700; }
-.rel-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
-.rel-arrow { color: #94a3b8; font-size: 16px; }
+/* Lapangan */
+.td-jalan { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; position: relative; }
+.td-jalan-step { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 3px; position: relative; padding: 4px; }
+.td-jalan-step:not(:last-child)::after { content: ''; position: absolute; top: 22px; left: calc(50% + 24px); right: calc(-50% + 24px); height: 3px; border-radius: 99px; background: #e2e8f0; }
+.td-jalan-step.lewat:not(:last-child)::after { background: #22c55e; }
+.td-jalan-step .bulat { width: 44px; height: 44px; font-size: 19px; background: #f1f5f9; transition: transform .2s; }
+.td-jalan-step.lewat .bulat { background: #dcfce7; }
+.td-jalan-step.kini .bulat { background: #fef3c7; animation: td-loncat 1.6s infinite; }
+@keyframes td-loncat { 50% { transform: translateY(-4px); } }
+.td-jalan-step b { font-size: 12.5px; }
+.td-jalan-step small { font-size: 11px; color: #94a3b8; }
+.td-peta { height: 340px; border-radius: 14px; overflow: hidden; z-index: 0; }
+.td-peta-kaki { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; }
+:deep(.td-pin) { background: none; border: 0; }
+:deep(.td-pin span) { display: block; font-size: 28px; line-height: 1; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, .35)); }
+.td-foto-grup { margin-bottom: 10px; }
+.td-foto-lbl { display: block; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+.td-foto-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.td-foto { border: 0; padding: 0; background: #f1f5f9; border-radius: 12px; overflow: hidden; cursor: zoom-in; position: relative; aspect-ratio: 1; }
+.td-foto img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s; }
+.td-foto:hover img { transform: scale(1.08); }
+.td-foto small { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 4px; font-size: 10px; color: #fff; background: linear-gradient(transparent, rgba(0, 0, 0, .65)); }
 
-/* ── MODAL ───────────────────────────────────── */
-/* Overlay & modal pakai style global (main.css). z-index dinaikkan agar
-   berada di atas pane/kontrol Leaflet (z-index s/d 1000). */
-.modal-overlay { z-index: 2000; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.field.full { grid-column: 1 / -1; }
-.field label { font-size: 12.5px; font-weight: 600; color: var(--text-3); }
-.req { color: var(--danger); }
-.field input, .field select, .field textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r); font-size: 13.5px; font-family: inherit; outline: none; background: var(--surface); color: var(--text-1); transition: border-color 0.15s, box-shadow 0.15s; }
-.field textarea { resize: vertical; line-height: 1.5; }
-.field input:focus, .field select:focus, .field textarea:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
-.form-error-box { background: var(--danger-light); border: 1px solid #fecaca; border-radius: var(--r); color: var(--danger); font-size: 13px; padding: 8px 12px; margin: 14px 0 0; }
-.modal-footer .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+/* Sidebar */
+.td-site dl { margin: 0; display: grid; grid-template-columns: 78px 1fr; gap: 6px 10px; font-size: 12.5px; }
+.td-site dt { color: #94a3b8; font-weight: 700; font-size: 11.5px; }
+.td-site dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.td-site dd small { color: #94a3b8; font-family: ui-monospace, monospace; font-size: 10.5px; margin-left: 6px; white-space: nowrap; }
+.td-site a { color: #2563eb; font-weight: 700; text-decoration: none; }
+.td-kontak { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f8fafc; }
+.td-kontak:last-child { border-bottom: 0; }
+.td-kontak .nm { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 12.5px; line-height: 1.25; }
+.td-kontak .nm small { font-size: 11px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-kontak .nm em { font-style: normal; font-size: 9.5px; background: #dbeafe; color: #1d4ed8; padding: 0 5px; border-radius: 4px; vertical-align: middle; }
+.td-k { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; text-decoration: none; font-size: 14px; flex-shrink: 0; transition: transform .15s; }
+.td-k:hover { transform: scale(1.12); }
+.td-k.wa { background: #dcfce7; } .td-k.tel { background: #dbeafe; } .td-k.mail { background: #f3e8ff; }
+.td-isp { padding: 8px 0; border-bottom: 1px solid #f8fafc; display: flex; flex-direction: column; gap: 3px; }
+.td-isp:last-child { border-bottom: 0; }
+.td-isp-atas { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.td-isp-atas small { color: #64748b; font-size: 11px; }
+.td-isp-no { font-size: 11.5px; color: #64748b; }
+.td-salin { border: 0; background: none; cursor: pointer; color: #2563eb; }
+.td-isp-kontak { display: flex; align-items: center; gap: 5px; }
+.td-isp-kontak small { flex: 1; font-size: 11.5px; color: #64748b; }
+.td-rel { width: 100%; display: flex; gap: 8px; align-items: center; border: 0; background: none; padding: 7px 4px; border-radius: 10px; cursor: pointer; font: inherit; text-align: left; }
+.td-rel:hover { background: #f8fafc; }
+.td-rel-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.td-rel .isi { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 12.5px; }
+.td-rel .isi b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-rel .isi small { font-size: 10.5px; color: #94a3b8; }
 
-/* ── TIMELINE MODAL ──────────────────────────── */
-.timeline-modal { background: var(--surface); border-radius: var(--r-xl); width: 560px; max-width: 95vw; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 24px 80px rgba(0,0,0,0.22); overflow: hidden; }
-.tl-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 22px 24px 16px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
-.tl-title { font-size: 17px; font-weight: 800; color: #0f172a; margin-bottom: 2px; }
-.tl-sub { font-size: 12px; color: #64748b; }
-.tl-body { overflow-y: auto; padding: 20px 24px 24px; flex: 1; }
+/* Lightbox */
+.td-lightbox { position: fixed; inset: 0; z-index: 3000; background: rgba(15, 23, 42, .92); display: flex; align-items: center; justify-content: center; gap: 12px; padding: 20px; animation: td-muncul .2s both; }
+.td-lightbox figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 90vw; }
+.td-lightbox img { max-width: 100%; max-height: 80vh; border-radius: 12px; box-shadow: 0 20px 50px rgba(0, 0, 0, .5); }
+.td-lightbox figcaption { color: #cbd5e1; font-size: 12.5px; }
+.td-lb-x { position: absolute; top: 16px; right: 16px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .14); color: #fff; font-size: 16px; cursor: pointer; }
+.td-lb-nav { width: 46px; height: 46px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .14); color: #fff; font-size: 26px; cursor: pointer; flex-shrink: 0; }
+.td-lb-nav:hover, .td-lb-x:hover { background: rgba(255, 255, 255, .28); }
 
-.tl-list { display: flex; flex-direction: column; }
-.tl-item { display: flex; gap: 14px; }
-.tl-line-wrap { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
-.tl-dot { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
-.tl-connector { width: 2px; flex: 1; min-height: 16px; background: linear-gradient(#e2e8f0, #e2e8f0); margin: 4px 0; border-radius: 2px; }
+/* Modal */
+.td-modal { max-width: 600px; }
+.td-modal-kepala { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 16px 20px 12px; border-bottom: 1px solid #f1f5f9; background: linear-gradient(120deg, #eff6ff, #fff); border-top-left-radius: inherit; border-top-right-radius: inherit; }
+.td-modal-kepala.hijau { background: linear-gradient(120deg, #dcfce7, #fff); }
+.td-modal-kepala h3 { margin: 0; font-size: 17px; font-weight: 900; }
+.td-modal-kepala small { color: #64748b; font-size: 12px; }
+.td-form { display: flex; flex-direction: column; gap: 12px; }
+.td-form label, .td-field { display: flex; flex-direction: column; gap: 5px; }
+.td-info { margin: 0; font-size: 12px; color: #64748b; background: #f8fafc; border-radius: 10px; padding: 8px 10px; }
+.td-prio-pilih { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.td-prio-pilih button { --pw: #64748b; border: 2px solid #e2e8f0; background: #fff; border-radius: 13px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: all .15s; }
+.td-prio-pilih button span { font-size: 19px; }
+.td-prio-pilih button b { font-size: 12px; color: var(--pw); }
+.td-prio-pilih button small { font-size: 10px; color: #94a3b8; }
+.td-prio-pilih button.on { border-color: var(--pw); background: color-mix(in srgb, var(--pw) 9%, #fff); transform: translateY(-2px); }
+.td-tl { list-style: none; margin: 0; padding: 0; }
+.td-tl li { --tc: #64748b; display: flex; gap: 12px; position: relative; padding-bottom: 16px; }
+.td-tl li:not(:last-child)::before { content: ''; position: absolute; left: 17px; top: 36px; bottom: 0; width: 2px; background: color-mix(in srgb, var(--tc) 30%, #f1f5f9); }
+.td-tl-ikon { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--tc) 15%, #fff); border: 2px solid var(--tc); font-size: 15px; flex-shrink: 0; }
+.td-tl li > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.td-tl b { font-size: 13.5px; }
+.td-tl small { font-size: 11.5px; color: #94a3b8; }
+.td-tl p { font-size: 12.5px; color: #475569; }
 
-.tl-content { padding: 6px 0 20px; flex: 1; min-width: 0; }
-.tl-ev-title { font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
-.tl-ev-time { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
-.tl-ev-desc { font-size: 13px; color: #475569; margin-bottom: 2px; word-break: break-word; }
-.tl-ev-by { font-size: 11px; color: #94a3b8; }
-.tl-badge-wrap { margin-top: 4px; }
-
-.tl-gps-card { margin-top: 8px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 12px; }
-.tl-gps-row { margin-bottom: 3px; }
-.tl-gps-row:last-child { margin-bottom: 0; }
-.tl-gps-label { font-size: 11px; font-weight: 700; color: #15803d; text-transform: uppercase; letter-spacing: 0.3px; }
-.tl-gps-coord { font-size: 12px; font-family: monospace; color: #0f172a; font-weight: 600; }
-.tl-gps-acc { font-size: 11px; color: #64748b; }
-.tl-gps-link { font-size: 12px; color: #3b82f6; text-decoration: none; font-weight: 600; }
-.tl-gps-link:hover { text-decoration: underline; }
-
-.tl-fotos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.tl-foto-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 2px solid #e2e8f0; cursor: pointer; transition: transform 0.15s, border-color 0.15s; }
-.tl-foto-thumb:hover { transform: scale(1.06); border-color: #3b82f6; }
-
-/* ── PRTG SECTION ────────────────────────────── */
-/* Status Card */
-.noc-card { margin-bottom: 16px; }
-.noc-kesimpulan { display: flex; flex-direction: column; gap: 3px; border-left: 4px solid; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #334155; margin-bottom: 12px; }
-.noc-link { font-size: 13px; color: #2563eb; font-weight: 600; }
-.noc-router { border-top: 1px solid var(--border); padding: 10px 0; }
-.noc-baris { display: flex; gap: 10px; align-items: flex-start; }
-.noc-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; }
-.noc-info { flex: 1; min-width: 0; }
-.noc-nama { font-family: monospace; font-weight: 700; font-size: 13px; color: #0f172a; word-break: break-all; }
-.noc-jenis { margin-left: 6px; font-family: inherit; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #e0e7ff; color: #3730a3; }
-.noc-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
-.noc-tunnel { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-.noc-tunnel span { font-family: monospace; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 5px; }
-.noc-tunnel .on, .noc-kj-jenis.on { background: #dcfce7; color: #166534; }
-.noc-tunnel .off, .noc-kj-jenis.off { background: #fee2e2; color: #991b1b; }
-.noc-tunnel .macet { background: #fef3c7; color: #92400e; }
-.noc-tunnel small { font-weight: 600; }
-.noc-btn { flex: none; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: #f8fafc; cursor: pointer; }
-.noc-btn:hover { background: #e2e8f0; }
-.noc-kejadian { margin: 8px 0 0 20px; max-height: 240px; overflow: auto; }
-.noc-kj { display: flex; gap: 8px; align-items: center; font-size: 12px; padding: 3px 0; }
-.noc-kj-at { color: #64748b; white-space: nowrap; font-family: monospace; }
-.noc-kj-jenis { padding: 1px 6px; border-radius: 4px; font-weight: 700; white-space: nowrap; }
-.noc-kj-det { color: #475569; }
-.prtg-card { background: var(--surface); border-radius: var(--r-lg); border: 1px solid var(--border); padding: 20px; box-shadow: var(--shadow-sm); }
-.prtg-hdr { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
-.prtg-hdr-left { display: flex; align-items: flex-start; gap: 12px; }
-.prtg-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
-.prtg-title { font-size: 15px; font-weight: 800; color: #0f172a; margin-bottom: 3px; }
-.prtg-device-name { font-size: 12px; color: #3b82f6; font-weight: 600; font-family: monospace; }
-.prtg-loading { font-size: 13px; color: #94a3b8; padding: 10px 0; }
-.prtg-err { font-size: 13px; color: #ef4444; padding: 10px 0; }
-.prtg-empty { font-size: 13px; color: #94a3b8; padding: 10px 0; }
-.btn-refresh-prtg {
-  background: #f1f5f9; border: none; border-radius: 8px; padding: 6px 10px;
-  font-size: 18px; cursor: pointer; color: #64748b; flex-shrink: 0;
-  transition: background 0.15s;
-}
-.btn-refresh-prtg:hover { background: #e2e8f0; }
-.btn-refresh-prtg:disabled { opacity: 0.5; cursor: not-allowed; }
-.spinning { display: inline-block; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* Down-Up rincian */
-.prtg-downup { background: #f8fafc; border-radius: 10px; padding: 16px; margin-top: 14px; border: 1px solid #e2e8f0; }
-.pdu-section-title { font-size: 12px; font-weight: 700; color: #64748b; margin-bottom: 12px; letter-spacing: 0.3px; }
-.prtg-downup-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.prtg-downup-item { display: flex; align-items: flex-start; gap: 10px; flex: 1; min-width: 130px; }
-.pdu-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; flex-shrink: 0; margin-top: 2px; }
-.pdu-icon.down    { background: #fee2e2; color: #dc2626; }
-.pdu-icon.up      { background: #dcfce7; color: #16a34a; }
-.pdu-icon.pending { background: #fef9c3; color: #a16207; }
-.pdu-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 3px; }
-.pdu-val   { font-size: 13px; font-weight: 700; color: #0f172a; }
-.pdu-msg   { font-size: 11px; color: #64748b; margin-top: 2px; font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
-.prtg-downup-arrow { font-size: 20px; color: #cbd5e1; flex-shrink: 0; }
-.prtg-downup-duration { border-radius: 10px; padding: 12px 18px; text-align: center; flex-shrink: 0; min-width: 130px; border: 1.5px solid; }
-.prtg-downup-duration.dur-card-done { background: #f0fdf4; border-color: #bbf7d0; }
-.prtg-downup-duration.dur-card-live { background: #fff1f2; border-color: #fecdd3; }
-.pdu-dur-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 6px; }
-.pdu-dur-val { font-size: 18px; font-weight: 900; line-height: 1; }
-.pdu-dur-val.dur-done { color: #16a34a; }
-.pdu-dur-val.dur-live { color: #ef4444; }
-
-/* Sensor Grid */
-.sensor-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
-}
-.sensor-card {
-  display: flex; align-items: flex-start; gap: 10px;
-  border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px 14px;
-  cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
-  background: #fafafa;
-}
-.sensor-card:hover { border-color: #93c5fd; background: #f0f9ff; }
-.sensor-card.sensor-selected { border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
-.sensor-status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; box-shadow: 0 0 0 3px rgba(0,0,0,0.07); }
-.sensor-body { flex: 1; min-width: 0; }
-.sensor-name { font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
-.sensor-device { font-size: 11px; }
-.sensor-msg { font-size: 11px; color: #64748b; margin-top: 2px; font-style: italic; }
-.sensor-badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; white-space: nowrap; align-self: flex-start; }
-
-/* Graph Card */
-.prtg-graph-card { background: var(--surface); border-radius: var(--r-lg); border: 1px solid var(--border); padding: 20px; box-shadow: var(--shadow-sm); }
-.prtg-graph-hdr { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
-.prtg-graph-title { font-size: 15px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.prtg-live-dot { display: flex; align-items: center; gap: 5px; color: #16a34a; }
-.blink-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: #16a34a;
-  animation: blink 1.2s ease-in-out infinite;
-  display: inline-block;
-}
-@keyframes blink {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }
-  50% { opacity: 0.5; box-shadow: 0 0 0 5px rgba(22,163,74,0); }
-}
-.prtg-sensor-lbl { font-size: 13px; color: #64748b; font-weight: 500; }
-
-.prtg-graph-tabs { display: flex; align-items: center; gap: 4px; }
-.prtg-tab {
-  padding: 5px 12px; border-radius: 7px; border: 1.5px solid #e2e8f0;
-  font-size: 12px; font-weight: 600; cursor: pointer; background: #f8fafc; color: #64748b;
-  transition: all 0.15s;
-}
-.prtg-tab.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-.prtg-tab:hover:not(.active) { border-color: #93c5fd; background: #eff6ff; color: #1d4ed8; }
-.prtg-refresh-btn {
-  margin-left: 4px; padding: 5px 10px; border-radius: 7px;
-  border: 1.5px solid #e2e8f0; background: #f8fafc; color: #64748b;
-  font-size: 16px; cursor: pointer; transition: background 0.15s;
-}
-.prtg-refresh-btn:hover { background: #e2e8f0; }
-
-.prtg-graph-wrap { background: #f8fafc; border-radius: 10px; overflow: hidden; min-height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.prtg-graph-img { width: 100%; display: block; border-radius: 10px; }
-.prtg-graph-err { font-size: 13px; color: #94a3b8; padding: 32px; text-align: center; }
-.prtg-graph-spinner { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px; color: #94a3b8; font-size: 13px; }
-.spin-svg { width: 28px; height: 28px; animation: spin 0.9s linear infinite; }
-
-.prtg-graph-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
-.prtg-graph-id { font-size: 11px; color: #94a3b8; font-family: monospace; }
-.prtg-auto-refresh { font-size: 11px; color: #16a34a; font-weight: 600; }
-
-@media (max-width: 900px) {
-  .main-grid { grid-template-columns: 1fr; }
-  .foto-stages-grid { grid-template-columns: 1fr; }
-  .prtg-graph-hdr { flex-direction: column; align-items: flex-start; }
-  .kontak-grid { grid-template-columns: 1fr; }
+@media (max-width: 1100px) {
+  .td-grid { grid-template-columns: minmax(0, 1fr); }
+  .td-samping { position: static; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 }
 @media (max-width: 768px) {
-  /* Global main.css membuat semua tombol page-header full-width; tombol kembali
-     tetap ringkas, dan tombol aksi dibagi dua kolom agar tidak menumpuk 6 baris. */
-  .page-header .btn-back { width: auto !important; }
-  .header-right { justify-content: flex-start; }
-  .page-header .header-right > button { width: auto !important; flex: 1 1 calc(50% - 4px); }
-  .wo-item { flex-wrap: wrap; }
-  .wo-status { text-align: left; }
+  .td-hero { padding: 14px 14px 16px; border-radius: 18px; }
+  .td-hero h1 { font-size: 19px; }
+  .td-durasi, .td-sla { min-width: 0; flex: 1; }
+  .td-btn kbd { display: none; }
+  .td-dua { grid-template-columns: 1fr; }
+  .td-jalan { grid-template-columns: repeat(2, 1fr); row-gap: 14px; }
+  .td-jalan-step::after { display: none; }
+  .td-kj { grid-template-columns: 1fr; gap: 2px; padding: 6px 0; border-bottom: 1px solid #f8fafc; }
+  .td-prio-pilih { grid-template-columns: repeat(2, 1fr); }
+  .td-peta { height: 260px; }
+  .td-lb-nav { position: absolute; bottom: 20px; }
+  .td-lb-nav.kiri { left: 20px; } .td-lb-nav.kanan { right: 20px; }
 }
-@media (max-width: 600px) {
-  .info-bar { grid-template-columns: 1fr 1fr; }
-  .prtg-downup-arrow { display: none; }
-  .prtg-downup-duration { width: 100%; }
-  .pdu-msg { max-width: 100%; }
-  .sensor-grid { grid-template-columns: 1fr; }
-  .prtg-graph-tabs { flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) {
+  .td *, .td *::before, .td *::after { animation: none !important; transition: none !important; }
 }
-
-/* ── Kontak & Provider ──────────────────────────────────── */
-.kontak-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
-.kontak-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; }
-.kontak-card-title { font-size: 12px; font-weight: 700; color: #475569; letter-spacing: 0.3px; margin-bottom: 12px; }
-.kontak-group { margin-bottom: 12px; }
-.kontak-group:last-child { margin-bottom: 0; }
-.kontak-group-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px; margin-bottom: 6px; }
-.kontak-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; }
-.kontak-row:last-child { border-bottom: none; }
-.kontak-name-wrap { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.kontak-name { font-size: 13px; font-weight: 600; color: #1e293b; }
-.kontak-jabatan { font-size: 11px; color: #94a3b8; }
-.kontak-badge-utama { font-size: 10px; background: #dbeafe; color: #1d4ed8; border-radius: 4px; padding: 1px 5px; font-weight: 600; }
-.kontak-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
-.kontak-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 5px; text-decoration: none; white-space: nowrap; border: none; cursor: pointer; }
-.kontak-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
-.kontak-btn.wa { background: #dcfce7; color: #16a34a; }
-.kontak-btn.wa:hover { background: #bbf7d0; }
-.kontak-btn.tel { background: #e0f2fe; color: #0369a1; }
-.kontak-btn.tel:hover { background: #bae6fd; }
-.kontak-btn.email { background: #fef3c7; color: #b45309; }
-.kontak-btn.email:hover { background: #fde68a; }
-.kontak-empty { font-size: 12px; color: #94a3b8; font-style: italic; padding: 8px 0; }
-
-/* ISP rows */
-.isp-row { border-bottom: 1px solid #f1f5f9; padding: 8px 0; }
-.isp-row:last-child { border-bottom: none; }
-.isp-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
-.isp-link-type { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
-.isp-main { background: #dbeafe; color: #1d4ed8; }
-.isp-backup { background: #fef9c3; color: #854d0e; }
-.isp-vendor-name { font-size: 13px; font-weight: 600; color: #1e293b; }
-.isp-bw { font-size: 11px; color: #64748b; background: #f1f5f9; border-radius: 4px; padding: 1px 6px; }
-.isp-pelno { font-size: 11px; color: #64748b; margin-bottom: 4px; }
-.isp-pic-name { font-size: 11px; color: #475569; font-style: italic; }
 </style>
