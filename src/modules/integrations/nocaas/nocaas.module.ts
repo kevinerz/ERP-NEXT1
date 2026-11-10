@@ -6,11 +6,12 @@ import { NocaasController } from './nocaas.controller';
 import { NocaasService } from './nocaas.service';
 import { NocaasLaporanService } from './nocaas-laporan.service';
 import { NocaasClient } from './nocaas.client';
+import { NocaasSiteService } from './nocaas-site.service';
 
 @Module({
   imports: [PrtgModule, StarsenderModule, WhatsappModule],
   controllers: [NocaasController],
-  providers: [NocaasClient, NocaasService, NocaasLaporanService],
+  providers: [NocaasClient, NocaasService, NocaasLaporanService, NocaasSiteService],
   exports: [NocaasClient],
 })
 export class NocaasModule {}

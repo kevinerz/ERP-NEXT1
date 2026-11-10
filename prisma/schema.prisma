@@ -1283,6 +1283,8 @@ model NocaasRouter {
   macet_lama      Boolean   @default(false) // sudah macet saat pertama dicek → bukan gangguan baru (tidak ditiketkan)
   wan_status      Json? // { iface: { running, pernah_hidup, sejak } } dari snapshot config router (live_config)
   live_at         DateTime? // waktu snapshot config router terakhir
+  live_ringkas    Json? // ringkasan config router (model, SN, RouterOS, interface, LAN, DHCP, VPN) — panel detail site
+  vpn_ringkas     Json? // akun VPN NS/UN: nama, ISP, caller id, status
   updated_at      DateTime  @updatedAt
 
   site SitePelanggan? @relation(fields: [id_site], references: [id_site], onDelete: SetNull)

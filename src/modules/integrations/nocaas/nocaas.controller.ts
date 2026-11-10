@@ -3,6 +3,8 @@ import { IsBoolean, IsInt, IsObject, IsOptional, Max, Min } from 'class-validato
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { NocaasService } from './nocaas.service';
 import { NocaasLaporanService } from './nocaas-laporan.service';
+import { NocaasSiteService } from './nocaas-site.service';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 
 class PetakanDto {
   @IsOptional() @IsInt() @Min(1) id_site?: number | null;
@@ -22,7 +24,16 @@ class KonfigurasiDto {
 // Tiket gangguan otomatis dibuat dari status NOCaaS (lihat NocaasService.prosesTiket).
 @Controller('nocaas')
 export class NocaasController {
-  constructor(private readonly svc: NocaasService, private readonly lap: NocaasLaporanService) {}
+  constructor(private readonly svc: NocaasService, private readonly lap: NocaasLaporanService, private readonly siteSvc: NocaasSiteService) {}
+
+  // ── Data NOCaaS di halaman site & sinkron ke perangkat site ──
+  @Get('site/:id/panel') panelSite(@Param('id', ParseIntPipe) id: number) { return this.siteSvc.panel(id); }
+  @Get('site/:id/sinkron') pratinjauSinkron(@Param('id', ParseIntPipe) id: number) { return this.siteSvc.pratinjau(id); }
+  @Post('site/:id/sinkron') terapkanSinkron(@Param('id', ParseIntPipe) id: number, @Body('timpa') timpa: boolean, @CurrentUser() u: any) {
+    return this.siteSvc.terapkan(id, timpa === true, u);
+  }
+  @Get('sinkron-perangkat') pratinjauMassal(@CurrentUser() u: any) { return this.siteSvc.massal('pratinjau', u); }
+  @Post('sinkron-perangkat') @Roles('Admin', 'Director', 'Manager_Ops') terapkanMassal(@CurrentUser() u: any) { return this.siteSvc.massal('terapkan', u); }
 
   // Laporan gangguan gabungan PRTG + NOCaaS + sumber lain
   @Get('laporan') laporan(@Query() q: { dari?: string; sampai?: string }) { return this.lap.laporan(q); }

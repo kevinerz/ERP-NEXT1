@@ -61,10 +61,34 @@ interface Paired {
   site_key: string; primary_name?: string; brand?: string; public_ip?: string; access_isp?: string;
   // Perangkat non-Mikrotik (RCMS / Ruijie): jenis, nama asli perangkat, model
   jenis?: string; nama?: string; model?: string;
-  live_config?: { interfaces?: { name: string; running?: boolean; disabled?: boolean; rx_byte?: number }[] } | null; live_config_at?: string | null;
+  live_config?: { interfaces?: { name: string; running?: boolean; disabled?: boolean; rx_byte?: number }[]; [k: string]: any } | null; live_config_at?: string | null;
   offline_since?: string | null; downs7?: number; flaps24?: number; any_online?: boolean;
-  ns?: { name?: string; tunnel_ip?: string; is_online?: boolean; net_status?: string; hb_at?: string | null } | null;
-  un?: { name?: string; tunnel_ip?: string; is_online?: boolean; net_status?: string; hb_at?: string | null } | null;
+  ns?: { name?: string; tunnel_ip?: string; is_online?: boolean; net_status?: string; hb_at?: string | null; isp?: string; caller_id?: string } | null;
+  un?: { name?: string; tunnel_ip?: string; is_online?: boolean; net_status?: string; hb_at?: string | null; isp?: string; caller_id?: string } | null;
+}
+
+/** Ringkas live_config NOCaaS → hanya yang dipakai panel site (data besar spt rx/tx byte & route dibuang) */
+export function ringkasLive(lc: any) {
+  if (!lc) return null;
+  const rb = lc.routerboard ?? {}, rs = lc.resource ?? {};
+  const leases = (lc.dhcp_leases ?? []) as any[];
+  return {
+    identity: lc.identity ?? null,
+    model: rb.model || rs.board_name || null, board: rs.board_name ?? null, serial: rb.serial ?? null,
+    firmware: rb.firmware ?? null, ros: rs.version ?? null, arsitektur: rs.architecture ?? null,
+    uptime: rs.uptime ?? null, cpu: rs.cpu_load ?? null,
+    mem: rs.total_memory ? { bebas: rs.free_memory, total: rs.total_memory } : null,
+    hdd: rs.total_hdd ? { bebas: rs.free_hdd, total: rs.total_hdd } : null,
+    interfaces: ((lc.interfaces ?? []) as any[]).slice(0, 24).map((i) => ({
+      name: i.name, type: i.type, mac: i.mac, running: !!i.running, disabled: !!i.disabled, speed: i.speed || null, comment: i.comment || null,
+    })),
+    ip: ((lc.ip_addresses ?? []) as any[]).filter((a) => !a.disabled).map((a) => ({ address: a.address, interface: a.interface, dynamic: !!a.dynamic })).slice(0, 12),
+    dhcp_server: ((lc.dhcp_servers ?? []) as any[]).filter((d) => !d.disabled).map((d) => ({ name: d.name, interface: d.interface })),
+    dhcp_aktif: leases.filter((l) => l.status === 'bound').length,
+    dhcp_klien: leases.filter((l) => l.status === 'bound').slice(0, 30).map((l) => ({ ip: l.address, mac: l.mac, host: l.hostname || null })),
+    dns: lc.dns?.servers ?? null,
+    l2tp: ((lc.l2tp_clients ?? []) as any[]).map((c) => ({ name: c.name, user: c.user, connect_to: c.connect_to, running: !!c.running, disabled: !!c.disabled })),
+  };
 }
 
 /**
@@ -234,6 +258,14 @@ export class NocaasService {
           }
           wan = { wan_status: baru, live_at: at };
         }
+        // Ringkasan config — diisi saat snapshot baru atau bila belum pernah tersimpan
+        const live_ringkas = x.live_config && (wan || !r?.live_ringkas) ? ringkasLive(x.live_config) : undefined;
+        const vpnBaru = x.jenis === 'mikrotik' ? {
+          ns: x.ns ? { name: x.ns.name ?? null, isp: x.ns.isp ?? null, caller_id: x.ns.caller_id ?? null } : null,
+          un: x.un ? { name: x.un.name ?? null, isp: x.un.isp ?? null, caller_id: x.un.caller_id ?? null } : null,
+        } : null;
+        const vpnBerubah = JSON.stringify(vpnBaru) !== JSON.stringify(r?.vpn_ringkas ?? null);
+        const ekstra: any = { ...(live_ringkas !== undefined ? { live_ringkas } : {}), ...(vpnBerubah ? { vpn_ringkas: vpnBaru } : {}) };
         const data = {
           jenis: x.jenis ?? 'mikrotik', model: x.model?.slice(0, 40) ?? null, konflik_id_site: konflik,
           nama_utama: x.jenis === 'mikrotik' ? x.primary_name || x.ns?.name || x.un?.name || null : null,
@@ -246,6 +278,7 @@ export class NocaasService {
         };
         if (!r) {
           if (wan) Object.assign(data, wan);
+          Object.assign(data, ekstra);
           // Baru pertama tercatat dalam keadaan mati = kondisi lama (sebelum fitur tiket aktif), bukan gangguan baru
           const sejakMati = data.offline_since ?? new Date(Math.min(now.getTime(), cfgTiket.aktif_sejak.getTime()) - 1000);
           tulis.push(this.prisma.nocaasRouter.create({ data: { site_key: x.site_key, ...data, status_sejak: status === 'offline' ? sejakMati : now } }));
@@ -256,7 +289,7 @@ export class NocaasService {
           if (k === 'hb_at') return Math.abs((a?.getTime?.() ?? 0) - (b?.getTime?.() ?? 0)) > 5 * 60_000;
           return a instanceof Date || b instanceof Date ? (a?.getTime?.() ?? null) !== (b?.getTime?.() ?? null) : (a ?? null) !== (b ?? null);
         });
-        if (berubah || wan) tulis.push(this.prisma.nocaasRouter.update({ where: { site_key: x.site_key }, data: { ...data, ...(wan ?? {}), ...(r.status !== status ? { status_sejak: now } : {}) } }));
+        if (berubah || wan || Object.keys(ekstra).length) tulis.push(this.prisma.nocaasRouter.update({ where: { site_key: x.site_key }, data: { ...data, ...(wan ?? {}), ...ekstra, ...(r.status !== status ? { status_sejak: now } : {}) } }));
       }
       // Perangkat yang sudah dihapus dari NOCaaS — hanya untuk jenis yang datanya berhasil diambil lengkap
       const ada = new Set(items.map((x) => x.site_key));

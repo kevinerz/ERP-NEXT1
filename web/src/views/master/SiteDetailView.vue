@@ -3,6 +3,8 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { confirmDialog } from '@/composables/useDialog'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
+import NocaasSitePanel from './NocaasSitePanel.vue'
 import { fmtDateShort, fmtRupiah } from '@/composables/useFormat'
 
 const route = useRoute()
@@ -16,7 +18,10 @@ const vendorList = ref<any[]>([])
 const asetSimList = ref<any[]>([])
 const asetList = ref<any[]>([])  // untuk perangkat picker
 
-const activeTab = ref<'sumber' | 'perangkat' | 'pic' | 'proyek' | 'tiket' | 'dokumen'>('sumber')
+const activeTab = ref<'sumber' | 'perangkat' | 'pic' | 'proyek' | 'tiket' | 'dokumen' | 'nocaas'>('sumber')
+// Tab NOCaaS: data router hanya untuk pengguna modul operations (endpoint /nocaas digate backend)
+const auth = useAuthStore()
+const bisaNocaas = computed(() => auth.canAccess('operations'))
 
 // Sumber Internet
 const showSumberModal = ref(false)
@@ -418,6 +423,14 @@ const isGsm = computed(() => {
         <button :class="['tab', { active: activeTab === 'dokumen' }]" @click="activeTab = 'dokumen'">
           📄 Dokumen ({{ dokumenList.length }})
         </button>
+        <button v-if="bisaNocaas" :class="['tab', { active: activeTab === 'nocaas' }]" @click="activeTab = 'nocaas'">
+          🛰️ NOCaaS
+        </button>
+      </div>
+
+      <!-- Tab: NOCaaS -->
+      <div v-if="activeTab === 'nocaas' && bisaNocaas" class="tab-content">
+        <NocaasSitePanel :id-site="site.id_site" @berubah="loadSite" />
       </div>
 
       <!-- Tab: Sumber Internet -->

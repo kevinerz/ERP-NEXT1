@@ -5,6 +5,8 @@ import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateTime } from '@/composables/useFormat'
 import { alertError } from '@/composables/useDialog'
+import { useAuthStore } from '@/stores/auth'
+import SinkronPerangkatNocaas from './SinkronPerangkatNocaas.vue'
 
 const router = useRouter()
 const WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626' }
@@ -147,6 +149,8 @@ function onKey(e: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener('keydown', onKey))
 onUnmounted(() => window.removeEventListener('keydown', onKey))
+const authNc = useAuthStore()
+const pengelolaNc = computed(() => ['Admin', 'Director', 'Manager_Ops'].some((r) => authNc.hasRole(r)) || authNc.isSuperAdmin)
 </script>
 
 <template>
@@ -156,6 +160,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         <h2 class="page-title">🛰️ Pembanding NOCaaS</h2>
         <p class="page-subtitle">Tiket gangguan dibandingkan dengan status perangkat di NOCaaS (Mikrotik: VPN NS/UN + heartbeat syslog + ping; RCMS &amp; Ruijie: status cloud) — diperbarui tiap menit</p>
         <p v-if="data?.per_jenis" class="muted">Perangkat: <template v-for="(j, i) in data.per_jenis" :key="j.jenis">{{ i ? ' · ' : '' }}{{ JENIS[j.jenis] ?? j.jenis }} <b>{{ j.n.toLocaleString('id-ID') }}</b></template></p>
+        <SinkronPerangkatNocaas v-if="pengelolaNc" style="margin-top:8px" />
       </div>
       <div class="nc-tombol">
         <span v-if="data?.sinkron" class="muted" :class="{ gagal: !data.sinkron.ok }">
