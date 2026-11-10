@@ -23,6 +23,15 @@ export class EmailController {
     return this.svc.connectAccount(req.user.id_user, dto);
   }
 
+  // Hubungkan mailbox lewat Hostinger Mail API (tanpa password) — dibatasi di service
+  @Get('api-mailboxes')
+  apiMailboxes(@Req() req: any) { return this.svc.apiMailboxes(req.user.id_user); }
+
+  @Post('account/api')
+  connectApi(@Body() body: { email_address: string }, @Req() req: any) {
+    return this.svc.connectApi(req.user.id_user, String(body?.email_address || ''));
+  }
+
   @Delete('account')
   disconnectAccount(@Req() req: any) { return this.svc.disconnectAccount(req.user.id_user); }
 

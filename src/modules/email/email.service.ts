@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { SecretCryptoService } from '../../common/crypto/secret-crypto.service';
 import { ImapClientService, FolderKind } from './imap.client';
 import { SmtpClientService } from './smtp.client';
+import { HostingerMailClient } from './hostinger-mail.client';
 import { SettingsService } from '../settings/settings.service';
 import { MailBrandingService } from '../../common/mailer/mail-branding.service';
 import { ConnectEmailDto, SendEmailDto, SaveDraftDto } from './dto/email.dto';
@@ -27,7 +28,69 @@ export class EmailService {
     private smtp: SmtpClientService,
     private settings: SettingsService,
     private branding: MailBrandingService,
+    private hmail: HostingerMailClient,
   ) {}
+
+  // ─── Hostinger Mail API ──────────────────────────────────────────
+  // Akun yang alamatnya dijangkau HOSTINGER_MAIL_TOKEN dilayani lewat API (HTTPS),
+  // bukan IMAP/SMTP — port IMAP dari server sering timeout.
+
+  /** Mailbox API untuk akun ini, atau null kalau akun memakai IMAP/SMTP biasa */
+  private async mailboxApi(address: string): Promise<string | null> {
+    if (!this.hmail.aktif) return null;
+    return (await this.hmail.cariMailbox(address))?.resourceId ?? null;
+  }
+
+  /**
+   * Siapa boleh menghubungkan mailbox API TANPA password: token bisa membaca seluruh isi
+   * mailbox, jadi hanya Admin/Director atau pemilik alamat itu (email karyawannya sama).
+   */
+  private async bolehPakaiApi(userId: number, address: string): Promise<boolean> {
+    const u = await this.prisma.coreUser.findUnique({
+      where: { id_user: userId },
+      select: { karyawan: { select: { email: true } }, user_roles: { select: { role: { select: { nama_role: true } } } } },
+    });
+    if (!u) return false;
+    if (u.user_roles.some((r) => ['Admin', 'Director'].includes(r.role.nama_role))) return true;
+    return (u.karyawan?.email || '').trim().toLowerCase() === address.trim().toLowerCase();
+  }
+
+  /** Mailbox Hostinger yang boleh dihubungkan user ini lewat API (untuk tombol di halaman connect) */
+  async apiMailboxes(userId: number) {
+    const semua = await this.hmail.mailboxes();
+    const boleh = [];
+    for (const m of semua) if (await this.bolehPakaiApi(userId, m.address)) boleh.push({ address: m.address });
+    return { data: boleh };
+  }
+
+  async connectApi(userId: number, email_address: string) {
+    const mb = await this.hmail.cariMailbox(email_address || '');
+    if (!mb) throw new BadRequestException('Alamat ini tidak tersedia di Hostinger Mail API');
+    if (!(await this.bolehPakaiApi(userId, mb.address))) {
+      throw new BadRequestException('Hanya Admin/Director atau pemilik alamat ini yang boleh menghubungkannya tanpa password');
+    }
+    // Uji akses dulu — supaya token yang dicabut ketahuan sebelum tersimpan
+    await this.hmail.resolveFolder(mb.resourceId, 'sent');
+    const data = {
+      email_address: mb.address, imap_host: 'api.mail.hostinger.com', imap_port: 443,
+      smtp_host: 'api.mail.hostinger.com', smtp_port: 443, password_enc: this.crypto.encrypt(''),
+    };
+    const row = await this.prisma.emailAccount.upsert({
+      where: { id_user: userId },
+      create: { id_user: userId, ...data },
+      update: { ...data, is_aktif: true, last_error: null, connected_at: new Date() },
+    });
+    const { password_enc: _p, ...safe } = row;
+    return { data: safe, message: `Terhubung ke ${mb.address} lewat Hostinger Mail API` };
+  }
+
+  /** Akun + mailbox API (bila ada) — dipakai semua operasi kotak surat */
+  private async jalur(userId: number) {
+    const row = await this.prisma.emailAccount.findUnique({ where: { id_user: userId } });
+    if (!row || !row.is_aktif) throw new BadRequestException('Belum terhubung ke akun email — buka menu Email untuk connect');
+    const rid = await this.mailboxApi(row.email_address);
+    return { row, rid };
+  }
 
   /** Kontak karyawan (nama + email) untuk dropdown penerima di compose. */
   async listContacts() {
@@ -43,7 +106,7 @@ export class EmailService {
     const row = await this.prisma.emailAccount.findUnique({ where: { id_user: userId } });
     if (!row) return { data: null };
     const { password_enc, ...safe } = row;
-    return { data: safe };
+    return { data: { ...safe, via_api: !!(await this.mailboxApi(row.email_address)) } };
   }
 
   async connectAccount(userId: number, dto: ConnectEmailDto) {
@@ -119,6 +182,13 @@ export class EmailService {
   }
 
   async listFolders(userId: number) {
+    const { rid } = await this.jalur(userId);
+    if (rid) {
+      const data = await Promise.all(FOLDER_KEYS.map(async (key) => ({
+        key, label: FOLDER_LABELS[key], path: await this.hmail.resolveFolder(rid, key).catch(() => null),
+      })));
+      return { data };
+    }
     const { account, password } = await this.resolveCreds(userId);
     const creds = this.imapCreds(account, password);
     const data = await Promise.all(
@@ -133,7 +203,14 @@ export class EmailService {
     const creds = this.imapCreds(account, password);
     const page = Number(query.page) || 1;
     const limit = Math.min(Number(query.limit) || 25, 100);
+    const { rid } = await this.jalur(userId);
     try {
+      if (rid) {
+        const path = await this.hmail.resolveFolder(rid, key);
+        const r = await this.hmail.listMessages(rid, path, { page, limit, search: query.search });
+        await this.prisma.emailAccount.update({ where: { id_user: userId }, data: { last_error: null } }).catch(() => {});
+        return r;
+      }
       const path = await this.imap.resolveFolder(creds, key);
       return await this.imap.listMessages(creds, path, { page, limit, search: query.search });
     } catch (e: any) {
@@ -144,6 +221,8 @@ export class EmailService {
 
   async getMessage(userId: number, folder: string | undefined, uid: number) {
     const key = this.normalizeFolder(folder);
+    const { rid } = await this.jalur(userId);
+    if (rid) return { data: await this.hmail.getMessage(rid, await this.hmail.resolveFolder(rid, key), uid, key !== 'drafts') };
     const { account, password } = await this.resolveCreds(userId);
     const creds = this.imapCreds(account, password);
     const path = await this.imap.resolveFolder(creds, key);
@@ -154,6 +233,8 @@ export class EmailService {
 
   async getAttachment(userId: number, folder: string | undefined, uid: number, partId: number) {
     const key = this.normalizeFolder(folder);
+    const { rid } = await this.jalur(userId);
+    if (rid) return this.hmail.getAttachment(rid, await this.hmail.resolveFolder(rid, key), uid, partId);
     const { account, password } = await this.resolveCreds(userId);
     const creds = this.imapCreds(account, password);
     const path = await this.imap.resolveFolder(creds, key);
@@ -162,6 +243,11 @@ export class EmailService {
 
   async setSeen(userId: number, folder: string | undefined, uid: number, seen: boolean) {
     const key = this.normalizeFolder(folder);
+    const { rid } = await this.jalur(userId);
+    if (rid) {
+      await this.hmail.setSeen(rid, await this.hmail.resolveFolder(rid, key), uid, seen);
+      return { message: seen ? 'Ditandai dibaca' : 'Ditandai belum dibaca' };
+    }
     const { account, password } = await this.resolveCreds(userId);
     const creds = this.imapCreds(account, password);
     const path = await this.imap.resolveFolder(creds, key);
@@ -171,6 +257,16 @@ export class EmailService {
 
   async deleteMessage(userId: number, folder: string | undefined, uid: number) {
     const key = this.normalizeFolder(folder);
+    const { rid } = await this.jalur(userId);
+    if (rid) {
+      const path = await this.hmail.resolveFolder(rid, key);
+      if (key === 'trash') {
+        await this.hmail.deleteMessage(rid, path, uid);
+        return { message: 'Email dihapus permanen' };
+      }
+      await this.hmail.moveMessage(rid, path, uid, await this.hmail.resolveFolder(rid, 'trash'));
+      return { message: 'Email dipindah ke Sampah' };
+    }
     const { account, password } = await this.resolveCreds(userId);
     const creds = this.imapCreds(account, password);
     const path = await this.imap.resolveFolder(creds, key);
@@ -184,6 +280,24 @@ export class EmailService {
   }
 
   async sendMail(userId: number, dto: SendEmailDto, files?: { originalname: string; buffer: Buffer }[]) {
+    const { rid } = await this.jalur(userId);
+    if (rid) {
+      const settings = await this.settings.getAll();
+      const { html, logoAttachment } = this.branding.build(dto.html, settings);
+      await this.hmail.send(rid, {
+        to: dto.to, cc: dto.cc, bcc: dto.bcc, subject: dto.subject, html,
+        attachments: [
+          ...(files?.map((f) => ({ filename: f.originalname, content: f.buffer })) || []),
+          ...(logoAttachment ? [logoAttachment] : []),
+        ],
+      });
+      // Salinan Terkirim dibuat otomatis oleh Hostinger. Draf asal dihapus bila ada.
+      if (dto.draft_uid) {
+        await this.hmail.deleteMessage(rid, await this.hmail.resolveFolder(rid, 'drafts'), Number(dto.draft_uid))
+          .catch((e) => this.logger.warn(`Gagal hapus draf ${dto.draft_uid}: ${e.message}`));
+      }
+      return { message: 'Email terkirim' };
+    }
     const { account, password } = await this.resolveCreds(userId);
     const smtpCreds = this.smtpCreds(account, password);
     const settings = await this.settings.getAll();
@@ -217,6 +331,9 @@ export class EmailService {
   }
 
   async saveDraft(userId: number, dto: SaveDraftDto, files?: { originalname: string; buffer: Buffer }[]) {
+    if ((await this.jalur(userId)).rid) {
+      throw new BadRequestException('Simpan draf belum didukung Hostinger Mail API — kirim langsung, atau salin isinya dulu');
+    }
     const { account, password } = await this.resolveCreds(userId);
     const imapCreds = this.imapCreds(account, password);
     const raw = await this.smtp.buildRaw(this.smtpCreds(account, password), {
@@ -232,6 +349,11 @@ export class EmailService {
   }
 
   async deleteDraft(userId: number, uid: number) {
+    const { rid } = await this.jalur(userId);
+    if (rid) {
+      await this.hmail.deleteMessage(rid, await this.hmail.resolveFolder(rid, 'drafts'), uid);
+      return { message: 'Draf dihapus' };
+    }
     const { account, password } = await this.resolveCreds(userId);
     const imapCreds = this.imapCreds(account, password);
     const draftsPath = await this.imap.resolveFolder(imapCreds, 'drafts');

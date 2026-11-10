@@ -30,6 +30,23 @@ const confirmDisconnect = ref(false)
 const confirmHapusEmail = ref(false)
 const hapusEmailTarget = ref<{ uid: number; pesan: string } | null>(null)
 
+// Mailbox yang bisa dihubungkan lewat Hostinger Mail API tanpa password (dibatasi server)
+const apiMailboxes = ref<{ address: string }[]>([])
+async function muatApiMailboxes() {
+  try { apiMailboxes.value = (await api.get('/email/api-mailboxes')).data.data ?? [] } catch { apiMailboxes.value = [] }
+}
+async function hubungkanApi(address: string) {
+  connecting.value = true; connectError.value = ''
+  try {
+    await api.post('/email/account/api', { email_address: address })
+    await email.fetchAccount()
+    await email.fetchFolders()
+    await loadInbox()
+  } catch (e: any) { connectError.value = e.response?.data?.message || 'Gagal terhubung lewat API' }
+  finally { connecting.value = false }
+}
+watch(() => email.accountChecked && !email.account, (perlu) => { if (perlu) muatApiMailboxes() }, { immediate: true })
+
 function pakaiPresetHostinger() {
   form.value.imap_host = 'imap.hostinger.com'
   form.value.imap_port = 993
@@ -345,6 +362,13 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
     <div v-if="email.accountChecked && !email.account" class="connect-wrap">
       <div class="connect-card">
         <h2>📧 Hubungkan Email</h2>
+        <div v-if="apiMailboxes.length" class="api-box">
+          <p class="api-judul">⚡ Tersedia lewat Hostinger Mail API — tanpa password, lebih cepat &amp; stabil</p>
+          <button v-for="m in apiMailboxes" :key="m.address" type="button" class="btn-api" :disabled="connecting" @click="hubungkanApi(m.address)">
+            Hubungkan {{ m.address }}
+          </button>
+          <p class="api-atau">atau hubungkan alamat lain dengan IMAP/SMTP:</p>
+        </div>
         <p class="sub">Masukkan detail akun email (IMAP/SMTP) — password disimpan terenkripsi, hanya kamu yang bisa akses inbox ini.</p>
         <button class="btn-preset" @click="pakaiPresetHostinger">⚡ Isi otomatis untuk Hostinger</button>
         <div class="field">
@@ -387,7 +411,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
       <div class="inbox-header">
         <div>
           <h2>📧 Email</h2>
-          <p class="sub">{{ email.account.email_address }}</p>
+          <p class="sub">{{ email.account.email_address }} <span v-if="email.account.via_api" class="lencana-api" title="Dilayani Hostinger Mail API lewat HTTPS">⚡ Hostinger API</span></p>
         </div>
         <div class="header-actions">
           <button type="button" class="btn btn-primary" @click="bukaCompose">✏️ Tulis Email</button>
@@ -547,7 +571,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
         <p v-if="sendError" class="msg err">{{ sendError }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" :disabled="sending || savingDraft" @click="tutupCompose">Batal</button>
-          <button class="btn-draft" :disabled="sending || savingDraft" @click="simpanDraf">
+          <button v-if="!email.account?.via_api" class="btn-draft" :disabled="sending || savingDraft" @click="simpanDraf">
             {{ savingDraft ? 'Menyimpan...' : '📝 Simpan Draf' }}
           </button>
           <button class="btn-submit" @click="kirimEmail" :disabled="sending || savingDraft">
@@ -679,4 +703,10 @@ const totalPages = computed(() => Math.max(1, Math.ceil(email.meta.total / email
 .btn-draft { padding: 9px 18px; background: #fff; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-weight: 600; color: #334155; cursor: pointer; }
 .btn-draft:disabled { opacity: 0.5; cursor: not-allowed; }
 .toast-terkirim { position: fixed; right: 24px; bottom: 24px; z-index: 300; padding: 10px 16px; border-radius: 10px; background: #065f46; color: #fff; font-size: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.api-box { margin: 4px 0 16px; padding: 14px; border-radius: 12px; background: linear-gradient(135deg, #eef5ff, #f5f0ff); border: 1px solid #c7dbf7; }
+.api-judul { margin: 0 0 10px; font-size: 13px; font-weight: 700; color: #1e3a8a; }
+.btn-api { display: block; width: 100%; margin-bottom: 8px; padding: 10px 14px; border: 0; border-radius: 10px; background: #2a78d6; color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }
+.btn-api:disabled { opacity: .6; cursor: progress; }
+.api-atau { margin: 6px 0 0; font-size: 12px; color: #64748b; }
+.lencana-api { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 99px; background: #e8f1fd; color: #1c5cab; font-size: 11px; font-weight: 700; }
 </style>

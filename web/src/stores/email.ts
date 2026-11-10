@@ -12,6 +12,8 @@ export interface EmailAccount {
   is_aktif: boolean
   last_error?: string | null
   connected_at: string
+  /** true = dilayani Hostinger Mail API (HTTPS), bukan IMAP/SMTP */
+  via_api?: boolean
 }
 
 export interface FolderInfo {
