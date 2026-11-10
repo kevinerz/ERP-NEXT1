@@ -181,6 +181,11 @@ export class NocaasService {
       const rencana: { x: Paired; status: StatusRouter; ns_ip: string | null; un_ip: string | null; id_site: number | null; sumber_map: string | null; konflik: number | null }[] = [];
       const infoSite = new Map((await this.siteAktif()).map((s) => [s.id_site, `${s.nama_site} ${s.kota ?? ''}`]));
       let n = 0;
+      // IP tunnel yang dipakai >1 router di NOCaaS (akun VPN dipakai ulang) ambigu → tidak dipakai untuk memetakan.
+      // Contoh nyata: UN 192.168.70.185 dipakai ACE-PLAZA-PONDOK-GEDE (aktif) & ACE-HARDWARE-CIBINONG (lama).
+      const jmlIp = new Map<string, number>();
+      for (const x of items) for (const ip of [x.ns?.tunnel_ip, x.un?.tunnel_ip]) if (ip) jmlIp.set(ip, (jmlIp.get(ip) ?? 0) + 1);
+      const ipUnik = (ip: string | null) => (ip && jmlIp.get(ip) === 1 ? ip : null);
       for (const x of items) {
         if (!x.site_key) continue;
         if (++n % 100 === 0) await jeda();
@@ -190,10 +195,11 @@ export class NocaasService {
         let id_site: number | null = r?.id_site ?? null, sumber_map: string | null = r?.sumber_map ?? null;
         if (sumber_map !== 'manual' && sumber_map !== 'abaikan') {
           id_site = null; sumber_map = null;
-          const viaIp = (ns_ip && ipSite.get(ns_ip)) || (un_ip && ipSite.get(un_ip));
+          const nsU = ipUnik(ns_ip), unU = ipUnik(un_ip);
+          const viaIp = (nsU && ipSite.get(nsU)) || (unU && ipSite.get(unU));
           if (viaIp) { id_site = viaIp; sumber_map = 'ip_perangkat'; }
           if (!id_site) {
-            const dev = (ns_ip && prtgIp.get(ns_ip)) || (un_ip && prtgIp.get(un_ip));
+            const dev = (nsU && prtgIp.get(nsU)) || (unU && prtgIp.get(unU));
             if (dev) {
               const s = await this.siteDariDevicePrtg(dev, cacheNama);
               if (s) { id_site = s; sumber_map = 'prtg_host'; }
@@ -217,6 +223,24 @@ export class NocaasService {
         if (p.x.jenis === 'mikrotik' || p.sumber_map === 'manual' || p.sumber_map === 'abaikan') continue;
         const id = siteMikrotik.get(normal(p.x.nama ?? ''));
         if (id) { p.id_site = id; p.sumber_map = 'nama_mikrotik'; }
+      }
+
+      // Satu site memegang beberapa router lewat IP/host PRTG = data IP ERP basi (IP tunnel dipakai ulang toko lain).
+      // Pertahankan router yang namanya paling mirip site; sisanya dilepas → dicoba lewat saran nama di bawah.
+      const tok = (t: string) => t.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 2);
+      const skor = (router: string, site: string) => {
+        const a = tok(router.replace(/^(NS|UN)-/i, '')), b = new Set(tok(site));
+        return a.filter((w) => b.has(w)).length + (a[0] && a[0] === tok(site)[0] ? 1 : 0);
+      };
+      const perSite = new Map<number, typeof rencana>();
+      for (const p of rencana) if (p.id_site && (p.sumber_map === 'ip_perangkat' || p.sumber_map === 'prtg_host')) {
+        perSite.set(p.id_site, [...(perSite.get(p.id_site) ?? []), p]);
+      }
+      for (const [id_site, ps] of perSite) {
+        if (ps.length < 2 || !infoSite.has(id_site)) continue;
+        const nilai = ps.map((p) => skor(p.x.nama ?? p.x.site_key, infoSite.get(id_site)!))
+        const maks = Math.max(...nilai);
+        ps.forEach((p, i) => { if (nilai[i]! < maks) { p.id_site = null; p.sumber_map = null; } });
       }
 
       this.tandai.pass1 = Date.now() - t0;

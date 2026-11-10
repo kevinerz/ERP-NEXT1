@@ -55,6 +55,9 @@ export class NocaasSiteService {
       this.prisma.nocaasRouter.findMany({ where: { id_site }, orderBy: [{ jenis: 'asc' }, { site_key: 'asc' }] }),
       this.prisma.perangkatSite.findMany({ where: { id_site }, orderBy: { id_perangkat: 'asc' } }),
     ]);
+    // Router paling relevan di depan: yang hidup & ber-config dulu, yang mati lama di belakang
+    const PERINGKAT: Record<string, number> = { online: 0, partial: 1, internet_ok: 1, offline: 2 };
+    routers.sort((a, b) => (PERINGKAT[a.status] ?? 3) - (PERINGKAT[b.status] ?? 3) || (b.live_at?.getTime() ?? 0) - (a.live_at?.getTime() ?? 0));
     return {
       data: {
         routers: routers.map((r) => ({
