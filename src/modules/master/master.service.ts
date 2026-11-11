@@ -532,6 +532,7 @@ export class MasterService {
             aset_sim: { select: { kode_aset: true, nama_perangkat: true, serial_number: true } },
           },
         },
+        nocaas_router: { select: { site_key: true, status: true, status_sejak: true } },
         perangkat: {
           orderBy: { jenis_perangkat: 'asc' },
           include: { aset: { select: { kode_aset: true, nama_perangkat: true } } },
@@ -1046,5 +1047,38 @@ export class MasterService {
       site: site.map((x) => ({ ...x, pelanggan: x.pelanggan?.nama_pelanggan ?? '' })),
       vendor, layanan, teknisi, gudang,
     };
+  }
+
+  // ─── SITE DISMANTLE: perangkat yang masih melapor / belum ditarik ──
+  // Dasar surat Berita Acara Pengambilan Barang. "Melapor" = router NOCaaS tidak offline,
+  // atau heartbeat syslog masuk ≤ 24 jam, atau baru mati ≤ 7 hari (perangkat kemungkinan masih terpasang).
+  async dismantlePerangkat() {
+    const now = Date.now();
+    const sites = await this.prisma.sitePelanggan.findMany({
+      where: { status_site: 'Dismantle' },
+      select: {
+        id_site: true, kode_site: true, nama_site: true, alamat_lengkap: true, kota: true, provinsi: true, tgl_terminasi: true, catatan: true,
+        pelanggan: { select: { id_pelanggan: true, nama_pelanggan: true, nama_pic_utama: true, no_hp_pic_utama: true } },
+        layanan: { select: { nama_layanan: true } },
+        pic: { select: { nama_pic: true, jabatan: true, no_kontak: true, is_utama: true }, orderBy: { is_utama: 'desc' } },
+        perangkat: {
+          where: { status_perangkat: 'Aktif' },
+          select: { id_perangkat: true, jenis_perangkat: true, merk: true, tipe_model: true, serial_number: true, mac_address: true, ip_address: true, aset: { select: { kode_aset: true } } },
+        },
+        sumber_internet: {
+          where: { sn_modem: { not: null } },
+          select: { id_sumber: true, peruntukan_link: true, sn_modem: true, nomor_pelanggan_isp: true, status_link: true, vendor: { select: { nama_vendor: true } } },
+        },
+        aset: { select: { id_aset: true, kode_aset: true, nama_perangkat: true, merk: true, tipe_model: true, serial_number: true, kategori: true } },
+        nocaas_router: { select: { site_key: true, nama_utama: true, model: true, brand: true, status: true, status_sejak: true, hb_at: true, public_ip: true } },
+      },
+      orderBy: [{ tgl_terminasi: 'desc' }, { nama_site: 'asc' }],
+    });
+    return sites.map((s) => {
+      const melapor = s.nocaas_router.some((r) => r.status !== 'offline' || (r.hb_at && now - +r.hb_at < 24 * 3600_000));
+      const baruMati = !melapor && s.nocaas_router.some((r) => r.status === 'offline' && now - +r.status_sejak < 7 * 86400_000);
+      const jumlahBarang = s.perangkat.length + s.sumber_internet.length + s.aset.length;
+      return { ...s, melapor, baru_mati: baruMati, jumlah_barang: jumlahBarang };
+    }).filter((s) => s.melapor || s.baru_mati || s.jumlah_barang > 0);
   }
 }

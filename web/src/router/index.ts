@@ -160,6 +160,11 @@ const router = createRouter({
           component: () => import('@/views/master/SiteView.vue'),
         },
         {
+          path: 'master/site/tarik-perangkat',
+          name: 'master-site-tarik',
+          component: () => import('@/views/master/TarikPerangkatView.vue'),
+        },
+        {
           path: 'master/site/:id',
           name: 'master-site-detail',
           component: () => import('@/views/master/SiteDetailView.vue'),
@@ -545,7 +550,7 @@ const ROUTE_MODUL: Record<string, string | string[]> = {
   'nocaas': 'operations', 'laporan-gangguan': 'operations',
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris', 'hris-undangan': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master', 'master-gudang': 'master',
-  'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master', 'master-jenis-gangguan': 'master',
+  'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master', 'master-site-tarik': 'master', 'master-jenis-gangguan': 'master',
   'presales-list': 'sales',
   'sales-dashboard': 'sales', 'sales-lead-list': 'sales', 'sales-lead-detail': 'sales',
   'sales-opp-list': 'sales', 'sales-opp-detail': 'sales',
@@ -616,6 +621,7 @@ const ROUTE_TITLE: Record<string, string> = {
   'master-pelanggan':      'Pelanggan — NextOne ERP',
   'master-site':           'Site — NextOne ERP',
   'master-site-detail':    'Detail Site — NextOne ERP',
+  'master-site-tarik':     'Tarik Perangkat — NextOne ERP',
   'master-layanan':        'Layanan — NextOne ERP',
   'master-vendor':         'Vendor — NextOne ERP',
   'presales-list':         'Pre-Sales — NextOne ERP',

@@ -1041,3 +1041,115 @@ export function printBaAktivasi(o: any, opsi: { basah?: boolean } = {}) {
   </div></body></html>`
   printDocument(html)
 }
+
+// ─────────────────────────────────────────────
+// BERITA ACARA PENGAMBILAN BARANG (site Dismantle) — format NextOne, satu halaman per site
+// ─────────────────────────────────────────────
+export function printBaPengambilan(daftar: any[], opsi: { tanggal?: string } = {}) {
+  const e = escapeHtml
+  const c = getCompany()
+  const tgl = opsi.tanggal ? new Date(opsi.tanggal) : new Date()
+  const tglPanjang = (d: Date | string | null | undefined) => (d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '')
+  const telp = (n: string) => { const d = String(n || '').replace(/\D/g, '').replace(/^62/, '0'); return d.replace(/^(\d{4})(\d{4})(\d+)$/, '$1 $2 $3') }
+  const logo = c.logo ? `<img src="${c.logo}" class="logo">` : `<div class="logo-teks">${e(c.brand)}</div>`
+  const ym = `${tgl.getFullYear()}/${String(tgl.getMonth() + 1).padStart(2, '0')}`
+  const cek = (on: boolean) => `<span class="cek">${on ? '■' : '□'}</span>`
+
+  const halaman = daftar.map((s) => {
+    const pic = (s.pic || [])[0]
+    const kontak = pic ? `${pic.nama_pic}${pic.jabatan ? ` (${pic.jabatan})` : ''}${pic.no_kontak ? ` · ${telp(pic.no_kontak)}` : ''}` : [s.pelanggan?.nama_pic_utama, s.pelanggan?.no_hp_pic_utama ? telp(s.pelanggan.no_hp_pic_utama) : ''].filter(Boolean).join(' · ')
+    const alamat = [s.alamat_lengkap, s.kota, s.provinsi].filter(Boolean).join(', ')
+    // Daftar barang: router NOCaaS, perangkat tercatat, modem ISP, aset gudang di site (tanpa dobel SN)
+    const barang: { nama: string; sn: string; ket: string }[] = []
+    const sudah = new Set<string>()
+    const tambah = (nama: string, sn: string, ket: string) => {
+      const k = (sn || '').trim().toLowerCase()
+      if (k && sudah.has(k)) return
+      if (k) sudah.add(k)
+      barang.push({ nama, sn: sn || '', ket })
+    }
+    for (const p of s.perangkat || []) tambah([p.jenis_perangkat, p.merk, p.tipe_model].filter(Boolean).join(' '), p.serial_number || '', [p.aset?.kode_aset, p.mac_address ? `MAC ${p.mac_address}` : ''].filter(Boolean).join(' · '))
+    for (const a of s.aset || []) tambah([a.nama_perangkat, a.merk, a.tipe_model].filter(Boolean).join(' '), a.serial_number || '', a.kode_aset || '')
+    for (const m of s.sumber_internet || []) tambah(`Modem ${m.vendor?.nama_vendor || ''}${m.peruntukan_link === 'Backup' ? ' (Backup)' : ''}`.trim(), m.sn_modem || '', m.nomor_pelanggan_isp ? `ID ${m.nomor_pelanggan_isp}` : '')
+    for (const r of s.nocaas_router || []) {
+      if (!barang.some((b) => /router|mikrotik|rb/i.test(b.nama))) tambah(`Router ${[r.brand, r.model].filter(Boolean).join(' ') || 'Mikrotik'}`, '', `NOCaaS ${r.site_key}${r.status !== 'offline' ? ' · masih online' : ''}`)
+    }
+    while (barang.length < 6) barang.push({ nama: '', sn: '', ket: '' })
+    const status = (s.nocaas_router || []).map((r: any) => `${r.site_key}: ${r.status === 'offline' ? `offline sejak ${tglPanjang(r.status_sejak)}` : r.status}${r.public_ip ? ` (IP ${r.public_ip})` : ''}`).join('; ')
+    const nomor = `BA-TRK/N1/${ym}/${s.kode_site}`
+    return `<section class="hal">
+      <div class="kop">
+        <div class="kiri">${logo}</div>
+        <div class="judul">BERITA ACARA<small>PENGAMBILAN BARANG</small></div>
+        <div class="alamat">Head Office<br>${e(c.address).replace(/\n|\\n/g, '<br>')}<br>Phone : ${e(telp(c.phone))}<br>Email : ${e(c.email)}</div>
+      </div>
+      <table class="nomor"><tr><td>Tanggal</td><td><b>${e(tglPanjang(tgl))}</b></td><td>No</td><td><b>${e(nomor)}</b></td></tr></table>
+      <div class="jenis">
+        <span>${cek(false)}Aktivasi</span><span>${cek(false)}Instalasi</span><span>${cek(false)}Upgrade / Downgrade</span>
+        <span>${cek(true)}<b>Dismantle</b></span><span>${cek(false)}Migrasi</span><span>${cek(false)}Relokasi</span><span>${cek(false)}Lain - Lain</span>
+      </div>
+      <p class="pembuka">Pada hari ini, ____________________ tanggal ______________________, telah dilakukan <b>pengambilan perangkat</b> milik ${e(c.name)} (${e(c.brand)}) dari lokasi pelanggan berikut karena layanan telah <b>berhenti / dismantle</b>${s.tgl_terminasi ? ` per ${e(tglPanjang(s.tgl_terminasi))}` : ''}.</p>
+      <div class="bar">Data Pelanggan &amp; Lokasi</div>
+      <table class="data">
+        <tr><td class="lb">Nama pelanggan</td><td class="isi b">${e(s.pelanggan?.nama_pelanggan || '')}</td></tr>
+        <tr><td class="lb">Nama site / ID</td><td class="isi b">${e(s.nama_site)} &nbsp;·&nbsp; ${e(s.kode_site)}</td></tr>
+        <tr><td class="lb">Alamat</td><td class="isi">${e(alamat) || '&nbsp;'}</td></tr>
+        <tr><td class="lb">Layanan</td><td class="isi">${e(s.layanan?.nama_layanan || '')}</td></tr>
+        <tr><td class="lb">PIC lokasi</td><td class="isi">${e(kontak) || '&nbsp;'}</td></tr>
+        <tr><td class="lb">Status perangkat (NOC)</td><td class="isi">${e(status) || 'Tidak terpantau'}</td></tr>
+      </table>
+      <div class="bar">Daftar Barang yang Diambil</div>
+      <table class="brg">
+        <thead><tr><th style="width:5%">No</th><th style="width:33%">Nama perangkat</th><th style="width:24%">Serial number</th><th style="width:20%">Keterangan</th><th style="width:18%">Kondisi</th></tr></thead>
+        <tbody>${barang.map((b, i) => `<tr><td class="c">${i + 1}</td><td>${e(b.nama) || '&nbsp;'}</td><td class="mono">${e(b.sn)}</td><td class="kecil">${e(b.ket)}</td><td class="kecil">□ Baik &nbsp;□ Rusak &nbsp;□ Tidak ada</td></tr>`).join('')}</tbody>
+      </table>
+      <p class="kecil" style="margin-top:4px">Kelengkapan: □ Adaptor/kabel power &nbsp; □ Kabel LAN/patchcord &nbsp; □ Antena &nbsp; □ SIM card &nbsp; □ Box/dus</p>
+      <div class="bar">Catatan</div>
+      <div class="catatan"></div>
+      <p class="kecil">Dengan ditandatanganinya berita acara ini, barang di atas telah diterima kembali oleh ${e(c.brand)} dalam kondisi sebagaimana tercatat, dan pelanggan tidak lagi bertanggung jawab atas barang tersebut.</p>
+      <div class="ttd">
+        <div class="kotak"><div class="h">Pelanggan / PIC Lokasi</div><div class="area"></div><div class="nm">(${pic ? e(pic.nama_pic) : '&nbsp;'.repeat(30)})</div></div>
+        <div class="kotak"><div class="h">Teknisi Pengambil</div><div class="area"></div><div class="nm">(${'&nbsp;'.repeat(30)})</div></div>
+        <div class="kotak"><div class="h">Diterima Gudang ${e(c.brand)}</div><div class="area"></div><div class="nm">(${'&nbsp;'.repeat(30)})</div></div>
+      </div>
+      <div class="kaki"><span>${e(c.name)}</span><span>${e(nomor)}</span></div>
+    </section>`
+  }).join('')
+
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>BA Pengambilan Barang${daftar.length === 1 ? ` — ${e(daftar[0].nama_site)}` : ` (${daftar.length} site)`}</title>
+  <style>
+    @page { size: A4; margin: 10mm 12mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; font-size: 9pt; color: #111; background:#fff; }
+    .hal { max-width: 190mm; margin: 0 auto; page-break-after: always; }
+    .hal:last-child { page-break-after: auto; }
+    .kop { background: #2c6a66; color: #fff; display:flex; align-items:center; justify-content:space-between; padding: 10px 14px 16px; border-radius: 0 0 40% 0 / 0 0 30% 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .logo { height: 46px; width:auto; background:#fff; border-radius:6px; padding:3px; }
+    .logo-teks { font-size: 20pt; font-weight: 800; }
+    .judul { font-size: 20pt; font-weight: 800; letter-spacing: 2px; text-align:center; line-height:1.05; }
+    .judul small { display:block; font-size: 10pt; letter-spacing: 3px; font-weight: 700; opacity:.9; }
+    .alamat { font-size: 7pt; text-align: right; line-height: 1.35; font-style: italic; }
+    table.nomor { width:100%; border:1px solid #2c6a66; border-collapse:collapse; margin: 8px 0 4px; font-size: 8.5pt; }
+    table.nomor td { padding: 3px 6px; border-right: 1px solid #ccc; }
+    .jenis { display:flex; gap: 14px; font-size: 8.5pt; margin: 4px 0 6px; flex-wrap: wrap; }
+    .cek { font-size: 10pt; margin-right: 3px; }
+    .pembuka { font-size: 9pt; line-height: 1.6; margin: 6px 0; }
+    .bar { background:#2c6a66; color:#fff; font-weight:700; padding: 2px 6px; font-size: 9pt; margin-top: 8px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    table.data { width: 100%; border-collapse: collapse; }
+    table.data td { padding: 3px 4px; vertical-align: bottom; }
+    td.lb { width: 28%; color: #333; } td.isi { border-bottom: 1px solid #555; } td.b { font-weight: 700; }
+    table.brg { width:100%; border-collapse: collapse; margin-top: 4px; }
+    table.brg th { border:1px solid #2c6a66; background:#e8f1f0; font-size:8.5pt; padding:3px 4px; text-align:left; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    table.brg td { border:1px solid #999; padding: 5px 4px; height: 22px; font-size: 8.5pt; }
+    td.c { text-align:center; } td.mono { font-family: monospace; }
+    .kecil { font-size: 7.8pt; color:#333; }
+    .catatan { border: 1px solid #999; height: 48px; margin-top: 4px; }
+    .ttd { display:flex; justify-content:space-between; margin-top: 14px; gap: 10px; }
+    .kotak { border: 1px solid #2c6a66; width: 32%; text-align:center; display:flex; flex-direction:column; }
+    .kotak .h { background:#2c6a66; color:#fff; font-size: 8.5pt; padding: 2px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .kotak .area { height: 70px; }
+    .kotak .nm { border-top: 1px solid #2c6a66; padding: 3px; font-size: 8.5pt; min-height: 20px; }
+    .kaki { margin-top: 6px; font-size: 7pt; color: #666; display:flex; justify-content:space-between; }
+  </style></head><body>${halaman}</body></html>`
+  printDocument(html)
+}

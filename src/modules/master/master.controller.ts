@@ -174,6 +174,10 @@ export class MasterController {
   @Get('site')
   findAllSite(@Query() q: any) { return this.masterService.findAllSite(q); }
 
+  // Site Dismantle yang perangkatnya masih melapor / belum ditarik (dasar BA pengambilan barang)
+  @Get('site/dismantle-perangkat')
+  dismantlePerangkat() { return this.masterService.dismantlePerangkat(); }
+
   @Get('site/:id')
   findOneSite(@Param('id', ParseIntPipe) id: number) { return this.masterService.findOneSite(id); }
 

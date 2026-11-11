@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import MasterNav from './MasterNav.vue'
 import { ref, onMounted, computed, watch } from 'vue'
-import { confirmDialog, toast } from '@/composables/useDialog'
+import { confirmDialog, toast, alertError } from '@/composables/useDialog'
+import { printBaPengambilan } from '@/composables/usePrint'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
@@ -358,6 +359,23 @@ async function salin(teks: string, jenis: 'kode' | 'alamat') {
   const r = jenis === 'kode' ? kodeTersalin : alamatTersalin
   r.value = true; setTimeout(() => (r.value = false), 1500)
 }
+// Dismantle tapi perangkat masih melapor / tercatat terpasang → ajak cetak BA pengambilan barang
+const perluTarik = computed(() => {
+  const s = site.value
+  if (!s || s.status_site !== 'Dismantle') return ''
+  const hidup = (s.nocaas_router ?? []).some((r: any) => r.status && r.status !== 'offline')
+  const barang = (s.perangkat ?? []).filter((p: any) => p.status_perangkat === 'Aktif').length + (s.sumber_internet ?? []).filter((m: any) => m.sn_modem).length
+  if (hidup) return 'router-nya masih melapor ke NOC'
+  if (barang) return `masih ada ${barang} perangkat tercatat di lokasi`
+  return ''
+})
+async function cetakBaTarik() {
+  try {
+    const { data } = await api.get('/master/site/dismantle-perangkat')
+    const s = (data.data ?? []).find((x: any) => x.id_site === site.value?.id_site)
+    if (s) printBaPengambilan([s])
+  } catch (e) { alertError(e, 'Gagal menyiapkan BA') }
+}
 const picUtama = computed(() => site.value?.pic?.find((p: any) => p.is_utama) ?? site.value?.pic?.[0] ?? null)
 const waNomor = (n: string) => n.replace(/\D/g, '').replace(/^0/, '62')
 const tiketAktif = computed(() => (site.value?.tickets ?? []).filter((t: any) => ['Open', 'In_Progress', 'Pending', 'Pending_Customer'].includes(t.status_tiket)).length)
@@ -436,6 +454,14 @@ async function bukaDokumenFs(doc: any) {
           <a v-if="site.koordinat_gps" :href="`https://www.google.com/maps?q=${encodeURIComponent(site.koordinat_gps)}`" target="_blank" rel="noopener" class="btn btn-ghost">🗺️ Buka peta</a>
           <RouterLink v-if="bisaNocaas" to="/operations" class="btn btn-ghost">🎫 Tiket</RouterLink>
         </div>
+      </div>
+      <div v-if="site.status_site === 'Dismantle' && perluTarik" class="sd-tarik">
+        <span>📦</span>
+        <div>
+          <b>Site sudah Dismantle, tapi {{ perluTarik }}.</b>
+          <small>Jadwalkan teknisi untuk mengambil perangkat dan bawa Berita Acara Pengambilan Barang.</small>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" @click="cetakBaTarik">🖨️ Cetak BA pengambilan</button>
       </div>
 
       <!-- ═══ Ringkasan cepat ═══ -->
@@ -1212,4 +1238,9 @@ button.sd-kartu:hover { transform: translateY(-2px); box-shadow: 0 8px 20px colo
   .dok-upload-box { padding: 14px; }
   .btn-upload { width: 100%; }
 }
+.sd-tarik { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin: -4px 0 14px; border-radius: 14px; background: #fef2f2; border: 1px solid #fecaca; }
+.sd-tarik > span { font-size: 24px; }
+.sd-tarik div { flex: 1; display: flex; flex-direction: column; }
+.sd-tarik b { color: #991b1b; font-size: 14px; }
+.sd-tarik small { color: #7f1d1d; font-size: 12.5px; }
 </style>

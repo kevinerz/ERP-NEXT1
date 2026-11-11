@@ -458,6 +458,9 @@ function highlight(text: string, q: string) {
         @click="filterStatus = st; doSearch()">
         <i class="titik" /> {{ st }} <b>{{ (statusSummary[st] ?? 0).toLocaleString('id') }}</b>
       </button>
+      <button type="button" class="st-tarik" title="Site Dismantle yang perangkatnya masih melapor / belum ditarik — cetak BA pengambilan barang" @click="router.push('/master/site/tarik-perangkat')">
+        📦 Tarik perangkat
+      </button>
     </div>
 
     <!-- ─── Filter tambahan (opsional) ─── -->
@@ -748,4 +751,6 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
   .pt-row { padding: 9px 12px 9px 16px; }
   .row-actions { flex-wrap: nowrap; }
 }
+.st-tarik { margin-left: auto; border: 1px dashed #f87171 !important; color: #b91c1c !important; font-weight: 800; }
+.st-tarik:hover { background: #fef2f2 !important; }
 </style>
