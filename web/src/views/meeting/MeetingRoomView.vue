@@ -27,7 +27,7 @@ interface Detail {
   link_tamu: { kode: string; aktif: boolean; dimatikan: boolean; sampai: string | null } | null
   notulen: string | null; notulen_at: string | null; notulen_oleh: string | null
   tindak: Tindak[]
-  sesi: { id_karyawan: number | null; identity: string | null; masuk_at: string; keluar_at: string | null }[]
+  sesi: { id_karyawan: number | null; identity: string | null; nama: string | null; masuk_at: string; keluar_at: string | null }[]
 }
 
 const route = useRoute()
@@ -76,6 +76,9 @@ onBeforeUnmount(() => {
 const lobi = ref<InstanceType<typeof PratinjauPerangkat> | null>(null)
 const perangkat = reactive({ mic: true, kamera: true, micId: '', camId: '' })
 const menyambung = ref(false)
+// Rapat selesai dibuka untuk membaca notulen → kamera baru dinyalakan bila memang mau memulai lagi
+const siapkanLagi = ref(false)
+const tampilLobi = computed(() => d.value?.status !== 'Selesai' || siapkanLagi.value)
 const sesi = ref<{ url: string; token: string; judul: string; moderator: boolean } | null>(null)
 async function masuk() {
   if (menyambung.value || sesi.value) return
@@ -230,7 +233,7 @@ const linimasa = computed(() => {
   const baris = new Map<string, { nama: string; potong: { kiri: number; lebar: number; aktif: boolean }[] }>()
   for (const s of r.sesi) {
     const kunci = s.id_karyawan != null ? `k${s.id_karyawan}` : s.identity ?? '?'
-    const nama = s.id_karyawan != null ? r.peserta.find((p) => p.id_karyawan === s.id_karyawan)?.nama ?? `#${s.id_karyawan}` : 'Tamu'
+    const nama = s.id_karyawan != null ? r.peserta.find((p) => p.id_karyawan === s.id_karyawan)?.nama ?? `#${s.id_karyawan}` : `${(s.nama || 'Tamu').replace(/ · Tamu$/, '')} (tamu)`
     if (!baris.has(kunci)) baris.set(kunci, { nama, potong: [] })
     const m = +new Date(s.masuk_at)
     const k = s.keluar_at ? +new Date(s.keluar_at) : akhir
@@ -399,7 +402,13 @@ const namaSaya = computed(() => auth.user?.nama_lengkap || 'Anda')
         <!-- KIRI: lobi & link tamu -->
         <div class="rd-kiri">
           <section class="rd-kartu rd-lobi">
-            <template v-if="d.status !== 'Dibatalkan'">
+            <div v-if="d.status === 'Selesai' && !siapkanLagi" class="rd-batal">
+              <div>✅</div>
+              <b>Rapat sudah selesai</b>
+              <small class="rd-redup">{{ durasiNyata != null ? `Berlangsung ${durasiTeks(durasiNyata)}` : '' }} · {{ statistik.hadir }}/{{ statistik.total }} karyawan hadir</small>
+              <button type="button" class="rd-tombol" @click="siapkanLagi = true">🎬 Mulai lagi rapat ini</button>
+            </div>
+            <template v-else-if="tampilLobi && d.status !== 'Dibatalkan'">
               <div class="rd-kartu-kepala">
                 <b>{{ d.status === 'Berlangsung' ? '🟢 Rapat sedang berjalan' : '🎬 Siap masuk?' }}</b>
                 <small v-if="statistik.online">{{ statistik.online }} orang di dalam</small>

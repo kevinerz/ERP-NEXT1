@@ -216,7 +216,7 @@ export class MeetingService {
         id_tindak: t.id_tindak, judul: t.judul, id_pic: t.id_pic, pic: t.id_pic ? nama.get(t.id_pic)?.nama ?? `#${t.id_pic}` : null,
         tenggat: t.tenggat, selesai: t.selesai, selesai_at: t.selesai_at, dibuat_oleh: nama.get(t.dibuat_oleh)?.nama ?? '-',
       })),
-      sesi: hadir.map((h) => ({ id_karyawan: h.id_karyawan, identity: h.identity, masuk_at: h.masuk_at, keluar_at: h.keluar_at })),
+      sesi: hadir.map((h) => ({ id_karyawan: h.id_karyawan, identity: h.identity, nama: h.nama_tamu, masuk_at: h.masuk_at, keluar_at: h.keluar_at })),
       pembuat: { id_karyawan: r.id_pembuat, nama: nama.get(r.id_pembuat)?.nama ?? '-' },
       peserta: r.peserta.map((p) => {
         const k = per.get(p.id_karyawan);
