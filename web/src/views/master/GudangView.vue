@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MasterNav from './MasterNav.vue'
 import { ref, onMounted } from 'vue'
 import { confirmDialog, alertError } from '@/composables/useDialog'
 import api from '@/services/api'
@@ -103,6 +104,7 @@ async function hapusGudang(g: Gudang) {
 
 <template>
   <div class="page">
+    <MasterNav />
     <div class="page-header">
       <div>
         <h2>Gudang</h2>

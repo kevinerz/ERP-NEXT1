@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import MasterNav from './MasterNav.vue'
+import { useRoute } from 'vue-router'
 import { ref, onMounted } from 'vue'
 import { confirmDialog, alertError } from '@/composables/useDialog'
 import { useMasterStore, type Vendor } from '@/stores/master'
@@ -7,7 +9,7 @@ import BasePagination from '@/components/BasePagination.vue'
 
 const master = useMasterStore()
 
-const search = ref('')
+const search = ref(typeof useRoute().query.search === 'string' ? String(useRoute().query.search) : '')
 const filterTipe = ref('')
 const filterAktif = ref('')
 const page = ref(1)
@@ -143,6 +145,7 @@ async function hapusVendor(vendor: Vendor) {
 
 <template>
   <div class="page">
+    <MasterNav />
     <div class="page-header">
       <div>
         <h2>Vendor ISP</h2>

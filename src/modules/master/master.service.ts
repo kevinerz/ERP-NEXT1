@@ -996,4 +996,55 @@ export class MasterService {
     }
     return { message: `Dokumen ${doc.nama_file} dihapus` };
   }
+
+  // ─── PUSAT MASTER DATA: ringkasan & pencarian lintas data ────
+  async ringkasan() {
+    const p = this.prisma;
+    const [pelanggan, grup, siteAktif, siteDismantle, siteLain, layanan, vendor, teknisi, gudang, gangguan, baru] = await Promise.all([
+      p.pelanggan.count(), p.grupPelanggan.count(),
+      p.sitePelanggan.count({ where: { status_site: 'Aktif' } }),
+      p.sitePelanggan.count({ where: { status_site: 'Dismantle' } }),
+      p.sitePelanggan.count({ where: { status_site: { notIn: ['Aktif', 'Dismantle'] } } }),
+      p.masterLayanan.count({ where: { is_aktif: true } }),
+      p.masterVendorIsp.count({ where: { is_aktif: true } }),
+      p.masterKontakTeknisi.count({ where: { is_aktif: true } }),
+      p.masterGudang.count({ where: { is_aktif: true } }),
+      p.masterJenisGangguan.count({ where: { is_aktif: true } }),
+      p.sitePelanggan.findMany({
+        orderBy: { updated_at: 'desc' }, take: 8,
+        select: { id_site: true, kode_site: true, nama_site: true, status_site: true, updated_at: true, pelanggan: { select: { nama_pelanggan: true } } },
+      }),
+    ]);
+    return {
+      jumlah: { pelanggan, grup, site_aktif: siteAktif, site_dismantle: siteDismantle, site_lain: siteLain, layanan, vendor, teknisi, gudang, gangguan },
+      site_terbaru: baru.map((x) => ({ ...x, pelanggan: x.pelanggan?.nama_pelanggan ?? '' })),
+    };
+  }
+
+  async cariSemua(q: string) {
+    const kata = (q || '').trim();
+    if (kata.length < 2) return { pelanggan: [], site: [], vendor: [], layanan: [], teknisi: [], gudang: [] };
+    const p = this.prisma;
+    const [pelanggan, site, vendor, layanan, teknisi, gudang] = await Promise.all([
+      p.pelanggan.findMany({
+        where: { OR: [{ nama_pelanggan: { contains: kata } }, { kode_pelanggan: { contains: kata } }, { nama_pic_utama: { contains: kata } }] },
+        take: 6, orderBy: { nama_pelanggan: 'asc' },
+        select: { id_pelanggan: true, kode_pelanggan: true, nama_pelanggan: true, _count: { select: { sites: true } } },
+      }),
+      p.sitePelanggan.findMany({
+        where: { OR: [{ nama_site: { contains: kata } }, { kode_site: { contains: kata } }, { kota: { contains: kata } }, { alamat_lengkap: { contains: kata } }] },
+        take: 8, orderBy: [{ status_site: 'asc' }, { nama_site: 'asc' }],
+        select: { id_site: true, kode_site: true, nama_site: true, status_site: true, kota: true, pelanggan: { select: { nama_pelanggan: true } } },
+      }),
+      p.masterVendorIsp.findMany({ where: { OR: [{ nama_vendor: { contains: kata } }, { kontak_pic: { contains: kata } }] }, take: 5, select: { id_vendor: true, nama_vendor: true, tipe_vendor: true, is_aktif: true } }),
+      p.masterLayanan.findMany({ where: { OR: [{ nama_layanan: { contains: kata } }, { kode_layanan: { contains: kata } }] }, take: 5, select: { id_layanan: true, kode_layanan: true, nama_layanan: true, is_aktif: true } }),
+      p.masterKontakTeknisi.findMany({ where: { OR: [{ nama: { contains: kata } }, { no_hp: { contains: kata } }, { asal_vendor: { contains: kata } }] }, take: 5, select: { id_kontak: true, nama: true, no_hp: true, asal_vendor: true, is_aktif: true } }),
+      p.masterGudang.findMany({ where: { OR: [{ nama_gudang: { contains: kata } }, { kode_gudang: { contains: kata } }, { kota: { contains: kata } }] }, take: 5, select: { id_gudang: true, kode_gudang: true, nama_gudang: true, kota: true } }),
+    ]);
+    return {
+      pelanggan: pelanggan.map(({ _count, ...x }) => ({ ...x, jumlah_site: _count.sites })),
+      site: site.map((x) => ({ ...x, pelanggan: x.pelanggan?.nama_pelanggan ?? '' })),
+      vendor, layanan, teknisi, gudang,
+    };
+  }
 }

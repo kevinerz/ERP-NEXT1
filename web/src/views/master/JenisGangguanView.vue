@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MasterNav from './MasterNav.vue'
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
 import { confirmDialog } from '@/composables/useDialog'
@@ -102,6 +103,7 @@ async function hapus(row: JenisGangguan) {
 
 <template>
   <div class="page">
+    <MasterNav />
     <div class="page-header">
       <div>
         <h2>⚡ Jenis Gangguan</h2>

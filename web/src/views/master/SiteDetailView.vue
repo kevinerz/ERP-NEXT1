@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MasterNav from './MasterNav.vue'
 import { ref, onMounted, computed, watch } from 'vue'
 import { confirmDialog, toast } from '@/composables/useDialog'
 import { useRoute, useRouter } from 'vue-router'
@@ -409,6 +410,7 @@ async function bukaDokumenFs(doc: any) {
 
 <template>
   <div class="page">
+    <MasterNav />
     <div v-if="loading && !site" class="loading-state">Memuat data site...</div>
     <div v-else-if="error && !site" class="alert alert-danger">{{ error }}</div>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MasterNav from './MasterNav.vue'
 import { ref, onMounted } from 'vue'
 import { confirmDialog, alertError } from '@/composables/useDialog'
 import { useMasterStore, type Layanan } from '@/stores/master'
@@ -100,6 +101,7 @@ async function hapusLayanan(layanan: Layanan) {
 
 <template>
   <div class="page">
+    <MasterNav />
     <div class="page-header">
       <div>
         <h2>Layanan</h2>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MasterNav from './MasterNav.vue'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { confirmDialog, alertDialog, promptDialog, alertError } from '@/composables/useDialog'
 import { useRouter } from 'vue-router'
@@ -429,6 +430,7 @@ function highlight(text: string, q: string) {
 
 <template>
   <div class="page st">
+    <MasterNav />
     <!-- ─── Kepala ─── -->
     <div class="st-kepala">
       <div>

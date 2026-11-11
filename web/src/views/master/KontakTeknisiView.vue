@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import MasterNav from './MasterNav.vue'
+import { useRoute } from 'vue-router'
 import { ref, onMounted } from 'vue'
 import { confirmDialog, alertError } from '@/composables/useDialog'
 import api from '@/services/api'
@@ -24,7 +26,7 @@ const meta = ref({ total: 0, page: 1, limit: 20, total_pages: 0 })
 const loading = ref(false)
 const error = ref('')
 
-const search = ref('')
+const search = ref(typeof useRoute().query.search === 'string' ? String(useRoute().query.search) : '')
 const filterAktif = ref('')
 const page = ref(1)
 
@@ -188,6 +190,7 @@ async function submitPin() {
 
 <template>
   <div class="page">
+    <MasterNav />
     <div class="page-header">
       <div>
         <h2>Kontak Teknisi / Pemasang</h2>

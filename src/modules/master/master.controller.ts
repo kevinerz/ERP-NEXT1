@@ -29,6 +29,13 @@ export class MasterController {
 
   // ─── LAYANAN ────────────────────────────────────────────────
 
+  // Pusat Master Data — ringkasan jumlah & pencarian lintas data
+  @Get('ringkasan')
+  ringkasan() { return this.masterService.ringkasan(); }
+
+  @Get('cari')
+  cari(@Query('q') q: string) { return this.masterService.cariSemua(q); }
+
   @Get('layanan')
   findAllLayanan(@Query() query: { search?: string; is_aktif?: string }) {
     return this.masterService.findAllLayanan(query);

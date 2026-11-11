@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MasterNav from './MasterNav.vue'
 import { ref, onMounted, computed, watch } from 'vue'
 import { useMasterStore } from '@/stores/master'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -276,6 +277,7 @@ function inisial(n: string) {
 
 <template>
   <div class="page">
+    <MasterNav />
     <div class="page-header">
       <div>
         <h2>🏢 Pelanggan</h2>
