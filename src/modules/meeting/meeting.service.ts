@@ -1,5 +1,6 @@
 import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { buatToken, verifikasiWebhook, type VideoGrant } from './livekit.util';
@@ -116,30 +117,80 @@ export class MeetingService {
   async daftar(id_karyawan: number, semua = false) {
     const rapat = await this.prisma.rapat.findMany({
       where: semua ? {} : { peserta: { some: { id_karyawan } } },
-      include: { peserta: true, _count: { select: { kehadiran: true } } },
+      include: {
+        peserta: true,
+        kehadiran: { select: { id_karyawan: true, identity: true } },
+        tindak: { select: { selesai: true } },
+      },
       orderBy: [{ created_at: 'desc' }],
-      take: 100,
+      take: 500,
     });
     const nama = await this.namaKaryawan([...new Set(rapat.flatMap((r) => [r.id_pembuat, ...r.peserta.map((p) => p.id_karyawan)]))]);
-    const bentuk = (r: (typeof rapat)[number]) => ({
-      id_rapat: r.id_rapat, judul: r.judul, deskripsi: r.deskripsi, jadwal_at: r.jadwal_at, status: r.status,
-      mulai_at: r.mulai_at, selesai_at: r.selesai_at, created_at: r.created_at,
-      pembuat: nama.get(r.id_pembuat)?.nama ?? '-',
-      moderator: r.peserta.some((p) => p.id_karyawan === id_karyawan && p.peran === 'moderator'),
-      diundang: r.peserta.some((p) => p.id_karyawan === id_karyawan),
-      peserta: r.peserta.map((p) => ({ id_karyawan: p.id_karyawan, nama: nama.get(p.id_karyawan)?.nama ?? `#${p.id_karyawan}`, peran: p.peran })),
-      jumlah_hadir: r._count.kehadiran,
-    });
+    const bentuk = (r: (typeof rapat)[number]) => {
+      const saya = r.peserta.find((p) => p.id_karyawan === id_karyawan);
+      const hadirKaryawan = new Set(r.kehadiran.filter((h) => h.id_karyawan != null).map((h) => h.id_karyawan));
+      const tamu = new Set(r.kehadiran.filter((h) => h.id_karyawan == null).map((h) => h.identity)).size;
+      return {
+        id_rapat: r.id_rapat, judul: r.judul, deskripsi: r.deskripsi, jadwal_at: r.jadwal_at, durasi_menit: r.durasi_menit,
+        kategori: r.kategori, lokasi: r.lokasi, status: r.status,
+        mulai_at: r.mulai_at, selesai_at: r.selesai_at, created_at: r.created_at,
+        pembuat: nama.get(r.id_pembuat)?.nama ?? '-', id_pembuat: r.id_pembuat,
+        moderator: saya?.peran === 'moderator',
+        diundang: !!saya,
+        respon_saya: saya?.respon ?? null,
+        peserta: r.peserta.map((p) => ({ id_karyawan: p.id_karyawan, nama: nama.get(p.id_karyawan)?.nama ?? `#${p.id_karyawan}`, peran: p.peran, respon: p.respon, hadir: hadirKaryawan.has(p.id_karyawan) })),
+        jumlah_hadir: hadirKaryawan.size,
+        jumlah_tamu: tamu,
+        ada_notulen: !!r.notulen?.trim(),
+        tindak_total: r.tindak.length,
+        tindak_terbuka: r.tindak.filter((t) => !t.selesai).length,
+      };
+    };
     const aktif = rapat.filter((r) => r.status === 'Terjadwal' || r.status === 'Berlangsung')
       .sort((a, b) => (a.status === 'Berlangsung' ? -1 : 0) - (b.status === 'Berlangsung' ? -1 : 0) || +(a.jadwal_at ?? a.created_at) - +(b.jadwal_at ?? b.created_at));
     const riwayat = rapat.filter((r) => r.status === 'Selesai' || r.status === 'Dibatalkan');
-    return { aktif: aktif.map(bentuk), riwayat: riwayat.map(bentuk) };
+
+    // Statistik ringkas (zona WIB)
+    const wib = (d: Date) => new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+    const now = new Date();
+    const hariIni = wib(now);
+    const awalBulan = hariIni.slice(0, 7);
+    const awalMinggu = new Date(now.getTime() - 7 * 86400_000);
+    const selesaiBulan = riwayat.filter((r) => r.status === 'Selesai' && r.mulai_at && r.selesai_at && wib(r.mulai_at).slice(0, 7) === awalBulan);
+    const menitBulan = selesaiBulan.reduce((a, r) => a + Math.max(0, (+r.selesai_at! - +r.mulai_at!) / 60_000), 0);
+    const persen = selesaiBulan.filter((r) => r.peserta.length > 1).map((r) => {
+      const h = new Set(r.kehadiran.filter((x) => x.id_karyawan != null).map((x) => x.id_karyawan));
+      return r.peserta.filter((p) => h.has(p.id_karyawan)).length / r.peserta.length;
+    });
+    const statistik = {
+      berlangsung: aktif.filter((r) => r.status === 'Berlangsung').length,
+      hari_ini: rapat.filter((r) => r.status !== 'Dibatalkan' && r.jadwal_at && wib(r.jadwal_at) === hariIni).length,
+      akan_datang: aktif.filter((r) => r.status === 'Terjadwal').length,
+      minggu_ini: rapat.filter((r) => r.status === 'Selesai' && r.mulai_at && r.mulai_at >= awalMinggu).length,
+      bulan_ini: selesaiBulan.length,
+      jam_bulan_ini: Math.round(menitBulan / 6) / 10,
+      rata_hadir: persen.length ? Math.round((persen.reduce((a, b) => a + b, 0) / persen.length) * 100) : null,
+      menunggu_respon: aktif.filter((r) => r.status === 'Terjadwal' && r.peserta.some((p) => p.id_karyawan === id_karyawan && !p.respon && p.peran !== 'moderator')).length,
+    };
+    return { aktif: aktif.map(bentuk), riwayat: riwayat.map(bentuk), statistik, tindak_saya: await this.tindakSaya(id_karyawan) };
+  }
+
+  /** Tindak lanjut yang belum selesai dengan PIC = saya (lintas rapat) */
+  async tindakSaya(id_karyawan: number) {
+    const t = await this.prisma.rapatTindak.findMany({
+      where: { id_pic: id_karyawan, selesai: false },
+      include: { rapat: { select: { id_rapat: true, judul: true } } },
+      orderBy: [{ tenggat: 'asc' }, { created_at: 'asc' }],
+      take: 50,
+    });
+    return t.map((x) => ({ id_tindak: x.id_tindak, judul: x.judul, tenggat: x.tenggat, id_rapat: x.rapat.id_rapat, rapat: x.rapat.judul }));
   }
 
   async detail(id_rapat: number, id_karyawan: number, semua = false) {
     const { r, moderator, diundang } = await this.rapatAnggota(id_rapat, id_karyawan, semua);
     const hadir = await this.prisma.rapatKehadiran.findMany({ where: { id_rapat }, orderBy: { masuk_at: 'asc' } });
-    const nama = await this.namaKaryawan([...new Set([r.id_pembuat, ...r.peserta.map((p) => p.id_karyawan)])]);
+    const tindak = await this.prisma.rapatTindak.findMany({ where: { id_rapat }, orderBy: [{ selesai: 'asc' }, { created_at: 'asc' }] });
+    const nama = await this.namaKaryawan([...new Set([r.id_pembuat, ...r.peserta.map((p) => p.id_karyawan), ...tindak.flatMap((t) => [t.id_pic ?? 0, t.dibuat_oleh]), r.notulen_oleh ?? 0].filter(Boolean))]);
     // Ringkas kehadiran per orang (karyawan per id, tamu per identity): pertama masuk, terakhir keluar, total menit
     type Ringkas = { nama: string | null; masuk: Date; keluar: Date | null; detik: number; online: boolean };
     const per = new Map<number, Ringkas>();
@@ -157,13 +208,21 @@ export class MeetingService {
     const linkAktif = this.linkBerlaku(r);
     return {
       id_rapat: r.id_rapat, judul: r.judul, deskripsi: r.deskripsi, jadwal_at: r.jadwal_at, status: r.status,
+      durasi_menit: r.durasi_menit, kategori: r.kategori, lokasi: r.lokasi,
       mulai_at: r.mulai_at, selesai_at: r.selesai_at, created_at: r.created_at, moderator, diundang,
+      respon_saya: r.peserta.find((p) => p.id_karyawan === id_karyawan)?.respon ?? null,
+      notulen: r.notulen, notulen_at: r.notulen_at, notulen_oleh: r.notulen_oleh ? nama.get(r.notulen_oleh)?.nama ?? null : null,
+      tindak: tindak.map((t) => ({
+        id_tindak: t.id_tindak, judul: t.judul, id_pic: t.id_pic, pic: t.id_pic ? nama.get(t.id_pic)?.nama ?? `#${t.id_pic}` : null,
+        tenggat: t.tenggat, selesai: t.selesai, selesai_at: t.selesai_at, dibuat_oleh: nama.get(t.dibuat_oleh)?.nama ?? '-',
+      })),
+      sesi: hadir.map((h) => ({ id_karyawan: h.id_karyawan, identity: h.identity, masuk_at: h.masuk_at, keluar_at: h.keluar_at })),
       pembuat: { id_karyawan: r.id_pembuat, nama: nama.get(r.id_pembuat)?.nama ?? '-' },
       peserta: r.peserta.map((p) => {
         const k = per.get(p.id_karyawan);
         return {
           id_karyawan: p.id_karyawan, nama: nama.get(p.id_karyawan)?.nama ?? `#${p.id_karyawan}`, jabatan: nama.get(p.id_karyawan)?.jabatan ?? '',
-          peran: p.peran, hadir: !!k, online: k?.online ?? false, masuk_at: k?.masuk ?? null, keluar_at: k?.online ? null : k?.keluar ?? null,
+          peran: p.peran, respon: p.respon, hadir: !!k, online: k?.online ?? false, masuk_at: k?.masuk ?? null, keluar_at: k?.online ? null : k?.keluar ?? null,
           menit: k ? Math.round(k.detik / 60) : 0,
         };
       }),
@@ -227,7 +286,7 @@ export class MeetingService {
   }
 
   // ── Buat / ubah / batal ──────────────────────────────────────────────────────
-  async buat(id_karyawan: number, d: { judul: string; deskripsi?: string; jadwal_at?: string; peserta: number[] }) {
+  async buat(id_karyawan: number, d: { judul: string; deskripsi?: string; jadwal_at?: string; peserta: number[]; durasi_menit?: number; kategori?: string; lokasi?: string; moderator?: number[] }) {
     const ids = [...new Set(d.peserta.filter((x) => x !== id_karyawan))];
     const valid = await this.prisma.hrisKaryawan.findMany({ where: { id_karyawan: { in: ids }, status_aktif: true }, select: { id_karyawan: true } });
     const jadwal = d.jadwal_at ? new Date(d.jadwal_at) : null;
@@ -235,7 +294,13 @@ export class MeetingService {
       data: {
         room: `rapat-${randomBytes(6).toString('hex')}`,
         judul: d.judul.trim(), deskripsi: d.deskripsi?.trim() || null, jadwal_at: jadwal, id_pembuat: id_karyawan,
-        peserta: { create: [{ id_karyawan, peran: 'moderator' }, ...valid.map((v) => ({ id_karyawan: v.id_karyawan }))] },
+        durasi_menit: d.durasi_menit ?? null, kategori: d.kategori?.trim() || null, lokasi: d.lokasi?.trim() || null,
+        peserta: {
+          create: [
+            { id_karyawan, peran: 'moderator', respon: 'hadir', respon_at: new Date() },
+            ...valid.map((v) => ({ id_karyawan: v.id_karyawan, peran: d.moderator?.includes(v.id_karyawan) ? 'moderator' : 'peserta' })),
+          ],
+        },
       },
     });
     const pembuat = (await this.namaKaryawan([id_karyawan])).get(id_karyawan)?.nama ?? 'Rekan';
@@ -247,18 +312,134 @@ export class MeetingService {
     return this.detail(r.id_rapat, id_karyawan);
   }
 
-  async ubah(id_rapat: number, id_karyawan: number, d: { judul?: string; deskripsi?: string; jadwal_at?: string | null }) {
+  async ubah(id_rapat: number, id_karyawan: number, d: { judul?: string; deskripsi?: string; jadwal_at?: string | null; durasi_menit?: number | null; kategori?: string | null; lokasi?: string | null }) {
     const r = await this.moderatorSaja(id_rapat, id_karyawan);
     if (r.status === 'Selesai' || r.status === 'Dibatalkan') throw new BadRequestException('Rapat sudah selesai / dibatalkan');
+    const jadwalBaru = d.jadwal_at !== undefined ? (d.jadwal_at ? new Date(d.jadwal_at) : null) : undefined;
+    const jadwalBerubah = jadwalBaru !== undefined && +(jadwalBaru ?? 0) !== +(r.jadwal_at ?? 0);
     await this.prisma.rapat.update({
       where: { id_rapat },
       data: {
         ...(d.judul !== undefined ? { judul: d.judul.trim() } : {}),
         ...(d.deskripsi !== undefined ? { deskripsi: d.deskripsi.trim() || null } : {}),
-        ...(d.jadwal_at !== undefined ? { jadwal_at: d.jadwal_at ? new Date(d.jadwal_at) : null } : {}),
+        ...(d.durasi_menit !== undefined ? { durasi_menit: d.durasi_menit || null } : {}),
+        ...(d.kategori !== undefined ? { kategori: d.kategori?.trim() || null } : {}),
+        ...(d.lokasi !== undefined ? { lokasi: d.lokasi?.trim() || null } : {}),
+        ...(jadwalBerubah ? { jadwal_at: jadwalBaru, diingatkan_at: null } : {}),
       },
     });
+    if (jadwalBerubah) {
+      // Jadwal berubah → beri tahu peserta & minta konfirmasi ulang
+      await this.prisma.rapatPeserta.updateMany({ where: { id_rapat, id_karyawan: { not: id_karyawan }, respon: { not: null } }, data: { respon: null, respon_at: null } });
+      await this.beriTahu(r.peserta.map((p) => p.id_karyawan).filter((x) => x !== id_karyawan), {
+        tipe: 'rapat_undangan', judul: `Jadwal rapat berubah: ${d.judul?.trim() || r.judul}`,
+        deskripsi: `Sekarang ${this.fmtJadwal(jadwalBaru ?? null)} — mohon konfirmasi kehadiran`, url: `/meeting/${id_rapat}`,
+      });
+    }
     return this.detail(id_rapat, id_karyawan);
+  }
+
+  /** Salin rapat (judul, agenda, peserta, moderator) ke jadwal baru — untuk rapat rutin */
+  async duplikat(id_rapat: number, id_karyawan: number, semua: boolean, d: { jadwal_at?: string; judul?: string }) {
+    const { r } = await this.rapatAnggota(id_rapat, id_karyawan, semua);
+    const peserta = r.peserta.map((p) => p.id_karyawan).filter((x) => x !== id_karyawan);
+    return this.buat(id_karyawan, {
+      judul: d.judul?.trim() || r.judul, deskripsi: r.deskripsi ?? undefined, jadwal_at: d.jadwal_at, peserta,
+      durasi_menit: r.durasi_menit ?? undefined, kategori: r.kategori ?? undefined, lokasi: r.lokasi ?? undefined,
+      moderator: r.peserta.filter((p) => p.peran === 'moderator').map((p) => p.id_karyawan),
+    });
+  }
+
+  // ── Konfirmasi kehadiran (RSVP) ──────────────────────────────────────────────
+  async respon(id_rapat: number, id_karyawan: number, respon: string) {
+    const { r, diundang } = await this.rapatAnggota(id_rapat, id_karyawan);
+    if (!diundang) throw new ForbiddenException('Anda tidak diundang ke rapat ini');
+    if (r.status !== 'Terjadwal') throw new BadRequestException('Konfirmasi hanya untuk rapat yang belum dimulai');
+    await this.prisma.rapatPeserta.updateMany({ where: { id_rapat, id_karyawan }, data: { respon, respon_at: new Date() } });
+    if (respon === 'tidak' && r.id_pembuat !== id_karyawan) {
+      const n = (await this.namaKaryawan([id_karyawan])).get(id_karyawan)?.nama ?? 'Peserta';
+      await this.beriTahu([r.id_pembuat], { tipe: 'rapat_respon', judul: `${n} tidak bisa hadir`, deskripsi: r.judul, url: `/meeting/${id_rapat}` });
+    }
+    return this.detail(id_rapat, id_karyawan);
+  }
+
+  // ── Notulen ──────────────────────────────────────────────────────────────────
+  async simpanNotulen(id_rapat: number, id_karyawan: number, notulen: string) {
+    const { diundang } = await this.rapatAnggota(id_rapat, id_karyawan);
+    if (!diundang) throw new ForbiddenException('Hanya peserta rapat yang bisa menulis notulen');
+    const now = new Date();
+    await this.prisma.rapat.update({ where: { id_rapat }, data: { notulen: notulen.trim() ? notulen : null, notulen_oleh: id_karyawan, notulen_at: now } });
+    return { notulen_at: now, notulen_oleh: (await this.namaKaryawan([id_karyawan])).get(id_karyawan)?.nama ?? null };
+  }
+
+  // ── Tindak lanjut ────────────────────────────────────────────────────────────
+  private async anggotaSaja(id_rapat: number, id_karyawan: number) {
+    const x = await this.rapatAnggota(id_rapat, id_karyawan);
+    if (!x.diundang) throw new ForbiddenException('Hanya peserta rapat yang bisa mengubah tindak lanjut');
+    return x.r;
+  }
+
+  async tambahTindak(id_rapat: number, id_karyawan: number, d: { judul: string; id_pic?: number | null; tenggat?: string | null }) {
+    const r = await this.anggotaSaja(id_rapat, id_karyawan);
+    const t = await this.prisma.rapatTindak.create({
+      data: { id_rapat, judul: d.judul.trim(), id_pic: d.id_pic || null, tenggat: d.tenggat ? new Date(d.tenggat) : null, dibuat_oleh: id_karyawan },
+    });
+    if (t.id_pic && t.id_pic !== id_karyawan) {
+      await this.beriTahu([t.id_pic], {
+        tipe: 'rapat_tindak', judul: `Tugas dari rapat: ${t.judul}`,
+        deskripsi: `${r.judul}${t.tenggat ? ` · tenggat ${t.tenggat.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}` : ''}`, url: `/meeting/${id_rapat}?tab=tindak`,
+      });
+    }
+    return this.detail(id_rapat, id_karyawan);
+  }
+
+  async ubahTindak(id_rapat: number, id_karyawan: number, id_tindak: number, d: { judul?: string; id_pic?: number | null; tenggat?: string | null; selesai?: boolean }) {
+    const r = await this.anggotaSaja(id_rapat, id_karyawan);
+    const lama = await this.prisma.rapatTindak.findFirst({ where: { id_tindak, id_rapat } });
+    if (!lama) throw new NotFoundException('Tindak lanjut tidak ditemukan');
+    await this.prisma.rapatTindak.update({
+      where: { id_tindak },
+      data: {
+        ...(d.judul !== undefined ? { judul: d.judul.trim() } : {}),
+        ...(d.id_pic !== undefined ? { id_pic: d.id_pic || null } : {}),
+        ...(d.tenggat !== undefined ? { tenggat: d.tenggat ? new Date(d.tenggat) : null } : {}),
+        ...(d.selesai !== undefined ? { selesai: d.selesai, selesai_at: d.selesai ? new Date() : null } : {}),
+      },
+    });
+    if (d.id_pic && d.id_pic !== lama.id_pic && d.id_pic !== id_karyawan) {
+      await this.beriTahu([d.id_pic], { tipe: 'rapat_tindak', judul: `Tugas dari rapat: ${d.judul?.trim() || lama.judul}`, deskripsi: r.judul, url: `/meeting/${id_rapat}?tab=tindak` });
+    }
+    return this.detail(id_rapat, id_karyawan);
+  }
+
+  async hapusTindak(id_rapat: number, id_karyawan: number, id_tindak: number) {
+    await this.anggotaSaja(id_rapat, id_karyawan);
+    await this.prisma.rapatTindak.deleteMany({ where: { id_tindak, id_rapat } });
+    return this.detail(id_rapat, id_karyawan);
+  }
+
+  // ── Pengingat: 10 menit sebelum rapat terjadwal mulai ────────────────────────
+  @Cron('* * * * *')
+  async kirimPengingat() {
+    try {
+      const now = new Date();
+      const rapat = await this.prisma.rapat.findMany({
+        where: { status: 'Terjadwal', diingatkan_at: null, jadwal_at: { gt: new Date(now.getTime() - 5 * 60_000), lte: new Date(now.getTime() + 10 * 60_000) } },
+        include: { peserta: true },
+        take: 50,
+      });
+      for (const r of rapat) {
+        const ok = await this.prisma.rapat.updateMany({ where: { id_rapat: r.id_rapat, diingatkan_at: null }, data: { diingatkan_at: now } });
+        if (!ok.count) continue;
+        const menit = Math.max(0, Math.round((+r.jadwal_at! - +now) / 60_000));
+        await this.beriTahu(r.peserta.filter((p) => p.respon !== 'tidak').map((p) => p.id_karyawan), {
+          tipe: 'rapat_pengingat', judul: `⏰ Rapat ${menit ? `${menit} menit lagi` : 'dimulai sekarang'}: ${r.judul}`,
+          deskripsi: `${this.fmtJadwal(r.jadwal_at)}${r.lokasi ? ` · ${r.lokasi}` : ''}`, url: `/meeting/${r.id_rapat}`,
+        });
+      }
+    } catch (e: any) {
+      this.logger.warn(`pengingat rapat gagal: ${e?.message}`);
+    }
   }
 
   async tambahPeserta(id_rapat: number, id_karyawan: number, ids: number[]) {

@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 import RuangRapat from './RuangRapat.vue'
+import PratinjauPerangkat from './PratinjauPerangkat.vue'
 
 // Halaman tamu rapat (tanpa login ERP) — /rapat/tamu/:kode
 const route = useRoute()
@@ -14,6 +15,9 @@ const nama = ref('')
 const instansi = ref('')
 const pakaiMic = ref(true)
 const pakaiKamera = ref(true)
+const micId = ref('')
+const camId = ref('')
+const lobi = ref<InstanceType<typeof PratinjauPerangkat> | null>(null)
 const menyambung = ref(false)
 const sesi = ref<{ url: string; token: string; judul: string } | null>(null)
 
@@ -41,6 +45,7 @@ async function masuk() {
     const { data } = await axios.post(`/api/meeting/tamu/${encodeURIComponent(kode)}/masuk`, { nama: nama.value.trim(), instansi: instansi.value.trim() || undefined })
     simpanLokal('rapat_tamu_nama', nama.value.trim())
     simpanLokal('rapat_tamu_instansi', instansi.value.trim())
+    lobi.value?.lepas()
     sesi.value = data.data
   } catch (e: any) {
     const m = e?.response?.data?.message
@@ -57,7 +62,7 @@ const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('id-ID', { wee
 </script>
 
 <template>
-  <RuangRapat v-if="sesi" :url="sesi.url" :token="sesi.token" :judul="sesi.judul" :moderator="false" :mic="pakaiMic" :kamera="pakaiKamera" @selesai="selesai" />
+  <RuangRapat v-if="sesi" :url="sesi.url" :token="sesi.token" :judul="sesi.judul" :moderator="false" :mic="pakaiMic" :kamera="pakaiKamera" :mic-id="micId" :cam-id="camId" @selesai="selesai" />
 
   <div v-else class="tm">
     <div class="tm-kartu">
@@ -75,9 +80,8 @@ const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('id-ID', { wee
           <input v-model="nama" maxlength="100" placeholder="Nama lengkap" autofocus />
           <label>Instansi / perusahaan <small>(opsional)</small></label>
           <input v-model="instansi" maxlength="100" placeholder="mis. PT Contoh Jaya" />
-          <div class="tm-cek">
-            <label><input v-model="pakaiMic" type="checkbox" /> 🎙️ Mikrofon</label>
-            <label><input v-model="pakaiKamera" type="checkbox" /> 📷 Kamera</label>
+          <div class="tm-lobi">
+            <PratinjauPerangkat ref="lobi" v-model:mic="pakaiMic" v-model:kamera="pakaiKamera" v-model:mic-id="micId" v-model:cam-id="camId" :nama="nama || 'Tamu'" />
           </div>
           <p v-if="pesan" class="tm-pesan">{{ pesan }}</p>
           <button type="submit" :disabled="nama.trim().length < 2 || menyambung">{{ menyambung ? 'Menyambungkan…' : 'Masuk rapat' }}</button>
@@ -91,7 +95,10 @@ const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('id-ID', { wee
 
 <style scoped>
 .tm { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; background: #0b1220; color: #e2e8f0; box-sizing: border-box; }
-.tm-kartu { width: 100%; max-width: 420px; padding: 28px; border-radius: 16px; background: #111a2e; border: 1px solid #1e293b; }
+.tm-lobi { margin-top: 10px; }
+.tm-lobi :deep(label) { color: #94a3b8; }
+.tm { background: radial-gradient(circle at 15% 0%, #1e1b4b 0%, transparent 45%), #0b1220 !important; }
+.tm-kartu { width: 100%; max-width: 480px; padding: 28px; border-radius: 16px; background: #111a2e; border: 1px solid #1e293b; }
 .tm-merek { font-size: 13px; color: #94a3b8; margin-bottom: 10px; }
 h2 { margin: 0 0 6px; font-size: 20px; }
 .tm-redup { color: #94a3b8; font-size: 13.5px; margin: 0 0 10px; }

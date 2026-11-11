@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
+import { inisial, warnaNama } from './rapat-util'
 
 // Pilih banyak karyawan (aktif) — dikelompokkan per departemen, bisa dicari
 interface Karyawan { id_karyawan: number; nama_lengkap: string; jabatan: string; departemen: string }
@@ -31,6 +32,7 @@ const perDept = computed(() => {
   return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
 })
 const dipilih = computed(() => new Set(props.modelValue))
+const terpilih = computed(() => semua.value.filter((k) => dipilih.value.has(k.id_karyawan)))
 function toggle(id: number) {
   const s = new Set(props.modelValue)
   if (s.has(id)) s.delete(id); else s.add(id)
@@ -46,6 +48,12 @@ function pilihDept(list: Karyawan[]) {
 
 <template>
   <div class="kp">
+    <div v-if="terpilih.length" class="kp-chip">
+      <button v-for="k in terpilih" :key="k.id_karyawan" type="button" :title="`Hapus ${k.nama_lengkap}`" @click="toggle(k.id_karyawan)">
+        <i :style="{ background: warnaNama(k.nama_lengkap) }">{{ inisial(k.nama_lengkap) }}</i>{{ k.nama_lengkap.split(' ')[0] }} <span>×</span>
+      </button>
+      <button type="button" class="kp-hapus" @click="emit('update:modelValue', [])">Kosongkan</button>
+    </div>
     <input v-model="cari" class="form-input" placeholder="Cari nama, jabatan, departemen…" />
     <div class="kp-list">
       <p v-if="!semua.length" class="muted">Memuat…</p>
@@ -73,4 +81,10 @@ function pilihDept(list: Karyawan[]) {
 .kp-item { display: flex; gap: 8px; align-items: center; padding: 3px 0; font-size: 13.5px; cursor: pointer; }
 .kp-item small { margin-left: auto; }
 .muted { color: var(--text-3, #64748b); }
+.kp-chip { display: flex; flex-wrap: wrap; gap: 5px; }
+.kp-chip button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 99px; padding: 2px 8px 2px 2px; font-size: 12px; font-weight: 600; cursor: pointer; color: #334155; }
+.kp-chip button:hover { border-color: #f87171; background: #fef2f2; }
+.kp-chip i { width: 20px; height: 20px; border-radius: 50%; color: #fff; font-style: normal; font-size: 9.5px; font-weight: 800; display: grid; place-items: center; }
+.kp-chip span { color: #94a3b8; }
+.kp-chip .kp-hapus { border-style: dashed; padding: 2px 9px; color: #64748b; }
 </style>

@@ -1822,41 +1822,70 @@ model IpRiwayat {
 // ============================================================
 
 model Rapat {
-  id_rapat    Int       @id @default(autoincrement())
-  room        String    @unique @db.VarChar(64) // nama room LiveKit
-  judul       String    @db.VarChar(200)
-  deskripsi   String?   @db.Text
-  jadwal_at   DateTime? // kosong = rapat dadakan
-  status      String    @default("Terjadwal") @db.VarChar(20) // Terjadwal | Berlangsung | Selesai | Dibatalkan
-  id_pembuat  Int
-  mulai_at    DateTime?
-  selesai_at  DateTime?
+  id_rapat      Int       @id @default(autoincrement())
+  room          String    @unique @db.VarChar(64) // nama room LiveKit
+  judul         String    @db.VarChar(200)
+  deskripsi     String?   @db.Text
+  jadwal_at     DateTime? // kosong = rapat dadakan
+  durasi_menit  Int? // rencana durasi (untuk kalender & .ics)
+  kategori      String?   @db.VarChar(30) // Koordinasi | Mingguan | 1on1 | Proyek | Klien | Pelatihan | Lainnya
+  lokasi        String?   @db.VarChar(200) // ruang fisik bila hybrid
+  status        String    @default("Terjadwal") @db.VarChar(20) // Terjadwal | Berlangsung | Selesai | Dibatalkan
+  id_pembuat    Int
+  mulai_at      DateTime?
+  selesai_at    DateTime?
+  notulen       String?   @db.MediumText
+  notulen_oleh  Int?
+  notulen_at    DateTime?
+  diingatkan_at DateTime? // pengingat 10 menit sebelum mulai sudah dikirim
   // Link tamu (orang di luar HRIS) — langsung masuk tanpa login
-  tamu_kode   String?   @unique @db.VarChar(48)
-  tamu_aktif  Boolean   @default(false)
-  tamu_sampai DateTime?
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
+  tamu_kode     String?   @unique @db.VarChar(48)
+  tamu_aktif    Boolean   @default(false)
+  tamu_sampai   DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
 
   peserta   RapatPeserta[]
   kehadiran RapatKehadiran[]
+  tindak    RapatTindak[]
 
   @@index([status, jadwal_at])
   @@map("rapat")
 }
 
 model RapatPeserta {
-  id_peserta  Int      @id @default(autoincrement())
+  id_peserta  Int       @id @default(autoincrement())
   id_rapat    Int
   id_karyawan Int
-  peran       String   @default("peserta") @db.VarChar(20) // moderator | peserta
-  created_at  DateTime @default(now())
+  peran       String    @default("peserta") @db.VarChar(20) // moderator | peserta
+  respon      String?   @db.VarChar(10) // hadir | mungkin | tidak (RSVP)
+  respon_at   DateTime?
+  created_at  DateTime  @default(now())
 
   rapat Rapat @relation(fields: [id_rapat], references: [id_rapat], onDelete: Cascade)
 
   @@unique([id_rapat, id_karyawan])
   @@index([id_karyawan])
   @@map("rapat_peserta")
+}
+
+// Tindak lanjut (action item) hasil rapat
+model RapatTindak {
+  id_tindak   Int       @id @default(autoincrement())
+  id_rapat    Int
+  judul       String    @db.VarChar(300)
+  id_pic      Int?
+  tenggat     DateTime? @db.Date
+  selesai     Boolean   @default(false)
+  selesai_at  DateTime?
+  dibuat_oleh Int
+  created_at  DateTime  @default(now())
+
+  rapat Rapat @relation(fields: [id_rapat], references: [id_rapat], onDelete: Cascade)
+
+  @@index([id_rapat])
+  @@index([id_pic, selesai])
+  @@map("rapat_tindak")
 }
 
 // Diisi dari webhook LiveKit (participant_joined / participant_left)
