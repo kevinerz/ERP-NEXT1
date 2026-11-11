@@ -1,79 +1,75 @@
 <template>
-  <div class="page">
-    <div class="page-header">
-      <button type="button" class="btn-back" @click="router.push('/hris/karyawan')">← Daftar Karyawan</button>
-      <h2>Undangan Sign-In Karyawan Baru</h2>
-      <p>Buat link pendaftaran mandiri untuk calon karyawan — mereka isi semua data sendiri (termasuk foto), akun otomatis dibuat dan kredensial dikirim ke email mereka.</p>
-    </div>
+  <div class="ud">
+    <button type="button" class="ud-kembali" @click="router.push('/hris/karyawan')">← Buku Tim</button>
+    <header class="ud-kepala">
+      <div>
+        <h1>Undang rekan baru <em>isi data sendiri</em></h1>
+        <p>Buat link pendaftaran untuk calon karyawan. Mereka mengisi semua data (termasuk foto), akun ERP dibuat otomatis, dan kredensial dikirim ke email mereka. Link berlaku 7 hari.</p>
+      </div>
+      <div class="ud-langkah">
+        <span><i>1</i>Buat link</span><span><i>2</i>Kirim lewat WA / email</span><span><i>3</i>Rekan isi data</span><span><i>4</i>Muncul di Buku Tim</span>
+      </div>
+    </header>
 
-    <div class="card form-card">
-      <h3>Buat Undangan Baru</h3>
-      <div class="form-row">
-        <div class="field">
-          <label>Departemen (opsional, sekadar hint)</label>
-          <select v-model="form.departemen">
-            <option value="">— Tidak ditentukan —</option>
-            <option v-for="d in hris.departemenList" :key="d" :value="d">{{ d }}</option>
-          </select>
+    <div class="ud-tata">
+      <section class="ud-kartu ud-buat">
+        <h3>✉️ Buat undangan</h3>
+        <label class="ud-f">Departemen <small>(opsional — sekadar petunjuk)</small>
+          <div class="ud-dept">
+            <button v-for="d in hris.departemenList" :key="d" type="button" :class="{ on: form.departemen === d }" :style="{ '--c': infoDept(d).warna }" @click="form.departemen = form.departemen === d ? '' : d">{{ infoDept(d).ikon }} {{ d }}</button>
+          </div>
+        </label>
+        <label class="ud-f">Jabatan <small>(opsional)</small><input v-model="form.jabatan" type="text" placeholder="mis. Network Engineer" @keydown.enter="handleCreate" /></label>
+        <button type="button" class="ud-btn utama" :disabled="creating" @click="handleCreate">{{ creating ? 'Membuat…' : '＋ Buat link undangan' }}</button>
+        <p v-if="createError" class="ud-galat">{{ createError }}</p>
+
+        <div v-if="lastLink" class="ud-hasil">
+          <small>Link siap dibagikan 🎉</small>
+          <span ref="linkEl" class="ud-link">{{ lastLink }}</span>
+          <div class="ud-hasil-aksi">
+            <button type="button" class="ud-btn" @click="copyLink(lastLink)">{{ copied ? '✓ Disalin' : '📋 Salin link' }}</button>
+            <a class="ud-btn wa" :href="waLink(lastLink, jabatanTerakhir)" target="_blank" rel="noopener">💬 Kirim via WhatsApp</a>
+          </div>
+          <p v-if="copyFailed" class="ud-galat">Gagal menyalin otomatis — link sudah ditandai, tekan Ctrl+C (atau tahan &amp; salin di HP).</p>
         </div>
-        <div class="field">
-          <label>Jabatan (opsional, sekadar hint)</label>
-          <input v-model="form.jabatan" type="text" placeholder="Contoh: Network Engineer" />
+      </section>
+
+      <section class="ud-kartu">
+        <div class="ud-daftar-kepala">
+          <h3>Daftar undangan</h3>
+          <div class="ud-segmen">
+            <button type="button" :class="{ on: saring === '' }" @click="saring = ''">Semua <i>{{ invitations.length }}</i></button>
+            <button type="button" :class="{ on: saring === 'Pending' }" @click="saring = 'Pending'">Menunggu <i>{{ hitung.menunggu }}</i></button>
+            <button type="button" :class="{ on: saring === 'Used' }" @click="saring = 'Used'">Terpakai <i>{{ hitung.terpakai }}</i></button>
+          </div>
         </div>
-        <button class="btn-primary" :disabled="creating" @click="handleCreate">
-          {{ creating ? 'Membuat...' : '+ Buat Link' }}
-        </button>
-      </div>
-      <p v-if="createError" class="error-msg">{{ createError }}</p>
-
-      <div v-if="lastLink" class="link-result">
-        <span ref="linkEl" class="link-text">{{ lastLink }}</span>
-        <button class="btn-copy" @click="copyLink(lastLink)">{{ copied ? '✓ Disalin' : 'Salin Link' }}</button>
-      </div>
-      <p v-if="copyFailed" class="error-msg">Gagal menyalin otomatis — link sudah ditandai, tekan Ctrl+C (atau tahan &amp; salin di HP).</p>
-    </div>
-
-    <div class="card">
-      <h3>Daftar Undangan</h3>
-      <div v-if="loadError" class="empty-state error-msg">
-        ⚠ {{ loadError }}
-        <button class="btn-copy" @click="fetchInvitations">Coba lagi</button>
-      </div>
-      <div v-else-if="loading" class="empty-state">Memuat...</div>
-      <div v-else-if="!invitations.length" class="empty-state">Belum ada undangan dibuat</div>
-      <div v-else class="table-wrap">
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th>Dibuat</th>
-            <th>Hint Departemen/Jabatan</th>
-            <th>Status</th>
-            <th>Kedaluwarsa</th>
-            <th>Karyawan Terdaftar</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="inv in invitations" :key="inv.id_invitation">
-            <td>{{ fmtDateTime(inv.created_at) }}</td>
-            <td>{{ inv.departemen || '—' }} / {{ inv.jabatan || '—' }}</td>
-            <td><span class="badge" :class="statusClass(inv.status)">{{ STATUS_TEXT[inv.status] || inv.status }}</span></td>
-            <td>{{ fmtDateTime(inv.expires_at) }}</td>
-            <td>{{ inv.karyawan?.nama_lengkap || '—' }}</td>
-            <td>
-              <button
-                v-if="inv.status === 'Pending'"
-                class="btn-revoke"
-                :disabled="revokingId === inv.id_invitation"
-                @click="handleRevoke(inv.id_invitation)"
-              >
-                {{ revokingId === inv.id_invitation ? '...' : 'Batalkan' }}
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
+        <div v-if="loadError" class="ud-kosong">⚠ {{ loadError }} <button type="button" class="ud-btn" @click="fetchInvitations">Coba lagi</button></div>
+        <div v-else-if="loading" class="ud-kosong">Memuat…</div>
+        <div v-else-if="!tampil.length" class="ud-kosong">🌿 Belum ada undangan{{ saring ? ' dengan status ini' : '' }}.</div>
+        <ul v-else class="ud-daftar">
+          <li v-for="inv in tampil" :key="inv.id_invitation" :class="'s-' + String(inv.status).toLowerCase()" :style="{ '--c': infoDept(inv.departemen).warna }">
+            <div class="ud-ikon">{{ inv.status === 'Used' ? '✅' : inv.status === 'Pending' ? '⏳' : inv.status === 'Revoked' ? '🚫' : '⌛' }}</div>
+            <div class="ud-isi">
+              <b v-if="inv.karyawan?.nama_lengkap">{{ inv.karyawan.nama_lengkap }}</b>
+              <b v-else>{{ inv.jabatan || 'Jabatan belum ditentukan' }}</b>
+              <small>
+                <span v-if="inv.departemen" class="ud-dept-teks">{{ inv.departemen }}</span>
+                <template v-if="inv.karyawan?.nama_lengkap && inv.jabatan"> · {{ inv.jabatan }}</template>
+                · dibuat {{ fmtDateTime(inv.created_at) }}<template v-if="inv.admin?.username"> oleh {{ inv.admin.username }}</template>
+              </small>
+            </div>
+            <div class="ud-status">
+              <span class="ud-lencana">{{ STATUS_TEXT[inv.status] || inv.status }}</span>
+              <small v-if="inv.status === 'Pending'">sisa {{ sisaHari(inv.expires_at) }} hari</small>
+            </div>
+            <div v-if="inv.status === 'Pending'" class="ud-aksi">
+              <button type="button" title="Salin link" @click="salinCepat(linkDari(inv.token))">📋</button>
+              <a :href="waLink(linkDari(inv.token), inv.jabatan)" target="_blank" rel="noopener" title="Kirim via WhatsApp">💬</a>
+              <button type="button" class="bahaya" :disabled="revokingId === inv.id_invitation" title="Batalkan undangan" @click="handleRevoke(inv.id_invitation)">{{ revokingId === inv.id_invitation ? '…' : '✕' }}</button>
+            </div>
+          </li>
+        </ul>
+      </section>
     </div>
   </div>
 </template>
@@ -85,6 +81,9 @@ import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useHrisStore } from '@/stores/hris'
 import { fmtDateTime } from '@/composables/useFormat'
+import { computed } from 'vue'
+import { toast } from '@/composables/useDialog'
+import { infoDept } from './hris-util'
 
 const router = useRouter()
 const hris = useHrisStore()
@@ -127,6 +126,7 @@ async function handleCreate() {
     })
     const token = r.data.data.token
     lastLink.value = `${window.location.origin}/onboarding/${token}`
+    jabatanTerakhir.value = form.value.jabatan
     form.value = { departemen: '', jabatan: '' }
     await fetchInvitations()
   } catch (e: any) {
@@ -177,6 +177,22 @@ function statusClass(status: string) {
   return 'badge-expired'
 }
 
+const linkDari = (token: string) => `${window.location.origin}/onboarding/${token}`
+const hitung = computed(() => ({
+  menunggu: invitations.value.filter((i) => i.status === 'Pending').length,
+  terpakai: invitations.value.filter((i) => i.status === 'Used').length,
+  lain: invitations.value.filter((i) => i.status !== 'Pending' && i.status !== 'Used').length,
+}))
+const saring = ref<'Pending' | 'Used' | ''>('')
+const tampil = computed(() => invitations.value.filter((i) => !saring.value || i.status === saring.value))
+const teksWa = (link: string, jabatan?: string) => `Halo! Selamat bergabung di NEXT1 🎉\n\nSilakan lengkapi data karyawan Anda${jabatan ? ` (${jabatan})` : ''} lewat link berikut — akun ERP akan dibuat otomatis dan dikirim ke email Anda:\n${link}\n\nLink berlaku 7 hari.`
+const waLink = (link: string, jabatan?: string) => `https://wa.me/?text=${encodeURIComponent(teksWa(link, jabatan))}`
+async function salinCepat(link: string) {
+  try { await navigator.clipboard.writeText(link); toast('Link disalin') } catch { toast('Gagal menyalin — salin manual dari kolom link', 'warning') }
+}
+const sisaHari = (d: string) => Math.max(0, Math.ceil((+new Date(d) - Date.now()) / 86400_000))
+const jabatanTerakhir = ref('')
+
 onMounted(async () => {
   await hris.fetchDepartemen()
   await fetchInvitations()
@@ -184,80 +200,62 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page { max-width: 1000px; }
-
-/* Tombol kembali + judul + deskripsi ditumpuk (global .page-header = baris) */
-.page-header { flex-direction: column; align-items: flex-start; gap: 0; }
-.page-header h2 { margin: 8px 0 4px; font-size: 22px; color: var(--text-1); }
-.page-header p { margin: 0; font-size: 13px; color: #64748b; max-width: 640px; }
-
-.btn-back {
-  background: none; border: none; color: #3b82f6;
-  font-size: 14px; font-weight: 600; cursor: pointer; padding: 0;
-}
-
-.card {
-  background: #fff; border-radius: 12px;
-  padding: 24px 28px; margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
-.card h3 { margin: 0 0 16px; font-size: 16px; color: #0f172a; }
-
-.form-row { display: flex; gap: 16px; align-items: flex-end; }
-.field { display: flex; flex-direction: column; gap: 6px; flex: 1; }
-.field label { font-size: 13px; font-weight: 600; color: #374151; }
-.field input, .field select {
-  padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px;
-  font-size: 14px; outline: none; background: #f8fafc; color: #0f172a;
-}
-.field input:focus, .field select:focus { border-color: #3b82f6; background: #fff; }
-
-.btn-primary {
-  background: linear-gradient(135deg, #1e40af, #3b82f6);
-  color: #fff; border: none; border-radius: 8px;
-  padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
-  white-space: nowrap;
-}
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.error-msg {
-  background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
-  color: #dc2626; font-size: 13px; padding: 10px 14px; margin: 16px 0 0;
-}
-
-.link-result {
-  margin-top: 16px; padding: 12px 16px;
-  background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px;
-  display: flex; align-items: center; flex-wrap: wrap; gap: 12px; justify-content: space-between;
-}
-.link-text { font-size: 13px; font-family: monospace; color: #15803d; word-break: break-all; }
-.btn-copy {
-  background: #15803d; color: #fff; border: none; border-radius: 6px;
-  padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
-}
-
-.empty-state { color: #94a3b8; font-size: 14px; padding: 24px 0; text-align: center; }
-
-.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.tbl th { text-align: left; color: #94a3b8; font-weight: 600; font-size: 11px; text-transform: uppercase; padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
-.tbl td { padding: 10px; border-bottom: 1px solid #f8fafc; color: #0f172a; }
-
-.badge { padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-.badge-pending { background: #eff6ff; color: #1d4ed8; }
-.badge-used { background: #f0fdf4; color: #15803d; }
-.badge-expired { background: #f8fafc; color: #64748b; }
-
-.btn-revoke {
-  background: #fee2e2; border: none; border-radius: 6px;
-  padding: 5px 12px; font-size: 12px; font-weight: 600; color: #dc2626; cursor: pointer;
-}
-.btn-revoke:disabled { opacity: 0.5; cursor: not-allowed; }
-.tbl td { vertical-align: middle; }
-.tbl th { white-space: nowrap; }
-@media (max-width: 768px) {
-  .card { padding: 18px 16px; }
-  .tbl { min-width: 620px; }
-  .page-header .btn-back { width: auto !important; }
-  .form-row .btn-primary { width: 100%; }
-}
+.ud { --kertas: #fbf8f2; --tinta: #1c2a22; --hutan: #1f4d3a; --terakota: #c2552d; --garis: #e9e2d4; --redup: #8a8170;
+  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  background: var(--kertas); padding: 18px 24px 50px; min-height: 100%; box-sizing: border-box; color: var(--tinta); }
+.ud-kembali { border: 0; background: none; color: var(--hutan); font-weight: 800; font-size: 13px; cursor: pointer; padding: 2px 0 8px; }
+.ud-kepala { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 18px; }
+.ud-kepala h1 { margin: 0; font-family: var(--serif); font-size: 32px; font-weight: 700; letter-spacing: -.5px; }
+.ud-kepala h1 em { font-weight: 400; color: var(--terakota); }
+.ud-kepala p { margin: 6px 0 0; color: #5b5242; font-size: 13.5px; max-width: 620px; line-height: 1.5; }
+.ud-langkah { display: flex; flex-wrap: wrap; gap: 6px; }
+.ud-langkah span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #5b5242; background: #fff; border: 1px solid var(--garis); border-radius: 99px; padding: 4px 10px 4px 4px; }
+.ud-langkah i { width: 20px; height: 20px; border-radius: 50%; background: var(--hutan); color: #fff; font-style: normal; display: grid; place-items: center; font-size: 11px; }
+.ud-tata { display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 18px; align-items: start; max-width: 1150px; }
+.ud-kartu { background: #fff; border: 1px solid var(--garis); border-radius: 22px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.ud-kartu h3 { margin: 0; font-family: var(--serif); font-size: 19px; }
+.ud-buat { position: sticky; top: 12px; }
+.ud-f { display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: #5b5242; }
+.ud-f small { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--redup); }
+.ud-f input { text-transform: none; letter-spacing: 0; font: inherit; font-weight: 500; font-size: 14px; border: 1px solid var(--garis); border-radius: 12px; padding: 10px 12px; background: #fdfcf9; color: var(--tinta); }
+.ud-f input:focus { outline: none; border-color: #2f6b4f; box-shadow: 0 0 0 3px rgba(47, 107, 79, .13); }
+.ud-dept { display: flex; flex-wrap: wrap; gap: 5px; text-transform: none; letter-spacing: 0; }
+.ud-dept button { --c: #1f4d3a; border: 1px solid var(--garis); background: #fff; border-radius: 99px; padding: 5px 10px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--tinta); }
+.ud-dept button.on { background: var(--c); border-color: var(--c); color: #fff; }
+.ud-btn { border: 1px solid var(--garis); background: #fff; color: var(--tinta); border-radius: 999px; padding: 9px 16px; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.ud-btn.utama { background: var(--hutan); border-color: var(--hutan); color: #f7f3ea; padding: 11px 16px; font-size: 14px; }
+.ud-btn.wa { background: #1f7a4a; border-color: #1f7a4a; color: #fff; }
+.ud-btn:disabled { opacity: .5; cursor: default; }
+.ud-galat { margin: 0; padding: 9px 12px; border-radius: 12px; background: #fdecea; color: #b42318; font-size: 13px; }
+.ud-hasil { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 16px; background: linear-gradient(150deg, #e6f3ea, #fff 80%); border: 1px dashed #9cc7ab; animation: ud-muncul .3s; }
+@keyframes ud-muncul { from { opacity: 0; transform: translateY(6px); } }
+.ud-hasil small { font-weight: 800; color: var(--hutan); }
+.ud-link { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; background: #fff; border: 1px solid var(--garis); border-radius: 10px; padding: 8px 10px; user-select: all; }
+.ud-hasil-aksi { display: flex; flex-wrap: wrap; gap: 6px; }
+.ud-daftar-kepala { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ud-segmen { display: inline-flex; background: #f3eee3; border-radius: 999px; padding: 3px; gap: 2px; }
+.ud-segmen button { border: 0; background: none; padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 12.5px; font-weight: 700; color: #6b6253; cursor: pointer; }
+.ud-segmen button.on { background: #fff; color: var(--hutan); box-shadow: 0 1px 4px rgba(28, 42, 34, .12); }
+.ud-segmen i { font-style: normal; font-size: 11px; color: var(--redup); margin-left: 3px; }
+.ud-kosong { text-align: center; padding: 30px 10px; color: var(--redup); font-size: 13.5px; }
+.ud-daftar { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ud-daftar li { --c: #1f4d3a; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--garis); border-left: 4px solid var(--c); border-radius: 16px; background: #fff; }
+.ud-daftar li.s-revoked, .ud-daftar li.s-expired { opacity: .55; }
+.ud-daftar li.s-used { background: #f6fbf7; }
+.ud-ikon { font-size: 20px; }
+.ud-isi { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ud-isi b { font-family: var(--serif); font-size: 15px; }
+.ud-isi small { font-size: 11.5px; color: var(--redup); }
+.ud-dept-teks { font-weight: 800; color: var(--c); }
+.ud-status { display: flex; flex-direction: column; align-items: flex-end; }
+.ud-lencana { font-size: 11.5px; font-weight: 800; padding: 2px 9px; border-radius: 99px; background: #f3eee3; color: #5b5242; }
+.s-pending .ud-lencana { background: #fdf3e2; color: #8a5a00; }
+.s-used .ud-lencana { background: #e6f3ea; color: var(--hutan); }
+.ud-status small { font-size: 11px; color: var(--redup); margin-top: 2px; }
+.ud-aksi { display: flex; gap: 4px; }
+.ud-aksi button, .ud-aksi a { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--garis); background: #fff; cursor: pointer; display: grid; place-items: center; text-decoration: none; font-size: 13px; color: var(--tinta); }
+.ud-aksi button:hover, .ud-aksi a:hover { background: #f6f1e6; }
+.ud-aksi .bahaya:hover { background: #fdecea; color: #b42318; }
+@media (max-width: 950px) { .ud-tata { grid-template-columns: 1fr; } .ud-buat { position: static; } }
+@media (max-width: 640px) { .ud { padding: 12px 12px 40px; } .ud-kepala h1 { font-size: 26px; } .ud-daftar li { flex-wrap: wrap; } }
 </style>
