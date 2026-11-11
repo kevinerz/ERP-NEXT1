@@ -31,6 +31,18 @@ export class HrisController {
     return this.hrisService.findAllKaryawan(query);
   }
 
+  // GET /api/hris/foto?ids=1,2,3 — foto karyawan untuk kartu direktori
+  @Get('foto')
+  foto(@Query('ids') ids: string) {
+    return this.hrisService.fotoKaryawan(String(ids || '').split(',').map(Number));
+  }
+
+  // GET /api/hris/karyawan/:id/aktivitas — ringkasan pekerjaan (tiket, WO, instalasi, rapat)
+  @Get('karyawan/:id/aktivitas')
+  aktivitas(@Param('id', ParseIntPipe) id: number) {
+    return this.hrisService.aktivitasKaryawan(id);
+  }
+
   // GET /api/hris/karyawan/:id
   @Get('karyawan/:id')
   findOne(@Param('id', ParseIntPipe) id: number) {

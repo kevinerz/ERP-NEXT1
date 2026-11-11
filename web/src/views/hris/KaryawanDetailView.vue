@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { confirmDialog } from '@/composables/useDialog'
 import { useRouter, useRoute } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
 import { fmtDate as formatDate } from '@/composables/useFormat'
+import api from '@/services/api'
+import { toast } from '@/composables/useDialog'
+import { infoDept, inisial, kelengkapan, masaKerjaTeks, hariMenuju, umur, tgl, nomorWa } from './hris-util'
 
 const router = useRouter()
 const route = useRoute()
@@ -39,6 +42,7 @@ onMounted(async () => {
     await hris.fetchOne(id)
   } catch { /* error ditampilkan lewat hris.error jika ada */ }
   finally { loaded.value = true }
+  muatAktivitas()
 })
 
 // cegah klik ganda selama request berjalan
@@ -224,490 +228,464 @@ async function handleToggleUserStatus() {
     actionError.value = e.response?.data?.message || 'Gagal'
   } finally { togglingUser.value = false }
 }
+
+// ─── Tampilan profil ──────────────────────────────────────────
+const k = computed(() => hris.current)
+const dept = computed(() => infoDept(k.value?.departemen))
+const lengkap = computed(() => (k.value ? kelengkapan(k.value) : { persen: 0, kurang: [] as string[] }))
+const tab = ref<string>(typeof route.query.tab === 'string' ? route.query.tab : 'profil')
+watch(tab, (t) => router.replace({ query: { ...route.query, tab: t === 'profil' ? undefined : t } }).catch(() => {}))
+const tampilRahasia = ref(false)
+const samar = (v?: string | null) => (!v ? '—' : tampilRahasia.value ? v : `${'•'.repeat(Math.max(0, v.length - 4))}${v.slice(-4)}`)
+const menuLain = ref(false)
+const ultahLagi = computed(() => hariMenuju(k.value?.tgl_lahir))
+async function salin(teks: string, label: string) {
+  try { await navigator.clipboard.writeText(teks); toast(`${label} disalin`) } catch { /* abaikan */ }
+}
+const JENIS_KELAMIN: Record<string, string> = { L: 'Laki-laki', P: 'Perempuan' }
+
+// ─── Aktivitas kerja ──────────────────────────────────────────
+interface Aktivitas {
+  tiket: { aktif: number; bulan_ini: number }; wo: { aktif: number; bulan_ini: number }; instalasi: { aktif: number; bulan_ini: number }
+  rapat_30h: number; tindak_terbuka: number
+  tiket_terbaru: { id_ticket: number; nomor_tiket: string; judul_tiket: string; status_tiket: string; updated_at: string }[]
+}
+const aktivitas = ref<Aktivitas | null>(null)
+async function muatAktivitas() {
+  try { const { data } = await api.get(`/hris/karyawan/${id}/aktivitas`); aktivitas.value = data.data } catch { /* opsional */ }
+}
+const modulLabel = (key: string) => ALL_MODULS.find((m) => m.key === key) ?? { key, label: key, icon: '•' }
 </script>
 
 <template>
-  <div class="page" v-if="hris.current">
-    <!-- Header -->
-    <div class="page-header">
-      <button class="btn-back" @click="router.push('/hris/karyawan')">← Daftar Karyawan</button>
-      <div class="header-right">
-        <button class="btn-secondary" @click="router.push(`/hris/karyawan/${id}/edit`)">Edit</button>
-        <button
-          :class="hris.current.status_aktif ? 'btn-danger' : 'btn-success'"
-          :disabled="togglingStatus"
-          @click="handleToggleStatus"
-        >
-          {{ togglingStatus ? 'Memproses...' : hris.current.status_aktif ? 'Nonaktifkan' : 'Aktifkan' }}
-        </button>
-        <button class="btn-danger" :disabled="deleting" @click="handleDelete">
-          {{ deleting ? 'Menghapus...' : 'Hapus Karyawan' }}
-        </button>
-      </div>
+  <div class="pf">
+    <div v-if="!hris.current && loaded" class="pf-hilang">
+      <div>🍂</div><b>Karyawan tidak ditemukan</b>
+      <button type="button" class="pf-btn" @click="router.push('/hris/karyawan')">← Kembali ke Buku Tim</button>
     </div>
+    <div v-else-if="!hris.current" class="pf-kerangka"></div>
 
-    <!-- Notifikasi -->
-    <div v-if="actionSuccess" class="alert-success">{{ actionSuccess }}</div>
-    <div v-if="actionError" class="alert-error">{{ actionError }}</div>
+    <template v-if="k">
+      <button type="button" class="pf-kembali" @click="router.push('/hris/karyawan')">← Buku Tim</button>
 
-    <!-- Info Karyawan -->
-    <div class="card">
-      <div class="card-header">
-        <img v-if="hris.current.foto_url" :src="hris.current.foto_url" alt="" class="avatar-photo" />
-        <div v-else class="avatar">{{ hris.current.nama_lengkap.charAt(0).toUpperCase() }}</div>
-        <div>
-          <h3>{{ hris.current.nama_lengkap }}</h3>
-          <p>{{ hris.current.jabatan }} · {{ hris.current.departemen }}</p>
-          <span :class="hris.current.status_aktif ? 'badge-aktif' : 'badge-nonaktif'">
-            {{ hris.current.status_aktif ? 'Aktif' : 'Nonaktif' }}
-          </span>
+      <!-- SAMPUL -->
+      <header class="pf-sampul" :class="{ mati: !k.status_aktif }" :style="{ '--c': dept.warna, '--l': dept.lembut }">
+        <div class="pf-foto">
+          <img v-if="k.foto_url" :src="k.foto_url" alt="" />
+          <span v-else>{{ inisial(k.nama_lengkap) }}</span>
+          <i v-if="k.status_aktif" class="pf-status" title="Aktif"></i>
         </div>
-      </div>
-
-      <div class="info-grid">
-        <div class="info-item">
-          <span class="label">NIP</span>
-          <span class="value mono">{{ hris.current.nip }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">No. HP</span>
-          <span class="value">{{ hris.current.no_hp || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">Email</span>
-          <span class="value">{{ hris.current.email || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">Tanggal Bergabung</span>
-          <span class="value">{{ formatDate(hris.current.tgl_bergabung) }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Data Pribadi -->
-    <div class="card">
-      <div class="section-header">
-        <h4>Data Pribadi</h4>
-      </div>
-      <div class="info-grid">
-        <div class="info-item">
-          <span class="label">Tempat, Tanggal Lahir</span>
-          <span class="value">{{ hris.current.tempat_lahir || '—' }}, {{ formatDate(hris.current.tgl_lahir) }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">Jenis Kelamin</span>
-          <span class="value">{{ hris.current.jenis_kelamin === 'L' ? 'Laki-laki' : hris.current.jenis_kelamin === 'P' ? 'Perempuan' : '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">Agama</span>
-          <span class="value">{{ hris.current.agama || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">Status Pernikahan</span>
-          <span class="value">{{ hris.current.status_pernikahan || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">No. KTP</span>
-          <span class="value mono">{{ hris.current.no_ktp || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">No. NPWP</span>
-          <span class="value mono">{{ hris.current.no_npwp || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">Pendidikan Terakhir</span>
-          <span class="value">{{ hris.current.pendidikan_terakhir || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">Alamat (sesuai KTP)</span>
-          <span class="value">{{ hris.current.alamat_ktp || '—' }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Kontak Darurat -->
-    <div class="card">
-      <div class="section-header">
-        <h4>Kontak Darurat</h4>
-      </div>
-      <div class="info-grid">
-        <div class="info-item">
-          <span class="label">Nama</span>
-          <span class="value">{{ hris.current.kontak_darurat_nama || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">No. HP</span>
-          <span class="value">{{ hris.current.kontak_darurat_hp || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">Hubungan</span>
-          <span class="value">{{ hris.current.kontak_darurat_hubungan || '—' }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Rekening Bank -->
-    <div class="card">
-      <div class="section-header">
-        <h4>Rekening Bank (Payroll)</h4>
-      </div>
-      <div class="info-grid">
-        <div class="info-item">
-          <span class="label">Nama Bank</span>
-          <span class="value">{{ hris.current.bank_nama || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">No. Rekening</span>
-          <span class="value mono">{{ hris.current.bank_no_rekening || '—' }}</span>
-        </div>
-        <div class="info-item">
-          <span class="label">Nama Pemilik Rekening</span>
-          <span class="value">{{ hris.current.bank_atas_nama || '—' }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Akun User -->
-    <div class="card">
-      <div class="section-header">
-        <h4>Akun Sistem</h4>
-        <button
-          v-if="!hris.current.user"
-          class="btn-primary"
-          @click="showCreateUser = true"
-        >
-          + Buat Akun
-        </button>
-      </div>
-
-      <!-- Belum punya akun -->
-      <div v-if="!hris.current.user" class="empty-user">
-        Karyawan ini belum memiliki akun untuk login ke ERP.
-      </div>
-
-      <!-- Sudah punya akun -->
-      <div v-else class="user-info">
-        <div class="info-grid">
-          <div class="info-item">
-            <span class="label">Username</span>
-            <span class="value mono">{{ hris.current.user.username }}</span>
+        <div class="pf-identitas">
+          <div class="pf-pil">
+            <span class="pf-dept">{{ dept.ikon }} {{ k.departemen }}</span>
+            <span v-if="!k.status_aktif" class="pf-tanda">Nonaktif</span>
+            <span v-if="ultahLagi === 0" class="pf-tanda ultah">🎂 Ulang tahun hari ini!</span>
           </div>
-          <div class="info-item">
-            <span class="label">Status Akun</span>
-            <span :class="hris.current.user.is_aktif ? 'badge-aktif' : 'badge-nonaktif'">
-              {{ hris.current.user.is_aktif ? 'Aktif' : 'Nonaktif' }}
-            </span>
-          </div>
-          <div class="info-item">
-            <span class="label">Role</span>
-            <span class="value">
-              {{ hris.current.user.user_roles.map(ur => ur.role.nama_role).join(', ') || '—' }}
-            </span>
-          </div>
-          <div class="info-item">
-            <span class="label">Akses Modul</span>
-            <span class="value">
-              <span v-if="!hris.current.user.modul_akses?.length" class="badge-admin">⭐ Semua Modul</span>
-              <span v-else>{{ hris.current.user.modul_akses.length }} modul</span>
-            </span>
-          </div>
-          <div class="info-item">
-            <span class="label">Login Terakhir</span>
-            <span class="value">{{ formatDate(hris.current.user.last_login) }}</span>
+          <h1>{{ k.nama_lengkap }}</h1>
+          <p class="pf-jabatan">{{ k.jabatan }}</p>
+          <div class="pf-fakta">
+            <button type="button" title="Salin NIP" @click="salin(k.nip, 'NIP')"><span>NIP</span><code>{{ k.nip }}</code></button>
+            <span><span>Masa kerja</span>{{ masaKerjaTeks(k.tgl_bergabung) }}</span>
+            <span v-if="umur(k.tgl_lahir) != null"><span>Usia</span>{{ umur(k.tgl_lahir) }} tahun</span>
+            <span v-if="k.user?.last_login"><span>Login terakhir</span>{{ formatDate(k.user.last_login) }}</span>
           </div>
         </div>
-        <div class="user-actions">
-          <button class="btn-secondary" @click="openEditRoles">Edit Role</button>
-          <button class="btn-secondary" @click="openEditModul">Edit Akses Modul</button>
-          <button class="btn-secondary" @click="showResetPw = true">Reset Password</button>
-          <button
-            :class="hris.current.user.is_aktif ? 'btn-danger' : 'btn-success'"
-            :disabled="togglingUser"
-            @click="handleToggleUserStatus"
-          >
-            {{ togglingUser ? 'Memproses...' : hris.current.user.is_aktif ? 'Nonaktifkan Akun' : 'Aktifkan Akun' }}
-          </button>
+        <div class="pf-aksi">
+          <div class="pf-kontak">
+            <a v-if="k.no_hp" :href="`https://wa.me/${nomorWa(k.no_hp)}`" target="_blank" rel="noopener" title="WhatsApp">💬</a>
+            <a v-if="k.no_hp" :href="`tel:${k.no_hp}`" title="Telepon">📞</a>
+            <a v-if="k.email" :href="`mailto:${k.email}`" title="Email">✉️</a>
+          </div>
+          <button type="button" class="pf-btn utama" @click="router.push(`/hris/karyawan/${id}/edit`)">✏️ Ubah profil</button>
+          <div class="pf-menu">
+            <button type="button" class="pf-btn" aria-label="Aksi lain" @click="menuLain = !menuLain">⋯</button>
+            <div v-if="menuLain" class="pf-menu-isi" @click="menuLain = false">
+              <button type="button" :disabled="togglingStatus" @click="handleToggleStatus">{{ k.status_aktif ? '⏸️ Nonaktifkan karyawan' : '▶️ Aktifkan karyawan' }}</button>
+              <button type="button" class="bahaya" :disabled="deleting" @click="handleDelete">🗑️ Hapus karyawan</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div v-if="actionSuccess" class="pf-pesan ok">✓ {{ actionSuccess }}</div>
+      <div v-if="actionError && !showCreateUser && !showResetPw && !showEditRoles && !showEditModul" class="pf-pesan gagal">{{ actionError }}</div>
+
+      <div class="pf-tata">
+        <!-- KIRI -->
+        <aside class="pf-kiri">
+          <section class="pf-kartu">
+            <h4>Kelengkapan profil</h4>
+            <div class="pf-lengkap">
+              <span class="pf-cincin" :style="{ '--p': lengkap.persen }"><i>{{ lengkap.persen }}<small>%</small></i></span>
+              <div>
+                <b>{{ lengkap.persen === 100 ? 'Lengkap 🎉' : `${lengkap.kurang.length} data belum diisi` }}</b>
+                <small v-if="lengkap.kurang.length">{{ lengkap.kurang.join(', ') }}</small>
+              </div>
+            </div>
+            <button v-if="lengkap.kurang.length" type="button" class="pf-btn penuh" @click="router.push(`/hris/karyawan/${id}/edit`)">Lengkapi sekarang</button>
+          </section>
+
+          <section class="pf-kartu">
+            <h4>Sekilas</h4>
+            <dl class="pf-sekilas">
+              <dt>📅 Bergabung</dt><dd>{{ tgl(k.tgl_bergabung) }}</dd>
+              <dt>🎂 Lahir</dt><dd>{{ k.tempat_lahir || '—' }}{{ k.tgl_lahir ? `, ${tgl(k.tgl_lahir)}` : '' }}<small v-if="ultahLagi != null && ultahLagi > 0 && ultahLagi <= 60"> · ulang tahun {{ ultahLagi }} hari lagi</small></dd>
+              <dt>📱 HP</dt><dd><a v-if="k.no_hp" :href="`tel:${k.no_hp}`">{{ k.no_hp }}</a><template v-else>—</template></dd>
+              <dt>✉️ Email</dt><dd><a v-if="k.email" :href="`mailto:${k.email}`">{{ k.email }}</a><template v-else>—</template></dd>
+              <dt>🔐 Akun ERP</dt><dd><template v-if="k.user"><code>{{ k.user.username }}</code> <small :class="k.user.is_aktif ? 'hijau' : 'merah'">{{ k.user.is_aktif ? 'aktif' : 'nonaktif' }}</small></template><template v-else>Belum ada</template></dd>
+            </dl>
+          </section>
+
+          <section v-if="k.kontak_darurat_nama || k.kontak_darurat_hp" class="pf-kartu darurat">
+            <h4>🚑 Kontak darurat</h4>
+            <b>{{ k.kontak_darurat_nama || '—' }}</b>
+            <small>{{ k.kontak_darurat_hubungan || 'Hubungan belum diisi' }}</small>
+            <a v-if="k.kontak_darurat_hp" class="pf-btn penuh" :href="`tel:${k.kontak_darurat_hp}`">📞 {{ k.kontak_darurat_hp }}</a>
+          </section>
+        </aside>
+
+        <!-- KANAN -->
+        <div class="pf-kanan">
+          <nav class="pf-tab" role="tablist">
+            <button type="button" role="tab" :class="{ on: tab === 'profil' }" @click="tab = 'profil'">Profil</button>
+            <button type="button" role="tab" :class="{ on: tab === 'kerja' }" @click="tab = 'kerja'">Pekerjaan</button>
+            <button type="button" role="tab" :class="{ on: tab === 'akun' }" @click="tab = 'akun'">Akun &amp; akses <i v-if="!k.user" class="pf-titik"></i></button>
+          </nav>
+
+          <!-- PROFIL -->
+          <div v-if="tab === 'profil'" class="pf-isi">
+            <section class="pf-kartu">
+              <div class="pf-kepala"><h3>Data pribadi</h3>
+                <button type="button" class="pf-mata" @click="tampilRahasia = !tampilRahasia">{{ tampilRahasia ? '🙈 Sembunyikan' : '👁️ Tampilkan' }} nomor identitas</button>
+              </div>
+              <dl class="pf-data">
+                <div><dt>Jenis kelamin</dt><dd>{{ JENIS_KELAMIN[k.jenis_kelamin ?? ''] ?? '—' }}</dd></div>
+                <div><dt>Agama</dt><dd>{{ k.agama || '—' }}</dd></div>
+                <div><dt>Status pernikahan</dt><dd>{{ k.status_pernikahan || '—' }}</dd></div>
+                <div><dt>Pendidikan terakhir</dt><dd>{{ k.pendidikan_terakhir || '—' }}</dd></div>
+                <div><dt>No. KTP</dt><dd class="mono">{{ samar(k.no_ktp) }}</dd></div>
+                <div><dt>NPWP</dt><dd class="mono">{{ samar(k.no_npwp) }}</dd></div>
+                <div class="lebar"><dt>Alamat sesuai KTP</dt><dd>{{ k.alamat_ktp || '—' }}</dd></div>
+              </dl>
+            </section>
+
+            <section class="pf-kartu">
+              <div class="pf-kepala"><h3>Rekening payroll</h3></div>
+              <div v-if="k.bank_nama || k.bank_no_rekening" class="pf-bank">
+                <div class="pf-bank-kartu">
+                  <small>{{ k.bank_nama || 'Bank' }}</small>
+                  <b class="mono">{{ samar(k.bank_no_rekening) }}</b>
+                  <span>a.n. {{ k.bank_atas_nama || k.nama_lengkap }}</span>
+                </div>
+                <button v-if="k.bank_no_rekening && tampilRahasia" type="button" class="pf-btn" @click="salin(k.bank_no_rekening!, 'Nomor rekening')">📋 Salin nomor</button>
+              </div>
+              <p v-else class="pf-redup">Rekening belum diisi.</p>
+            </section>
+
+            <section class="pf-kartu">
+              <div class="pf-kepala"><h3>Kontak darurat</h3></div>
+              <dl class="pf-data">
+                <div><dt>Nama</dt><dd>{{ k.kontak_darurat_nama || '—' }}</dd></div>
+                <div><dt>Hubungan</dt><dd>{{ k.kontak_darurat_hubungan || '—' }}</dd></div>
+                <div><dt>No. HP</dt><dd>{{ k.kontak_darurat_hp || '—' }}</dd></div>
+              </dl>
+            </section>
+          </div>
+
+          <!-- PEKERJAAN -->
+          <div v-else-if="tab === 'kerja'" class="pf-isi">
+            <section class="pf-kartu">
+              <div class="pf-kepala"><h3>Beban kerja saat ini</h3><small class="pf-redup">angka "30 hari" = dibuat dalam 30 hari terakhir</small></div>
+              <div v-if="!aktivitas" class="pf-redup">Memuat…</div>
+              <div v-else class="pf-kerja">
+                <div><span>🎫</span><b>{{ aktivitas.tiket.aktif }}</b><small>Tiket gangguan aktif</small><em>{{ aktivitas.tiket.bulan_ini }} dalam 30 hari</em></div>
+                <div><span>🧰</span><b>{{ aktivitas.wo.aktif }}</b><small>Work order berjalan</small><em>{{ aktivitas.wo.bulan_ini }} dalam 30 hari</em></div>
+                <div><span>🛠️</span><b>{{ aktivitas.instalasi.aktif }}</b><small>Pemasangan berjalan</small><em>{{ aktivitas.instalasi.bulan_ini }} dalam 30 hari</em></div>
+                <div><span>📹</span><b>{{ aktivitas.rapat_30h }}</b><small>Rapat dihadiri</small><em>30 hari terakhir</em></div>
+                <div><span>☑️</span><b>{{ aktivitas.tindak_terbuka }}</b><small>Tugas rapat terbuka</small><em>sebagai PIC</em></div>
+              </div>
+            </section>
+            <section class="pf-kartu">
+              <div class="pf-kepala"><h3>Tiket terakhir sebagai PIC</h3></div>
+              <p v-if="aktivitas && !aktivitas.tiket_terbaru.length" class="pf-redup">Belum pernah menjadi PIC tiket gangguan.</p>
+              <button v-for="t in aktivitas?.tiket_terbaru ?? []" :key="t.id_ticket" type="button" class="pf-tiket" @click="router.push(`/operations/${t.id_ticket}`)">
+                <code>{{ t.nomor_tiket }}</code><span>{{ t.judul_tiket }}</span><em>{{ t.status_tiket.replace('_', ' ') }}</em>
+              </button>
+            </section>
+          </div>
+
+          <!-- AKUN -->
+          <div v-else class="pf-isi">
+            <section v-if="!k.user" class="pf-kartu pf-tanpa-akun">
+              <div>🔐</div>
+              <h3>Belum punya akun ERP</h3>
+              <p>Buat akun supaya {{ k.nama_lengkap.split(' ')[0] }} bisa login, menerima tiket, undangan rapat, dan notifikasi.</p>
+              <button type="button" class="pf-btn utama" @click="showCreateUser = true">＋ Buat akun</button>
+            </section>
+            <template v-else>
+              <section class="pf-kartu">
+                <div class="pf-kepala"><h3>Akun login</h3>
+                  <span class="pf-status-akun" :class="k.user.is_aktif ? 'on' : 'off'">{{ k.user.is_aktif ? '● Aktif' : '● Nonaktif' }}</span>
+                </div>
+                <dl class="pf-data">
+                  <div><dt>Username</dt><dd class="mono">{{ k.user.username }}</dd></div>
+                  <div><dt>Login terakhir</dt><dd>{{ formatDate(k.user.last_login) }}</dd></div>
+                  <div class="lebar"><dt>Role</dt><dd><span v-for="ur in k.user.user_roles" :key="ur.role.id_role" class="pf-chip">{{ ur.role.nama_role }}</span><template v-if="!k.user.user_roles.length">—</template></dd></div>
+                </dl>
+                <div class="pf-tombol-baris">
+                  <button type="button" class="pf-btn" @click="openEditRoles">🎭 Ubah role</button>
+                  <button type="button" class="pf-btn" @click="showResetPw = true">🔑 Reset password</button>
+                  <button type="button" class="pf-btn" :class="k.user.is_aktif ? 'bahaya' : ''" :disabled="togglingUser" @click="handleToggleUserStatus">
+                    {{ togglingUser ? 'Memproses…' : k.user.is_aktif ? '⏸️ Nonaktifkan akun' : '▶️ Aktifkan akun' }}
+                  </button>
+                </div>
+              </section>
+              <section class="pf-kartu">
+                <div class="pf-kepala"><h3>Akses modul</h3><button type="button" class="pf-btn" @click="openEditModul">Atur akses</button></div>
+                <p v-if="!k.user.modul_akses?.length" class="pf-semua">⭐ Administrator — bisa membuka semua modul</p>
+                <div v-else class="pf-modul">
+                  <span v-for="m in k.user.modul_akses" :key="m">{{ modulLabel(m).icon }} {{ modulLabel(m).label }}</span>
+                </div>
+              </section>
+            </template>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Modal: Buat Akun -->
-    <div v-if="showCreateUser" class="modal-overlay" @click.self="showCreateUser = false">
-      <div class="modal">
-        <h3>Buat Akun User</h3>
-        <div class="field">
-          <label>Username</label>
-          <input v-model="userForm.username" type="text" placeholder="username" />
+      <!-- Modal: Buat Akun -->
+      <div v-if="showCreateUser" class="pf-lapis" @click.self="showCreateUser = false">
+        <div v-focus-trap class="pf-modal">
+          <h3>Buat akun ERP</h3>
+          <p class="pf-redup">Untuk {{ k.nama_lengkap }}</p>
+          <label class="pf-field">Username<input v-model="userForm.username" type="text" placeholder="username" autocomplete="off" /></label>
+          <label class="pf-field">Password<input v-model="userForm.password" type="password" placeholder="Min. 8 karakter" autocomplete="new-password" /></label>
+          <div class="pf-field">Role
+            <div class="pf-role">
+              <label v-for="r in hris.roles" :key="r.id_role" :class="{ on: userForm.role_ids.includes(r.id_role) }">
+                <input v-model="userForm.role_ids" type="checkbox" :value="r.id_role" />
+                <b>{{ r.nama_role }}</b><small>{{ r.deskripsi }}</small>
+              </label>
+            </div>
+          </div>
+          <p v-if="actionError" class="pf-galat">{{ actionError }}</p>
+          <div class="pf-modal-kaki">
+            <button type="button" class="pf-btn" @click="showCreateUser = false">Batal</button>
+            <button type="button" class="pf-btn utama" :disabled="actionLoading" @click="handleCreateUser">{{ actionLoading ? 'Menyimpan…' : 'Buat akun' }}</button>
+          </div>
         </div>
-        <div class="field">
-          <label>Password</label>
-          <input v-model="userForm.password" type="password" placeholder="Min. 8 karakter" />
+      </div>
+
+      <!-- Modal: Reset Password -->
+      <div v-if="showResetPw" class="pf-lapis" @click.self="showResetPw = false">
+        <div v-focus-trap class="pf-modal kecil">
+          <h3>Reset password</h3>
+          <p class="pf-redup">Akun <b>{{ k.user?.username }}</b></p>
+          <label class="pf-field">Password baru<input v-model="newPassword" type="password" placeholder="Min. 8 karakter" autocomplete="new-password" /></label>
+          <p v-if="actionError" class="pf-galat">{{ actionError }}</p>
+          <div class="pf-modal-kaki">
+            <button type="button" class="pf-btn" @click="showResetPw = false">Batal</button>
+            <button type="button" class="pf-btn utama" :disabled="actionLoading" @click="handleResetPw">{{ actionLoading ? 'Menyimpan…' : 'Reset' }}</button>
+          </div>
         </div>
-        <div class="field">
-          <label>Role (pilih satu atau lebih)</label>
-          <div class="role-list">
-            <label v-for="r in hris.roles" :key="r.id_role" class="role-item">
-              <input
-                type="checkbox"
-                :value="r.id_role"
-                v-model="userForm.role_ids"
-              />
-              {{ r.nama_role }}
-              <span class="role-desc">{{ r.deskripsi }}</span>
+      </div>
+
+      <!-- Modal: Edit Role -->
+      <div v-if="showEditRoles" class="pf-lapis" @click.self="showEditRoles = false">
+        <div v-focus-trap class="pf-modal">
+          <h3>Ubah role</h3>
+          <p class="pf-redup">Akun <b>{{ k.user?.username }}</b></p>
+          <div class="pf-role">
+            <label v-for="r in hris.roles" :key="r.id_role" :class="{ on: editRoleIds.includes(r.id_role) }">
+              <input v-model="editRoleIds" type="checkbox" :value="r.id_role" />
+              <b>{{ r.nama_role }}</b><small>{{ r.deskripsi }}</small>
             </label>
           </div>
-        </div>
-        <div v-if="actionError" class="error-msg">{{ actionError }}</div>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showCreateUser = false">Batal</button>
-          <button class="btn-submit" @click="handleCreateUser" :disabled="actionLoading">
-            {{ actionLoading ? 'Menyimpan...' : 'Buat Akun' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal: Reset Password -->
-    <div v-if="showResetPw" class="modal-overlay" @click.self="showResetPw = false">
-      <div class="modal">
-        <h3>Reset Password</h3>
-        <div class="field">
-          <label>Password Baru</label>
-          <input v-model="newPassword" type="password" placeholder="Min. 8 karakter" />
-        </div>
-        <div v-if="actionError" class="error-msg">{{ actionError }}</div>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showResetPw = false">Batal</button>
-          <button class="btn-submit" @click="handleResetPw" :disabled="actionLoading">
-            {{ actionLoading ? 'Menyimpan...' : 'Reset' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal: Edit Role -->
-    <div v-if="showEditRoles" class="modal-overlay" @click.self="showEditRoles = false">
-      <div class="modal">
-        <h3>Edit Role Akun</h3>
-        <p class="modal-sub">Username: <strong>{{ hris.current.user?.username }}</strong></p>
-        <div class="field">
-          <label>Role (pilih satu atau lebih)</label>
-          <div class="role-list">
-            <label v-for="r in hris.roles" :key="r.id_role" class="role-item">
-              <input type="checkbox" :value="r.id_role" v-model="editRoleIds" />
-              {{ r.nama_role }}
-              <span class="role-desc">{{ r.deskripsi }}</span>
-            </label>
+          <p v-if="actionError" class="pf-galat">{{ actionError }}</p>
+          <div class="pf-modal-kaki">
+            <button type="button" class="pf-btn" @click="showEditRoles = false">Batal</button>
+            <button type="button" class="pf-btn utama" :disabled="actionLoading" @click="handleEditRoles">{{ actionLoading ? 'Menyimpan…' : 'Simpan role' }}</button>
           </div>
         </div>
-        <div v-if="actionError" class="error-msg">{{ actionError }}</div>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showEditRoles = false">Batal</button>
-          <button class="btn-submit" @click="handleEditRoles" :disabled="actionLoading">
-            {{ actionLoading ? 'Menyimpan...' : 'Simpan Role' }}
-          </button>
-        </div>
       </div>
-    </div>
 
-    <!-- Modal: Edit Akses Modul -->
-    <div v-if="showEditModul" class="modal-overlay" @click.self="showEditModul = false">
-      <div class="modal modal-wide">
-        <h3>Edit Akses Modul</h3>
-        <p class="modal-sub">Username: <strong>{{ hris.current?.user?.username }}</strong></p>
-
-        <!-- Toggle Semua Modul (Administrator) -->
-        <label class="modul-admin-toggle" :class="{ active: semuaModul }">
-          <input type="checkbox" v-model="semuaModul" @change="onSemuaModulChange" />
-          <span>⭐ Administrator — Semua Modul (tidak dibatasi)</span>
-        </label>
-
-        <!-- Preset per jabatan -->
-        <div class="preset-section" v-if="!semuaModul">
-          <span class="preset-label">Preset jabatan:</span>
-          <div class="preset-list">
-            <button
-              v-for="p in PRESETS" :key="p.key"
-              class="btn-preset"
-              :class="{ active: editModulAkses.join(',') === p.moduls.join(',') }"
-              @click="applyPreset(p.moduls)"
-              type="button"
-            >{{ p.icon }} {{ p.label }}</button>
+      <!-- Modal: Akses Modul -->
+      <div v-if="showEditModul" class="pf-lapis" @click.self="showEditModul = false">
+        <div v-focus-trap class="pf-modal lebar">
+          <h3>Atur akses modul</h3>
+          <p class="pf-redup">Akun <b>{{ k.user?.username }}</b></p>
+          <label class="pf-admin" :class="{ on: semuaModul }">
+            <input v-model="semuaModul" type="checkbox" @change="onSemuaModulChange" />
+            <span>⭐ Administrator — semua modul, tidak dibatasi</span>
+          </label>
+          <template v-if="!semuaModul">
+            <div class="pf-preset">
+              <small>Preset jabatan:</small>
+              <button v-for="p in PRESETS" :key="p.key" type="button" :class="{ on: editModulAkses.join(',') === p.moduls.join(',') }" @click="applyPreset(p.moduls)">{{ p.icon }} {{ p.label }}</button>
+            </div>
+            <small class="pf-redup">{{ editModulAkses.length }} modul dipilih</small>
+            <div class="pf-modul-pilih">
+              <label v-for="m in ALL_MODULS" :key="m.key" :class="{ on: editModulAkses.includes(m.key) }">
+                <input v-model="editModulAkses" type="checkbox" :value="m.key" />
+                <span>{{ m.icon }}</span>{{ m.label }}
+              </label>
+            </div>
+          </template>
+          <p v-if="actionError" class="pf-galat">{{ actionError }}</p>
+          <div class="pf-modal-kaki">
+            <button type="button" class="pf-btn" @click="showEditModul = false">Batal</button>
+            <button type="button" class="pf-btn utama" :disabled="actionLoading" @click="handleEditModul">{{ actionLoading ? 'Menyimpan…' : 'Simpan akses' }}</button>
           </div>
         </div>
-
-        <!-- Daftar modul individual -->
-        <div class="field" v-if="!semuaModul">
-          <label>Modul yang dapat diakses ({{ editModulAkses.length }} dipilih):</label>
-          <div class="modul-grid">
-            <label v-for="m in ALL_MODULS" :key="m.key" class="modul-item"
-              :class="{ checked: editModulAkses.includes(m.key) }">
-              <input type="checkbox" :value="m.key" v-model="editModulAkses" />
-              <span class="modul-icon">{{ m.icon }}</span>
-              <span class="modul-name">{{ m.label }}</span>
-            </label>
-          </div>
-        </div>
-
-        <div v-if="actionError" class="error-msg">{{ actionError }}</div>
-        <div class="modal-actions">
-          <button class="btn-cancel" @click="showEditModul = false">Batal</button>
-          <button class="btn-submit" @click="handleEditModul" :disabled="actionLoading">
-            {{ actionLoading ? 'Menyimpan...' : 'Simpan Akses' }}
-          </button>
-        </div>
       </div>
-    </div>
-  </div>
-
-  <div v-else-if="hris.loading || !loaded" class="loading-page">Memuat data karyawan...</div>
-  <div v-else class="page">
-    <button type="button" class="btn-back" @click="router.push('/hris/karyawan')">← Daftar Karyawan</button>
-    <div class="empty-state"><div class="empty-title">{{ hris.error || 'Data karyawan tidak ditemukan.' }}</div></div>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.page { max-width: 900px; }
+.pf { --kertas: #fbf8f2; --tinta: #1c2a22; --hutan: #1f4d3a; --terakota: #c2552d; --garis: #e9e2d4; --redup: #8a8170;
+  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  background: var(--kertas); padding: 18px 24px 70px; min-height: 100%; box-sizing: border-box; color: var(--tinta); }
+.pf-redup { color: var(--redup); font-size: 13px; margin: 0; }
+.mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+code { font-size: 12px; background: #f3eee3; padding: 1px 6px; border-radius: 5px; color: #5b5242; }
+.hijau { color: #2f7a4d; } .merah { color: #b42318; }
+.pf-kembali { border: 0; background: none; color: var(--hutan); font-weight: 800; font-size: 13px; cursor: pointer; padding: 2px 0 10px; }
+.pf-kerangka { height: 220px; border-radius: 26px; background: linear-gradient(90deg, #fff, #f3eee3, #fff); background-size: 200% 100%; animation: pf-kilau 1.2s infinite; }
+@keyframes pf-kilau { to { background-position: -200% 0; } }
+.pf-hilang { text-align: center; padding: 60px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.pf-hilang div { font-size: 44px; } .pf-hilang b { font-family: var(--serif); font-size: 20px; }
 
-.page-header { align-items: center; }
-.btn-back {
-  background: none; border: none; color: #3b82f6;
-  font-size: 14px; font-weight: 600; cursor: pointer; padding: 0;
-  align-self: flex-start;
-}
-.header-right { display: flex; gap: 10px; flex-wrap: wrap; }
+/* Sampul */
+.pf-sampul { --c: #1f4d3a; --l: #e6f3ea; position: relative; display: flex; flex-wrap: wrap; gap: 22px; align-items: center; padding: 24px 26px; border-radius: 26px; margin-bottom: 14px; border: 1px solid var(--garis);
+  background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--c) 14%, transparent), transparent 55%), linear-gradient(120deg, var(--l), #fff 70%); }
+.pf-sampul.mati { filter: grayscale(.7); }
+.pf-foto { position: relative; width: 116px; height: 116px; border-radius: 32px; background: var(--c); color: #fff; display: grid; place-items: center; font-family: var(--serif); font-size: 42px; font-weight: 700; overflow: visible; flex-shrink: 0; box-shadow: 0 16px 30px -16px var(--c); transform: rotate(-3deg); }
+.pf-foto img { width: 100%; height: 100%; object-fit: cover; border-radius: 32px; }
+.pf-foto span { transform: rotate(3deg); }
+.pf-status { position: absolute; right: -4px; bottom: -4px; width: 20px; height: 20px; border-radius: 50%; background: #2f7a4d; border: 4px solid #fff; }
+.pf-identitas { flex: 1; min-width: 240px; }
+.pf-pil { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.pf-dept { font-size: 11.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: var(--c); }
+.pf-tanda { font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 99px; background: #eee9df; color: #6b6253; }
+.pf-tanda.ultah { background: #fdf0e3; color: var(--terakota); }
+.pf-sampul h1 { margin: 0; font-family: var(--serif); font-size: 34px; font-weight: 700; letter-spacing: -.5px; line-height: 1.1; color: var(--tinta); }
+.pf-jabatan { margin: 4px 0 12px; font-size: 15px; color: #5b5242; font-style: italic; font-family: var(--serif); }
+.pf-fakta { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.pf-fakta > * { display: flex; flex-direction: column; font-size: 13.5px; font-weight: 700; border: 0; background: none; padding: 0; text-align: left; font-family: inherit; color: var(--tinta); }
+.pf-fakta button { cursor: pointer; }
+.pf-fakta > * > span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--redup); font-weight: 800; }
+.pf-aksi { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.pf-kontak { display: flex; gap: 6px; }
+.pf-kontak a { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: #fff; border: 1px solid var(--garis); text-decoration: none; font-size: 16px; transition: transform .15s; }
+.pf-kontak a:hover { transform: translateY(-2px); background: var(--l); }
+.pf-aksi > .pf-btn, .pf-menu { align-self: stretch; }
+.pf-aksi { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.pf-btn { border: 1px solid var(--garis); background: #fff; color: var(--tinta); border-radius: 999px; padding: 8px 15px; font: inherit; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background .15s, transform .15s; }
+.pf-btn:hover:not(:disabled) { background: #f6f1e6; }
+.pf-btn:disabled { opacity: .5; cursor: default; }
+.pf-btn.utama { background: var(--hutan); border-color: var(--hutan); color: #f7f3ea; }
+.pf-btn.utama:hover:not(:disabled) { background: #173d2d; }
+.pf-btn.bahaya { color: #b42318; border-color: #f2c4bd; }
+.pf-btn.penuh { width: 100%; }
+.pf-menu { position: relative; }
+.pf-menu-isi { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; background: #fff; border: 1px solid var(--garis); border-radius: 14px; box-shadow: 0 18px 40px -16px rgba(28, 42, 34, .4); padding: 6px; min-width: 220px; display: flex; flex-direction: column; }
+.pf-menu-isi button { border: 0; background: none; text-align: left; padding: 9px 12px; border-radius: 9px; font: inherit; font-size: 13px; cursor: pointer; color: var(--tinta); }
+.pf-menu-isi button:hover { background: #f6f1e6; }
+.pf-menu-isi button.bahaya { color: #b42318; }
+.pf-pesan { padding: 10px 14px; border-radius: 14px; font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+.pf-pesan.ok { background: #e6f3ea; color: #1f4d3a; } .pf-pesan.gagal { background: #fdecea; color: #b42318; }
 
-.alert-success {
-  background: #f0fdf4; border: 1px solid #86efac;
-  color: #15803d; border-radius: 8px;
-  padding: 10px 16px; font-size: 14px; margin-bottom: 16px;
-}
-.alert-error {
-  background: #fef2f2; border: 1px solid #fecaca;
-  color: #dc2626; border-radius: 8px;
-  padding: 10px 16px; font-size: 14px; margin-bottom: 16px;
-}
+/* Tata letak */
+.pf-tata { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
+.pf-kiri { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 12px; }
+.pf-kanan { min-width: 0; }
+.pf-kartu { background: #fff; border: 1px solid var(--garis); border-radius: 20px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.pf-kartu h4 { margin: 0; font-family: var(--serif); font-size: 16px; }
+.pf-kartu h3 { margin: 0; font-family: var(--serif); font-size: 19px; font-weight: 700; }
+.pf-kepala { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pf-lengkap { display: flex; gap: 12px; align-items: center; }
+.pf-lengkap div { display: flex; flex-direction: column; min-width: 0; }
+.pf-lengkap b { font-size: 13.5px; }
+.pf-lengkap small { font-size: 11.5px; color: var(--redup); line-height: 1.4; }
+.pf-cincin { --p: 50; width: 62px; height: 62px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; background: conic-gradient(var(--terakota) calc(var(--p) * 1%), #f0eadd 0); }
+.pf-cincin i { width: 48px; height: 48px; border-radius: 50%; background: #fff; display: grid; place-items: center; font-style: normal; font-family: var(--serif); font-size: 17px; font-weight: 700; }
+.pf-cincin small { font-size: 10px; }
+.pf-sekilas { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; margin: 0; font-size: 13px; }
+.pf-sekilas dt { color: var(--redup); font-weight: 700; white-space: nowrap; }
+.pf-sekilas dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.pf-sekilas dd small { color: var(--terakota); font-weight: 700; }
+.pf-sekilas a { color: var(--hutan); }
+.pf-kartu.darurat { background: linear-gradient(160deg, #fdf0e3, #fff 70%); border-color: #f2d6bf; gap: 4px; }
+.pf-kartu.darurat b { font-family: var(--serif); font-size: 16px; }
+.pf-kartu.darurat small { color: var(--redup); font-size: 12px; margin-bottom: 6px; }
 
-.card {
-  background: #fff; border-radius: 12px;
-  padding: 24px 28px; margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-}
-
-.card-header {
-  display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
-}
-.avatar-photo {
-  width: 56px; height: 56px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-.avatar {
-  width: 56px; height: 56px;
-  background: linear-gradient(135deg, #1e40af, #3b82f6);
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 22px; font-weight: 700;
-  flex-shrink: 0;
-}
-.card-header h3 { margin: 0; font-size: 18px; color: #0f172a; }
-.card-header p { margin: 2px 0 6px; font-size: 14px; color: #64748b; }
-
-.section-header {
-  display: flex; justify-content: space-between;
-  align-items: center; margin-bottom: 16px;
-}
-.section-header h4 { margin: 0; font-size: 16px; color: #0f172a; }
-
-.info-grid {
-  display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;
-}
-.info-item { display: flex; flex-direction: column; gap: 3px; }
-.label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; }
-.value { font-size: 14px; color: var(--text-1); overflow-wrap: anywhere; }
-.mono { font-family: monospace; }
-
-.badge-aktif { background: #dcfce7; color: #15803d; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-.badge-nonaktif { background: #fee2e2; color: #dc2626; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
-
-.user-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-.empty-user { color: #94a3b8; font-size: 14px; padding: 16px 0; }
-
-.btn-primary { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
-.btn-secondary { background: #f1f5f9; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #1e40af; cursor: pointer; }
-.btn-danger { background: #fee2e2; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #dc2626; cursor: pointer; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-success { background: #dcfce7; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: #15803d; cursor: pointer; }
+/* Tab */
+.pf-tab { display: flex; gap: 22px; border-bottom: 1px solid var(--garis); margin-bottom: 14px; }
+.pf-tab button { border: 0; background: none; padding: 8px 2px 10px; font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--redup); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -1px; position: relative; }
+.pf-tab button.on { color: var(--tinta); border-color: var(--terakota); }
+.pf-titik { position: absolute; top: 6px; right: -10px; width: 8px; height: 8px; border-radius: 50%; background: var(--terakota); }
+.pf-isi { display: flex; flex-direction: column; gap: 14px; animation: pf-muncul .25s both; }
+@keyframes pf-muncul { from { opacity: 0; transform: translateY(6px); } }
+.pf-mata { border: 0; background: none; color: var(--hutan); font-weight: 700; font-size: 12.5px; cursor: pointer; }
+.pf-data { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin: 0; }
+.pf-data > div { display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; border-bottom: 1px dashed var(--garis); }
+.pf-data .lebar { grid-column: 1 / -1; }
+.pf-data dt { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--redup); font-weight: 800; }
+.pf-data dd { margin: 0; font-size: 14px; }
+.pf-bank { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.pf-bank-kartu { width: 300px; max-width: 100%; aspect-ratio: 1.7; border-radius: 18px; padding: 16px 18px; color: #f7f3ea; display: flex; flex-direction: column; justify-content: space-between;
+  background: radial-gradient(circle at 90% 10%, rgba(255, 255, 255, .18), transparent 40%), linear-gradient(135deg, #1f4d3a, #2f6b4f 60%, #c2552d 140%); box-shadow: 0 16px 30px -18px #1f4d3a; }
+.pf-bank-kartu small { font-weight: 800; letter-spacing: 1px; text-transform: uppercase; font-size: 11.5px; opacity: .85; }
+.pf-bank-kartu b { font-size: 20px; letter-spacing: 2px; }
+.pf-bank-kartu span { font-size: 12.5px; opacity: .9; }
+.pf-kerja { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.pf-kerja div { position: relative; border: 1px solid var(--garis); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; background: linear-gradient(160deg, #fbf8f2, #fff); }
+.pf-kerja span { position: absolute; right: 10px; top: 8px; font-size: 20px; }
+.pf-kerja b { font-family: var(--serif); font-size: 30px; color: var(--hutan); line-height: 1.1; }
+.pf-kerja small { font-size: 12.5px; font-weight: 700; }
+.pf-kerja em { font-style: normal; font-size: 11px; color: var(--redup); }
+.pf-tiket { display: flex; align-items: center; gap: 10px; border: 0; border-bottom: 1px dashed var(--garis); background: none; padding: 9px 2px; font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.pf-tiket:hover { background: #fbf8f2; }
+.pf-tiket span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-tiket em { font-style: normal; font-size: 11.5px; font-weight: 700; color: var(--redup); }
+.pf-tanpa-akun { align-items: center; text-align: center; padding: 34px 20px; }
+.pf-tanpa-akun div { font-size: 40px; }
+.pf-tanpa-akun p { margin: 0 0 6px; color: var(--redup); font-size: 13.5px; max-width: 420px; }
+.pf-status-akun { font-size: 12.5px; font-weight: 800; }
+.pf-status-akun.on { color: #2f7a4d; } .pf-status-akun.off { color: #b42318; }
+.pf-chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 99px; background: #e6f3ea; color: var(--hutan); margin: 0 4px 4px 0; }
+.pf-tombol-baris { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-semua { margin: 0; padding: 12px 14px; border-radius: 14px; background: #fdf3e2; color: #8a5a00; font-weight: 700; font-size: 13.5px; }
+.pf-modul { display: flex; flex-wrap: wrap; gap: 6px; }
+.pf-modul span { font-size: 12.5px; padding: 5px 11px; border-radius: 99px; background: #f6f1e6; border: 1px solid var(--garis); }
 
 /* Modal */
-.modal { padding: 32px; max-width: 440px; }
-@media (max-width: 480px) {
-  .modal { padding: 20px 18px; }
-  .card { padding: 18px 16px; }
-}
-.modal h3 { margin: 0 0 4px; font-size: 18px; color: #0f172a; }
-.modal-sub { margin: 0 0 20px; font-size: 13px; color: #64748b; }
-.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-.field label { font-size: 13px; font-weight: 600; color: #374151; }
-.field input:not([type="checkbox"]) { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; }
-.field input:not([type="checkbox"]):focus { border-color: #3b82f6; }
-.error-msg { background: var(--danger-light); border: 1px solid #fecaca; color: var(--danger); border-radius: var(--r); padding: 8px 12px; font-size: 13px; margin-top: 4px; }
+.pf-lapis { position: fixed; inset: 0; z-index: 800; background: rgba(28, 42, 34, .5); backdrop-filter: blur(3px); display: flex; align-items: flex-start; justify-content: center; padding: 6vh 12px; overflow: auto; }
+.pf-modal { width: 100%; max-width: 520px; background: var(--kertas); border-radius: 24px; padding: 22px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 30px 70px -24px rgba(28, 42, 34, .6); animation: pf-muncul .2s; }
+.pf-modal.kecil { max-width: 420px; } .pf-modal.lebar { max-width: 680px; }
+.pf-modal h3 { margin: 0; font-family: var(--serif); font-size: 22px; }
+.pf-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 800; color: #5b5242; text-transform: uppercase; letter-spacing: .5px; }
+.pf-field input { text-transform: none; letter-spacing: 0; font-weight: 500; border: 1px solid var(--garis); border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 14px; background: #fff; color: var(--tinta); }
+.pf-field input:focus { outline: none; border-color: #2f6b4f; box-shadow: 0 0 0 3px rgba(47, 107, 79, .14); }
+.pf-role { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow: auto; text-transform: none; letter-spacing: 0; }
+.pf-role label { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--garis); border-radius: 12px; background: #fff; cursor: pointer; }
+.pf-role label.on { border-color: var(--hutan); background: #eef6f0; }
+.pf-role input { grid-row: span 2; }
+.pf-role b { font-size: 13.5px; color: var(--tinta); }
+.pf-role small { font-size: 11.5px; color: var(--redup); font-weight: 500; }
+.pf-galat { margin: 0; padding: 9px 12px; border-radius: 12px; background: #fdecea; color: #b42318; font-size: 13px; }
+.pf-modal-kaki { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.pf-admin { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 14px; border: 1.5px dashed #e0c48a; background: #fffaf0; cursor: pointer; font-weight: 700; font-size: 13.5px; }
+.pf-admin.on { border-style: solid; background: #fdf3e2; }
+.pf-preset { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pf-preset small { font-weight: 700; color: var(--redup); }
+.pf-preset button { border: 1px solid var(--garis); background: #fff; border-radius: 99px; padding: 5px 11px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.pf-preset button.on { background: var(--hutan); color: #fff; border-color: var(--hutan); }
+.pf-modul-pilih { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.pf-modul-pilih label { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--garis); border-radius: 12px; background: #fff; cursor: pointer; font-size: 13px; }
+.pf-modul-pilih label.on { border-color: var(--hutan); background: #eef6f0; font-weight: 700; }
 
-.role-list { display: flex; flex-direction: column; gap: 8px; }
-.role-item {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 14px; cursor: pointer;
-}
-.role-desc { font-size: 12px; color: #94a3b8; }
-
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-.btn-cancel { background: #f1f5f9; border: none; border-radius: 8px; padding: 9px 18px; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; }
-.btn-submit { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; border-radius: 8px; padding: 9px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
-.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* Modul akses */
-.modal-wide { max-width: 560px; }
-.badge-admin { background: #fef3c7; color: #92400e; border-radius: 12px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
-.modul-admin-toggle {
-  display: flex; align-items: center; gap: 10px;
-  padding: 12px 14px; border-radius: 10px; border: 2px solid #e2e8f0;
-  cursor: pointer; font-size: 14px; font-weight: 600; margin-bottom: 14px;
-  transition: all 0.15s;
-}
-.modul-admin-toggle.active { border-color: #f59e0b; background: #fffbeb; color: #92400e; }
-.modul-admin-toggle input { width: 16px; height: 16px; accent-color: #f59e0b; }
-.modul-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.modul-item {
-  display: flex; align-items: center; gap: 7px;
-  padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;
-  cursor: pointer; font-size: 13px; transition: all 0.12s;
-}
-.modul-item.checked { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
-.modul-item input { width: 14px; height: 14px; accent-color: #3b82f6; }
-.modul-icon { font-size: 15px; }
-.modul-name { font-weight: 500; }
-@media (max-width: 500px) { .modul-grid { grid-template-columns: repeat(2, 1fr); } }
-
-/* Preset jabatan */
-.preset-section {
-  margin-bottom: 14px;
-}
-.preset-label {
-  display: block; font-size: 12px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.5px;
-  color: #94a3b8; margin-bottom: 8px;
-}
-.preset-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.btn-preset {
-  background: #f1f5f9; border: 1.5px solid #e2e8f0;
-  border-radius: 20px; padding: 5px 12px;
-  font-size: 12px; font-weight: 600; color: #475569;
-  cursor: pointer; transition: all 0.12s;
-}
-.btn-preset:hover { border-color: #3b82f6; color: #1d4ed8; background: #eff6ff; }
-.btn-preset.active { border-color: #3b82f6; background: #eff6ff; color: #1d4ed8; }
-
-.loading-page { padding: 60px; text-align: center; color: #94a3b8; }
+@media (max-width: 1000px) { .pf-tata { grid-template-columns: 1fr; } .pf-kiri { position: static; } }
+@media (max-width: 640px) { .pf { padding: 12px 12px 60px; } .pf-sampul { padding: 18px; } .pf-sampul h1 { font-size: 26px; } .pf-foto { width: 88px; height: 88px; font-size: 32px; } .pf-data { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>

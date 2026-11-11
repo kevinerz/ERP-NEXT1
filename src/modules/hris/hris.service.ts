@@ -258,6 +258,50 @@ export class HrisService {
     });
   }
 
+  // ─── FOTO (untuk kartu direktori) ────────────────────────────
+  // Daftar tidak membawa foto (base64 besar) — kartu meminta foto terpisah, hanya untuk yang punya
+  async fotoKaryawan(ids: number[]) {
+    const id = ids.filter((x) => Number.isInteger(x) && x > 0).slice(0, 100);
+    if (!id.length) return [];
+    return this.prisma.hrisKaryawan.findMany({
+      where: { id_karyawan: { in: id }, foto_url: { not: null } },
+      select: { id_karyawan: true, foto_url: true },
+    });
+  }
+
+  // ─── AKTIVITAS KERJA (tab Pekerjaan di profil) ───────────────
+  async aktivitasKaryawan(id_karyawan: number) {
+    const k = await this.prisma.hrisKaryawan.findUnique({ where: { id_karyawan }, select: { id_karyawan: true } });
+    if (!k) throw new NotFoundException('Karyawan tidak ditemukan');
+    const sejak = new Date(Date.now() - 30 * 86400_000);
+    const selesaiTiket = ['Resolved', 'Closed'];
+    const selesaiWo = ['Completed', 'Selesai', 'Closed', 'Dibatalkan', 'Batal', 'Cancelled'];
+    const [tiketAktif, tiket30, woAktif, wo30, instAktif, inst30, rapat30, tindakTerbuka, tiketTerbaru] = await Promise.all([
+      this.prisma.operationTicket.count({ where: { id_teknisi_pic: id_karyawan, status_tiket: { notIn: selesaiTiket } } }),
+      this.prisma.operationTicket.count({ where: { id_teknisi_pic: id_karyawan, created_at: { gte: sejak } } }),
+      this.prisma.workOrder.count({ where: { id_teknisi_internal: id_karyawan, status_wo: { notIn: selesaiWo } } }),
+      this.prisma.workOrder.count({ where: { id_teknisi_internal: id_karyawan, created_at: { gte: sejak } } }),
+      this.prisma.instalasiOrder.count({ where: { id_teknisi_internal: id_karyawan, status_instalasi: { notIn: ['Selesai', 'Dibatalkan'] } } }),
+      this.prisma.instalasiOrder.count({ where: { id_teknisi_internal: id_karyawan, created_at: { gte: sejak } } }),
+      this.prisma.rapatKehadiran.findMany({ where: { id_karyawan, masuk_at: { gte: sejak } }, distinct: ['id_rapat'], select: { id_rapat: true } }),
+      this.prisma.rapatTindak.count({ where: { id_pic: id_karyawan, selesai: false } }),
+      this.prisma.operationTicket.findMany({
+        where: { id_teknisi_pic: id_karyawan },
+        orderBy: { updated_at: 'desc' },
+        take: 5,
+        select: { id_ticket: true, nomor_tiket: true, judul_tiket: true, status_tiket: true, updated_at: true },
+      }),
+    ]);
+    return {
+      tiket: { aktif: tiketAktif, bulan_ini: tiket30 },
+      wo: { aktif: woAktif, bulan_ini: wo30 },
+      instalasi: { aktif: instAktif, bulan_ini: inst30 },
+      rapat_30h: rapat30.length,
+      tindak_terbuka: tindakTerbuka,
+      tiket_terbaru: tiketTerbaru,
+    };
+  }
+
   // ─── ROLES (untuk dropdown) ──────────────────────────────────
 
   async getRoles() {
