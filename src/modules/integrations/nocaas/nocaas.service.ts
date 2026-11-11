@@ -959,7 +959,6 @@ export class NocaasService {
       select: {
         id_ticket: true, nomor_tiket: true, judul_tiket: true, status_tiket: true, id_site: true,
         site: { select: { nama_site: true, id_pelanggan: true, pelanggan: { select: { nama_pelanggan: true, no_hp_pic_utama: true } } } },
-        logs: { where: { catatan: { startsWith: 'NOCaaS: internet lokasi kembali' } }, select: { id_log: true }, take: 1 },
       },
     });
     for (const t of tiketNoc) {
@@ -967,14 +966,9 @@ export class NocaasService {
       // Yang menahan resolve hanya gangguan baru — perangkat yang sudah mati / macet sebelum fitur aktif diabaikan
       const masihGanggu = rs.some((r) => (r.status === 'offline' && r.status_sejak >= cfg.aktif_sejak) || (r.macet_sejak && !r.macet_lama));
       if (!rs.length || masihGanggu || rs.every((r) => r.status === 'offline')) continue;
-      if (rs.every((r) => r.status === 'internet_ok')) {
-        // Internet lokasi hidup lagi tapi VPN belum → tiket tetap terbuka, tangani remote
-        if (!t.logs.length) await this.prisma.operationTicketLog.create({
-          data: { id_ticket: t.id_ticket, status_ke: t.status_tiket, catatan: 'NOCaaS: internet lokasi kembali (heartbeat syslog masuk), VPN masih putus — tangani remote' },
-        });
-        continue;
-      }
-      const hidup = rs.filter((r) => r.status === 'online' || r.status === 'partial');
+      // Router yang masih melapor lewat syslog (internet lokasi hidup) dianggap tersambung walau VPN putus —
+      // VPN putus saja dibiarkan, tidak ditiketkan (arahan Kevin, 11 Nov 2026)
+      const hidup = rs.filter((r) => r.status === 'online' || r.status === 'partial' || r.status === 'internet_ok');
       if (await dipegangHelpdesk(this.prisma, t.id_ticket)) {
         await catatSekali(this.prisma, t.id_ticket, t.status_tiket, 'NOCaaS: router sudah tersambung kembali',
           `NOCaaS: router sudah tersambung kembali (${hidup.map((r) => `${r.site_key} ${KESIMPULAN[r.status as StatusRouter].label}`).join(', ')}) — status tidak diubah otomatis karena tiket ditangani helpdesk; tutup bila sudah beres.`);
