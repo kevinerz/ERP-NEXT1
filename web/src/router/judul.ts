@@ -13,6 +13,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "master-pelanggan":     "Master — Pelanggan",
   "master-site":          "Master — Site",
   "master-site-detail":   "Master — Detail Site",
+  "master-site-tarik":    "Master — Tarik Perangkat",
   "pasang-baru":          "Pasang Baru",
   "pb-survey-baru":       "Pasang Baru — Survey Baru",
   "pb-survey-ubah":       "Pasang Baru — Ubah Survey",
