@@ -239,13 +239,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', simpanPintas))
         <section id="bag-kerja" class="fk-kartu">
           <h3>💼 Pekerjaan</h3>
           <div class="fk-grid">
-            <label class="fk-f">NIP <b>*</b>
+            <label class="fk-f"><span>NIP <b>*</b></span>
               <input v-model="form.nip" type="text" placeholder="mis. N1-002" :disabled="isEdit" />
               <small v-if="isEdit">NIP tidak bisa diubah.</small>
             </label>
-            <label class="fk-f">Nama lengkap <b>*</b><input v-model="form.nama_lengkap" type="text" placeholder="Nama lengkap karyawan" /></label>
-            <label class="fk-f">Jabatan <b>*</b><input v-model="form.jabatan" type="text" placeholder="mis. Network Engineer" /></label>
-            <div class="fk-f">Departemen <b>*</b>
+            <label class="fk-f"><span>Nama lengkap <b>*</b></span><input v-model="form.nama_lengkap" type="text" placeholder="Nama lengkap karyawan" /></label>
+            <label class="fk-f"><span>Jabatan <b>*</b></span><input v-model="form.jabatan" type="text" placeholder="mis. Network Engineer" /></label>
+            <div class="fk-f"><span>Departemen <b>*</b></span>
               <div class="fk-dept">
                 <button v-for="d in hris.departemenList" :key="d" type="button" :class="{ on: form.departemen === d }" :style="{ '--c': infoDept(d).warna, '--l': infoDept(d).lembut }" @click="form.departemen = d">{{ infoDept(d).ikon }} {{ d }}</button>
               </div>
