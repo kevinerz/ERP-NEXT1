@@ -17,7 +17,8 @@ function escapeCell(v: any): string {
   let s = String(v)
   // Cegah CSV/formula injection — Excel/LibreOffice mengeksekusi cell yang diawali
   // =, +, -, @ sebagai formula. Prefix kutip agar dibaca sebagai teks literal.
-  if (/^[=+\-@]/.test(s)) s = `'${s}`
+  // (angka negatif/bertanda seperti -1500 atau +62… yang murni numerik tetap apa adanya)
+  if (/^[=+\-@]/.test(s) && !/^[+-]?\d+([.,]\d+)?$/.test(s)) s = `'${s}`
   // Bungkus dengan quote bila mengandung koma, kutip, atau newline
   if (/[",\n;]/.test(s)) return `"${s.replace(/"/g, '""')}"`
   return s

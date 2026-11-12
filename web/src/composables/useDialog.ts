@@ -75,24 +75,82 @@ export function promptDialog(opts: string | PromptOptions): Promise<string | nul
   return open<string | null>('prompt', { title: 'Masukkan Data', confirmLabel: 'Simpan', ...o })
 }
 
+/* ── Pesan galat yang ramah ───────────────────────────────────────────────────
+   Satu tempat untuk menerjemahkan error apa pun (axios / Error / string) menjadi
+   kalimat yang bisa dipahami pengguna. Pesan dari server selalu diutamakan. */
+const PESAN_STATUS: Record<number, string> = {
+  400: 'Data yang dikirim belum sesuai. Periksa kembali isian Anda.',
+  401: 'Sesi Anda berakhir. Silakan masuk kembali.',
+  403: 'Anda tidak memiliki akses untuk tindakan ini.',
+  404: 'Data tidak ditemukan — mungkin sudah dihapus atau dipindahkan.',
+  408: 'Server terlalu lama merespons. Coba lagi.',
+  409: 'Data bentrok dengan data yang sudah ada.',
+  413: 'Berkas terlalu besar untuk diunggah.',
+  422: 'Data yang dikirim belum sesuai. Periksa kembali isian Anda.',
+  429: 'Terlalu banyak permintaan. Tunggu sebentar lalu coba lagi.',
+  500: 'Terjadi kesalahan di server. Coba lagi; bila berulang, hubungi admin.',
+  502: 'Server sedang tidak dapat dihubungi. Coba lagi sebentar lagi.',
+  503: 'Layanan sedang tidak tersedia. Coba lagi sebentar lagi.',
+  504: 'Server terlalu lama merespons. Coba lagi.',
+}
+const PESAN_MENTAH = /^(internal server error|forbidden( resource)?|unauthorized|bad request|not found|bad gateway|service unavailable|gateway timeout|conflict|payload too large|request entity too large|throttlerexception: too many requests|too many requests)$/i
+
+export function pesanGalat(err: any, fallback = 'Terjadi kesalahan'): string {
+  if (typeof err === 'string') return err || fallback
+  const res = err?.response
+  if (res) {
+    const raw = res.data?.message
+    const teks = Array.isArray(raw) ? raw.filter(Boolean).join('\n') : typeof raw === 'string' ? raw.trim() : ''
+    if (teks && !PESAN_MENTAH.test(teks)) return teks
+    return PESAN_STATUS[res.status as number] ?? (res.status >= 500 ? PESAN_STATUS[500]! : fallback)
+  }
+  if (err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT') return 'Server terlalu lama merespons. Periksa koneksi lalu coba lagi.'
+  if (err?.code === 'ERR_NETWORK' || (err?.isAxiosError && err?.request)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.'
+  if (err?.isAxiosError) return fallback
+  return (err instanceof Error && err.message) || fallback
+}
+
 /** Shortcut untuk pesan error dari API (axios) atau Error biasa. */
 export function alertError(err: any, fallback = 'Terjadi kesalahan'): Promise<void> {
-  const raw = err?.response?.data?.message ?? (typeof err === 'string' ? err : null) ?? fallback
-  const message = Array.isArray(raw) ? raw.join('\n') : String(raw)
-  return alertDialog({ title: 'Gagal', message, variant: 'danger' })
+  // Sudah diberitahukan oleh lapisan global (toast/banner koneksi) — jangan tumpuk dua pesan.
+  if (err && typeof err === 'object' && err.__diberitahu) return Promise.resolve()
+  if (err && typeof err === 'object') err.__diberitahu = true
+  return alertDialog({ title: 'Gagal', message: pesanGalat(err, fallback), variant: 'danger' })
 }
 
 // ── Toast: umpan balik singkat yang tidak perlu diklik (mis. "Tersimpan") ──────────
 export interface Toast { id: number; pesan: string; variant: 'success' | 'danger' | 'warning' | 'default' }
 export const toasts = ref<Toast[]>([])
 let toastId = 0
-export function toast(pesan: string, variant: Toast['variant'] = 'success', durasiMs = 4000) {
+export function toast(pesan: string, variant: Toast['variant'] = 'success', durasiMs?: number) {
+  // Pesan yang sama sedang tampil → jangan ditumpuk (mis. banyak permintaan gagal bersamaan)
+  if (toasts.value.some((t) => t.pesan === pesan && t.variant === variant)) return
   const id = ++toastId
-  toasts.value = [...toasts.value, { id, pesan, variant }]
-  setTimeout(() => tutupToast(id), durasiMs)
+  toasts.value = [...toasts.value.slice(-3), { id, pesan, variant }]
+  setTimeout(() => tutupToast(id), durasiMs ?? (variant === 'danger' || variant === 'warning' ? 6500 : 4000))
 }
 export function tutupToast(id: number) { toasts.value = toasts.value.filter((t) => t.id !== id) }
 
+/** Toast galat dari error apa pun; aman dipanggil berulang (tidak dobel untuk error yang sama). */
+export function toastGalat(err: any, fallback = 'Terjadi kesalahan') {
+  if (err && typeof err === 'object') {
+    if (err.__diberitahu) return
+    err.__diberitahu = true
+  }
+  toast(pesanGalat(err, fallback), 'danger')
+}
+
+/** Jaring pengaman global: dipanggil untuk error yang tidak ditangani halaman mana pun. */
+export function laporGalat(err: any, dariVue = false) {
+  if (!err || err.__diberitahu || err.__CANCEL__ || err.code === 'ERR_CANCELED' || err.name === 'CanceledError') return
+  if (err.isAxiosError) {
+    if (err.response?.status === 401) return
+    return toastGalat(err)
+  }
+  console.error(err)
+  if (dariVue) toastGalat('Terjadi kesalahan pada halaman ini. Muat ulang bila tampilan tidak normal.')
+}
+
 export function useDialog() {
-  return { confirm: confirmDialog, alert: alertDialog, prompt: promptDialog, alertError, toast }
+  return { confirm: confirmDialog, alert: alertDialog, prompt: promptDialog, alertError, toast, toastGalat, pesanGalat }
 }

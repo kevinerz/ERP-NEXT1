@@ -1,3 +1,5 @@
+import { mulaiKemajuan, selesaiKemajuan } from '@/composables/kemajuan'
+import { toast } from '@/composables/useDialog'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { usePortalAuthStore } from '@/stores/portalAuth'
@@ -572,6 +574,32 @@ const ROUTE_MODUL: Record<string, string | string[]> = {
   'wo-list': 'public-wo', 'wo-detail': 'public-wo',
   'file-server': 'fileserver',
 }
+
+// Bilah kemajuan saat pindah halaman (termasuk waktu mengunduh berkas halaman)
+// (satu navigasi bisa melewati beforeEach berkali-kali karena redirect — hitung sekali saja)
+let navBerjalan = false
+const akhiriNav = () => { if (navBerjalan) { navBerjalan = false; selesaiKemajuan() } }
+router.beforeEach((to, from) => {
+  if (to.path !== from.path && !navBerjalan) { navBerjalan = true; mulaiKemajuan(120) }
+})
+router.afterEach(akhiriNav)
+// Setelah ERP diperbarui, berkas halaman versi lama sudah tidak ada di server.
+// Muat ulang sekali ke halaman tujuan supaya pengguna langsung memakai versi baru.
+router.onError((err, to) => {
+  akhiriNav()
+  const pesan = String(err?.message || err)
+  if (/dynamically imported module|Importing a module script failed|Failed to fetch|error loading dynamically|Unable to preload CSS/i.test(pesan)) {
+    const kunci = 'muat_ulang_versi'
+    const terakhir = Number(sessionStorage.getItem(kunci) || 0)
+    if (Date.now() - terakhir > 15_000) {
+      sessionStorage.setItem(kunci, String(Date.now()))
+      window.location.assign(to.fullPath)
+      return
+    }
+  }
+  console.error(err)
+  toast('Halaman gagal dibuka. Periksa koneksi lalu coba lagi.', 'danger')
+})
 
 router.beforeEach((to) => {
   // ── Portal pelanggan — guard terpisah ─────────────────────

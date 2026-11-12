@@ -836,9 +836,16 @@ export class WaService {
         await fsp.rm(`${dasar}.jpg`, { force: true });
         return null;
       }
-      const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
-      if (!res.ok) return existsSync(`${dasar}.jpg`) ? `${dasar}.jpg` : null;
-      await fsp.writeFile(`${dasar}.jpg`, Buffer.from(await res.arrayBuffer()));
+      // Unduhan foto dari server WhatsApp bisa gagal/timeout — itu bukan galat server; pakai foto lama bila ada
+      let isi: Buffer;
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+        if (!res.ok) return existsSync(`${dasar}.jpg`) ? `${dasar}.jpg` : null;
+        isi = Buffer.from(await res.arrayBuffer());
+      } catch {
+        return existsSync(`${dasar}.jpg`) ? `${dasar}.jpg` : null;
+      }
+      await fsp.writeFile(`${dasar}.jpg`, isi);
       await fsp.rm(`${dasar}.none`, { force: true });
       return `${dasar}.jpg`;
     });
