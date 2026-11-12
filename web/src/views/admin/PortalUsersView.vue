@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
-import { confirmDialog, alertDialog, promptDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, promptDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 
 const users    = ref<any[]>([])
 const loading  = ref(true)
@@ -13,31 +13,48 @@ const pelList  = ref<any[]>([])
 const loadError = ref('')
 const busyId   = ref<number | null>(null)
 
-onMounted(async () => {
+// daftar pelanggan hanya untuk form tambah — gagalnya tidak boleh mengosongkan tabel akun
+const pelError = ref('')
+async function muatPelanggan() {
+  pelError.value = ''
+  try { pelList.value = (await api.get('/master/pelanggan', { params: { limit: 500 } })).data.data ?? [] }
+  catch (e: any) { pelError.value = pesanGalat(e, 'Gagal memuat daftar pelanggan') }
+}
+async function muat() {
+  loading.value = true; loadError.value = ''
   try {
-    const [u, p] = await Promise.all([
-      api.get('/portal/admin/users'),
-      api.get('/master/pelanggan', { params: { limit: 500 } }),
-    ])
-    users.value  = u.data.data
-    pelList.value = p.data.data
+    users.value = (await api.get('/portal/admin/users')).data.data ?? []
   } catch (e: any) {
-    loadError.value = e.response?.data?.message || 'Gagal memuat akun portal'
+    loadError.value = pesanGalat(e, 'Gagal memuat akun portal')
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(() => { muat(); muatPelanggan() })
+function bukaTambah() {
+  showAdd.value = true
+  addForm.value = { id_pelanggan: 0, email: '', password: '', nama: '' }
+  addError.value = ''
+  if (pelError.value || !pelList.value.length) muatPelanggan()
+}
 
 async function handleAdd() {
-  if (!addForm.value.id_pelanggan || !addForm.value.email || !addForm.value.password) {
+  if (addSave.value) return
+  const f = addForm.value
+  if (!f.id_pelanggan || !f.email.trim() || !f.password) {
     addError.value = 'Pelanggan, email, dan password wajib diisi'; return
   }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) { addError.value = 'Format email tidak valid'; return }
+  if (f.password.length < 8) { addError.value = 'Password minimal 8 karakter'; return }
   addSave.value = true; addError.value = ''
   try {
-    const res = await api.post('/portal/admin/users', addForm.value)
-    users.value.unshift(res.data.data)
+    const res = await api.post('/portal/admin/users', { ...f, email: f.email.trim(), nama: f.nama.trim() || undefined })
+    // respons create tidak menyertakan relasi pelanggan → lengkapi dari daftar agar kolom Pelanggan tidak "—"
+    const pel = pelList.value.find((p) => p.id_pelanggan === f.id_pelanggan)
+    users.value.unshift({ ...res.data.data, pelanggan: res.data.data?.pelanggan ?? (pel ? { nama_pelanggan: pel.nama_pelanggan, kode_pelanggan: pel.kode_pelanggan } : null) })
     showAdd.value = false
-  } catch (e: any) { addError.value = e.response?.data?.message || 'Gagal' }
+    toast('Akun portal dibuat')
+  } catch (e: any) { addError.value = pesanGalat(e, 'Gagal membuat akun portal') }
   finally { addSave.value = false }
 }
 
@@ -54,6 +71,7 @@ async function toggleUser(u: any) {
   try {
     const res = await api.patch(`/portal/admin/users/${u.id_user}/toggle`)
     u.is_aktif = res.data.data.is_aktif
+    toast(u.is_aktif ? 'Akun portal diaktifkan' : 'Akun portal dinonaktifkan')
   } catch (e: any) {
     alertError(e, 'Gagal mengubah status akun')
   } finally { busyId.value = null }
@@ -69,7 +87,7 @@ async function resetPw(u: any) {
     confirmLabel: 'Reset',
     variant: 'warning',
   })
-  if (!pw) return
+  if (!pw || busyId.value !== null) return
   busyId.value = u.id_user
   try {
     await api.patch(`/portal/admin/users/${u.id_user}/reset-password`, { password: pw })
@@ -80,6 +98,7 @@ async function resetPw(u: any) {
 }
 
 async function deleteUser(u: any) {
+  if (busyId.value !== null) return
   if (!(await confirmDialog({
     title: 'Hapus Akun Portal',
     message: `Hapus akun portal "${u.email}"?\nAksi ini tidak dapat dibatalkan.`,
@@ -90,6 +109,7 @@ async function deleteUser(u: any) {
   try {
     await api.delete(`/portal/admin/users/${u.id_user}`)
     users.value = users.value.filter(x => x.id_user !== u.id_user)
+    toast('Akun portal dihapus')
   } catch (e: any) {
     alertError(e, 'Gagal menghapus akun')
   } finally { busyId.value = null }
@@ -108,11 +128,11 @@ function fmtDate(d: string | null) {
         <h2>Akun Portal Pelanggan</h2>
         <p class="sub">Kelola akun login untuk dashboard monitoring pelanggan</p>
       </div>
-      <button type="button" class="btn btn-primary" @click="showAdd = true; addForm = { id_pelanggan: 0, email: '', password: '', nama: '' }; addError = ''">+ Tambah Akun</button>
+      <button type="button" class="btn btn-primary" @click="bukaTambah">+ Tambah Akun</button>
     </div>
 
     <div v-if="loading" class="loading">Memuat...</div>
-    <div v-else-if="loadError" class="form-error" role="alert">{{ loadError }}</div>
+    <div v-else-if="loadError" class="form-error" role="alert">{{ loadError }} <button type="button" class="act-btn" @click="muat">↻ Coba lagi</button></div>
 
     <div class="table-card" v-else>
       <table>
@@ -164,6 +184,7 @@ function fmtDate(d: string | null) {
               <option :value="0">— Pilih Pelanggan —</option>
               <option v-for="p in pelList" :key="p.id_pelanggan" :value="p.id_pelanggan">{{ p.nama_pelanggan }}</option>
             </select>
+            <small v-if="pelError" class="form-error">{{ pelError }} — <a href="#" @click.prevent="muatPelanggan">coba lagi</a></small>
           </div>
           <div class="field">
             <label>Email <span class="req">*</span></label>

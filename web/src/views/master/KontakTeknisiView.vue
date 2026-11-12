@@ -2,7 +2,7 @@
 import MasterNav from './MasterNav.vue'
 import { useRoute } from 'vue-router'
 import { ref, onMounted } from 'vue'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, pesanGalat, toastGalat } from '@/composables/useDialog'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
 
@@ -56,10 +56,10 @@ async function fetchData() {
     if (search.value) params.search = search.value
     if (filterAktif.value !== '') params.is_aktif = filterAktif.value
     const r = await api.get('/master/kontak-teknisi', { params })
-    rows.value = r.data.data
-    meta.value = r.data.meta
+    rows.value = r.data.data ?? []
+    meta.value = r.data.meta ?? meta.value
   } catch (e: any) {
-    error.value = e.response?.data?.message || 'Gagal memuat data'
+    error.value = pesanGalat(e, 'Gagal memuat kontak teknisi')
   } finally {
     loading.value = false
   }
@@ -107,7 +107,8 @@ function openEdit(k: KontakTeknisi) {
 }
 
 async function handleSubmit() {
-  if (!form.value.nama || !form.value.no_hp) {
+  if (submitting.value) return
+  if (!form.value.nama.trim() || !form.value.no_hp.trim()) {
     formError.value = 'Nama dan No. HP wajib diisi'
     return
   }
@@ -135,30 +136,41 @@ async function handleSubmit() {
     flash(isEdit.value ? 'Kontak diperbarui' : 'Kontak ditambahkan')
     fetchData()
   } catch (e: any) {
-    formError.value = e.response?.data?.message || 'Terjadi kesalahan'
+    formError.value = pesanGalat(e, 'Gagal menyimpan kontak')
   } finally {
     submitting.value = false
   }
 }
 
+// baris yang sedang diproses — klik ganda pada "Nonaktifkan" akan membalik status dua kali
+const busyId = ref<number | null>(null)
 async function handleToggle(k: KontakTeknisi) {
+  if (busyId.value !== null) return
+  busyId.value = k.id_kontak
   try {
     await api.patch('/master/kontak-teknisi/' + k.id_kontak + '/toggle')
     flash(`Kontak ${!k.is_aktif ? 'diaktifkan' : 'dinonaktifkan'}`)
     fetchData()
   } catch (e: any) {
-    error.value = e.response?.data?.message || 'Gagal ubah status'
+    toastGalat(e, 'Gagal mengubah status kontak')
+  } finally {
+    busyId.value = null
   }
 }
 
 async function hapusKontak(k: KontakTeknisi) {
+  if (busyId.value !== null) return
   if (!(await confirmDialog({ title: 'Hapus Kontak?', message: 'Hapus kontak ' + k.nama + '?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  busyId.value = k.id_kontak
   try {
     await api.delete('/master/kontak-teknisi/' + k.id_kontak)
     flash('Kontak dihapus')
+    if (rows.value.length === 1 && page.value > 1) page.value--
     fetchData()
   } catch (e: any) {
     await alertError(e, 'Gagal menghapus kontak')
+  } finally {
+    busyId.value = null
   }
 }
 
@@ -177,13 +189,14 @@ function openSetPin(k: KontakTeknisi) {
 }
 
 async function submitPin() {
+  if (pinSubmitting.value || !pinTarget.value) return
   if (!pinValue.value || pinValue.value.length < 4) { pinError.value = 'PIN minimal 4 karakter'; return }
   pinSubmitting.value = true; pinError.value = ''
   try {
     await api.patch(`/master/kontak-teknisi/${pinTarget.value!.id_kontak}/set-pin`, { pin: pinValue.value })
     showPinModal.value = false
     flash('PIN berhasil diset untuk ' + pinTarget.value!.nama)
-  } catch (e: any) { pinError.value = e.response?.data?.message || 'Gagal set PIN' }
+  } catch (e: any) { pinError.value = pesanGalat(e, 'Gagal menyimpan PIN') }
   finally { pinSubmitting.value = false }
 }
 </script>
@@ -214,7 +227,7 @@ async function submitPin() {
     </div>
 
     <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error" class="alert alert-danger">{{ error }} <button type="button" class="btn btn-sm btn-secondary" @click="fetchData">Coba lagi</button></div>
 
     <!-- Table -->
     <div class="table-card">
@@ -231,12 +244,12 @@ async function submitPin() {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!rows.length">
+          <tr v-if="!rows.length && !error">
             <td colspan="6">
               <div class="empty-state">
                 <div class="empty-icon">🧰</div>
-                <div class="empty-title">Belum ada kontak teknisi</div>
-                <div class="empty-desc">Tambahkan kontak pemasang atau teknisi pertama Anda</div>
+                <div class="empty-title">{{ search || filterAktif !== '' ? 'Tidak ada kontak yang cocok' : 'Belum ada kontak teknisi' }}</div>
+                <div class="empty-desc">{{ search || filterAktif !== '' ? 'Ubah kata kunci atau filter status' : 'Tambahkan kontak pemasang atau teknisi pertama Anda' }}</div>
               </div>
             </td>
           </tr>
@@ -271,12 +284,14 @@ async function submitPin() {
                 <button
                   type="button"
                   :class="['btn btn-sm', k.is_aktif ? 'btn-soft-warning' : 'btn-soft-success']"
+                  :disabled="busyId === k.id_kontak"
                   @click="handleToggle(k)"
                 >{{ k.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
                 <button
                   v-if="!k.is_aktif"
                   type="button"
                   class="btn btn-sm btn-soft-danger"
+                  :disabled="busyId === k.id_kontak"
                   @click="hapusKontak(k)"
                 >Hapus</button>
               </div>

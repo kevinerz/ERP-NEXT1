@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import api from '@/services/api'
-import { toast } from '@/composables/useDialog'
+import { toast, pesanGalat } from '@/composables/useDialog'
 import KaryawanPicker from './KaryawanPicker.vue'
 import { KATEGORI, TEMPLAT, labelKategori, tglPanjang } from './rapat-util'
 
@@ -61,6 +61,9 @@ async function kirim() {
   if (!siap.value || simpan.value) return
   simpan.value = true
   err.value = ''
+  let ulang = 1
+  let dibuat = 0
+  let pertama: any = null
   try {
     const dasar = {
       judul: f.judul.trim(), deskripsi: f.deskripsi.trim(), durasi_menit: f.durasi || undefined,
@@ -75,18 +78,23 @@ async function kirim() {
       emit('tersimpan', data.data, false)
       return
     }
-    const ulang = f.mode === 'jadwal' ? Math.max(1, Math.min(8, f.ulang)) : 1
-    let pertama: any = null
+    ulang = f.mode === 'jadwal' ? Math.max(1, Math.min(8, f.ulang)) : 1
     for (let i = 0; i < ulang; i++) {
       const jadwal = f.mode === 'jadwal' ? new Date(+jadwalIso.value! + i * 7 * 86400_000).toISOString() : undefined
       const { data } = await api.post('/meeting', { ...dasar, deskripsi: dasar.deskripsi || undefined, peserta: f.peserta, jadwal_at: jadwal })
       pertama ??= data.data
+      dibuat++
     }
     toast(ulang > 1 ? `${ulang} rapat mingguan dijadwalkan` : f.mode === 'sekarang' ? 'Rapat dibuat — menyambungkan…' : 'Rapat dijadwalkan & undangan terkirim')
     emit('tersimpan', pertama, f.mode === 'sekarang')
   } catch (e: any) {
-    const m = e?.response?.data?.message
-    err.value = Array.isArray(m) ? m.join(', ') : m || 'Gagal menyimpan rapat'
+    // Rapat berulang gagal di tengah jalan: yang sudah terbuat tetap ada — tutup form agar tidak dikirim ulang (dobel)
+    if (dibuat > 0) {
+      toast(`${dibuat} dari ${ulang} rapat terjadwal; sisanya gagal dibuat: ${pesanGalat(e, 'kesalahan server')}`, 'warning', 9000)
+      emit('tersimpan', pertama, false)
+      return
+    }
+    err.value = pesanGalat(e, 'Gagal menyimpan rapat')
   } finally {
     simpan.value = false
   }

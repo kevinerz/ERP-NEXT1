@@ -16,15 +16,18 @@
       <div v-else-if="checkError" class="state-box error">
         <span class="state-icon">⚠️</span>
         <p>{{ checkError }}</p>
-        <p class="hint">Hubungi HR/Admin untuk mendapatkan link undangan baru.</p>
+        <template v-if="checkBisaUlang">
+          <button type="button" class="btn-primary" @click="checkToken">Coba lagi</button>
+        </template>
+        <p v-else class="hint">Hubungi HR/Admin untuk mendapatkan link undangan baru.</p>
       </div>
 
       <!-- Sukses submit -->
       <div v-else-if="result" class="state-box success">
         <span class="state-icon">✅</span>
         <h3>Pendaftaran Berhasil!</h3>
-        <p>{{ result.message }}</p>
-        <div v-if="!result.data.email_sent" class="credential-box">
+        <p>{{ result.message || 'Data Anda sudah kami terima.' }}</p>
+        <div v-if="result.data && !result.data.email_sent" class="credential-box">
           <div class="cred-row"><span class="cred-label">Username</span><span class="cred-value">{{ result.data.username }}</span></div>
           <div class="cred-row"><span class="cred-label">Password</span><span class="cred-value">{{ result.data.password }}</span></div>
           <p class="cred-warning">⚠️ Catat sekarang — password ini tidak akan ditampilkan lagi.</p>
@@ -183,15 +186,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 
 const route = useRoute()
 const token = route.params.token as string
 
 const checking = ref(true)
 const checkError = ref('')
+// Gagal karena koneksi/server (bukan token tidak sah) → tawarkan coba lagi, bukan minta link baru.
+const checkBisaUlang = ref(false)
 const departemenList = ref<string[]>([])
 
 const foto = ref<File | null>(null)
@@ -210,14 +216,16 @@ const submitError = ref('')
 const result = ref<any>(null)
 
 async function checkToken() {
-  checking.value = true
+  checking.value = true; checkError.value = ''; checkBisaUlang.value = false
   try {
     const r = await api.get(`/onboarding/${token}`)
     if (r.data.data.departemen) form.value.departemen = r.data.data.departemen
     if (r.data.data.jabatan) form.value.jabatan = r.data.data.jabatan
     departemenList.value = r.data.data.departemen_list || []
   } catch (e: any) {
-    checkError.value = e.response?.data?.message || 'Link undangan tidak valid'
+    const status = e?.response?.status
+    checkBisaUlang.value = !status || status >= 500
+    checkError.value = checkBisaUlang.value ? pesanGalat(e, 'Gagal memeriksa link undangan') : pesanGalat(e, 'Link undangan tidak valid')
   } finally {
     checking.value = false
   }
@@ -228,11 +236,20 @@ function handleFotoChange(e: Event) {
   const file = input.files?.[0]
   if (!file) return
   foto.value = file
+  if (fotoPreview.value) URL.revokeObjectURL(fotoPreview.value)
   fotoPreview.value = URL.createObjectURL(file)
 }
+onBeforeUnmount(() => { if (fotoPreview.value) URL.revokeObjectURL(fotoPreview.value) })
 
 async function submit() {
+  if (submitting.value) return
   submitError.value = ''
+  const f = form.value
+  // atribut `required` meloloskan isian yang hanya berisi spasi
+  if (![f.nama_lengkap, f.jabatan, f.departemen, f.no_hp, f.email].every((v) => v.trim())) {
+    submitError.value = 'Nama lengkap, jabatan, departemen, no. HP, dan email wajib diisi'
+    return
+  }
   submitting.value = true
   try {
     const fd = new FormData()
@@ -244,7 +261,7 @@ async function submit() {
     })
     result.value = r.data
   } catch (e: any) {
-    submitError.value = e.response?.data?.message || 'Gagal mengirim pendaftaran'
+    submitError.value = pesanGalat(e, 'Gagal mengirim pendaftaran')
   } finally {
     submitting.value = false
   }

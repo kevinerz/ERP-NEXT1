@@ -41,7 +41,7 @@ export class CreateWoDto {
 
 export class UpdateWoDto {
   @IsOptional() @IsString() @MaxLength(30)
-  @IsIn(['Open', 'In_Progress', 'Completed', 'Cancelled'])
+  @IsIn(['Open', 'Dispatch', 'On-Site', 'Selesai', 'Ditunda', 'Dibatalkan', 'In_Progress', 'Completed', 'Cancelled'])
   status_wo?: string;
 
   @IsOptional() @IsDateString()

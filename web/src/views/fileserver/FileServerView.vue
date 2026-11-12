@@ -4,7 +4,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
-import { confirmDialog, promptDialog, toast } from '@/composables/useDialog'
+import { confirmDialog, promptDialog, toast, toastGalat, pesanGalat } from '@/composables/useDialog'
 import ImporBaPanel from './ImporBaPanel.vue'
 const imporBa = ref(false)
 
@@ -34,42 +34,61 @@ function bukaAtur() {
   galatAtur.value = ''; atur.value = true
 }
 async function simpanAtur() {
+  if (menyimpan.value) return
   menyimpan.value = true; galatAtur.value = ''
   try {
     const body: any = { host: fk.value.host.trim(), domain: fk.value.domain.trim(), username: fk.value.username.trim(),
       share_izin: fk.value.share_izin.split(',').map((x) => x.trim()).filter(Boolean) }
     if (fk.value.password) body.password = fk.value.password
     const r = await api.put('/fileserver/konfigurasi', body)
-    toast(r.data.message)
+    toast(r.data.message || 'Koneksi file server tersimpan')
     fk.value.password = ''
     atur.value = false
-    await muatStatus(); await muatShares()
-  } catch (e: any) { galatAtur.value = e.response?.data?.message || 'Gagal terhubung' }
+    galat.value = ''
+    await muatStatus(); await muatShares(); await muatIsi()
+  } catch (e: any) { galatAtur.value = pesanGalat(e, 'Gagal terhubung ke file server') }
   finally { menyimpan.value = false }
 }
 
+const memuatAwal = ref(true)
 async function muatStatus() {
-  try { status.value = (await api.get('/fileserver/status')).data.data } catch (e: any) { galat.value = e.response?.data?.message || 'Gagal memuat status' }
+  try { status.value = (await api.get('/fileserver/status')).data.data } catch (e: any) { galat.value = pesanGalat(e, 'Gagal memuat status file server') }
 }
 async function muatShares() {
   if (!status.value?.terisi) return
   try {
     shares.value = (await api.get('/fileserver/shares')).data.data ?? []
     if (!share.value && shares.value[0]) share.value = shares.value[0].nama
-  } catch (e: any) { galat.value = e.response?.data?.message || 'Gagal memuat daftar share' }
+  } catch (e: any) { galat.value = pesanGalat(e, 'Gagal memuat daftar share') }
 }
+// nomor urut: pindah folder cepat → jawaban folder lama tidak boleh menimpa isi folder baru
+let seqIsi = 0
 async function muatIsi() {
   if (!share.value) return
+  const seq = ++seqIsi
   memuat.value = true; galat.value = ''
-  try { items.value = (await api.get('/fileserver/ls', { params: { share: share.value, path: dir.value } })).data.data ?? [] }
-  catch (e: any) { items.value = []; galat.value = e.response?.data?.message || 'Gagal membuka folder' }
-  finally { memuat.value = false }
+  try {
+    const isi = (await api.get('/fileserver/ls', { params: { share: share.value, path: dir.value } })).data.data ?? []
+    if (seq === seqIsi) items.value = isi
+  } catch (e: any) {
+    if (seq !== seqIsi) return
+    items.value = []; galat.value = pesanGalat(e, 'Gagal membuka folder')
+  } finally { if (seq === seqIsi) memuat.value = false }
+}
+/** Coba lagi dari tahap yang gagal (status → share → isi folder) */
+async function muatSemua() {
+  memuatAwal.value = true; galat.value = ''
+  try {
+    if (!status.value) await muatStatus()
+    if (status.value?.terisi && !shares.value.length) await muatShares()
+    if (!galat.value) await muatIsi()
+  } finally { memuatAwal.value = false }
 }
 watch([share, dir], () => {
   router.replace({ query: { ...(share.value ? { share: share.value } : {}), ...(dir.value ? { path: dir.value } : {}) } }).catch(() => {})
   cari.value = ''; dipilih.value = new Set(); muatIsi()
 })
-onMounted(async () => { await muatStatus(); await muatShares(); await muatIsi() })
+onMounted(muatSemua)
 
 // ── Navigasi ──
 const remah = computed(() => {
@@ -126,9 +145,11 @@ async function unduh(it: Item) {
     const a = document.createElement('a'); a.href = url; a.download = it.nama
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
   } catch (e: any) {
-    let m = 'Gagal mengunduh'
-    if (e.response?.data instanceof Blob) { try { m = JSON.parse(await e.response.data.text()).message || m } catch { /* bukan JSON */ } }
-    toast(m, 'danger')
+    // respons galat ikut berbentuk Blob (responseType) → baca pesannya dulu
+    if (e.response?.data instanceof Blob) {
+      try { e.response.data = JSON.parse(await e.response.data.text()) } catch { e.response.data = {} }
+    }
+    toastGalat(e, `Gagal mengunduh ${it.nama}`)
   } finally { proses.value = '' }
 }
 const inputBerkas = ref<HTMLInputElement | null>(null)
@@ -137,6 +158,7 @@ const progres = ref<number | null>(null)
 async function unggah(files: FileList | File[] | null) {
   const list = Array.from(files ?? [])
   if (!list.length || !share.value) return
+  if (progres.value != null) { toast('Tunggu unggahan sebelumnya selesai', 'warning'); return }
   const fd = new FormData()
   fd.append('share', share.value); fd.append('path', dir.value)
   list.forEach((f) => fd.append('files', f))
@@ -146,25 +168,25 @@ async function unggah(files: FileList | File[] | null) {
       headers: { 'Content-Type': 'multipart/form-data' }, timeout: 30 * 60_000,
       onUploadProgress: (e) => { if (e.total) progres.value = Math.round((e.loaded / e.total) * 100) },
     })
-    toast(r.data.message, r.data.data?.gagal?.length ? 'warning' : 'success')
+    toast(r.data.message || 'Unggahan selesai', r.data.data?.gagal?.length ? 'warning' : 'success')
     for (const g of r.data.data?.gagal ?? []) toast(`${g.nama}: ${g.alasan}`, 'danger', 7000)
     await muatIsi()
-  } catch (e: any) { toast(e.response?.data?.message || 'Gagal mengunggah', 'danger') }
+  } catch (e: any) { toastGalat(e, 'Gagal mengunggah') }
   finally { progres.value = null; proses.value = ''; if (inputBerkas.value) inputBerkas.value.value = '' }
 }
 function jatuh(e: DragEvent) { seret.value = false; unggah(e.dataTransfer?.files ?? null) }
 
 async function folderBaru() {
   const nama = await promptDialog({ title: 'Folder baru', label: 'Nama folder', placeholder: 'mis. BA Pasang Baru 2026', confirmLabel: 'Buat' })
-  if (!nama) return
-  try { toast((await api.post('/fileserver/folder', { share: share.value, path: dir.value, nama })).data.message); await muatIsi() }
-  catch (e: any) { toast(e.response?.data?.message || 'Gagal membuat folder', 'danger') }
+  if (!nama?.trim()) return
+  try { toast((await api.post('/fileserver/folder', { share: share.value, path: dir.value, nama: nama.trim() })).data.message || 'Folder dibuat'); await muatIsi() }
+  catch (e: any) { toastGalat(e, 'Gagal membuat folder') }
 }
 async function gantiNama(it: Item) {
   const baru = await promptDialog({ title: 'Ganti nama', label: 'Nama baru', defaultValue: it.nama, confirmLabel: 'Simpan' })
-  if (!baru || baru === it.nama) return
-  try { toast((await api.post('/fileserver/ganti-nama', { share: share.value, path: gabung(it.nama), baru })).data.message); await muatIsi() }
-  catch (e: any) { toast(e.response?.data?.message || 'Gagal mengganti nama', 'danger') }
+  if (!baru?.trim() || baru.trim() === it.nama) return
+  try { toast((await api.post('/fileserver/ganti-nama', { share: share.value, path: gabung(it.nama), baru: baru.trim() })).data.message || 'Nama diganti'); await muatIsi() }
+  catch (e: any) { toastGalat(e, 'Gagal mengganti nama') }
 }
 async function hapus(it: Item) {
   const ok = await confirmDialog({
@@ -173,13 +195,16 @@ async function hapus(it: Item) {
     confirmLabel: 'Hapus permanen', variant: 'danger',
   })
   if (!ok) return
-  try { toast((await api.post('/fileserver/hapus', { share: share.value, path: gabung(it.nama), folder: it.folder })).data.message); await muatIsi() }
-  catch (e: any) { toast(e.response?.data?.message || 'Gagal menghapus', 'danger') }
+  try {
+    toast((await api.post('/fileserver/hapus', { share: share.value, path: gabung(it.nama), folder: it.folder })).data.message || 'Terhapus')
+    if (dipilih.value.has(it.nama)) { const s = new Set(dipilih.value); s.delete(it.nama); dipilih.value = s }
+    await muatIsi()
+  } catch (e: any) { toastGalat(e, 'Gagal menghapus') }
 }
 // pilih banyak untuk unduh
 const dipilih = ref<Set<string>>(new Set())
 function togglePilih(n: string) { const s = new Set(dipilih.value); s.has(n) ? s.delete(n) : s.add(n); dipilih.value = s }
-async function unduhTerpilih() { for (const it of daftar.value.filter((i) => dipilih.value.has(i.nama) && !i.folder)) await unduh(it) }
+async function unduhTerpilih() { if (proses.value) return; for (const it of daftar.value.filter((i) => dipilih.value.has(i.nama) && !i.folder)) await unduh(it) }
 </script>
 
 <template>
@@ -191,6 +216,9 @@ async function unduhTerpilih() { for (const it of daftar.value.filter((i) => dip
       </div>
       <button v-if="status?.bisa_atur" type="button" class="btn btn-ghost" @click="bukaAtur">⚙️ Koneksi</button>
     </div>
+
+    <div v-if="!status && memuatAwal" class="fs-kosong"><span class="putar" /> Memeriksa koneksi file server…</div>
+    <div v-else-if="!status && galat" class="fs-kosong merah" role="alert">😵 {{ galat }} <button type="button" class="btn btn-ghost btn-sm" @click="muatSemua">Coba lagi</button></div>
 
     <!-- Belum diatur -->
     <div v-if="status && !status.terisi" class="fs-kosong besar">
@@ -233,7 +261,7 @@ async function unduhTerpilih() { for (const it of daftar.value.filter((i) => dip
         <label>Urut
           <select v-model="urut"><option value="nama">nama</option><option value="diubah">terbaru</option><option value="ukuran">terbesar</option></select>
         </label>
-        <button v-if="dipilih.size" type="button" class="btn btn-ghost btn-sm" @click="unduhTerpilih">⬇️ Unduh {{ dipilih.size }} terpilih</button>
+        <button v-if="dipilih.size" type="button" class="btn btn-ghost btn-sm" :disabled="!!proses" @click="unduhTerpilih">⬇️ Unduh {{ dipilih.size }} terpilih</button>
       </div>
 
       <div v-if="proses" class="fs-proses" role="status">
@@ -243,7 +271,7 @@ async function unduhTerpilih() { for (const it of daftar.value.filter((i) => dip
 
       <!-- Isi folder -->
       <div class="fs-daftar">
-        <div v-if="galat" class="fs-kosong merah" role="alert">😵 {{ galat }} <button type="button" class="btn btn-ghost btn-sm" @click="muatIsi">Coba lagi</button></div>
+        <div v-if="galat" class="fs-kosong merah" role="alert">😵 {{ galat }} <button type="button" class="btn btn-ghost btn-sm" @click="muatSemua">Coba lagi</button></div>
         <div v-else-if="memuat" class="fs-kosong"><span class="putar" /> Membuka folder…</div>
         <template v-else>
           <button v-if="dir" type="button" class="fs-baris naik" @click="naik"><span class="fs-ikon">⤴️</span><span class="fs-nama">.. (naik satu folder)</span></button>

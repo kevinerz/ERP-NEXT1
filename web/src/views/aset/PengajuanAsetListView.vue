@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { toast, pesanGalat } from '@/composables/useDialog'
 import { useAsetStore } from '@/stores/aset'
 import { useAuthStore } from '@/stores/auth'
 import { fmtRupiah, fmtDateTime } from '@/composables/useFormat'
@@ -31,9 +32,9 @@ const submitting = ref(false)
 const formError = ref('')
 const form = ref({ nama_item: '', kategori: '', jumlah: 1, alasan: '', estimasi_harga: 0, id_gudang_tujuan: 0, link_marketplace: '', id_pemohon: 0 })
 
-onMounted(async () => {
-  await Promise.all([fetchGudang(), fetchKaryawan()])
+onMounted(() => {
   fetchData()
+  fetchGudang(); fetchKaryawan()
 })
 
 // dropdown gagal dimuat → tampilkan hint, bukan daftar kosong diam-diam
@@ -70,22 +71,26 @@ function resetForm() {
 }
 
 async function handleSubmit() {
+  if (submitting.value) return
   if (!form.value.id_pemohon) {
     formError.value = 'Pilih pengaju terlebih dahulu'; return
   }
-  if (!form.value.nama_item || !form.value.kategori || !form.value.alasan) {
+  if (!form.value.nama_item.trim() || !form.value.kategori.trim() || !form.value.alasan.trim()) {
     formError.value = 'Nama barang, kategori, dan alasan wajib diisi'; return
   }
+  if (!(Number(form.value.jumlah) >= 1)) { formError.value = 'Jumlah minimal 1'; return }
   submitting.value = true; formError.value = ''
   try {
     const payload: any = { ...form.value }
     if (!payload.id_gudang_tujuan) delete payload.id_gudang_tujuan
     if (!payload.link_marketplace) delete payload.link_marketplace
     if (!payload.id_pemohon) delete payload.id_pemohon
+    if (typeof payload.estimasi_harga !== 'number') payload.estimasi_harga = 0
     const result = await aset.createPengajuan(payload)
     showModal.value = false
+    toast('Pengajuan terkirim')
     router.push(`/assets/pengajuan/${result.id_pengajuan}`)
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal membuat pengajuan' }
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal membuat pengajuan') }
   finally { submitting.value = false }
 }
 
@@ -117,7 +122,10 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
       </select>
     </div>
 
-    <div v-if="aset.error" class="alert-error">{{ aset.error }}</div>
+    <div v-if="aset.error" class="alert-error" role="alert">
+      {{ aset.error }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="fetchData">↻ Coba lagi</button>
+    </div>
 
     <div class="table-card">
       <div v-if="aset.loading" class="loading">Memuat...</div>
@@ -135,7 +143,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
         </thead>
         <tbody>
           <tr v-if="!aset.pengajuanList.length">
-            <td colspan="7" class="empty">Belum ada pengajuan aset</td>
+            <td colspan="7" class="empty">{{ aset.error ? 'Data pengajuan gagal dimuat' : filterStatus ? `Tidak ada pengajuan berstatus ${filterStatus}` : 'Belum ada pengajuan aset' }}</td>
           </tr>
           <tr v-baris v-for="p in aset.pengajuanList" :key="p.id_pengajuan" class="row-link" @click="router.push(`/assets/pengajuan/${p.id_pengajuan}`)">
             <td class="kode">#{{ p.id_pengajuan }}</td>

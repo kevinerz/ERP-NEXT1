@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import api from '@/services/api'
+import { toastGalat, pesanGalat } from '@/composables/useDialog'
 
 function maxId(items: any[], current: number): number {
   return items.reduce((m, n) => Math.max(m, Number(n.id_notif) || 0), current)
@@ -21,7 +22,7 @@ export const useNotificationStore = defineStore('notification', {
   actions: {
     async fetchCount() {
       try {
-        const r = await api.get('/notifications/unread-count')
+        const r = await api.get('/notifications/unread-count', { senyap: true })
         const newCount: number = r.data.data.count
         // Fetch pertama setelah reload/login: notif yang sudah ada dijadikan
         // baseline tanpa toast/bunyi, supaya notif lama tidak di-toast ulang.
@@ -40,7 +41,7 @@ export const useNotificationStore = defineStore('notification', {
 
     async checkNewToasts() {
       try {
-        const r = await api.get('/notifications', { params: { page: 1 } })
+        const r = await api.get('/notifications', { params: { page: 1 }, senyap: true })
         const items: any[] = r.data.data || []
         const newest = items.filter(n => !n.is_read && n.id_notif > this._lastSeenId)
         newest.slice(0, 3).forEach(n => this.showToast(n))
@@ -56,7 +57,7 @@ export const useNotificationStore = defineStore('notification', {
 
     async syncLastSeen(): Promise<boolean> {
       try {
-        const r = await api.get('/notifications', { params: { page: 1 } })
+        const r = await api.get('/notifications', { params: { page: 1 }, senyap: true })
         this._lastSeenId = maxId(r.data.data || [], this._lastSeenId)
         return true
       } catch { return false }
@@ -71,8 +72,8 @@ export const useNotificationStore = defineStore('notification', {
         this.meta = r.data.meta
         this.count = r.data.meta.unread
         this._lastSeenId = maxId(r.data.data || [], this._lastSeenId)
-      } catch {
-        this.error = 'Gagal memuat notifikasi'
+      } catch (e: any) {
+        this.error = pesanGalat(e, 'Gagal memuat notifikasi')
       }
       finally { this.loading = false }
     },
@@ -95,7 +96,7 @@ export const useNotificationStore = defineStore('notification', {
         this.notifications.forEach(n => { n.is_read = true })
         this.count = 0
         this.meta.unread = 0
-      } catch {}
+      } catch (e: any) { toastGalat(e, 'Gagal menandai semua notifikasi sebagai dibaca') }
     },
 
     showToast(notif: any) {

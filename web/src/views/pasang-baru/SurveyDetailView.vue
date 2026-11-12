@@ -4,7 +4,7 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { fmtDateTime, fmtRupiah } from '@/composables/useFormat'
-import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, pesanGalat, promptDialog, toast } from '@/composables/useDialog'
 import { DEPOSIT_JENIS, KELAS_SPH, KELAS_SURVEY, umur, type Vendor } from './pb'
 
 interface VendorBaris {
@@ -58,7 +58,7 @@ async function muat() {
     muatError.value = ''
   } catch (e) {
     // muat awal gagal → error di halaman; muat ulang setelah aksi → modal
-    if (!s.value) { const m = (e as any)?.response?.data?.message; muatError.value = Array.isArray(m) ? m.join(', ') : m || 'Gagal memuat survey' }
+    if (!s.value) muatError.value = pesanGalat(e, 'Gagal memuat survey')
     else alertError(e, 'Gagal memuat survey')
   } finally {
     memuat.value = false
@@ -112,6 +112,7 @@ const ringkas = computed(() => {
 
 // ── Aksi ─────────────────────────────────────────────────────────────────────
 async function jalankan(fn: () => Promise<any>) {
+  if (proses.value) return
   proses.value = true
   try { await fn(); await muat() } catch (e) { alertError(e) } finally { proses.value = false }
 }
@@ -131,11 +132,12 @@ async function batal() {
 }
 const aktifkan = () => jalankan(() => api.post(`/pasang-baru/survey/${id.value}/aktifkan`))
 async function hapus() {
-  if (!(await confirmDialog({ title: 'Hapus survey', message: `Hapus ${s.value.nomor_survey}?`, variant: 'danger', confirmLabel: 'Hapus' }))) return
+  if (proses.value || !(await confirmDialog({ title: 'Hapus survey', message: `Hapus ${s.value.nomor_survey}?`, variant: 'danger', confirmLabel: 'Hapus' }))) return
   proses.value = true
   try {
     await api.delete(`/pasang-baru/survey/${id.value}`)
     berubah.value = false
+    toast('Survey dihapus')
     router.push('/pasang-baru?tab=Survey')
   } catch (e) { alertError(e) } finally { proses.value = false }
 }
@@ -225,10 +227,10 @@ const PETUNJUK: Record<string, string> = {
 
 <template>
   <div class="page">
-    <p v-if="memuat && !s" class="muted">Memuat…</p>
+    <p v-if="memuat && !s" class="loading-state">Memuat survey…</p>
     <div v-else-if="!s && muatError" class="alert alert-danger" role="alert">
       <span>⚠ {{ muatError }}</span>
-      <button class="btn btn-sm btn-ghost" @click="muat">Coba lagi</button>
+      <button type="button" class="btn btn-sm btn-ghost" @click="muat">↻ Coba lagi</button>
       <button class="btn btn-sm btn-ghost" @click="router.push('/pasang-baru?tab=Survey')">← Daftar</button>
     </div>
     <template v-else-if="s">
@@ -353,7 +355,7 @@ const PETUNJUK: Record<string, string> = {
                         </select>
                       </td>
                       <td><input v-model="v.catatan" class="form-input" maxlength="500" /></td>
-                      <td><button class="btn btn-sm btn-ghost" title="Hapus" @click="edit[i]!.vendor.splice(j, 1); berubah = true">✕</button></td>
+                      <td><button type="button" class="btn btn-sm btn-ghost" title="Hapus baris vendor" aria-label="Hapus baris vendor" @click="edit[i]!.vendor.splice(j, 1); berubah = true">✕</button></td>
                     </tr>
                   </tbody>
                 </table>

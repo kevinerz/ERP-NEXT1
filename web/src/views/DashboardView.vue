@@ -5,6 +5,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 import DashEksekutif from './dashboard/DashEksekutif.vue'
 import KartuAngka from '@/components/grafik/KartuAngka.vue'
 import GrafikTren from '@/components/grafik/GrafikTren.vue'
@@ -27,18 +28,22 @@ const terakhir = ref<Date | null>(null)
 const gagalPerbarui = ref(false)
 const jamTerakhir = computed(() => terakhir.value ? terakhir.value.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '')
 
+let sedangMuat = false
 async function muat(diam = false) {
+  // Penyegaran latar belakang dilewati bila permintaan sebelumnya belum selesai (server lambat).
+  if (diam && sedangMuat) return
+  sedangMuat = true
   if (!diam) memuat.value = true
   try {
-    const r = await api.get('/dashboard/saya')
+    const r = await api.get('/dashboard/saya', { senyap: diam })
     d.value = r.data.data
     error.value = ''
     terakhir.value = new Date()
     gagalPerbarui.value = false
   } catch (e: any) {
-    if (!diam || !d.value) error.value = e.response?.data?.message || 'Gagal memuat dashboard'
+    if (!diam || !d.value) error.value = pesanGalat(e, 'Gagal memuat dashboard')
     else gagalPerbarui.value = true
-  } finally { memuat.value = false }
+  } finally { memuat.value = false; sedangMuat = false }
 }
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => { muat(); timer = setInterval(() => muat(true), 60_000) })

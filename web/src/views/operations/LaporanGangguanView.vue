@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateTime } from '@/composables/useFormat'
+import { toast } from '@/composables/useDialog'
 import StatBatang from '@/views/wa/StatBatang.vue'
 
 const router = useRouter()
@@ -21,16 +22,23 @@ const d = ref<any>(null)
 const memuat = ref(false)
 const galat = ref('')
 const rentangSalah = computed(() => !!filter.dari && !!filter.sampai && filter.dari > filter.sampai)
+// Nomor urut: periode yang dipilih belakangan tidak boleh tertimpa jawaban periode sebelumnya
+let urutMuat = 0
 async function muat() {
+  const no = ++urutMuat
   galat.value = ''
   // Rentang tidak valid: jangan kirim permintaan
-  if (!filter.dari || !filter.sampai || rentangSalah.value) { d.value = null; return }
+  if (!filter.dari || !filter.sampai || rentangSalah.value) { d.value = null; memuat.value = false; return }
   memuat.value = true
-  try { d.value = (await api.get('/nocaas/laporan', { params: { dari: filter.dari, sampai: filter.sampai } })).data.data } catch (e: any) {
+  try {
+    const hasil = (await api.get('/nocaas/laporan', { params: { dari: filter.dari, sampai: filter.sampai } })).data.data
+    if (no === urutMuat) d.value = hasil
+  } catch (e: any) {
+    if (no !== urutMuat) return
     const m = e?.response?.data?.message
     galat.value = (Array.isArray(m) ? m.join(', ') : m) || 'Gagal memuat laporan gangguan'
     d.value = null
-  } finally { memuat.value = false }
+  } finally { if (no === urutMuat) memuat.value = false }
 }
 onMounted(muat)
 watch(() => [filter.dari, filter.sampai], muat)
@@ -53,6 +61,7 @@ const tiket = computed(() => ((d.value?.tiket ?? []) as any[]).filter((t) =>
   (!filterSumber.value || t.sumber === filterSumber.value) &&
   (!cari.value || `${t.nomor_tiket} ${t.site} ${t.kode_site} ${t.pelanggan} ${t.kategori}`.toLowerCase().includes(cari.value.toLowerCase()))))
 function unduhCsv() {
+  if (!tiket.value.length) { toast('Tidak ada tiket untuk diunduh pada filter ini', 'warning'); return }
   const kolom = ['nomor_tiket', 'sumber', 'kategori', 'prioritas', 'status', 'tgl_open', 'tgl_resolved', 'durasi_menit', 'lewat_sla', 'kode_site', 'site', 'kota', 'pelanggan', 'judul_tiket']
   const esc = (v: any) => { const s = v == null ? '' : String(v); return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
   const isi = [kolom.join(','), ...tiket.value.map((t) => kolom.map((k) => esc(k.startsWith('tgl_') && t[k] ? fmtDateTime(t[k]) : t[k])).join(','))].join('\n')
@@ -60,7 +69,8 @@ function unduhCsv() {
   a.href = URL.createObjectURL(new Blob(['﻿' + isi], { type: 'text/csv;charset=utf-8' }))
   a.download = `laporan-gangguan-${filter.dari}-sd-${filter.sampai}.csv`
   a.click()
-  URL.revokeObjectURL(a.href)
+  // Dicabut belakangan: mencabut seketika bisa membatalkan unduhan di sebagian browser
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
 }
 </script>
 
@@ -89,7 +99,7 @@ function unduhCsv() {
     <p v-if="rentangSalah" class="form-error" role="alert">Tanggal "dari" tidak boleh setelah tanggal "sampai".</p>
     <div v-else-if="galat" class="alert alert-danger lg-galat" role="alert">
       <span>⚠ {{ galat }}</span>
-      <button class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">Coba lagi</button>
+      <button type="button" class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">Coba lagi</button>
     </div>
     <p v-else-if="memuat && !d" class="muted">Memuat…</p>
 
@@ -172,7 +182,7 @@ function unduhCsv() {
           <h3>Paling sering putus VPN <small class="muted">(NOCaaS)</small></h3>
           <table class="data-table">
             <thead><tr><th>Router</th><th>Putus</th><th>Terakhir</th></tr></thead>
-            <tbody><tr v-for="s in d.sering_putus" :key="s.site_key"><td class="mono">{{ s.site_key }}</td><td>{{ angka(s.downs) }}</td><td class="nowrap">{{ fmtDateTime(s.last_at) }}</td></tr></tbody>
+            <tbody><tr v-if="!d.sering_putus?.length"><td colspan="3" class="muted">–</td></tr><tr v-for="s in d.sering_putus" :key="s.site_key"><td class="mono">{{ s.site_key }}</td><td>{{ angka(s.downs) }}</td><td class="nowrap">{{ fmtDateTime(s.last_at) }}</td></tr></tbody>
           </table>
           <h4 class="lg-sub">Alasan putus</h4>
           <p class="muted"><template v-for="(r, i) in d.alasan_putus" :key="r.reason">{{ i ? ' · ' : '' }}{{ r.reason }} <b>{{ angka(r.count) }}</b></template></p>
@@ -189,6 +199,7 @@ function unduhCsv() {
           <table class="data-table">
             <thead><tr><th>Tiket</th><th>Site</th><th>Sumber · jenis</th><th>Dibuka</th><th>Durasi</th><th>Status</th></tr></thead>
             <tbody>
+              <tr v-if="!tiket.length"><td colspan="6" class="muted">{{ cari || filterSumber ? 'Tidak ada tiket yang cocok dengan filter.' : 'Belum ada tiket pada periode ini.' }}</td></tr>
               <tr v-baris v-for="t in tiket.slice(0, 300)" :key="t.id_ticket" class="lg-baris" @click="router.push(`/operations/${t.id_ticket}`)">
                 <td><b class="mono">{{ t.nomor_tiket }}</b><div class="muted">{{ t.prioritas }}</div></td>
                 <td>{{ t.site }}<div class="muted">{{ t.kode_site }} · {{ t.pelanggan }}</div></td>

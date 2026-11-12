@@ -4,7 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useSalesStore, type Lead } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
-import { confirmDialog, alertDialog, promptDialog } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, promptDialog, toast, pesanGalat } from '@/composables/useDialog'
 import { fmtDateShort } from '@/composables/useFormat'
 import BasePagination from '@/components/BasePagination.vue'
 import { useFilterUrl } from '@/composables/useFilterUrl'
@@ -52,13 +52,14 @@ function doSearch() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
 async function handleSubmit() {
-  if (!form.value.nama_prospek || !form.value.id_sales_pic) {
+  if (submitting.value) return
+  if (!form.value.nama_prospek.trim() || !form.value.id_sales_pic) {
     formError.value = 'Nama prospek dan Sales PIC wajib diisi'; return
   }
   submitting.value = true; formError.value = ''
   try {
     const result = await sales.createLead({
-      nama_prospek: form.value.nama_prospek,
+      nama_prospek: form.value.nama_prospek.trim(),
       nama_perusahaan: form.value.nama_perusahaan || undefined,
       no_kontak: form.value.no_kontak || undefined,
       email: form.value.email || undefined,
@@ -69,7 +70,7 @@ async function handleSubmit() {
     showModal.value = false
     router.push(`/sales/lead/${result.id_lead}`)
   } catch (e: any) {
-    formError.value = e.response?.data?.message || 'Terjadi kesalahan'
+    formError.value = pesanGalat(e, 'Gagal menyimpan lead')
   } finally { submitting.value = false }
 }
 
@@ -84,9 +85,10 @@ async function hapusLead(id: number, nama: string) {
   }))) return
   try {
     await api.delete(`/sales/lead/${id}`)
+    toast('Lead dihapus')
     fetchData()
   } catch (e: any) {
-    const msg = e.response?.data?.message || 'Gagal menghapus lead'
+    const msg = pesanGalat(e, 'Gagal menghapus lead')
     // Lead masih punya data terkait → tawarkan force delete (Admin/Director)
     if (e.response?.status === 400 && String(msg).includes('force delete')) {
       if (!canForce.value) {
@@ -114,7 +116,7 @@ async function hapusLead(id: number, nama: string) {
         fetchData()
         await alertDialog({ message: r.data?.message || 'Lead + data terkait dihapus', variant: 'success' })
       } catch (e2: any) {
-        await alertDialog({ message: e2.response?.data?.message || 'Force delete gagal', variant: 'danger' })
+        await alertDialog({ message: pesanGalat(e2, 'Force delete gagal'), variant: 'danger' })
       }
       return
     }
@@ -142,7 +144,9 @@ async function hapusLead(id: number, nama: string) {
       <button class="btn-search" @click="doSearch">Cari</button>
     </div>
 
-    <div v-if="sales.error" class="alert-error">{{ sales.error }}</div>
+    <div v-if="sales.error" class="alert-error" role="alert">{{ sales.error }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="fetchData">↻ Coba lagi</button>
+    </div>
 
     <div class="table-card">
       <div v-if="sales.loading" class="loading">Memuat...</div>
@@ -161,8 +165,8 @@ async function hapusLead(id: number, nama: string) {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!sales.leadList.length">
-            <td colspan="9" class="empty">Tidak ada lead</td>
+          <tr v-if="!sales.leadList.length && !sales.error">
+            <td colspan="9" class="empty">{{ search || filterStatus ? 'Tidak ada lead yang cocok dengan pencarian/filter ini' : 'Belum ada lead' }}</td>
           </tr>
           <tr v-baris
             v-for="l in sales.leadList" :key="l.id_lead"
@@ -172,7 +176,7 @@ async function hapusLead(id: number, nama: string) {
             <td class="text-gray">{{ l.nama_perusahaan || '—' }}</td>
             <td>{{ l.no_kontak || '—' }}</td>
             <td><span class="sumber-badge">{{ l.sumber_lead }}</span></td>
-            <td>{{ l.sales_pic?.nama_lengkap }}</td>
+            <td>{{ l.sales_pic?.nama_lengkap || '—' }}</td>
             <td><span :class="['badge', STATUS_COLOR[l.status_lead] || 'badge-gray']">{{ l.status_lead }}</span></td>
             <td class="center">{{ l._count?.opportunities ?? 0 }}</td>
             <td class="text-gray text-sm">{{ formatDate(l.created_at) }}</td>

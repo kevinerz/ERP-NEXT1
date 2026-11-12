@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 
 interface SyslogDevice {
   id: number
@@ -58,6 +59,7 @@ interface NocData {
 }
 
 const router = useRouter()
+const papanEl = ref<HTMLElement | null>(null)
 
 const data = ref<NocData | null>(null)
 const loading = ref(true)
@@ -81,31 +83,32 @@ const tglDinding = computed(() =>
   new Date(now.value).toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })
 )
 
-async function fetchData() {
+async function fetchData(latar = false) {
   try {
-    const r = await api.get('/operations/noc-board')
+    const r = await api.get('/operations/noc-board', { senyap: latar })
     data.value = r.data.data
     lastUpdate.value = new Date().toLocaleTimeString('id-ID', { hour12: false })
     error.value = ''
-  } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Gagal memuat data NOC'
+  } catch (e) {
+    error.value = pesanGalat(e, 'Gagal memuat data NOC') + (data.value ? ' — menampilkan data terakhir.' : '')
   } finally {
     loading.value = false
   }
 }
 
-async function fetchDevices() {
+async function fetchDevices(latar = false) {
   devicesLoading.value = true
   try {
-    const r = await api.get('/operations/noc-board/devices')
+    const r = await api.get('/operations/noc-board/devices', { senyap: latar })
     perangkat.value = r.data.data?.perangkat ?? []
     syslogDevices.value = r.data.data?.syslogDevices ?? []
     devicesError.value = ''
-  } catch (e: any) {
+  } catch (e) {
     // Data terakhir tetap ditampilkan
-    devicesError.value = e?.response?.data?.message || 'Gagal memuat daftar perangkat'
+    devicesError.value = pesanGalat(e, 'Gagal memuat daftar perangkat')
+  } finally {
+    devicesLoading.value = false
   }
-  devicesLoading.value = false
 }
 
 const prioColors: Record<string, string> = {
@@ -178,8 +181,8 @@ function fmtSyslogTime(ts: string): string {
 async function toggleFullscreen() {
   try {
     if (document.fullscreenElement) await document.exitFullscreen()
-    else await document.documentElement.requestFullscreen()
-  } catch { /* ignore */ }
+    else await (papanEl.value ?? document.documentElement).requestFullscreen()
+  } catch { /* browser menolak layar penuh — tidak ada yang perlu dilakukan */ }
 }
 
 function onFsChange() {
@@ -189,7 +192,10 @@ function onFsChange() {
 onMounted(() => {
   fetchData()
   fetchDevices()
-  fetchTimer = setInterval(() => { fetchData(); fetchDevices() }, 30000)
+  fetchTimer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return
+    fetchData(true); fetchDevices(true)
+  }, 30000)
   clockTimer = setInterval(() => { now.value = Date.now() }, 1000)
   document.addEventListener('fullscreenchange', onFsChange)
 })
@@ -202,7 +208,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="noc-board">
+  <div ref="papanEl" class="noc-board">
     <!-- Header -->
     <div class="noc-header">
       <div class="noc-title">
@@ -222,12 +228,12 @@ onUnmounted(() => {
         <div class="noc-clock">{{ jamDinding }}</div>
         <div class="noc-date">{{ tglDinding }}</div>
       </div>
-      <button type="button" class="fs-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'">
+      <button type="button" class="fs-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'" :aria-label="isFullscreen ? 'Keluar layar penuh' : 'Layar penuh'">
         {{ isFullscreen ? '✕' : '⛶' }}
       </button>
     </div>
 
-    <div v-if="error" class="noc-error">{{ error }}</div>
+    <div v-if="error" class="noc-error" role="alert">{{ error }} <button type="button" class="btn btn-ghost btn-sm" @click="fetchData()">Coba lagi</button></div>
 
     <template v-if="data">
       <!-- Stat strip -->
@@ -359,7 +365,7 @@ onUnmounted(() => {
 
         <div v-if="devicesError" class="empty-wo" style="padding:12px 0;color:#f87171" role="alert">
           ⚠ {{ devicesError }}<template v-if="perangkat.length"> — menampilkan data terakhir.</template>
-          <button class="btn btn-ghost btn-sm" :disabled="devicesLoading" @click="fetchDevices">Coba lagi</button>
+          <button type="button" class="btn btn-ghost btn-sm" :disabled="devicesLoading" @click="fetchDevices()">Coba lagi</button>
         </div>
         <div v-if="devicesLoading && !perangkat.length && !devicesError" class="empty-wo" style="padding:20px 0">Memuat perangkat…</div>
         <div v-else-if="!perangkat.length && !devicesError" class="empty-wo">Belum ada perangkat terdaftar</div>

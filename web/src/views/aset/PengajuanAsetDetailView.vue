@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useAuthStore } from '@/stores/auth'
@@ -40,7 +40,7 @@ async function load() {
     aset.pengajuanCurrent = (await api.get(`/assets/pengajuan/${id}`)).data.data
   } catch (e: any) {
     if (e?.response?.status === 404) tidakAda.value = true
-    else if (!aset.pengajuanCurrent) loadError.value = e?.response?.data?.message || 'Gagal memuat pengajuan'
+    else if (!aset.pengajuanCurrent) loadError.value = pesanGalat(e, 'Gagal memuat pengajuan')
     else alertError(e, 'Gagal memuat ulang pengajuan')
   } finally { memuat.value = false }
 }
@@ -60,6 +60,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 }
 
 async function approve(status: 'Disetujui' | 'Ditolak') {
+  if (processing.value) return
   if (!(await confirmDialog({
     title: status === 'Disetujui' ? 'Setujui Pengajuan?' : 'Tolak Pengajuan?',
     message: `${status} pengajuan "${p.value?.nama_item}" ini?`,
@@ -68,7 +69,8 @@ async function approve(status: 'Disetujui' | 'Ditolak') {
   }))) return
   processing.value = true
   try {
-    await aset.approvePengajuan(id, { status_approval: status, catatan_approval: catatanApproval.value || undefined })
+    await aset.approvePengajuan(id, { status_approval: status, catatan_approval: catatanApproval.value.trim() || undefined })
+    toast(status === 'Disetujui' ? 'Pengajuan disetujui' : 'Pengajuan ditolak')
     await load()
   } catch (e: any) { await alertError(e, 'Gagal memproses approval') }
   finally { processing.value = false }
@@ -82,25 +84,33 @@ function openSelesaiForm() {
 }
 
 async function submitSelesai() {
+  if (processing.value) return
+  if (!formSelesai.value.tgl_terima) { formError.value = 'Tanggal terima wajib diisi'; return }
   processing.value = true; formError.value = ''
   try {
     const payload: any = { ...formSelesai.value }
+    if (typeof payload.harga_aktual !== 'number') payload.harga_aktual = 0
     if (!payload.serial_number) delete payload.serial_number
     if (!payload.id_gudang) delete payload.id_gudang
     await aset.selesaikanPengajuan(id, payload)
     showSelesaiForm.value = false
+    toast('Barang tercatat sebagai aset')
     await load()
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal menyelesaikan pengajuan' }
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal menyelesaikan pengajuan') }
   finally { processing.value = false }
 }
 
 async function hapusAdmin() {
   const nama = p.value?.nama_item ?? `#${id}`
   if (!(await confirmDialog({ title: 'Hapus Pengajuan?', message: `Hapus pengajuan "${nama}" secara permanen?\n\nTindakan ini tidak bisa dibatalkan.`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  if (processing.value) return
+  processing.value = true
   try {
     await aset.removePengajuan(id)
+    toast('Pengajuan dihapus')
     router.push('/assets/pengajuan')
   } catch (e: any) { await alertError(e, 'Gagal menghapus pengajuan') }
+  finally { processing.value = false }
 }
 </script>
 

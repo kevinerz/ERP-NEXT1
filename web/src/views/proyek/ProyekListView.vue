@@ -5,7 +5,7 @@ import { useProyekStore } from '@/stores/proyek'
 import { useMasterStore } from '@/stores/master'
 import { fmtDateShort as fmtDate } from '@/composables/useFormat'
 import api from '@/services/api'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, pesanGalat, toast } from '@/composables/useDialog'
 import BasePagination from '@/components/BasePagination.vue'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 import { useFilterUrl } from '@/composables/useFilterUrl'
@@ -37,10 +37,17 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Ditahan:     { bg: '#fef2f2', color: '#dc2626' },
 }
 
-onMounted(async () => {
-  await Promise.all([proyek.fetchSummary(), proyek.fetchPmList()])
+onMounted(() => {
+  // Daftar tidak perlu menunggu ringkasan & daftar PM
   fetchData()
+  proyek.fetchSummary()
+  proyek.fetchPmList()
 })
+function bukaModal() {
+  form.value = { id_opportunity: 0, id_site: 0, id_pm: 0, id_kontrak: null, tgl_mulai: '', tgl_target_selesai: '', catatan: '' }
+  formError.value = ''
+  showModal.value = true
+}
 
 function fetchData() {
   const params: any = { page: page.value }
@@ -51,6 +58,7 @@ function doFilter() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
 async function handleSubmit() {
+  if (submitting.value) return
   if (!form.value.id_opportunity || !form.value.id_site || !form.value.id_pm) {
     formError.value = 'Opportunity ID, Site, dan PM wajib diisi'; return
   }
@@ -68,7 +76,7 @@ async function handleSubmit() {
     showModal.value = false
     router.push(`/projects/${result.id_project}`)
   } catch (e: any) {
-    formError.value = e.response?.data?.message || 'Terjadi kesalahan'
+    formError.value = pesanGalat(e, 'Gagal membuat project')
   } finally { submitting.value = false }
 }
 
@@ -81,6 +89,7 @@ async function hapusProyek(id: number, nomor: string) {
   }))) return
   try {
     await api.delete(`/projects/${id}`)
+    toast('Project dihapus')
     await proyek.fetchSummary()
     fetchData()
   } catch (e: any) {
@@ -111,7 +120,7 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
         <h2>Proyek</h2>
         <p class="sub">Delivery project instalasi & implementasi</p>
       </div>
-      <button type="button" class="btn btn-primary" @click="showModal = true">+ Buat Project</button>
+      <button type="button" class="btn btn-primary" @click="bukaModal">+ Buat Project</button>
     </div>
 
     <!-- Summary chips -->
@@ -137,7 +146,10 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
       >{{ s }}</button>
     </div>
 
-    <div v-if="proyek.error" class="alert-error">{{ proyek.error }}</div>
+    <div v-if="proyek.error" class="alert-error" role="alert">
+      {{ proyek.error }}
+      <button type="button" class="btn-cancel" @click="fetchData">↻ Coba lagi</button>
+    </div>
 
     <div class="table-card">
       <div v-if="proyek.loading" class="loading">Memuat...</div>
@@ -156,8 +168,8 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!proyek.list.length">
-            <td colspan="9" class="empty">Tidak ada project</td>
+          <tr v-if="!proyek.list.length && !proyek.error">
+            <td colspan="9" class="empty">{{ filterStatus ? `Tidak ada project berstatus ${filterStatus}` : 'Belum ada project' }}</td>
           </tr>
           <tr v-baris
             v-for="p in proyek.list" :key="p.id_project"
@@ -241,8 +253,8 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
         </div>
         <p v-if="formError" class="form-error">{{ formError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" @click="showModal = false">Batal</button>
-          <button class="btn-submit" @click="handleSubmit" :disabled="submitting">
+          <button type="button" class="btn-cancel" @click="showModal = false">Batal</button>
+          <button type="button" class="btn-submit" @click="handleSubmit" :disabled="submitting">
             {{ submitting ? 'Membuat...' : 'Buat Project' }}
           </button>
         </div>

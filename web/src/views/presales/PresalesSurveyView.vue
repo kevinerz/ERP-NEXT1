@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import api from '@/services/api'
 import { fmtDateShort } from '@/composables/useFormat'
+import { pesanGalat } from '@/composables/useDialog'
 import BasePagination from '@/components/BasePagination.vue'
 
 interface Layanan { id_layanan: number; kode_layanan: string; nama_layanan: string }
@@ -75,6 +76,7 @@ const form = reactive<Partial<Survey>>({
 })
 
 const loadError = ref('')
+const refError = ref('')
 let fetchSeq = 0
 
 async function fetchSurveys() {
@@ -90,13 +92,14 @@ async function fetchSurveys() {
     surveys.value = res.data.data
     total.value   = res.data.meta?.total ?? 0
   } catch (e: any) {
-    if (seq === fetchSeq) loadError.value = e?.response?.data?.message ?? 'Gagal memuat data survey'
+    if (seq === fetchSeq) loadError.value = pesanGalat(e, 'Gagal memuat data survey')
   } finally {
     if (seq === fetchSeq) loading.value = false
   }
 }
 
 async function fetchRefs() {
+  refError.value = ''
   try {
     const [k, o, l] = await Promise.all([
       api.get('/presales/karyawan'),
@@ -107,7 +110,7 @@ async function fetchRefs() {
     oppList.value     = o.data.data
     layananList.value = l.data.data
   } catch (e: any) {
-    loadError.value = e?.response?.data?.message ?? 'Gagal memuat data referensi (karyawan/opportunity/layanan)'
+    refError.value = pesanGalat(e, 'Gagal memuat data referensi (karyawan/opportunity/layanan)')
   }
 }
 
@@ -115,6 +118,7 @@ onMounted(() => { fetchSurveys(); fetchRefs() })
 
 function openCreate() {
   editId.value = null
+  saveError.value = ''
   Object.assign(form, {
     id_opportunity: null, id_layanan: null, nama_prospek: '', alamat_survey: '', kota: '',
     tanggal_survey: '', nama_odp: '', status_odp: 'Belum_Survey',
@@ -140,6 +144,7 @@ function openEdit(s: Survey) {
 }
 
 async function save() {
+  if (saving.value) return
   saving.value = true
   saveError.value = ''
   try {
@@ -157,7 +162,7 @@ async function save() {
     showModal.value = false
     await fetchSurveys()
   } catch (e: any) {
-    saveError.value = e?.response?.data?.message ?? e?.message ?? 'Gagal menyimpan, coba lagi.'
+    saveError.value = pesanGalat(e, 'Gagal menyimpan, coba lagi.')
   } finally {
     saving.value = false
   }
@@ -175,7 +180,7 @@ async function del(id: number) {
     confirmDel.value = null
     await fetchSurveys()
   } catch (e: any) {
-    delError.value = e?.response?.data?.message ?? 'Gagal menghapus survey'
+    delError.value = pesanGalat(e, 'Gagal menghapus survey')
   } finally {
     deleting.value = false
   }
@@ -188,6 +193,8 @@ function searchDebounced() {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(searchInput, 300)
 }
+onBeforeUnmount(() => clearTimeout(searchTimer))
+const adaFilter = computed(() => !!(filters.search.trim() || filters.status_presales || filters.id_layanan || filters.status_odp))
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / filters.limit)))
 function goPage(p: number) { filters.page = p; fetchSurveys() }
@@ -249,7 +256,14 @@ function prospecName(s: Survey) {
       </span>
     </div>
 
-    <div v-if="loadError" class="save-error" role="alert">{{ loadError }}</div>
+    <div v-if="loadError" class="save-error" role="alert">
+      {{ loadError }}
+      <button type="button" class="btn-cancel" @click="fetchSurveys">↻ Coba lagi</button>
+    </div>
+    <div v-if="refError" class="save-error" role="alert">
+      {{ refError }}
+      <button type="button" class="btn-cancel" @click="fetchRefs">↻ Coba lagi</button>
+    </div>
 
     <!-- Table -->
     <div class="ps-table-wrap">
@@ -272,8 +286,8 @@ function prospecName(s: Survey) {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!surveys.length">
-            <td colspan="12" class="ps-empty">Belum ada data survey</td>
+          <tr v-if="!surveys.length && !loadError">
+            <td colspan="12" class="ps-empty">{{ adaFilter ? 'Tidak ada survey yang cocok dengan filter ini' : 'Belum ada data survey' }}</td>
           </tr>
           <tr v-baris v-for="s in surveys" :key="s.id_survey" class="ps-row" @click="openEdit(s)">
             <td class="td-name">
@@ -445,8 +459,8 @@ function prospecName(s: Survey) {
           <p>Data tidak dapat dikembalikan.</p>
           <div v-if="delError" class="save-error" role="alert">{{ delError }}</div>
           <div class="modal-actions">
-            <button class="btn-cancel" @click="confirmDel = null; delError = ''">Batal</button>
-            <button class="btn-danger" :disabled="deleting" @click="del(confirmDel!)">{{ deleting ? 'Menghapus…' : 'Hapus' }}</button>
+            <button type="button" class="btn-cancel" @click="confirmDel = null; delError = ''">Batal</button>
+            <button type="button" class="btn-danger" :disabled="deleting" @click="del(confirmDel!)">{{ deleting ? 'Menghapus…' : 'Hapus' }}</button>
           </div>
         </div>
       </div>

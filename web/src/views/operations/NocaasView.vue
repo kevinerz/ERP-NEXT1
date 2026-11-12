@@ -4,7 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateTime } from '@/composables/useFormat'
-import { alertError } from '@/composables/useDialog'
+import { alertError, toast } from '@/composables/useDialog'
 import { useAuthStore } from '@/stores/auth'
 import SinkronPerangkatNocaas from './SinkronPerangkatNocaas.vue'
 
@@ -44,22 +44,35 @@ function bukaCfg() {
   cfgForm.value = { tiket_aktif: c.tiket_aktif, wa_pic_aktif: c.wa_pic_aktif, durasi_konfirmasi_menit: c.durasi_konfirmasi_menit, cooldown_menit: c.cooldown_menit, maks_tiket_per_putaran: c.maks_tiket_per_putaran, kategori: JSON.parse(JSON.stringify(c.kategori)) }
   cfgEdit.value = true
 }
+const menyimpanCfg = ref(false)
 async function simpanCfg() {
-  try { cfg.value = (await api.put('/nocaas/konfigurasi', cfgForm.value)).data.data; cfgEdit.value = false } catch (e) { alertError(e, 'Gagal menyimpan') }
+  if (menyimpanCfg.value) return
+  menyimpanCfg.value = true
+  try {
+    cfg.value = (await api.put('/nocaas/konfigurasi', cfgForm.value)).data.data
+    cfgEdit.value = false
+    toast('Pengaturan tiket otomatis disimpan')
+  } catch (e) { alertError(e, 'Gagal menyimpan') } finally { menyimpanCfg.value = false }
 }
 
-async function muat() {
+async function muat(latar = false) {
   memuat.value = true
   // Dipanggil tiap menit: jangan buka dialog, cukup banner & simpan data terakhir
-  try { data.value = (await api.get('/nocaas/ringkasan')).data.data; galat.value = '' } catch (e) { galat.value = pesanGagal(e, 'Gagal memuat ringkasan NOCaaS') } finally { memuat.value = false }
+  try { data.value = (await api.get('/nocaas/ringkasan', { senyap: latar })).data.data; galat.value = '' } catch (e) { galat.value = pesanGagal(e, 'Gagal memuat ringkasan NOCaaS') } finally { memuat.value = false }
 }
 async function sinkronSekarang() {
+  if (sinkron.value) return
   sinkron.value = true
-  try { await api.post('/nocaas/sinkron'); await muat(); if (tab.value === 'belum') muatBelum(belumMeta.value.page) } catch (e) { alertError(e, 'Sinkron gagal') } finally { sinkron.value = false }
+  try {
+    await api.post('/nocaas/sinkron')
+    await muat()
+    if (tab.value === 'belum') muatBelum(belumMeta.value.page)
+    if (!galat.value) toast(data.value?.sinkron && !data.value.sinkron.ok ? 'Sinkron dijalankan, tetapi NOCaaS melaporkan kegagalan' : 'Sinkron selesai', data.value?.sinkron && !data.value.sinkron.ok ? 'warning' : 'success')
+  } catch (e) { alertError(e, 'Sinkron gagal') } finally { sinkron.value = false }
 }
 let timer: ReturnType<typeof setInterval> | undefined
-onMounted(() => { muat(); muatCfg(); timer = setInterval(muat, 60_000) })
-onUnmounted(() => clearInterval(timer))
+onMounted(() => { muat(); muatCfg(); timer = setInterval(() => { if (document.visibilityState === 'visible') muat(true) }, 60_000) })
+onUnmounted(() => { clearInterval(timer); clearTimeout(petaTimer) })
 
 function lama(d?: string | null) {
   if (!d) return '—'
@@ -84,11 +97,17 @@ const belumMeta = ref({ total: 0, page: 1, pages: 1, jumlah: { belum: 0, saran: 
 const cariBelum = ref('')
 const fokus = ref(0)
 const sibuk = ref(false)
+const memuatBelum = ref(false)
+let urutBelum = 0
 async function muatBelum(page = 1) {
+  const no = ++urutBelum
+  memuatBelum.value = true
   try {
-    const r = (await api.get('/nocaas/tinjau', { params: { jenis: jenis.value, cari: cariBelum.value || undefined, page } })).data
-    belum.value = r.data; belumMeta.value = r.meta; fokus.value = 0
-  } catch (e) { alertError(e) }
+    const r = (await api.get('/nocaas/tinjau', { params: { jenis: jenis.value, cari: cariBelum.value.trim() || undefined, page } })).data
+    if (no !== urutBelum) return
+    belum.value = r.data ?? []; belumMeta.value = r.meta ?? belumMeta.value; fokus.value = 0
+  } catch (e) { if (no === urutBelum) alertError(e, 'Gagal memuat daftar pemetaan router') }
+  finally { if (no === urutBelum) memuatBelum.value = false }
 }
 function gantiJenis(j: Jenis) { jenis.value = j; petaKey.value = ''; muatBelum(1) }
 function bukaTab(t: typeof tab.value) { tab.value = t; if (t === 'belum' && !belum.value.length) muatBelum() }
@@ -108,18 +127,25 @@ async function aksiPeta(key: string, body: { id_site?: number; abaikan?: boolean
     if (fokus.value >= belum.value.length) fokus.value = Math.max(0, belum.value.length - 1)
     petaKey.value = ''
     if (!belum.value.length && belumMeta.value.total > 0) muatBelum(belumMeta.value.page)
-  } catch (e) { alertError(e) } finally { sibuk.value = false }
+  } catch (e) { alertError(e, 'Gagal menyimpan pemetaan router') } finally { sibuk.value = false }
 }
 
 const petaKey = ref('')
 const petaCari = ref('')
 const petaHasil = ref<any[]>([])
 let petaTimer: ReturnType<typeof setTimeout> | undefined
+let urutPeta = 0
+const petaGalat = ref('')
 function cariSite() {
   clearTimeout(petaTimer)
   petaTimer = setTimeout(async () => {
+    const no = ++urutPeta
+    petaGalat.value = ''
     if (petaCari.value.trim().length < 2) { petaHasil.value = []; return }
-    try { petaHasil.value = (await api.get('/visit/site', { params: { q: petaCari.value } })).data.data } catch { petaHasil.value = [] }
+    try {
+      const hasil = (await api.get('/visit/site', { params: { q: petaCari.value } })).data.data ?? []
+      if (no === urutPeta) petaHasil.value = hasil
+    } catch (e) { if (no === urutPeta) { petaHasil.value = []; petaGalat.value = pesanGagal(e, 'Gagal mencari site') } }
   }, 250)
 }
 function mulaiPeta(r: any) {
@@ -173,7 +199,7 @@ const pengelolaNc = computed(() => ['Admin', 'Director', 'Manager_Ops'].some((r)
 
     <div v-if="galat" class="alert alert-danger nc-galat" role="alert">
       <span>⚠ {{ galat }}<template v-if="data"> — menampilkan data terakhir.</template></span>
-      <button class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">{{ memuat ? 'Memuat…' : 'Coba lagi' }}</button>
+      <button type="button" class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat()">{{ memuat ? 'Memuat…' : 'Coba lagi' }}</button>
     </div>
     <p v-if="memuat && !data" class="muted">Memuat…</p>
     <template v-else-if="data">
@@ -221,7 +247,7 @@ const pengelolaNc = computed(() => ['Admin', 'Director', 'Manager_Ops'].some((r)
             </label>
             <label>Pulih setelah tenang <input v-model.number="cfgForm.kategori.pulih_menit" type="number" min="10" class="form-input" /> menit</label>
           </div>
-          <button type="submit" class="btn btn-primary btn-sm">Simpan</button>
+          <button type="submit" class="btn btn-primary btn-sm" :disabled="menyimpanCfg">{{ menyimpanCfg ? 'Menyimpan…' : 'Simpan' }}</button>
           <button type="button" class="btn btn-ghost btn-sm" @click="cfgEdit = false">Batal</button>
         </form>
       </div>
@@ -299,7 +325,7 @@ const pengelolaNc = computed(() => ['Admin', 'Director', 'Manager_Ops'].some((r)
       <div v-else class="card nc-panel">
         <p class="nc-catatan">
           Terpetakan:
-          <template v-for="(p, i) in data.pemetaan.per_sumber" :key="p.sumber">{{ i ? ' · ' : ' ' }}{{ SUMBER[p.sumber] }} <b>{{ p.n }}</b></template>.
+          <template v-for="(p, i) in data.pemetaan.per_sumber" :key="p.sumber">{{ i ? ' · ' : ' ' }}{{ SUMBER[p.sumber] ?? p.sumber }} <b>{{ p.n }}</b></template>.
           Pilihan di sini disimpan sebagai <b>manual</b> dan tidak akan ditimpa sinkronisasi.
         </p>
         <div class="nc-filter">
@@ -322,7 +348,7 @@ const pengelolaNc = computed(() => ['Admin', 'Director', 'Manager_Ops'].some((r)
               <tr v-else><th style="width:30%">Router NOCaaS</th><th>Site ERP</th><th style="width:220px"></th></tr>
             </thead>
             <tbody>
-              <tr v-if="!belum.length"><td colspan="3" class="muted nc-kosong">Tidak ada router di sini.</td></tr>
+              <tr v-if="!belum.length"><td colspan="3" class="muted nc-kosong">{{ memuatBelum ? 'Memuat…' : cariBelum.trim() ? 'Tidak ada router yang cocok dengan pencarian.' : 'Tidak ada router di sini.' }}</td></tr>
               <template v-for="(r, i) in belum" :key="r.site_key">
                 <tr v-baris :class="{ 'nc-fokus': jenis === 'belum' && i === fokus }" @click="fokus = i">
                   <td>
@@ -370,7 +396,8 @@ const pengelolaNc = computed(() => ['Admin', 'Director', 'Manager_Ops'].some((r)
                     <div v-baris v-for="s in petaHasil" :key="s.id_site" class="nc-pilih" @click="simpanPeta(s.id_site)">
                       <b>{{ s.nama_site }}</b> <span class="muted">{{ s.kode_site }} · {{ s.pelanggan?.nama_pelanggan }} · {{ s.kota }}<template v-if="s.status_site !== 'Aktif'"> · {{ s.status_site }}</template></span>
                     </div>
-                    <p v-if="petaCari.trim().length >= 2 && !petaHasil.length" class="muted">Tidak ada site cocok — ubah kata kunci.</p>
+                    <p v-if="petaGalat" class="form-error">{{ petaGalat }}</p>
+                    <p v-else-if="petaCari.trim().length >= 2 && !petaHasil.length" class="muted">Tidak ada site cocok — ubah kata kunci.</p>
                   </td>
                 </tr>
               </template>
@@ -378,9 +405,9 @@ const pengelolaNc = computed(() => ['Admin', 'Director', 'Manager_Ops'].some((r)
           </table>
         </div>
         <div v-if="belumMeta.pages > 1" class="nc-halaman">
-          <button class="btn btn-ghost btn-sm" :disabled="belumMeta.page <= 1" @click="muatBelum(belumMeta.page - 1)">‹</button>
+          <button type="button" class="btn btn-ghost btn-sm" aria-label="Halaman sebelumnya" :disabled="belumMeta.page <= 1 || memuatBelum" @click="muatBelum(belumMeta.page - 1)">‹</button>
           <span class="muted">{{ belumMeta.page }} / {{ belumMeta.pages }} · {{ belumMeta.total }} router</span>
-          <button class="btn btn-ghost btn-sm" :disabled="belumMeta.page >= belumMeta.pages" @click="muatBelum(belumMeta.page + 1)">›</button>
+          <button type="button" class="btn btn-ghost btn-sm" aria-label="Halaman berikutnya" :disabled="belumMeta.page >= belumMeta.pages || memuatBelum" @click="muatBelum(belumMeta.page + 1)">›</button>
         </div>
       </div>
     </template>

@@ -4,7 +4,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } 
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import { alertError, confirmDialog, promptDialog, toast } from '@/composables/useDialog'
+import { alertError, confirmDialog, promptDialog, toast, toastGalat, pesanGalat } from '@/composables/useDialog'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -38,7 +38,7 @@ let timerKoneksi: ReturnType<typeof setInterval> | null = null
 
 async function muatKoneksi() {
   try {
-    const { data } = await api.get(`/wa/akun/${AKUN}/koneksi`)
+    const { data } = await api.get(`/wa/akun/${AKUN}/koneksi`, { senyap: true })
     const live = data.data.live || {}
     koneksi.status = live.status || 'mati'
     koneksi.qr = live.qr || null
@@ -52,13 +52,18 @@ async function muatKoneksi() {
 }
 function pantauKoneksi(cepat: boolean) {
   if (timerKoneksi) clearInterval(timerKoneksi)
+  if (dilepas) return
   timerKoneksi = setInterval(muatKoneksi, cepat ? 3000 : 30000)
 }
 watch(() => koneksi.status, (s) => pantauKoneksi(s === 'qr' || s === 'menghubungkan'))
 
 async function hubungkan() {
   bukaQr.value = true
-  try { await api.post(`/wa/akun/${AKUN}/mulai`) } catch (e: any) { koneksi.error = e?.response?.data?.message || 'Gagal memulai' }
+  try { await api.post(`/wa/akun/${AKUN}/mulai`) } catch (e: any) {
+    // muatKoneksi() di bawah menimpa koneksi.error, jadi kegagalan juga ditampilkan lewat toast
+    koneksi.error = pesanGagal(e, 'Gagal memulai koneksi WhatsApp')
+    toastGalat(e, 'Gagal memulai koneksi WhatsApp')
+  }
   await muatKoneksi()
   pantauKoneksi(true)
 }
@@ -86,23 +91,27 @@ const total = ref(0)
 const hitung = reactive({ saya: 0, belum: 0, grup: 0 })
 const memuatChat = ref(false)
 const chatGalat = ref('') // gagal muat daftar chat (daftar terakhir tetap tampil)
-const pesanGagal = (e: any, f: string) => { const m = e?.response?.data?.message; return (Array.isArray(m) ? m.join(', ') : m) || f }
+const pesanGagal = (e: any, f: string) => pesanGalat(e, f)
 let timerCari: ReturnType<typeof setTimeout> | null = null
+let urutChat = 0 // hanya jawaban permintaan terakhir yang dipakai (ganti filter / ketik cari cepat)
 
-async function muatChat(lanjut = false) {
+async function muatChat(lanjut = false, senyap = false) {
+  const n = ++urutChat
   memuatChat.value = true
   try {
     if (!lanjut) halaman.value = 1
-    const { data } = await api.get('/wa/chat', { params: { akun: AKUN, filter: filter.value, q: cari.value || undefined, halaman: halaman.value } })
+    const { data } = await api.get('/wa/chat', { params: { akun: AKUN, filter: filter.value, q: cari.value || undefined, halaman: halaman.value }, senyap })
+    if (n !== urutChat) return
     chats.value = lanjut ? [...chats.value, ...data.data] : data.data
     total.value = data.meta?.total ?? chats.value.length
     Object.assign(hitung, data.meta?.hitung || {})
     chatGalat.value = ''
   } catch (e: any) {
+    if (n !== urutChat) return
     if (lanjut) halaman.value--
     chatGalat.value = pesanGagal(e, 'Gagal memuat daftar chat')
   } finally {
-    memuatChat.value = false
+    if (n === urutChat) memuatChat.value = false
   }
 }
 function gantiFilter(f: typeof filter.value) { filter.value = f; muatChat() }
@@ -119,7 +128,9 @@ async function cariPesanGlobal() {
   try {
     const { data } = await api.get('/wa/cari-pesan', { params: { akun: AKUN, q } })
     if (cari.value.trim() === q) hasilPesan.value = data.data
-  } catch { hasilPesan.value = [] } finally { mencariPesan.value = false }
+  } catch (e) {
+    if (cari.value.trim() === q) { hasilPesan.value = []; toastGalat(e, 'Gagal mencari isi pesan') }
+  } finally { mencariPesan.value = false }
 }
 async function bukaHasil(h: HasilCari) {
   if (!h.chat) return
@@ -187,13 +198,18 @@ function tutupChat() {
   aktif.value = null
 }
 
+let urutBuka = 0 // pindah chat cepat: jawaban chat yang lama tidak boleh menimpa chat yang baru dibuka
 async function bukaChat(c: Chat) {
+  const n = ++urutBuka
   const chatLain = aktif.value?.id_chat !== c.id_chat
   if (chatLain) simpanDraf()
   aktif.value = c
   pesan.value = []
   pesanMuatGalat.value = ''
   gagalSebelumnya.value = false
+  adaLagi.value = false
+  nempelBawah.value = true
+  baruDiBawah.value = 0
   kutip.value = null
   if (chatLain || editPesan.value) teks.value = draf.get(c.id_chat) ?? ''
   editPesan.value = null
@@ -206,7 +222,7 @@ async function bukaChat(c: Chat) {
   memuatPesan.value = true
   try {
     const { data } = await api.get(`/wa/chat/${c.id_chat}/pesan`)
-    if (aktif.value?.id_chat !== c.id_chat) return
+    if (n !== urutBuka || aktif.value?.id_chat !== c.id_chat) return
     pesan.value = data.data
     adaLagi.value = !!data.meta?.ada_lagi
     await nextTick()
@@ -215,27 +231,30 @@ async function bukaChat(c: Chat) {
     baruDiBawah.value = 0
     if (c.belum_dibaca) tandaiDibaca(c)
   } catch (e: any) {
-    if (aktif.value?.id_chat === c.id_chat) pesanMuatGalat.value = pesanGagal(e, 'Gagal memuat pesan')
+    if (n === urutBuka && aktif.value?.id_chat === c.id_chat) pesanMuatGalat.value = pesanGagal(e, 'Gagal memuat pesan')
   } finally {
-    memuatPesan.value = false
+    if (n === urutBuka) memuatPesan.value = false
   }
 }
 async function muatSebelumnya() {
-  if (!aktif.value || !pesan.value.length || memuatPesan.value) return
+  const c = aktif.value
+  if (!c || !pesan.value.length || memuatPesan.value) return
+  const n = urutBuka
   memuatPesan.value = true
   gagalSebelumnya.value = false
   const el = kotakPesan.value
   const tinggiLama = el?.scrollHeight ?? 0
   try {
-    const { data } = await api.get(`/wa/chat/${aktif.value.id_chat}/pesan`, { params: { sebelum: pesan.value[0]!.id_pesan } })
+    const { data } = await api.get(`/wa/chat/${c.id_chat}/pesan`, { params: { sebelum: pesan.value[0]!.id_pesan } })
+    if (n !== urutBuka) return // sudah pindah chat — jangan sisipkan pesan chat lama
     pesan.value = [...data.data, ...pesan.value]
     adaLagi.value = !!data.meta?.ada_lagi
     await nextTick()
     if (el) el.scrollTop = el.scrollHeight - tinggiLama
   } catch {
-    gagalSebelumnya.value = true
+    if (n === urutBuka) gagalSebelumnya.value = true
   } finally {
-    memuatPesan.value = false
+    if (n === urutBuka) memuatPesan.value = false
   }
 }
 // ── Lompat ke pesan tertentu (hasil pencarian) + sorot ──
@@ -245,16 +264,17 @@ async function lompatKe(id_pesan: number) {
   const c = aktif.value
   if (!c) return
   if (!pesan.value.some((p) => p.id_pesan === id_pesan)) {
+    const n = urutBuka
     memuatPesan.value = true
     try {
       const { data } = await api.get(`/wa/chat/${c.id_chat}/pesan`, { params: { sampai: id_pesan } })
-      if (aktif.value?.id_chat !== c.id_chat) return
+      if (n !== urutBuka || aktif.value?.id_chat !== c.id_chat) return
       pesan.value = data.data
       adaLagi.value = !!data.meta?.ada_lagi
     } catch (e: any) {
-      toast(pesanGagal(e, 'Gagal membuka pesan'), 'danger')
+      if (n === urutBuka) toastGalat(e, 'Gagal membuka pesan')
       return
-    } finally { memuatPesan.value = false }
+    } finally { if (n === urutBuka) memuatPesan.value = false }
   }
   sorotId.value = id_pesan
   nempelBawah.value = false
@@ -293,7 +313,9 @@ async function cariDalamChat() {
     cariChat.hasil = data.data
     cariChat.pos = cariChat.hasil.length ? 0 : -1
     if (cariChat.pos >= 0) lompatKe(cariChat.hasil[0]!.id_pesan)
-  } catch { cariChat.hasil = [] } finally { cariChat.mencari = false }
+  } catch (e) {
+    if (cariChat.q.trim() === q && aktif.value?.id_chat === c.id_chat) { cariChat.hasil = []; cariChat.pos = -1; toastGalat(e, 'Gagal mencari di chat ini') }
+  } finally { cariChat.mencari = false }
 }
 // arah 1 = hasil lebih lama (ke atas), -1 = lebih baru (ke bawah)
 function navCari(arah: 1 | -1) {
@@ -384,17 +406,19 @@ function onMediaMuat() {
 let timerBaca: ReturnType<typeof setTimeout> | null = null
 function tandaiDibaca(c: Chat) {
   if (timerBaca) clearTimeout(timerBaca)
-  timerBaca = setTimeout(() => { api.post(`/wa/chat/${c.id_chat}/baca`).catch(() => undefined) }, 600)
+  timerBaca = setTimeout(() => { api.post(`/wa/chat/${c.id_chat}/baca`, null, { senyap: true }).catch(() => undefined) }, 600)
 }
 
 // ── Pembagian kerja ──────────────────────────────────────────────────────────
 const staf = ref<{ id_karyawan: number; nama: string }[]>([])
+const memprosesChat = ref(false) // cegah klik ganda Ambil / Selesai / Buka lagi
 async function ambilChat() {
-  if (!aktif.value) return
+  if (!aktif.value || memprosesChat.value) return
+  memprosesChat.value = true
   try {
     const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/ambil`)
     terapkanChat(data.data)
-  } catch (e) { alertError(e, 'Gagal mengambil chat') }
+  } catch (e) { alertError(e, 'Gagal mengambil chat') } finally { memprosesChat.value = false }
 }
 async function alihkan(ev: Event) {
   if (!aktif.value) return
@@ -410,11 +434,12 @@ async function alihkan(ev: Event) {
   }
 }
 async function ubahStatus(selesai: boolean) {
-  if (!aktif.value) return
+  if (!aktif.value || memprosesChat.value) return
+  memprosesChat.value = true
   try {
     const { data } = await api.post(`/wa/chat/${aktif.value.id_chat}/${selesai ? 'selesai' : 'buka'}`)
     terapkanChat(data.data)
-  } catch (e) { alertError(e, selesai ? 'Gagal menandai selesai' : 'Gagal membuka chat lagi') }
+  } catch (e) { alertError(e, selesai ? 'Gagal menandai selesai' : 'Gagal membuka chat lagi') } finally { memprosesChat.value = false }
 }
 
 // ── Kirim ─────────────────────────────────────────────────────────────────────
@@ -517,7 +542,7 @@ async function kirimSatu(a: Antre) {
     }
   } catch (e: any) {
     const x = antrean.value.find((y) => y.kunci === a.kunci)
-    if (x) x.gagal = e?.response?.data?.message || 'Gagal mengirim'
+    if (x) x.gagal = pesanGagal(e, 'Gagal mengirim')
   }
 }
 function kirimUlang(a: Antre) {
@@ -570,17 +595,21 @@ function batalEdit() {
   editPesan.value = null
   teks.value = ''
 }
+const menyimpanEdit = ref(false)
 async function simpanEdit() {
   const p = editPesan.value
   const t = teks.value.trim()
-  if (!p || !t) return
+  if (!p || !t || menyimpanEdit.value) return
   if (t === tanpaTtd(p.teks).trim()) { batalEdit(); return }
+  menyimpanEdit.value = true
   try {
     await api.post(`/wa/pesan/${p.id_pesan}/edit`, { teks: t })
-    batalEdit()
+    if (editPesan.value === p) batalEdit()
     errKirim.value = ''
   } catch (e: any) {
-    errKirim.value = e?.response?.data?.message || 'Gagal mengedit pesan'
+    errKirim.value = pesanGagal(e, 'Gagal mengedit pesan')
+  } finally {
+    menyimpanEdit.value = false
   }
 }
 async function tarikPesan(p: Pesan) {
@@ -623,7 +652,7 @@ function ketikLangsung(e: KeyboardEvent) {
 
 async function reaksi(p: Pesan, emoji: string) {
   const sama = p.reaksi?.saya === emoji
-  try { await api.post(`/wa/pesan/${p.id_pesan}/reaksi`, { emoji: sama ? '' : emoji }) } catch { /* abaikan */ }
+  try { await api.post(`/wa/pesan/${p.id_pesan}/reaksi`, { emoji: sama ? '' : emoji }) } catch (e) { toastGalat(e, 'Gagal mengirim reaksi') }
 }
 
 // ── Template balasan cepat ───────────────────────────────────────────────────
@@ -694,14 +723,21 @@ async function hapusTemplate(t: Template) {
 // ── Media (privat, diambil lewat API ber-login) ──────────────────────────────
 const urlMedia = reactive<Record<number, string>>({})
 const memuatMedia = reactive<Record<number, boolean>>({})
-async function muatMedia(p: Pesan) {
+const gagalMedia = reactive<Record<number, boolean>>({})
+// manual = diklik pengguna (putar / unduh / coba lagi) → kegagalan diberitahukan; muat otomatis foto cukup tanda di bubble
+async function muatMedia(p: Pesan, manual = false) {
   if (urlMedia[p.id_pesan] || memuatMedia[p.id_pesan] || !p.media?.ada) return
   memuatMedia[p.id_pesan] = true
+  gagalMedia[p.id_pesan] = false
   try {
-    const { data } = await api.get(`/wa/media/${p.id_pesan}`, { responseType: 'blob' })
+    const { data } = await api.get(`/wa/media/${p.id_pesan}`, { responseType: 'blob', senyap: !manual })
+    if (dilepas) return
     urlMedia[p.id_pesan] = URL.createObjectURL(data)
     if (data?.type) tipeMedia[p.id_pesan] = data.type
-  } catch { /* tampil tombol coba lagi */ } finally {
+  } catch (e) {
+    gagalMedia[p.id_pesan] = true
+    if (manual) toastGalat(e, 'Gagal memuat media')
+  } finally {
     memuatMedia[p.id_pesan] = false
   }
 }
@@ -715,7 +751,7 @@ async function unduhUlang(p: Pesan) {
     const { data } = await api.post(`/wa/pesan/${p.id_pesan}/unduh-ulang`)
     upsertPesan(data.data)
   } catch (e: any) {
-    unduhUlangErr[p.id_pesan] = e?.response?.data?.message || 'Gagal mengunduh ulang'
+    unduhUlangErr[p.id_pesan] = pesanGagal(e, 'Gagal mengunduh ulang')
   } finally {
     memuatMedia[p.id_pesan] = false
   }
@@ -741,7 +777,7 @@ function namaBerkas(p: Pesan, mime?: string) {
 }
 const tipeMedia = reactive<Record<number, string>>({})
 async function unduh(p: Pesan) {
-  await muatMedia(p)
+  await muatMedia(p, true)
   const u = urlMedia[p.id_pesan]
   if (!u) return
   simpanBerkas(u, namaBerkas(p, tipeMedia[p.id_pesan]))
@@ -769,8 +805,8 @@ function jalankanFoto() {
   while (fotoJalan < 3 && antreFoto.length) {
     const id = antreFoto.shift()!
     fotoJalan++
-    api.get(`/wa/chat/${id}/foto`, { responseType: 'blob' })
-      .then(({ data }) => { foto[id] = URL.createObjectURL(data) })
+    api.get(`/wa/chat/${id}/foto`, { responseType: 'blob', senyap: true })
+      .then(({ data }) => { if (!dilepas) foto[id] = URL.createObjectURL(data) })
       .catch(() => undefined) // 404 = tidak ada foto → tetap inisial
       .finally(() => { fotoJalan--; jalankanFoto() })
   }
@@ -828,7 +864,7 @@ async function pilihTujuan(nomor: string, nama?: string) {
     terapkanChat(c)
     await bukaChat(c)
   } catch (e: any) {
-    errChatBaru.value = e?.response?.data?.message || 'Gagal membuat chat'
+    errChatBaru.value = pesanGagal(e, 'Gagal membuat chat')
   } finally {
     membuatChat.value = false
   }
@@ -974,22 +1010,26 @@ interface Profil {
 const profil = ref<Profil | null>(null)
 const bukaProfil = ref(false)
 const memuatProfil = ref(false)
+const profilGalat = ref('')
 const fotoBesar = ref<string | null>(null)
 async function tampilkanProfil() {
   if (!aktif.value) return
   const id = aktif.value.id_chat
   bukaProfil.value = true
   profil.value = null
+  profilGalat.value = ''
   if (fotoBesar.value) { URL.revokeObjectURL(fotoBesar.value); fotoBesar.value = null }
   memuatProfil.value = true
   try {
     const [p] = await Promise.all([
       api.get(`/wa/chat/${id}/profil`),
-      api.get(`/wa/chat/${id}/foto`, { params: { besar: 1 }, responseType: 'blob' })
+      api.get(`/wa/chat/${id}/foto`, { params: { besar: 1 }, responseType: 'blob', senyap: true })
         .then(({ data }) => { if (aktif.value?.id_chat === id) fotoBesar.value = URL.createObjectURL(data) })
         .catch(() => undefined),
     ])
     if (aktif.value?.id_chat === id) profil.value = p.data.data
+  } catch (e) {
+    if (aktif.value?.id_chat === id) profilGalat.value = pesanGagal(e, 'Gagal memuat info kontak')
   } finally {
     memuatProfil.value = false
   }
@@ -1010,7 +1050,7 @@ function konfirmasiSaranPic() {
 }
 async function tolakSaranPic() {
   if (!aktif.value) return
-  try { profil.value = (await api.post(`/wa/chat/${aktif.value.id_chat}/tolak-site`)).data.data } catch (e) { alertError(e, 'Gagal') }
+  try { profil.value = (await api.post(`/wa/chat/${aktif.value.id_chat}/tolak-site`)).data.data } catch (e) { alertError(e, 'Gagal menolak saran site') }
 }
 function lamaSejak(d: string | null) {
   if (!d) return ''
@@ -1036,7 +1076,7 @@ async function sambungStream() {
   es?.close()
   es = null
   try {
-    const { data } = await api.post('/wa/stream-tiket')
+    const { data } = await api.post('/wa/stream-tiket', null, { senyap: true })
     if (dilepas) return
     const s = new EventSource(`/api/wa/stream?tiket=${encodeURIComponent(data.data.tiket)}`)
     es = s
@@ -1053,7 +1093,7 @@ async function sambungStream() {
   }
 }
 function jadwalSambung(ms = 3000) {
-  if (timerSambung) return
+  if (timerSambung || dilepas) return
   timerSambung = setTimeout(() => { timerSambung = null; sambungStream() }, ms)
 }
 function jagaStream() {
@@ -1068,8 +1108,8 @@ async function sinkronkan() {
   try {
     const c = aktif.value
     const [, res] = await Promise.all([
-      halaman.value === 1 ? muatChat() : Promise.resolve(),
-      c ? api.get(`/wa/chat/${c.id_chat}/pesan`).catch(() => null) : Promise.resolve(null),
+      halaman.value === 1 ? muatChat(false, true) : Promise.resolve(),
+      c ? api.get(`/wa/chat/${c.id_chat}/pesan`, { senyap: true }).catch(() => null) : Promise.resolve(null),
     ])
     if (c && res && aktif.value?.id_chat === c.id_chat) {
       const bawah = nempelBawah.value
@@ -1114,7 +1154,7 @@ function terimaEvent(ev: any) {
   } else if (ev.tipe === 'riwayat') {
     sinkron.value = ev.terakhir ? '' : `Sinkron riwayat… ${ev.progress != null ? ev.progress + '%' : ''}`
     if (timerRiwayat) clearTimeout(timerRiwayat)
-    timerRiwayat = setTimeout(() => { muatChat(); if (ev.terakhir) sinkron.value = '' }, 2000)
+    timerRiwayat = setTimeout(() => { muatChat(false, true); if (ev.terakhir) sinkron.value = '' }, 2000)
   }
 }
 
@@ -1186,7 +1226,7 @@ onMounted(async () => {
   // /whatsapp?chat=ID (dari halaman statistik) → langsung buka chat tersebut
   const idDariUrl = Number(route.query.chat)
   if (idDariUrl) {
-    api.get(`/wa/chat/${idDariUrl}`).then(({ data }) => bukaChat(data.data)).catch(() => undefined)
+    api.get(`/wa/chat/${idDariUrl}`).then(({ data }) => bukaChat(data.data)).catch((e) => toastGalat(e, 'Chat yang diminta tidak bisa dibuka'))
     router.replace({ query: {} })
   }
   timerJaga = setInterval(() => {
@@ -1212,7 +1252,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', tutupPanelLuar)
   mqKecil?.removeEventListener('change', onMq)
   document.removeEventListener('touchstart', tutupPanelLuar)
-  if (timerCariChat) clearTimeout(timerCariChat)
+  for (const t of [timerCari, timerCariChat, timerBaca, timerRiwayat, timerTujuan, timerSite, timerKaryawan]) if (t) clearTimeout(t)
   if (timerJaga) clearInterval(timerJaga)
   if (timerKoneksi) clearInterval(timerKoneksi)
   if (timerSambung) clearTimeout(timerSambung)
@@ -1221,6 +1261,7 @@ onBeforeUnmount(() => {
   if (fotoBesar.value) URL.revokeObjectURL(fotoBesar.value)
   if (pratinjau.value) URL.revokeObjectURL(pratinjau.value)
   for (const a of antrean.value) if (a.pratinjau) URL.revokeObjectURL(a.pratinjau)
+  audioCtx?.close().catch(() => undefined)
 })
 </script>
 
@@ -1340,9 +1381,9 @@ onBeforeUnmount(() => {
             <button class="btn-sm btn-ghost" :title="aktif.disematkan ? 'Lepas sematan' : 'Sematkan di atas daftar (untuk semua staf)'" @click="ubahSematan(aktif)">
               📌 <span class="wa-teks-tombol">{{ aktif.disematkan ? 'Lepas' : 'Sematkan' }}</span>
             </button>
-            <button v-if="!milikSaya" class="btn-sm btn-ghost" @click="ambilChat">Ambil</button>
-            <button v-if="aktif.status === 'Terbuka'" class="btn-sm btn-hijau" @click="ubahStatus(true)">✓ Selesai</button>
-            <button v-else class="btn-sm btn-ghost" @click="ubahStatus(false)">Buka lagi</button>
+            <button v-if="!milikSaya" class="btn-sm btn-ghost" :disabled="memprosesChat" @click="ambilChat">Ambil</button>
+            <button v-if="aktif.status === 'Terbuka'" class="btn-sm btn-hijau" :disabled="memprosesChat" @click="ubahStatus(true)">✓ Selesai</button>
+            <button v-else class="btn-sm btn-ghost" :disabled="memprosesChat" @click="ubahStatus(false)">Buka lagi</button>
           </div>
         </header>
         <div v-if="cariChat.buka" class="wa-cari-chat">
@@ -1390,6 +1431,7 @@ onBeforeUnmount(() => {
                       <img :src="urlMedia[p.id_pesan]" :class="p.media.jenis === 'sticker' ? 'wa-stiker' : 'wa-foto'" alt="" @click="p.media.jenis === 'image' && bukaFoto(p)" />
                       <button v-if="p.media.jenis === 'image'" type="button" class="wa-unduh-media" title="Unduh foto" @click.stop="unduh(p)">⬇</button>
                     </div>
+                    <button v-else-if="p.media.ada && gagalMedia[p.id_pesan]" type="button" class="wa-media-box klik" @click="muatMedia(p, true)">⚠ Gagal memuat foto · coba lagi</button>
                     <div v-else class="wa-media-box">{{ p.media.ada ? '⏳ Memuat foto…' : (p.riwayat ? '📷 Foto (riwayat, tidak diunduh)' : '📷 Foto belum tersedia') }}</div>
                   </template>
                   <!-- Video -->
@@ -1398,14 +1440,14 @@ onBeforeUnmount(() => {
                       <video :src="urlMedia[p.id_pesan]" controls class="wa-foto"></video>
                       <button type="button" class="wa-unduh-media" title="Unduh video" @click.stop="unduh(p)">⬇</button>
                     </div>
-                    <button v-else class="wa-media-box klik" :disabled="!p.media.ada" @click="muatMedia(p)">
+                    <button v-else class="wa-media-box klik" :disabled="!p.media.ada" @click="muatMedia(p, true)">
                       🎥 {{ p.media.ada ? (memuatMedia[p.id_pesan] ? 'Memuat…' : 'Putar video') : 'Video (tidak tersedia)' }} {{ ukuran(p.media.ukuran) }}
                     </button>
                   </template>
                   <!-- Audio / voice note -->
                   <template v-else-if="p.media && p.media.jenis === 'audio'">
                     <audio v-if="urlMedia[p.id_pesan]" :src="urlMedia[p.id_pesan]" controls class="wa-audio"></audio>
-                    <button v-else class="wa-media-box klik" :disabled="!p.media.ada" @click="muatMedia(p)">
+                    <button v-else class="wa-media-box klik" :disabled="!p.media.ada" @click="muatMedia(p, true)">
                       {{ p.media.ptt ? '🎤 Voice note' : '🎵 Audio' }} {{ p.media.durasi ? `${p.media.durasi} dtk` : '' }} {{ p.media.ada ? (memuatMedia[p.id_pesan] ? '· memuat…' : '· putar') : '· tidak tersedia' }}
                     </button>
                   </template>
@@ -1529,7 +1571,7 @@ onBeforeUnmount(() => {
               ref="kotakTeks" v-model="teks" rows="1" :placeholder="!terhubung ? 'WhatsApp belum terhubung' : layarKecil ? 'Tulis pesan… ( / balasan cepat)' : 'Tulis pesan… (/ balasan cepat, Enter kirim, Shift+Enter baris baru)'"
               :disabled="!terhubung" @keydown="onKey" @paste="onPaste" @input="cekGaring" @click="cekGaring" @keyup="(e: KeyboardEvent) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') && cekGaring()" @blur="garing = null"
             ></textarea>
-            <button class="wa-kirim" :title="editPesan ? 'Simpan perubahan' : 'Kirim'" :disabled="!terhubung || (!teks.trim() && !file)" @click="kirim">{{ editPesan ? '✓' : '➤' }}</button>
+            <button class="wa-kirim" :title="editPesan ? 'Simpan perubahan' : 'Kirim'" :aria-label="editPesan ? 'Simpan perubahan' : 'Kirim'" :disabled="!terhubung || (!teks.trim() && !file) || menyimpanEdit" @click="kirim">{{ editPesan ? '✓' : '➤' }}</button>
           </div>
         </footer>
       </template>
@@ -1596,6 +1638,7 @@ onBeforeUnmount(() => {
           <p v-if="profil?.kontak?.nama_wa" class="muted">~{{ profil.kontak.nama_wa }}</p>
         </div>
         <p v-if="memuatProfil" class="muted pusat">Memuat…</p>
+        <p v-else-if="profilGalat" class="wa-err pusat" role="alert">⚠ {{ profilGalat }} <button class="btn-sm btn-ghost" @click="tampilkanProfil">Coba lagi</button></p>
         <template v-else-if="profil">
           <section v-if="!profil.is_grup" class="wa-profil-bag">
             <h4>Data ERP</h4>

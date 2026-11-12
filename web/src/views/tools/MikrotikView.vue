@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 
 interface Device {
   id_perangkat: number
@@ -110,7 +111,7 @@ async function loadDevices() {
     devices.value = r.data.data ?? []
     pingAllDevices()
   } catch (e: any) {
-    devError.value = e?.response?.data?.message || 'Gagal memuat perangkat'
+    devError.value = pesanGalat(e, 'Gagal memuat perangkat')
   } finally {
     loadingDevices.value = false
   }
@@ -153,8 +154,11 @@ async function loadConfig() {
   } catch {}
 }
 
+const cfgGagal = ref(false)
 async function saveConfig() {
+  if (cfgSaving.value) return
   cfgSaving.value = true
+  cfgGagal.value = false
   cfgMsg.value = ''
   try {
     const r = await api.put('/mikrotik/config', {
@@ -166,7 +170,8 @@ async function saveConfig() {
     cfgHasPass.value = !!(cfgPass.value || cfgHasPass.value)
     cfgPass.value = ''
   } catch (e: any) {
-    cfgMsg.value = 'Error: ' + (e?.response?.data?.message || e.message)
+    cfgGagal.value = true
+    cfgMsg.value = 'Gagal: ' + pesanGalat(e, 'kredensial tidak tersimpan')
   } finally {
     cfgSaving.value = false
   }
@@ -193,6 +198,7 @@ async function runCommand() {
   confirmRun.value = false
   if (!selected.value.size) return
   if (!command.value.trim()) return
+  if (running.value) return
   running.value = true
   results.value = []
   try {
@@ -204,7 +210,7 @@ async function runCommand() {
   } catch (e: any) {
     results.value = Array.from(selected.value).map(ip => ({
       ip, success: false, output: '', duration: 0,
-      error: e?.response?.data?.message || 'Request gagal',
+      error: pesanGalat(e, 'Permintaan ke server gagal'),
     }))
   } finally {
     running.value = false
@@ -255,7 +261,7 @@ onMounted(() => {
           </button>
         </div>
       </div>
-      <div v-if="cfgMsg" :class="['cfg-msg', cfgMsg.startsWith('Error') ? 'cfg-err' : 'cfg-ok']">{{ cfgMsg }}</div>
+      <div v-if="cfgMsg" :class="['cfg-msg', cfgGagal ? 'cfg-err' : 'cfg-ok']">{{ cfgMsg }}</div>
     </div>
 
     <!-- Main layout -->
@@ -276,7 +282,7 @@ onMounted(() => {
         </div>
 
         <div v-if="loadingDevices" class="dp-empty">Memuat perangkat...</div>
-        <div v-else-if="devError" class="dp-empty dp-err">{{ devError }}</div>
+        <div v-else-if="devError" class="dp-empty dp-err">{{ devError }}<br /><button type="button" class="dp-hidden-btn" @click="loadDevices">↻ Coba lagi</button></div>
         <div v-else-if="!devices.length" class="dp-empty">
           Tidak ada perangkat Mikrotik terdaftar.<br/>
           <small>Tambahkan perangkat dengan jenis 'Mikrotik' atau 'Router' di Master Site.</small>
@@ -387,7 +393,7 @@ onMounted(() => {
               <span class="res-dur">{{ (r.duration || 0).toLocaleString('id-ID') }} ms</span>
             </div>
             <pre v-if="r.success && r.output" class="res-output">{{ r.output.trim() }}</pre>
-            <div v-if="!r.success" class="res-errmsg">{{ r.error }}</div>
+            <div v-if="!r.success" class="res-errmsg">{{ r.error || 'Gagal tanpa keterangan dari router' }}</div>
           </div>
         </div>
 

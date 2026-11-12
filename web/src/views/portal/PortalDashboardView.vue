@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { usePortalAuthStore } from '@/stores/portalAuth'
 import portalApi from '@/services/portalApi'
 import { fmtDateShort } from '@/composables/useFormat'
+import { pesanGalat } from '@/composables/useDialog'
 
 const auth   = usePortalAuthStore()
 
@@ -24,14 +25,17 @@ const modalGraphUrl     = ref<string | null>(null)
 const modalGraphLoading = ref(false)
 const modalGraphError   = ref(false)
 
-onMounted(async () => {
+async function muatSite() {
+  loading.value = true; loadError.value = ''
   try {
     const res = await portalApi.get('/portal/sites')
-    sites.value = res.data.data
+    sites.value = Array.isArray(res.data.data) ? res.data.data : []
   } catch (e: any) {
-    loadError.value = e?.response?.data?.message || 'Gagal memuat data site.'
+    loadError.value = pesanGalat(e, 'Gagal memuat data site.')
   } finally { loading.value = false }
-})
+}
+onMounted(muatSite)
+onBeforeUnmount(() => { if (modalGraphUrl.value) URL.revokeObjectURL(modalGraphUrl.value) })
 
 async function toggleSensors(id_site: number) {
   if (expandedSite.value === id_site) {
@@ -46,13 +50,16 @@ async function muatSensor(id_site: number) {
   sensorLoading.value = true; sensorDevices.value = []; sensorError.value = ''
   try {
     const r = await portalApi.get(`/portal/sites/${id_site}/sensors`)
+    // Site lain sudah dibuka selagi menunggu — jangan timpa datanya dengan jawaban lama.
+    if (expandedSite.value !== id_site) return
     // API returns { data: [{device_name, sensors}] } — array of devices
     sensorDevices.value = Array.isArray(r.data.data) ? r.data.data : []
   } catch (e: any) {
+    if (expandedSite.value !== id_site) return
     sensorDevices.value = []
-    sensorError.value = e?.response?.data?.message || 'Data sensor tidak dapat dimuat saat ini.'
+    sensorError.value = pesanGalat(e, 'Data sensor tidak dapat dimuat saat ini.')
   }
-  finally { sensorLoading.value = false }
+  finally { if (expandedSite.value === id_site) sensorLoading.value = false }
 }
 
 async function openModal(id_site: number, objid: number, name: string) {
@@ -61,16 +68,23 @@ async function openModal(id_site: number, objid: number, name: string) {
   await fetchModalGraph(id_site, objid, graphHours.value)
 }
 
+let urutanGrafik = 0
 async function fetchModalGraph(id_site: number, objid: number, graphid: number) {
+  const urutan = ++urutanGrafik
   if (modalGraphUrl.value) { URL.revokeObjectURL(modalGraphUrl.value); modalGraphUrl.value = null }
   modalGraphLoading.value = true; modalGraphError.value = false
   try {
     const r = await portalApi.get(`/portal/sites/${id_site}/sensor/${objid}/graph.png`, {
       params: { graphid }, responseType: 'blob',
     })
+    // Rentang/sensor sudah diganti selagi menunggu — buang jawaban lama.
+    if (urutan !== urutanGrafik) return
     modalGraphUrl.value = URL.createObjectURL(r.data)
-  } catch { modalGraphUrl.value = null; modalGraphError.value = true }
-  finally { modalGraphLoading.value = false }
+  } catch {
+    if (urutan !== urutanGrafik) return
+    modalGraphUrl.value = null; modalGraphError.value = true
+  }
+  finally { if (urutan === urutanGrafik) modalGraphLoading.value = false }
 }
 
 async function modalChangeHours(h: number) {
@@ -116,24 +130,27 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
     <!-- KPI Strip -->
     <div class="kpi-strip">
       <div class="kpi-card">
-        <div class="kpi-value">{{ totalSite }}</div>
+        <div class="kpi-value">{{ loading || loadError ? '—' : totalSite }}</div>
         <div class="kpi-label">Total Site</div>
       </div>
       <div class="kpi-card kpi-up">
-        <div class="kpi-value">{{ totalUp }}</div>
+        <div class="kpi-value">{{ loading || loadError ? '—' : totalUp }}</div>
         <div class="kpi-label">Online</div>
       </div>
       <div class="kpi-card" :class="totalDown > 0 ? 'kpi-down' : ''">
-        <div class="kpi-value">{{ totalDown }}</div>
+        <div class="kpi-value">{{ loading || loadError ? '—' : totalDown }}</div>
         <div class="kpi-label">Down</div>
       </div>
       <div class="kpi-card" :class="totalTiket > 0 ? 'kpi-warn' : ''">
-        <div class="kpi-value">{{ totalTiket }}</div>
+        <div class="kpi-value">{{ loading || loadError ? '—' : totalTiket }}</div>
         <div class="kpi-label">Tiket Aktif</div>
       </div>
     </div>
 
-    <div v-if="loadError" class="alert-error">{{ loadError }}</div>
+    <div v-if="loadError && !loading" class="alert-error" role="alert">
+      {{ loadError }}
+      <button type="button" class="btn-retry" @click="muatSite">Coba lagi</button>
+    </div>
     <div v-if="loading" class="state-loading">
       <span class="spinner"></span> Memuat data…
     </div>
@@ -220,7 +237,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
           <div v-if="sensorLoading" class="sensor-state">Memuat data sensor dari PRTG…</div>
           <div v-else-if="sensorError" class="sensor-state sensor-error-state">
             ⚠ {{ sensorError }}
-            <button class="btn-retry" @click="muatSensor(site.id_site)">Coba lagi</button>
+            <button type="button" class="btn-retry" @click="muatSensor(site.id_site)">Coba lagi</button>
           </div>
           <div v-else-if="!sensorDevices.length" class="sensor-state sensor-empty-state">
             Tidak ada perangkat PRTG yang terdaftar untuk site ini.<br>
@@ -261,7 +278,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
       </div>
     </div>
 
-    <div v-if="!loading && !sites.length" class="state-empty">
+    <div v-if="!loading && !loadError && !sites.length" class="state-empty">
       Tidak ada site yang terdaftar pada akun ini.
     </div>
   </div>
@@ -288,7 +305,7 @@ const totalSensors = computed(() => sensorDevices.value.reduce((a, d) => a + (d.
           <img v-else-if="modalGraphUrl" :src="modalGraphUrl" :alt="`Grafik ${modalSensor.name}`" class="modal-graph-img" />
           <div v-else-if="modalGraphError" class="modal-loading sensor-error-state">
             ⚠ Gagal memuat grafik dari PRTG.
-            <button class="btn-retry" @click="modalChangeHours(modalHours)">Coba lagi</button>
+            <button type="button" class="btn-retry" @click="modalChangeHours(modalHours)">Coba lagi</button>
           </div>
           <div v-else class="modal-loading">Grafik tidak tersedia untuk sensor ini.</div>
         </div>

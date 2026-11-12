@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
-import { confirmDialog, alertDialog, promptDialog } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, promptDialog, toast, pesanGalat } from '@/composables/useDialog'
 import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
 import BasePagination from '@/components/BasePagination.vue'
 
@@ -29,8 +29,7 @@ const approveId = ref(0)
 const approveNomor = ref('')
 const approveForm = ref({ status_approval: 'Approved', id_approver: 0, catatan_approval: '' })
 const approveSubmitting = ref(false)
-const successMsg = ref('')
-const msgIsError = ref(false)
+const approveError = ref('')
 
 onMounted(async () => {
   await sales.fetchSalesList()
@@ -50,22 +49,21 @@ function openApprove(id: number, nomor: string) {
   approveId.value = id
   approveNomor.value = nomor
   approveForm.value = { status_approval: 'Approved', id_approver: sales.salesList[0]?.id_karyawan || 0, catatan_approval: '' }
+  approveError.value = ''
   showApprove.value = true
 }
 
 async function handleApprove() {
-  approveSubmitting.value = true
+  if (approveSubmitting.value) return
+  approveSubmitting.value = true; approveError.value = ''
   try {
     await sales.approveQuotation(approveId.value, approveForm.value)
     showApprove.value = false
-    msgIsError.value = false
-    successMsg.value = `Quotation ${approveForm.value.status_approval}`
-    setTimeout(() => successMsg.value = '', 3000)
+    toast(approveForm.value.status_approval === 'Approved' ? `Quotation ${approveNomor.value} disetujui` : `Quotation ${approveNomor.value} ditolak`)
     fetchData()
   } catch (e: any) {
-    msgIsError.value = true
-    successMsg.value = e.response?.data?.message || 'Gagal proses approval'
-    setTimeout(() => successMsg.value = '', 4000)
+    // Ditampilkan di dalam modal — banner halaman tertutup overlay
+    approveError.value = pesanGalat(e, 'Gagal memproses approval')
   } finally { approveSubmitting.value = false }
 }
 
@@ -78,9 +76,10 @@ async function hapusQuotation(id: number, nomor: string) {
   }))) return
   try {
     await api.delete(`/sales/quotation/${id}`)
+    toast('Quotation dihapus')
     fetchData()
   } catch (e: any) {
-    const msg = e.response?.data?.message || 'Gagal menghapus quotation'
+    const msg = pesanGalat(e, 'Gagal menghapus quotation')
     // Quotation non-Draft → tawarkan force delete (Admin/Director)
     if (e.response?.status === 400 && String(msg).includes('force delete')) {
       if (!canForce.value) {
@@ -108,7 +107,7 @@ async function hapusQuotation(id: number, nomor: string) {
         fetchData()
         await alertDialog({ message: r.data?.message || 'Quotation dihapus (force)', variant: 'success' })
       } catch (e2: any) {
-        await alertDialog({ message: e2.response?.data?.message || 'Force delete gagal', variant: 'danger' })
+        await alertDialog({ message: pesanGalat(e2, 'Force delete gagal'), variant: 'danger' })
       }
       return
     }
@@ -141,8 +140,9 @@ const fmtDate = fmtDateShort
       </div>
     </div>
 
-    <div v-if="successMsg" :class="msgIsError ? 'alert-error' : 'alert-success'">{{ successMsg }}</div>
-    <div v-if="sales.error" class="alert-error">{{ sales.error }}</div>
+    <div v-if="sales.error" class="alert-error" role="alert">{{ sales.error }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="fetchData">↻ Coba lagi</button>
+    </div>
 
     <div class="table-card">
       <div v-if="sales.loading" class="loading">Memuat...</div>
@@ -162,8 +162,8 @@ const fmtDate = fmtDateShort
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!sales.quotationList.length">
-            <td colspan="10" class="empty">Tidak ada quotation</td>
+          <tr v-if="!sales.quotationList.length && !sales.error">
+            <td colspan="10" class="empty">{{ filterStatus ? `Tidak ada quotation berstatus ${filterStatus}` : 'Belum ada quotation' }}</td>
           </tr>
           <tr v-for="q in sales.quotationList" :key="q.id_quotation">
             <td>
@@ -172,8 +172,8 @@ const fmtDate = fmtDateShort
                 @click="router.push(`/sales/quotation/${q.id_quotation}`)"
               >{{ q.nomor_quotation }}</span>
             </td>
-            <td class="fw600">{{ q.opportunity?.nama_opportunity }}</td>
-            <td class="text-gray">{{ q.opportunity?.lead?.nama_prospek }}</td>
+            <td class="fw600">{{ q.opportunity?.nama_opportunity || '—' }}</td>
+            <td class="text-gray">{{ q.opportunity?.lead?.nama_prospek || '—' }}</td>
             <td class="text-gray">{{ q.sales_pic?.nama_lengkap }}</td>
             <td class="text-gray text-sm">{{ fmtDate(q.tgl_quotation) }}</td>
             <td class="fw600">{{ fmt(Number(q.harga_mrc)) }}</td>
@@ -234,6 +234,7 @@ const fmtDate = fmtDateShort
             <textarea v-model="approveForm.catatan_approval" rows="3" placeholder="Opsional"></textarea>
           </div>
         </div>
+        <p v-if="approveError" class="alert-error" role="alert">{{ approveError }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showApprove = false">Batal</button>
           <button class="btn-submit" @click="handleApprove" :disabled="approveSubmitting">

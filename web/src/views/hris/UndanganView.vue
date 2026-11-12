@@ -82,7 +82,7 @@ import api from '@/services/api'
 import { useHrisStore } from '@/stores/hris'
 import { fmtDateTime } from '@/composables/useFormat'
 import { computed } from 'vue'
-import { toast } from '@/composables/useDialog'
+import { toast, pesanGalat } from '@/composables/useDialog'
 import { infoDept } from './hris-util'
 
 const router = useRouter()
@@ -109,20 +109,21 @@ async function fetchInvitations() {
     invitations.value = r.data.data
   } catch (e: any) {
     // gagal ≠ kosong: tampilkan pesan + tombol coba lagi
-    loadError.value = e?.response?.data?.message || 'Gagal memuat daftar undangan'
+    loadError.value = pesanGalat(e, 'Gagal memuat daftar undangan')
   } finally {
     loading.value = false
   }
 }
 
 async function handleCreate() {
+  if (creating.value) return
   creating.value = true
   createError.value = ''
   lastLink.value = ''
   try {
     const r = await api.post('/hris/invitations', {
       departemen: form.value.departemen || undefined,
-      jabatan: form.value.jabatan || undefined,
+      jabatan: form.value.jabatan.trim() || undefined,
     })
     const token = r.data.data.token
     lastLink.value = `${window.location.origin}/onboarding/${token}`
@@ -130,7 +131,7 @@ async function handleCreate() {
     form.value = { departemen: '', jabatan: '' }
     await fetchInvitations()
   } catch (e: any) {
-    createError.value = e.response?.data?.message || 'Gagal membuat undangan'
+    createError.value = pesanGalat(e, 'Gagal membuat undangan')
   } finally {
     creating.value = false
   }
@@ -157,10 +158,12 @@ async function copyLink(link: string) {
 }
 
 async function handleRevoke(id: number) {
+  if (revokingId.value) return
   if (!(await confirmDialog({ title: 'Batalkan Undangan?', message: 'Link tidak akan bisa dipakai lagi.', variant: 'danger', confirmLabel: 'Ya, Batalkan' }))) return
   revokingId.value = id
   try {
     await api.delete(`/hris/invitations/${id}`)
+    toast('Undangan dibatalkan')
     await fetchInvitations()
   } catch (e: any) {
     await alertError(e, 'Gagal membatalkan undangan')
@@ -188,14 +191,14 @@ const tampil = computed(() => invitations.value.filter((i) => !saring.value || i
 const teksWa = (link: string, jabatan?: string) => `Halo! Selamat bergabung di NEXT1 🎉\n\nSilakan lengkapi data karyawan Anda${jabatan ? ` (${jabatan})` : ''} lewat link berikut — akun ERP akan dibuat otomatis dan dikirim ke email Anda:\n${link}\n\nLink berlaku 7 hari.`
 const waLink = (link: string, jabatan?: string) => `https://wa.me/?text=${encodeURIComponent(teksWa(link, jabatan))}`
 async function salinCepat(link: string) {
-  try { await navigator.clipboard.writeText(link); toast('Link disalin') } catch { toast('Gagal menyalin — salin manual dari kolom link', 'warning') }
+  try { await navigator.clipboard.writeText(link); toast('Link disalin') } catch { toast('Gagal menyalin link — salin manual', 'warning') }
 }
 const sisaHari = (d: string) => Math.max(0, Math.ceil((+new Date(d) - Date.now()) / 86400_000))
 const jabatanTerakhir = ref('')
 
-onMounted(async () => {
-  await hris.fetchDepartemen()
-  await fetchInvitations()
+onMounted(() => {
+  hris.fetchDepartemen()
+  fetchInvitations()
 })
 </script>
 

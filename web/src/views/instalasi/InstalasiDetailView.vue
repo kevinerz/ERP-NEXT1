@@ -5,7 +5,7 @@ import { useInstalasiStore } from '@/stores/instalasi'
 import { useAuthStore } from '@/stores/auth'
 import { fmtDateTime as fmtDt, fmtDateShort, fmtRupiah } from '@/composables/useFormat'
 import api from '@/services/api'
-import { confirmDialog, alertDialog, alertError, toast } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, alertError, pesanGalat, toast, toastGalat } from '@/composables/useDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -73,6 +73,11 @@ watch(() => d.value?.bast, (b) => {
   if (b) bastForm.value = { nama_penandatangan_pelanggan: b.nama_penandatangan_pelanggan ?? '', jabatan_penandatangan: b.jabatan_penandatangan ?? '' }
 }, { immediate: true })
 
+// Store dipakai bersama: data order lain yang masih tersimpan tidak boleh tampil sebagai order ini
+if (ins.current?.id_instalasi !== id) ins.current = null
+const muatDetail = () => ins.fetchOne(id)
+const sudahMuat = ref(false)
+
 onMounted(async () => {
   // allSettled: dropdown opsional yang gagal tidak memunculkan unhandled rejection
   await Promise.allSettled([
@@ -81,6 +86,7 @@ onMounted(async () => {
     api.get('/operations/teknisi-list').then(r => { teknisiList.value = r.data.data ?? [] }),
     api.get('/master/kontak-teknisi', { params: { limit: 200 } }).then(r => { kontakTeknisiList.value = r.data.data ?? [] }),
   ])
+  sudahMuat.value = true
 })
 
 // ── STATUS ──────────────────────────────────────────────────────
@@ -91,6 +97,7 @@ function openStatus() {
   showStatusModal.value = true
 }
 async function submitStatus() {
+  if (statusSubmitting.value) return
   if (!newStatus.value) { statusError.value = 'Pilih status'; return }
   // Status akhir tidak bisa dibalik dengan mudah → konfirmasi dulu
   if ((newStatus.value === 'Selesai' || newStatus.value === 'Dibatalkan') && newStatus.value !== d.value?.status_instalasi) {
@@ -105,11 +112,14 @@ async function submitStatus() {
   statusSubmitting.value = true; statusError.value = ''
   try {
     await ins.update(id, { status_instalasi: newStatus.value })
-    if (statusCatatan.value) await ins.addLog({ id_instalasi: id, catatan: statusCatatan.value })
+    if (statusCatatan.value) {
+      // Status sudah tersimpan — gagal catatan tidak boleh membuat pengguna mengulang perubahan status
+      try { await ins.addLog({ id_instalasi: id, catatan: statusCatatan.value }) } catch (e) { toastGalat(e, 'Status tersimpan, tetapi catatan gagal disimpan') }
+    }
     await ins.fetchOne(id)
     showStatusModal.value = false
     toast('Status tersimpan')
-  } catch (e: any) { statusError.value = e.response?.data?.message || 'Gagal update status' }
+  } catch (e: any) { statusError.value = pesanGalat(e, 'Gagal update status') }
   finally { statusSubmitting.value = false }
 }
 
@@ -129,6 +139,7 @@ function openEdit() {
   showEditModal.value = true
 }
 async function submitEdit() {
+  if (editSubmitting.value) return
   editSubmitting.value = true; editError.value = ''
   try {
     const p: any = { ...editForm.value }
@@ -140,13 +151,13 @@ async function submitEdit() {
     await ins.fetchOne(id)
     showEditModal.value = false
     toast('Perubahan tersimpan')
-  } catch (e: any) { editError.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { editError.value = pesanGalat(e, 'Gagal menyimpan') }
   finally { editSubmitting.value = false }
 }
 
 // ── FOTO ─────────────────────────────────────────────────────────
 async function uploadFoto() {
-  if (!fotoFile.value) return
+  if (!fotoFile.value || fotoUploading.value) return
   fotoUploading.value = true
   try {
     await ins.uploadFoto(id, fotoFile.value, fotoStage.value, fotoCaption.value)
@@ -222,6 +233,7 @@ function getPos(e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement) {
 }
 
 async function submitBAST() {
+  if (bastSubmitting.value) return
   bastError.value = ''
   const nama = bastForm.value.nama_penandatangan_pelanggan.trim()
   if (!nama) { bastError.value = 'Nama penandatangan pelanggan wajib diisi'; return }
@@ -246,8 +258,10 @@ async function submitBAST() {
     })
     await ins.fetchOne(id)
     bastError.value = ''
+    // TTD sudah tersimpan — kosongkan kanvas supaya simpan ulang tidak mengunggah tanda tangan yang sama lagi
+    clearCanvas('teknisi'); clearCanvas('pelanggan')
     await alertDialog({ message: 'BAST berhasil disimpan', variant: 'success' })
-  } catch (e: any) { bastError.value = e.response?.data?.message || e.message || 'Gagal menyimpan BAST' }
+  } catch (e: any) { bastError.value = pesanGalat(e, 'Gagal menyimpan BAST') }
   finally { bastSubmitting.value = false }
 }
 
@@ -284,6 +298,7 @@ async function hapusOrder() {
   }))) return
   try {
     await ins.remove(id)
+    toast('Order dihapus')
     router.push('/instalasi')
   } catch (e: any) { alertError(e, 'Gagal menghapus') }
 }
@@ -291,8 +306,14 @@ async function hapusOrder() {
 
 <template>
   <div class="page">
-    <div v-if="ins.loading && !d" class="loading-full">Memuat...</div>
-    <div v-else-if="!d" class="loading-full text-gray">Data tidak ditemukan</div>
+    <div v-if="(ins.loading || !sudahMuat) && !d" class="loading-full">Memuat...</div>
+    <div v-else-if="!d" class="loading-full text-gray" role="alert">
+      {{ ins.error || 'Data tidak ditemukan' }}
+      <div style="margin-top:10px; display:flex; gap:8px; justify-content:center">
+        <button type="button" class="btn-outline" @click="muatDetail">↻ Coba lagi</button>
+        <button type="button" class="btn-outline" @click="router.push('/instalasi')">← Kembali</button>
+      </div>
+    </div>
     <template v-else>
       <!-- Header -->
       <div class="page-header">
@@ -407,7 +428,7 @@ async function hapusOrder() {
             <div class="foto-info">
               <span class="foto-stage">{{ foto.stage }}</span>
               <span v-if="foto.caption" class="foto-caption">{{ foto.caption }}</span>
-              <button v-if="auth.hasRole('Admin')" class="btn-del-foto" @click="hapusFoto(foto.id_foto)">×</button>
+              <button v-if="auth.hasRole('Admin')" type="button" class="btn-del-foto" title="Hapus foto" aria-label="Hapus foto" @click="hapusFoto(foto.id_foto)">×</button>
             </div>
           </div>
         </div>

@@ -5,6 +5,8 @@ import api from '@/services/api'
 import { printBaPengambilan } from '@/composables/usePrint'
 import { exportCsv } from '@/composables/useExport'
 import { useFilterUrl } from '@/composables/useFilterUrl'
+import { pesanGalat } from '@/composables/useDialog'
+import KeadaanData from '@/components/KeadaanData.vue'
 import MasterNav from './MasterNav.vue'
 
 // Site Dismantle yang perangkatnya masih melapor / belum ditarik → cetak BA Pengambilan Barang
@@ -31,18 +33,21 @@ useFilterUrl({ tampil, q })
 const dipilih = ref(new Set<number>())
 const tglBa = ref(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }))
 
-onMounted(async () => {
+async function muat() {
+  memuat.value = true
+  error.value = ''
   try {
     const { data } = await api.get('/master/site/dismantle-perangkat')
     semua.value = data.data ?? []
     // Pertama kali buka & tidak ada yang melapor → tampilkan semua yang perlu ditarik
     if (tampil.value === 'melapor' && !semua.value.some((s) => s.melapor)) tampil.value = 'semua'
   } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Gagal memuat data'
+    error.value = pesanGalat(e, 'Gagal memuat daftar site dismantle')
   } finally {
     memuat.value = false
   }
-})
+}
+onMounted(muat)
 
 const hitung = computed(() => ({
   melapor: semua.value.filter((s) => s.melapor).length,
@@ -96,7 +101,7 @@ function rincian(s: Site) {
   return [
     ...s.perangkat.map((p) => `${[p.jenis_perangkat, p.merk, p.tipe_model].filter(Boolean).join(' ')}${p.serial_number ? ` (SN ${p.serial_number})` : ''}`),
     ...s.aset.map((a) => `${a.nama_perangkat}${a.serial_number ? ` (SN ${a.serial_number})` : ''}`),
-    ...s.sumber_internet.map((m) => `Modem ${m.vendor?.nama_vendor ?? ''} (SN ${m.sn_modem})`),
+    ...s.sumber_internet.map((m) => `Modem ${m.vendor?.nama_vendor ?? ''}${m.sn_modem ? ` (SN ${m.sn_modem})` : ''}`.trim()),
   ]
 }
 </script>
@@ -111,8 +116,6 @@ function rincian(s: Site) {
         <p>Site yang sudah <b>Dismantle</b> tapi perangkatnya masih melapor ke NOC, baru mati, atau masih tercatat terpasang. Pilih site lalu cetak <b>Berita Acara Pengambilan Barang</b> untuk teknisi.</p>
       </div>
     </header>
-
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
 
     <section class="tp-kpi">
       <button type="button" class="k merah" :class="{ on: tampil === 'melapor' }" @click="tampil = 'melapor'"><b>{{ hitung.melapor }}</b><span>Masih melapor</span><small>router online / heartbeat ≤ 24 jam</small></button>
@@ -129,8 +132,8 @@ function rincian(s: Site) {
       <button type="button" class="btn btn-primary btn-sm" :disabled="!terpilih.length" @click="cetak(terpilih)">🖨️ Cetak BA ({{ terpilih.length }} site)</button>
     </div>
 
-    <div v-if="memuat" class="tp-kosong">Memuat…</div>
-    <div v-else-if="!daftar.length" class="tp-kosong">✅ Tidak ada site di kategori ini.</div>
+    <KeadaanData v-if="memuat || error" :memuat="memuat" :galat="error" teks-memuat="Memuat site dismantle…" @ulang="muat" />
+    <div v-else-if="!daftar.length" class="tp-kosong">{{ q.trim() ? `Tidak ada site yang cocok dengan “${q.trim()}”.` : '✅ Tidak ada site di kategori ini.' }}</div>
     <div v-else class="tp-tabel">
       <table>
         <thead>

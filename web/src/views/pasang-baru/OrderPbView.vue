@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDate, fmtDateTime, fmtRupiah } from '@/composables/useFormat'
-import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, pesanGalat, promptDialog, toast } from '@/composables/useDialog'
 import { DEPOSIT_JENIS, KELAS_TAHAP, TAHAP_ORDER, type Vendor } from './pb'
 import { printBaAktivasi } from '@/composables/usePrint'
 import KurirApiModal from './KurirApiModal.vue'
@@ -19,7 +19,6 @@ const proses = ref(false)
 // status muat awal: error ditampilkan di halaman (bukan "Memuat…" selamanya)
 const muatError = ref('')
 const vendorError = ref(false)
-const pesanErr = (e: any, f: string) => { const m = e?.response?.data?.message; return Array.isArray(m) ? m.join(', ') : m || f }
 
 async function muat(gantiTab = false) {
   try {
@@ -30,7 +29,7 @@ async function muat(gantiTab = false) {
     if (gantiTab) tab.value = ['Network', 'Selesai'].includes(o.value.tahap) ? 'Network' : 'OPS'
   } catch (e) {
     // muat awal gagal → tampilkan error di halaman; muat ulang setelah aksi → modal
-    if (!o.value) muatError.value = pesanErr(e, 'Gagal memuat order')
+    if (!o.value) muatError.value = pesanGalat(e, 'Gagal memuat order')
     else alertError(e, 'Gagal memuat order')
   }
 }
@@ -55,9 +54,10 @@ const lengkap = computed(() => (o.value?.syarat || []).every((x: any) => x.ok))
 const SEBELUM: Record<string, string> = { Network: 'OPS', Selesai: 'Network' }
 
 // true = berhasil — modal hanya ditutup kalau simpan berhasil, supaya isian (mis. TTD BA) tidak hilang saat gagal
-async function jalankan(fn: () => Promise<any>, gantiTab = false): Promise<boolean> {
+async function jalankan(fn: () => Promise<any>, gantiTab = false, sukses?: string): Promise<boolean> {
+  if (proses.value) return false
   proses.value = true
-  try { await fn(); await muat(gantiTab); return true } catch (e) { alertError(e); return false } finally { proses.value = false }
+  try { await fn(); if (sukses) toast(sukses); await muat(gantiTab); return true } catch (e) { alertError(e); return false } finally { proses.value = false }
 }
 async function serahkan() {
   const net = o.value.tahap === 'Network'
@@ -88,7 +88,7 @@ function isiForm() {
   isiBaData()
   muatReferensiNetwork()
 }
-const simpanOps = () => jalankan(() => api.patch(`/pasang-baru/order/${id.value}/ops`, { ...fo, ikg_nominal: Number(fo.ikg_nominal) || 0 }))
+const simpanOps = () => jalankan(() => api.patch(`/pasang-baru/order/${id.value}/ops`, { ...fo, ikg_nominal: Number(fo.ikg_nominal) || 0 }), false, 'IKG tersimpan')
 
 // ── Link vendor ISP ──────────────────────────────────────────────────────────
 const links = computed<any[]>(() => o.value?.site?.sumber_internet || [])
@@ -145,7 +145,7 @@ async function unggahFoto(ev: Event) {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('jenis', jenis)
-  jalankan(() => api.post(`/pasang-baru/link/${idl}/foto`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  jalankan(() => api.post(`/pasang-baru/link/${idl}/foto`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }), false, 'Foto terunggah')
 }
 const lihat = ref('')
 const kurangLink = (l: any) => [
@@ -167,9 +167,14 @@ async function muatReferensiNetwork() {
 }
 const stok = reactive({ buka: false, cari: '', isi: [] as any[], memuat: false })
 let timerStok: ReturnType<typeof setTimeout> | null = null
+let urutStok = 0
 async function muatStok() {
+  const urut = ++urutStok
   stok.memuat = true
-  try { stok.isi = (await api.get('/pasang-baru/stok', { params: { cari: stok.cari.trim() || undefined } })).data.data } catch (e) { alertError(e) } finally { stok.memuat = false }
+  try {
+    const isi = (await api.get('/pasang-baru/stok', { params: { cari: stok.cari.trim() || undefined } })).data.data
+    if (urut === urutStok) stok.isi = isi // jawaban pencarian lama tidak boleh menimpa yang baru
+  } catch (e) { if (urut === urutStok) alertError(e, 'Gagal memuat stok gudang') } finally { if (urut === urutStok) stok.memuat = false }
 }
 function bukaStok() { Object.assign(stok, { buka: true, cari: '' }); muatStok() }
 function cariStok() { if (timerStok) clearTimeout(timerStok); timerStok = setTimeout(muatStok, 300) }
@@ -208,13 +213,13 @@ const simpanNetwork = () => jalankan(() => api.put(`/pasang-baru/order/${id.valu
     kirim_wa: fn.kirim_wa, tujuan_kirim: fn.tujuan_kirim, fee_vendor: Number(fn.fee_vendor) || 0, tgl_jadwal: fn.tgl_jadwal || null,
     nama_ekspedisi: fn.nama_ekspedisi || undefined, nomor_resi: fn.nomor_resi || undefined, tgl_kirim: fn.tgl_kirim || null, status_pengiriman: fn.status_pengiriman,
   } : {}),
-}).then(() => { kontakTeknisi.value = []; muatReferensiNetwork() }))
+}).then(() => { kontakTeknisi.value = []; muatReferensiNetwork() }), false, 'Pemasangan tersimpan')
 const teknisiSiap = computed(() => fn.id_kontak_teknisi === 'baru' ? fn.baru.nama.trim().length >= 2 && fn.baru.no_hp.replace(/\D/g, '').length >= 9 : !!fn.id_kontak_teknisi)
 const teknisiDipilih = computed(() => kontakTeknisi.value.find((k) => k.id_kontak === fn.id_kontak_teknisi))
 async function kirimWa() {
   const k = net.value.wo?.kontak_teknisi
   if (!(await confirmDialog({ title: 'Kirim WA ke teknisi', message: `Kirim tugas pemasangan + link lapangan ke ${k?.nama} (${k?.no_hp}) lewat WhatsApp helpdesk?`, confirmLabel: 'Kirim' }))) return
-  jalankan(() => api.post(`/pasang-baru/order/${id.value}/wa-teknisi`))
+  jalankan(() => api.post(`/pasang-baru/order/${id.value}/wa-teknisi`), false, 'WA terkirim ke teknisi')
 }
 // Kurir api.co.id
 const kirim = computed<any>(() => net.value.wo?.pengiriman?.[0] ?? null)
@@ -227,10 +232,10 @@ const kirimSiap = computed(() => !!net.value.wo && net.value.wo.tipe_eksekutor =
 const resiManual = computed(() => !kurirAktif.value && !!kirim.value?.nomor_resi)
 const adaLacak = computed(() => kurirAktif.value || (resiManual.value && !!kirim.value?.kurir_status))
 const bukaKurir = ref(false)
-const lacakKurir = () => jalankan(() => api.post(`/pasang-baru/order/${id.value}/kurir-api/lacak`))
+const lacakKurir = () => jalankan(() => api.post(`/pasang-baru/order/${id.value}/kurir-api/lacak`), false, 'Status resi diperbarui')
 async function batalKurir() {
   if (!(await confirmDialog({ title: 'Batalkan order kurir', message: 'Hanya bisa sebelum paket dijemput. Ongkir dikembalikan ke saldo bila memenuhi syarat.', confirmLabel: 'Batalkan', variant: 'danger' }))) return
-  jalankan(() => api.post(`/pasang-baru/order/${id.value}/kurir-api/batal`))
+  jalankan(() => api.post(`/pasang-baru/order/${id.value}/kurir-api/batal`), false, 'Order kurir dibatalkan')
 }
 const STATUS_KURIR: Record<string, string> = { processing: 'Diproses', waiting: 'Menunggu jemput', shipping: 'Dalam pengiriman', delivered: 'Diterima', completed: 'Diterima', problem: 'Bermasalah', returned: 'Dikembalikan', cancelled: 'Dibatalkan', failed: 'Gagal' }
 
@@ -241,7 +246,7 @@ async function selesaiVendor() {
 }
 const tersalin = ref(false)
 async function salinLink() {
-  try { await navigator.clipboard.writeText(net.value.wo.link_lapangan); tersalin.value = true; setTimeout(() => (tersalin.value = false), 2000) } catch { /* abaikan */ }
+  try { await navigator.clipboard.writeText(net.value.wo.link_lapangan); tersalin.value = true; setTimeout(() => (tersalin.value = false), 2000) } catch { toast('Gagal menyalin link — salin manual: ' + net.value.wo.link_lapangan, 'warning') }
 }
 
 // ── Tab Network: BA aktivasi ─────────────────────────────────────────────────
@@ -275,9 +280,10 @@ function isiBaData() {
   try { d = JSON.parse(o.value.ba_data || '{}') } catch { /* abaikan */ }
   Object.assign(fbd, { penanggung_jawab: d.penanggung_jawab || '', ip: d.ip || '', bandwidth: d.bandwidth || '', lain: d.lain || '', catatan: d.catatan || '' })
 }
-const simpanBaData = () => jalankan(() => api.put(`/pasang-baru/order/${id.value}/ba-data`, fbd))
+const simpanBaData = () => jalankan(() => api.put(`/pasang-baru/order/${id.value}/ba-data`, fbd), false, 'Isi BA tersimpan')
 // Cetak untuk tanda tangan basah: nomor BA dipesan dulu supaya tercetak di kertas
 async function cetakBasah() {
+  if (proses.value) return
   proses.value = true
   try {
     if (bisaUbah('Network')) {
@@ -320,11 +326,11 @@ async function unggah(ev: Event) {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('jenis', jenisUnggah)
-  jalankan(() => api.post(`/pasang-baru/order/${id.value}/dokumen`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }))
+  jalankan(() => api.post(`/pasang-baru/order/${id.value}/dokumen`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }), false, 'Dokumen terunggah')
 }
 async function hapusDok(d: any) {
   if (!(await confirmDialog({ title: 'Hapus dokumen', message: `Hapus ${d.nama_file}?`, variant: 'danger', confirmLabel: 'Hapus' }))) return
-  jalankan(() => api.delete(`/pasang-baru/dokumen/${d.id_dokumen}`))
+  jalankan(() => api.delete(`/pasang-baru/dokumen/${d.id_dokumen}`), false, 'Dokumen dihapus')
 }
 const bisaUnggah = computed(() => o.value && !['Draft', 'Batal'].includes(o.value.tahap) && bolehTahap(o.value.tahap))
 
@@ -335,6 +341,8 @@ const margin = computed(() => Number(o.value?.biaya_bulanan || 0) - biayaVendor.
 const biayaAwal = computed(() => Number(o.value?.ikg_nominal || 0))
 const balikModal = computed(() => (margin.value > 0 && biayaAwal.value > 0 ? (biayaAwal.value / margin.value).toFixed(1) : null))
 
+onBeforeUnmount(() => { if (timerStok) clearTimeout(timerStok) })
+
 const AKSI: Record<string, string> = {
   buat: 'Dibuat', ubah: 'Diubah', setujui: 'SPH disetujui', serahkan: 'Diserahkan', kembalikan: 'Dikembalikan', batal: 'Dibatalkan', dokumen: 'Dokumen',
 }
@@ -344,10 +352,10 @@ const AKSI: Record<string, string> = {
   <div class="page">
     <div v-if="!o && muatError" class="alert alert-danger" role="alert">
       <span>⚠ {{ muatError }}</span>
-      <button class="btn btn-sm btn-ghost" @click="cobaLagi">Coba lagi</button>
+      <button type="button" class="btn btn-sm btn-ghost" @click="cobaLagi">↻ Coba lagi</button>
       <button class="btn btn-sm btn-ghost" @click="router.push('/pasang-baru')">← Daftar</button>
     </div>
-    <p v-else-if="!o" class="muted">Memuat…</p>
+    <p v-else-if="!o" class="loading-state">Memuat order…</p>
     <template v-else>
       <div class="page-header">
         <div>
@@ -426,7 +434,7 @@ const AKSI: Record<string, string> = {
                     <small>{{ j === 'modem' ? 'Foto modem' : 'Screenshot speedtest' }}</small>
                     <img v-if="l[`foto_${j}`]" :src="l[`foto_${j}`]" :alt="j" @click="lihat = l[`foto_${j}`]" />
                     <div v-else class="op-foto-kosong">belum ada</div>
-                    <button v-if="bisaUbah('OPS')" class="btn btn-sm btn-ghost" @click="pilihFoto(l, j)">📷 {{ l[`foto_${j}`] ? 'Ganti' : 'Unggah' }}</button>
+                    <button v-if="bisaUbah('OPS')" type="button" class="btn btn-sm btn-ghost" :disabled="proses" @click="pilihFoto(l, j)">📷 {{ l[`foto_${j}`] ? 'Ganti' : 'Unggah' }}</button>
                   </div>
                 </div>
               </div>
@@ -687,10 +695,10 @@ const AKSI: Record<string, string> = {
             <span v-for="d in dok(j)" :key="d.id_dokumen" class="op-file">
               <a :href="d.url_file" target="_blank" rel="noopener">📄 {{ d.nama_file }}</a>
               <small class="muted">{{ fmtDateTime(d.created_at) }}</small>
-              <button v-if="bisaUnggah" class="btn btn-sm btn-ghost" title="Hapus" @click="hapusDok(d)">✕</button>
+              <button v-if="bisaUnggah" type="button" class="btn btn-sm btn-ghost" title="Hapus dokumen" aria-label="Hapus dokumen" :disabled="proses" @click="hapusDok(d)">✕</button>
             </span>
             <span v-if="!dok(j).length" class="muted">—</span>
-            <button v-if="bisaUnggah" class="btn btn-sm btn-ghost" @click="pilihDok(j)">⬆ Unggah</button>
+            <button v-if="bisaUnggah" type="button" class="btn btn-sm btn-ghost" :disabled="proses" @click="pilihDok(j)">⬆ Unggah</button>
           </div>
           <p class="form-hint">PDF, JPG, atau PNG maks 15 MB. Dokumen juga tampil di detail site.</p>
         </div>
@@ -718,14 +726,14 @@ const AKSI: Record<string, string> = {
     <!-- Pilih perangkat dari stok -->
     <div v-if="stok.buka" class="modal-overlay" @click.self="stok.buka = false">
       <div class="modal modal-lg">
-        <div class="modal-header"><h3 class="modal-title">Ambil perangkat dari stok gudang</h3><button class="btn-modal-close" @click="stok.buka = false">×</button></div>
+        <div class="modal-header"><h3 class="modal-title">Ambil perangkat dari stok gudang</h3><button type="button" class="btn-modal-close" aria-label="Tutup" @click="stok.buka = false">×</button></div>
         <div class="modal-body">
           <input v-model="stok.cari" class="form-input" placeholder="Cari nama / tipe / SN… (kosong = Mikrotik & Router)" @input="cariStok" />
           <div class="table-wrap op-stok">
             <table class="data-table">
               <thead><tr><th>Perangkat</th><th>SN / kode</th><th>Gudang</th><th>Stok</th><th></th></tr></thead>
               <tbody>
-                <tr v-if="!stok.memuat && !stok.isi.length"><td colspan="5" class="pusat"><b class="merah">Stok kosong.</b> Ajukan request perangkat di bawah.</td></tr>
+                <tr v-if="!stok.memuat && !stok.isi.length"><td colspan="5" class="pusat"><b class="merah">{{ stok.cari.trim() ? `Tidak ada stok yang cocok dengan "${stok.cari.trim()}".` : 'Stok kosong.' }}</b> Ajukan request perangkat di bawah.</td></tr>
                 <tr v-for="a in stok.isi" :key="a.id_aset">
                   <td><b>{{ a.nama_perangkat }}</b><br /><small class="muted">{{ [a.kategori, a.merk, a.tipe_model].filter(Boolean).join(' · ') }} · {{ a.kondisi }}</small></td>
                   <td><small>{{ a.serial_number || '-' }}<br /><span class="muted">{{ a.kode_aset }}</span></small></td>
@@ -735,7 +743,7 @@ const AKSI: Record<string, string> = {
                 </tr>
               </tbody>
             </table>
-            <p v-if="stok.memuat" class="muted pusat">Memuat…</p>
+            <p v-if="stok.memuat" class="loading-state">Memuat stok…</p>
           </div>
         </div>
         <div class="modal-footer"><span class="muted">Tidak ada yang cocok?</span><button class="btn btn-ghost" @click="bukaRequest">📝 Request perangkat (stok kosong)</button></div>
@@ -745,7 +753,7 @@ const AKSI: Record<string, string> = {
     <!-- Request perangkat -->
     <div v-if="req.buka" class="modal-overlay" @click.self="req.buka = false">
       <div class="modal">
-        <div class="modal-header"><h3 class="modal-title">Request perangkat</h3><button class="btn-modal-close" @click="req.buka = false">×</button></div>
+        <div class="modal-header"><h3 class="modal-title">Request perangkat</h3><button type="button" class="btn-modal-close" aria-label="Tutup" @click="req.buka = false">×</button></div>
         <div class="modal-body">
           <p class="form-hint">Masuk ke Pengajuan Aset untuk disetujui Director / Manager Ops. Setelah barang masuk gudang, klik "Pakai barang masuk".</p>
           <div class="form-group"><label class="form-label form-required">Nama perangkat</label><input v-model="req.nama_item" class="form-input" maxlength="150" /></div>
@@ -763,7 +771,7 @@ const AKSI: Record<string, string> = {
     <!-- Unggah scan BA ttd basah -->
     <div v-if="scan.buka" class="modal-overlay" @click.self="scan.buka = false">
       <div class="modal">
-        <div class="modal-header"><h3 class="modal-title">Unggah scan BA (tanda tangan basah)</h3><button class="btn-modal-close" @click="scan.buka = false">×</button></div>
+        <div class="modal-header"><h3 class="modal-title">Unggah scan BA (tanda tangan basah)</h3><button type="button" class="btn-modal-close" aria-label="Tutup" @click="scan.buka = false">×</button></div>
         <div class="modal-body">
           <p class="form-hint">Foto / scan BA yang sudah ditandatangani penanggung jawab, pelaksana &amp; pelanggan (+ stempel outlet). PDF, JPG, atau PNG maks 15 MB.</p>
           <input ref="inputScan" type="file" accept=".pdf,.jpg,.jpeg,.png" class="form-input" @change="pilihScan" />
@@ -779,7 +787,7 @@ const AKSI: Record<string, string> = {
     <!-- Tanda tangan BA -->
     <div v-if="fb.buka" class="modal-overlay" @click.self="fb.buka = false">
       <div class="modal">
-        <div class="modal-header"><h3 class="modal-title">Tanda tangan BA aktivasi</h3><button class="btn-modal-close" @click="fb.buka = false">×</button></div>
+        <div class="modal-header"><h3 class="modal-title">Tanda tangan BA aktivasi</h3><button type="button" class="btn-modal-close" aria-label="Tutup" @click="fb.buka = false">×</button></div>
         <div class="modal-body">
           <div class="grid-2">
             <div class="form-group"><label class="form-label form-required">Nama penandatangan (pelanggan)</label><input v-model="fb.nama" class="form-input" maxlength="150" /></div>
@@ -787,7 +795,7 @@ const AKSI: Record<string, string> = {
           </div>
           <label class="form-label">Tanda tangan</label>
           <canvas ref="kanvas" class="op-kanvas" @pointerdown.prevent="mulaiGores" @pointermove.prevent="gores" @pointerup="menggambar = false" @pointercancel="menggambar = false" @pointerleave="menggambar = false"></canvas>
-          <button class="btn btn-sm btn-ghost" @click="hapusCoretan">Hapus coretan</button>
+          <button type="button" class="btn btn-sm btn-ghost" @click="hapusCoretan">Hapus coretan</button>
           <div class="form-group"><label class="form-label">Nama pelaksana NEXT1 (opsional)</label><input v-model="fb.nama_next1" class="form-input" maxlength="150" placeholder="kosong = nama Anda" /></div>
         </div>
         <div class="modal-footer"><button class="btn btn-ghost" @click="fb.buka = false">Batal</button><button class="btn btn-primary" :disabled="!adaCoretan || fb.nama.trim().length < 2 || proses" @click="simpanBa">Simpan tanda tangan</button></div>
@@ -799,7 +807,7 @@ const AKSI: Record<string, string> = {
       <div class="modal modal-lg">
         <div class="modal-header">
           <h3 class="modal-title">{{ fl.id_sumber ? 'Ubah' : 'Tambah' }} link vendor ISP</h3>
-          <button class="btn-modal-close" @click="fl.buka = false">×</button>
+          <button type="button" class="btn-modal-close" aria-label="Tutup" @click="fl.buka = false">×</button>
         </div>
         <div class="modal-body">
           <div class="grid-2">

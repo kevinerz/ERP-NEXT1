@@ -4,7 +4,7 @@
 import { computed, onMounted, ref } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import { confirmDialog, toast } from '@/composables/useDialog'
+import { confirmDialog, toast, toastGalat, pesanGalat } from '@/composables/useDialog'
 import { fmtDateTime, fmtRelativeTime } from '@/composables/useFormat'
 
 const props = defineProps<{ idSite: number }>()
@@ -22,7 +22,7 @@ const live = computed(() => r.value?.live ?? null)
 async function muat() {
   memuat.value = true; galat.value = ''
   try { routers.value = (await api.get(`/nocaas/site/${props.idSite}/panel`)).data.data.routers ?? [] }
-  catch (e: any) { galat.value = e.response?.data?.message || 'Gagal memuat data NOCaaS' }
+  catch (e: any) { galat.value = pesanGalat(e, 'Gagal memuat data NOCaaS') }
   finally { memuat.value = false }
 }
 onMounted(muat)
@@ -42,22 +42,24 @@ const ifAktif = computed(() => (live.value?.interfaces ?? [])
 const pratinjau = ref<any>(null)
 const proses = ref(false)
 async function bukaSinkron() {
+  if (proses.value) return
   proses.value = true
   try { pratinjau.value = (await api.get(`/nocaas/site/${props.idSite}/sinkron`)).data.data }
-  catch (e: any) { toast(e.response?.data?.message || 'Gagal menyiapkan sinkron', 'danger') }
+  catch (e: any) { toastGalat(e, 'Gagal menyiapkan sinkron') }
   finally { proses.value = false }
 }
 const adaIsi = computed(() => pratinjau.value?.baris?.some((b: any) => b.aksi === 'isi'))
 const adaBeda = computed(() => pratinjau.value?.baris?.some((b: any) => b.aksi === 'beda'))
 async function terapkan(timpa: boolean) {
+  if (proses.value) return
   if (timpa && !(await confirmDialog({ title: 'Timpa data perangkat?', message: 'Nilai yang berbeda di ERP akan diganti dengan data dari NOCaaS.', confirmLabel: 'Timpa', variant: 'warning' }))) return
   proses.value = true
   try {
     const res = await api.post(`/nocaas/site/${props.idSite}/sinkron`, { timpa })
-    toast(res.data.message)
+    toast(res.data?.message || 'Data perangkat disinkronkan')
     pratinjau.value = null
     emit('berubah')
-  } catch (e: any) { toast(e.response?.data?.message || 'Sinkron gagal', 'danger') }
+  } catch (e: any) { toastGalat(e, 'Sinkron gagal') }
   finally { proses.value = false }
 }
 </script>
@@ -125,8 +127,8 @@ async function terapkan(timpa: boolean) {
           <dl class="np-dl">
             <dt>IP publik</dt><dd><code>{{ r.public_ip || '—' }}</code></dd>
             <dt>ISP akses</dt><dd>{{ r.access_isp || '—' }}</dd>
-            <dt>Putus 7 hari</dt><dd :class="{ merah: r.downs7 > 5 }">{{ r.downs7 }}×</dd>
-            <dt>Naik-turun 24 jam</dt><dd :class="{ merah: r.flaps24 > 3 }">{{ r.flaps24 }}×</dd>
+            <dt>Putus 7 hari</dt><dd :class="{ merah: r.downs7 > 5 }">{{ r.downs7 ?? '—' }}×</dd>
+            <dt>Naik-turun 24 jam</dt><dd :class="{ merah: r.flaps24 > 3 }">{{ r.flaps24 ?? '—' }}×</dd>
             <dt>Heartbeat</dt><dd>{{ r.hb_at ? fmtRelativeTime(r.hb_at) : '—' }}</dd>
           </dl>
         </div>
@@ -146,10 +148,10 @@ async function terapkan(timpa: boolean) {
               <span>CPU</span><div class="bar"><i :style="{ width: `${live.cpu ?? 0}%` }" :class="{ tinggi: (live.cpu ?? 0) > 80 }" /></div><b>{{ live.cpu ?? '—' }}%</b>
             </div>
             <div v-if="live.mem" class="np-meter">
-              <span>Memori</span><div class="bar"><i :style="{ width: `${persen(live.mem)}%` }" :class="{ tinggi: (persen(live.mem) ?? 0) > 85 }" /></div><b>{{ persen(live.mem) }}%</b>
+              <span>Memori</span><div class="bar"><i :style="{ width: `${persen(live.mem) ?? 0}%` }" :class="{ tinggi: (persen(live.mem) ?? 0) > 85 }" /></div><b>{{ persen(live.mem) ?? '—' }}%</b>
             </div>
             <div v-if="live.hdd" class="np-meter">
-              <span>Storage</span><div class="bar"><i :style="{ width: `${persen(live.hdd)}%` }" /></div><b>{{ mb(live.hdd.total - live.hdd.bebas) }}</b>
+              <span>Storage</span><div class="bar"><i :style="{ width: `${persen(live.hdd) ?? 0}%` }" /></div><b>{{ mb(live.hdd.total - live.hdd.bebas) }}</b>
             </div>
           </template>
         </div>

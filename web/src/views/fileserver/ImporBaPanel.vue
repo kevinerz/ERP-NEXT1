@@ -3,7 +3,7 @@
 // lalu simpan sebagai tautan di tab Dokumen site (berkas tetap di file server, tidak disalin).
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import api from '@/services/api'
-import { confirmDialog, toast } from '@/composables/useDialog'
+import { confirmDialog, toast, toastGalat, pesanGalat } from '@/composables/useDialog'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 
 const props = defineProps<{ share: string; path: string }>()
@@ -33,7 +33,7 @@ async function pindai() {
       centang: b.status === 'yakin' && !b.sudah,
     }))
     tab.value = data.value!.yakin ? 'yakin' : data.value!.ragu ? 'ragu' : 'tidak_cocok'
-  } catch (e: any) { galat.value = e.response?.data?.message || 'Gagal memindai folder' }
+  } catch (e: any) { galat.value = pesanGalat(e, 'Gagal memindai folder') }
   finally { memuat.value = false }
 }
 onMounted(pindai)
@@ -62,7 +62,7 @@ const ukuran = (n: number) => (n < 1024 ** 2 ? `${Math.round(n / 1024)} KB` : `$
 const salin = ref<{ berjalan: boolean; total: number; selesai: number; gagal: number; byte: number } | null>(null)
 let timerSalin: ReturnType<typeof setInterval> | null = null
 async function pantauSalin() {
-  try { salin.value = (await api.get('/fileserver/impor-ba/salin')).data.data } catch { /* abaikan */ }
+  try { salin.value = (await api.get('/fileserver/impor-ba/salin', { senyap: true })).data.data } catch { /* abaikan */ }
   if (salin.value && !salin.value.berjalan && timerSalin) { clearInterval(timerSalin); timerSalin = null }
 }
 function mulaiPantau() { pantauSalin(); if (!timerSalin) timerSalin = setInterval(pantauSalin, 2000) }
@@ -70,16 +70,17 @@ onMounted(pantauSalin)
 onBeforeUnmount(() => { if (timerSalin) clearInterval(timerSalin) })
 
 async function simpan() {
+  if (menyimpan.value) return
   const items = terpilih.value.map((b) => ({ path: b.path, id_site: b.pilih, nama: b.nama, ukuran: b.ukuran }))
   const jmlSite = new Set(items.map((i) => i.id_site)).size
   if (!(await confirmDialog({ title: `Tautkan ${items.length} BA ke ${jmlSite} site?`, message: 'Berkas disalin ke server ERP dan muncul di tab Dokumen masing-masing site. Berkas asli di file server tidak diubah.', confirmLabel: 'Simpan' }))) return
   menyimpan.value = true
   try {
     const r = await api.post('/fileserver/impor-ba/terapkan', { share: props.share, items }, { timeout: 5 * 60_000 })
-    toast(r.data.message)
+    toast(r.data.message || 'BA ditautkan ke site')
     mulaiPantau()
     await pindai()
-  } catch (e: any) { toast(e.response?.data?.message || 'Gagal menyimpan', 'danger') }
+  } catch (e: any) { toastGalat(e, 'Gagal menautkan BA ke site') }
   finally { menyimpan.value = false }
 }
 </script>

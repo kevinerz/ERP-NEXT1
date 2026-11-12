@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router'
 import { useContractsStore } from '@/stores/contracts'
 import { useMasterStore } from '@/stores/master'
 import { useProyekStore } from '@/stores/proyek'
-import { fmtRupiah, fmtDateShort as fmtDate, statusLabel } from '@/composables/useFormat'
+import { fmtRupiah, fmtDateShort as fmtDate, statusLabel, todayLocal } from '@/composables/useFormat'
+import { pesanGalat } from '@/composables/useDialog'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
 import { useFilterUrl } from '@/composables/useFilterUrl'
@@ -75,25 +76,37 @@ function doFilter() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
 async function handleSubmit() {
+  if (submitting.value) return
   if (!form.value.id_site || !form.value.id_layanan || !form.value.tgl_mulai || !form.value.harga_mrc) {
     formError.value = 'Site, layanan, tanggal mulai, dan harga MRC wajib diisi'; return
   }
+  const durasi = Number(form.value.durasi_bulan), mrc = Number(form.value.harga_mrc), otc = Number(form.value.harga_otc) || 0
+  if (!Number.isInteger(durasi) || durasi < 1) { formError.value = 'Durasi harus bilangan bulat minimal 1 bulan'; return }
+  if (isNaN(mrc) || mrc < 0 || otc < 0) { formError.value = 'Harga tidak boleh negatif'; return }
   submitting.value = true; formError.value = ''
   try {
-    const payload: any = { ...form.value }
+    const payload: any = { ...form.value, durasi_bulan: durasi, harga_mrc: mrc, harga_otc: otc }
     if (payload.id_quotation === '' || !payload.id_quotation) delete payload.id_quotation
     const result = await contracts.create(payload)
     showModal.value = false
     await contracts.fetchSummary()
     router.push(`/contracts/${result.id_kontrak}`)
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal membuat kontrak' }
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal membuat kontrak') }
   finally { submitting.value = false }
 }
 
+// Selisih hari kalender (zona lokal) antara hari ini dan tanggal berakhir — bukan selisih jam,
+// yang membuat kontrak berakhir hari ini terbaca "1 hari lagi" pada pagi hari.
 function sisaHari(d?: string) {
   if (!d) return null
-  const diff = Math.ceil((new Date(d).getTime() - Date.now()) / 86400000)
-  return diff
+  const akhir = Date.parse(String(d).slice(0, 10))
+  if (isNaN(akhir)) return null
+  return Math.round((akhir - Date.parse(todayLocal())) / 86400000)
+}
+function teksSisa(d?: string) {
+  const s = sisaHari(d)
+  if (s === null) return ''
+  return s < 0 ? `lewat ${-s} hari` : s === 0 ? 'berakhir hari ini' : `${s} hari lagi`
 }
 </script>
 
@@ -135,7 +148,9 @@ function sisaHari(d?: string) {
       <button class="btn-search" @click="doFilter">Cari</button>
     </div>
 
-    <div v-if="contracts.error" class="alert-error">{{ contracts.error }}</div>
+    <div v-if="contracts.error" class="alert-error" role="alert">{{ contracts.error }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="fetchData">↻ Coba lagi</button>
+    </div>
 
     <div class="table-card">
       <div v-if="contracts.loading" class="loading">Memuat...</div>
@@ -152,24 +167,24 @@ function sisaHari(d?: string) {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!contracts.list.length">
-            <td colspan="7" class="empty">Belum ada data kontrak</td>
+          <tr v-if="!contracts.list.length && !contracts.error">
+            <td colspan="7" class="empty">{{ search || filterStatus ? 'Tidak ada kontrak yang cocok dengan pencarian/filter ini' : 'Belum ada data kontrak' }}</td>
           </tr>
           <tr v-baris v-for="k in contracts.list" :key="k.id_kontrak" class="row-link"
             @click="router.push(`/contracts/${k.id_kontrak}`)">
             <td class="nomor">{{ k.nomor_kontrak }}</td>
             <td>
-              <div class="fw600">{{ k.site?.pelanggan?.nama_pelanggan }}</div>
+              <div class="fw600">{{ k.site?.pelanggan?.nama_pelanggan || '—' }}</div>
               <div class="text-gray text-sm">{{ k.site?.nama_site }}</div>
             </td>
-            <td class="text-gray">{{ k.layanan?.nama_layanan }}</td>
+            <td class="text-gray">{{ k.layanan?.nama_layanan || '—' }}</td>
             <td class="fw600">{{ fmtRupiah(k.harga_mrc) }}</td>
             <td class="text-sm text-gray">{{ fmtDate(k.tgl_mulai) }}</td>
             <td>
               <div class="text-sm" v-if="k.tgl_berakhir">{{ fmtDate(k.tgl_berakhir) }}</div>
               <div v-if="k.tgl_berakhir && k.status_kontrak === 'Aktif'" class="sisa"
                 :class="{ warn: (sisaHari(k.tgl_berakhir) ?? 999) <= 30 }">
-                {{ (sisaHari(k.tgl_berakhir) ?? 0) < 0 ? `lewat ${-(sisaHari(k.tgl_berakhir) ?? 0)} hari` : `${sisaHari(k.tgl_berakhir)} hari lagi` }}
+                {{ teksSisa(k.tgl_berakhir) }}
               </div>
             </td>
             <td>
@@ -195,7 +210,7 @@ function sisaHari(d?: string) {
             <select v-model.number="form.id_quotation" @change="onQuotationChange">
               <option value="">— Tanpa Quotation —</option>
               <option v-for="q in approvedQuotations" :key="q.id_quotation" :value="q.id_quotation">
-                {{ q.nomor_quotation }} — {{ q.opportunity?.lead?.nama_prospek }}
+                {{ q.nomor_quotation }} — {{ q.opportunity?.lead?.nama_prospek || q.opportunity?.nama_opportunity || '—' }}
               </option>
             </select>
           </div>

@@ -54,7 +54,7 @@
             {{ simError }} · <button type="button" class="btn-hapus-sm" @click="fetchSimCards">Coba lagi</button>
           </div>
           <div v-else-if="simMemuat && simCards.length === 0" class="empty-state">Memuat…</div>
-          <div v-else-if="simCards.length === 0" class="empty-state">Tidak ada data sumber internet</div>
+          <div v-else-if="simCards.length === 0" class="empty-state">{{ simSearch.trim() ? 'Tidak ada sumber internet yang cocok dengan pencarian' : 'Belum ada data sumber internet' }}</div>
         </div>
       </div>
 
@@ -124,8 +124,8 @@
                   <td class="ket">{{ t.keterangan || '—' }}</td>
                   <td>{{ t.user?.karyawan?.nama_lengkap || '—' }}</td>
                   <td class="nowrap">
-                    <button v-if="t.metode === 'Haybi' && t.status_transaksi === 'Pending'" class="btn-cek-sm" @click="cekStatus(t.id_topup)">Cek Status</button>
-                    <button class="btn-hapus-sm" @click="deleteTopup(t.id_topup)">Hapus</button>
+                    <button v-if="t.metode === 'Haybi' && t.status_transaksi === 'Pending'" type="button" class="btn-cek-sm" :disabled="mengecek === t.id_topup" @click="cekStatus(t.id_topup)">{{ mengecek === t.id_topup ? 'Mengecek…' : 'Cek Status' }}</button>
+                    <button type="button" class="btn-hapus-sm" :disabled="menghapus === t.id_topup" @click="deleteTopup(t.id_topup)">Hapus</button>
                   </td>
                 </tr>
                 <tr v-if="topupError">
@@ -137,7 +137,7 @@
                   <td colspan="10" class="empty-cell">Memuat…</td>
                 </tr>
                 <tr v-else-if="topups.length === 0">
-                  <td colspan="10" class="empty-cell">Belum ada data topup</td>
+                  <td colspan="10" class="empty-cell">{{ selectedSim || filterJenis || filterDari || filterSampai ? 'Tidak ada topup untuk filter ini' : 'Belum ada data topup' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -203,11 +203,11 @@
 
     <!-- Modal Beli Digiflazz -->
     <Teleport to="body">
-      <div v-if="showBeliModal" class="modal-overlay" @click.self="showBeliModal = false">
+      <div v-if="showBeliModal" class="modal-overlay" @click.self="beliSubmitting || (showBeliModal = false)">
         <div class="modal modal-lg">
           <div class="modal-header">
             <h3>⚡ Beli Pulsa/Paket Data — Haybi H2H</h3>
-            <button type="button" class="btn-modal-close" @click="showBeliModal = false">✕</button>
+            <button type="button" class="btn-modal-close" aria-label="Tutup" :disabled="beliSubmitting" @click="showBeliModal = false">✕</button>
           </div>
           <div class="modal-body">
             <div v-if="beliError" class="beli-error-banner">⚠️ {{ beliError }}</div>
@@ -305,7 +305,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { confirmDialog, alertDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import BasePagination from '@/components/BasePagination.vue'
@@ -333,6 +333,7 @@ const filterSampai = ref('')
 
 const showModal  = ref(false)
 const submitting = ref(false)
+const menghapus  = ref(0)
 const formError  = ref('')
 const form = ref({ id_sumber: '' as number | '', jenis_topup: '', nominal: 0, tgl_topup: todayLocal(), keterangan: '' })
 
@@ -411,11 +412,12 @@ async function openBeliModal() {
   try {
     produkList.value = (await api.get('/digiflazz/price-list')).data.data
   } catch (e: any) {
-    beliError.value = e.response?.data?.message || 'Gagal memuat daftar produk'
+    beliError.value = pesanGalat(e, 'Gagal memuat daftar produk')
   } finally { loadingProduk.value = false }
 }
 
 async function submitBeli() {
+  if (beliSubmitting.value) return
   beliError.value = ''
   if (!beliConfirm.value || !beliForm.value.id_sumber || !beliProduk.value) return
   beliSubmitting.value = true
@@ -430,7 +432,7 @@ async function submitBeli() {
     await alertDialog({ message: r.data.message || 'Transaksi diproses', variant: 'success' })
     await Promise.all([fetchTopup(), fetchSimCards(), fetchDigiStatus()])
   } catch (e: any) {
-    beliError.value = e.response?.data?.message || 'Gagal memproses pembelian'
+    beliError.value = pesanGalat(e, 'Gagal memproses pembelian')
   } finally { beliSubmitting.value = false }
 }
 
@@ -442,34 +444,39 @@ async function openConfigModal() {
     configForm.value = { username: cfg.username || '', api_key: '' }
     configHasKey.value = !!cfg.has_api_key
   } catch (e: any) {
-    configError.value = `Konfigurasi saat ini gagal dimuat (${e?.response?.data?.message || 'koneksi bermasalah'}). Menyimpan akan menimpa nilai lama.`
+    configError.value = `Konfigurasi saat ini gagal dimuat (${pesanGalat(e, 'koneksi bermasalah')}). Menyimpan akan menimpa nilai lama.`
   }
 }
 
 async function submitConfig() {
+  if (configSaving.value) return
   configError.value = ''; configMsg.value = ''
-  if (!configForm.value.username || !configForm.value.api_key) {
+  if (!configForm.value.username.trim() || !configForm.value.api_key.trim()) {
     configError.value = 'Username dan API Key wajib diisi'; return
   }
   configSaving.value = true
   try {
     const r = await api.patch('/digiflazz/config', configForm.value)
-    configMsg.value = r.data.message
+    configMsg.value = r.data.message || 'Konfigurasi tersimpan'
     configForm.value.api_key = ''
+    configHasKey.value = true
     await fetchDigiStatus()
   } catch (e: any) {
-    configError.value = e.response?.data?.message || 'Gagal menyimpan konfigurasi'
+    configError.value = pesanGalat(e, 'Gagal menyimpan konfigurasi')
   } finally { configSaving.value = false }
 }
 
+const mengecek = ref(0)
 async function cekStatus(id_topup: number) {
+  if (mengecek.value) return
+  mengecek.value = id_topup
   try {
     const r = await api.post(`/digiflazz/topup/${id_topup}/check-status`)
-    await alertDialog({ title: 'Status Transaksi', message: r.data.message })
+    await alertDialog({ title: 'Status Transaksi', message: r.data.message || 'Status diperbarui' })
     await fetchTopup()
   } catch (e: any) {
     await alertError(e, 'Gagal cek status')
-  }
+  } finally { mengecek.value = 0 }
 }
 
 function statusClass(s: string) {
@@ -478,18 +485,25 @@ function statusClass(s: string) {
   return 'yellow'
 }
 
+// Nomor urut permintaan: jawaban pencarian lama tidak boleh menimpa yang lebih baru
+let simSeq = 0
+let topupSeq = 0
 async function fetchSimCards() {
+  const seq = ++simSeq
   simMemuat.value = true
   try {
-    const r = await api.get('/assets/sim-cards', { params: { search: simSearch.value || undefined } })
+    const r = await api.get('/assets/sim-cards', { params: { search: simSearch.value.trim() || undefined } })
+    if (seq !== simSeq) return
     simCards.value = r.data.data || []
     simError.value = ''
   } catch (e: any) {
-    simError.value = e?.response?.data?.message || 'Gagal memuat daftar SIM'
-  } finally { simMemuat.value = false }
+    if (seq !== simSeq) return
+    simError.value = pesanGalat(e, 'Gagal memuat daftar SIM')
+  } finally { if (seq === simSeq) simMemuat.value = false }
 }
 
 async function fetchTopup() {
+  const seq = ++topupSeq
   try {
     const params: any = { page: page.value, limit: 25 }
     if (selectedSim.value) params.id_sumber = selectedSim.value.id_sumber
@@ -498,12 +512,14 @@ async function fetchTopup() {
     if (filterSampai.value) params.tgl_sampai = filterSampai.value
     topupMemuat.value = true
     const r = await api.get('/assets/sim-topup', { params })
+    if (seq !== topupSeq) return
     topups.value = r.data.data || []
     meta.value = r.data.meta || meta.value
     topupError.value = ''
   } catch (e: any) {
-    topupError.value = e?.response?.data?.message || 'Gagal memuat riwayat topup'
-  } finally { topupMemuat.value = false }
+    if (seq !== topupSeq) return
+    topupError.value = pesanGalat(e, 'Gagal memuat riwayat topup')
+  } finally { if (seq === topupSeq) topupMemuat.value = false }
 }
 
 function selectSim(sim: any) {
@@ -535,10 +551,12 @@ function openModal() {
 }
 
 async function submitTopup() {
+  if (submitting.value) return
   formError.value = ''
   if (!form.value.id_sumber) return (formError.value = 'Pilih sumber internet')
   if (!form.value.jenis_topup) return (formError.value = 'Pilih jenis topup')
-  if (!form.value.nominal || form.value.nominal <= 0) return (formError.value = 'Nominal harus > 0')
+  if (!form.value.tgl_topup) return (formError.value = 'Tanggal topup wajib diisi')
+  if (!form.value.nominal || form.value.nominal <= 0) return (formError.value = 'Nominal harus lebih dari 0')
   submitting.value = true
   try {
     await api.post('/assets/sim-topup', {
@@ -549,20 +567,25 @@ async function submitTopup() {
       keterangan: form.value.keterangan || undefined,
     })
     showModal.value = false
+    toast('Topup tercatat')
     await Promise.all([fetchTopup(), fetchSimCards()])
   } catch (e: any) {
-    formError.value = e.response?.data?.message || 'Gagal menyimpan'
+    formError.value = pesanGalat(e, 'Gagal menyimpan')
   } finally { submitting.value = false }
 }
 
 async function deleteTopup(id_topup: number) {
   if (!(await confirmDialog({ title: 'Hapus Catatan Topup?', message: 'Hapus catatan topup ini?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  if (menghapus.value) return
+  menghapus.value = id_topup
   try {
     await api.delete('/assets/sim-topup/' + id_topup)
-    await fetchTopup()
+    toast('Catatan topup dihapus')
+    if (topups.value.length === 1 && page.value > 1) page.value--
+    await Promise.all([fetchTopup(), fetchSimCards()])
   } catch (e: any) {
     await alertError(e, 'Gagal menghapus topup')
-  }
+  } finally { menghapus.value = 0 }
 }
 
 const fmtRp = fmtRupiah

@@ -7,6 +7,14 @@
       </div>
     </div>
 
+    <div v-if="galatMuat" class="galat-state" role="alert">
+      <div class="galat-ikon">!</div>
+      <div class="galat-judul">Gagal memuat pengaturan</div>
+      <div>Form di bawah masih berisi nilai bawaan dan tidak bisa disimpan agar pengaturan asli tidak tertimpa.</div>
+      <button type="button" class="btn btn-secondary btn-sm" @click="muat">↻ Coba lagi</button>
+    </div>
+    <div v-else-if="memuat" class="loading-state">Memuat pengaturan…</div>
+
     <div class="settings-layout">
       <!-- LEFT: Logo + Brand -->
       <div class="settings-card logo-card">
@@ -114,7 +122,7 @@
     <div class="save-bar">
       <div v-if="saved" class="save-ok">✓ Pengaturan berhasil disimpan</div>
       <div v-if="saveError" class="save-err" role="alert">{{ saveError }}</div>
-      <button type="button" class="btn btn-primary btn-save" :disabled="saving" @click="handleSave">
+      <button type="button" class="btn btn-primary btn-save" :disabled="saving || memuat || galatMuat" @click="handleSave">
         {{ saving ? 'Menyimpan...' : 'Simpan Pengaturan' }}
       </button>
     </div>
@@ -125,6 +133,7 @@
 import { reactive, ref, onMounted } from 'vue'
 import api from '@/services/api'
 import { useSettingsStore } from '@/stores/settings'
+import { toast, pesanGalat } from '@/composables/useDialog'
 
 const store = useSettingsStore()
 
@@ -135,12 +144,21 @@ const saveError = ref('')
 const uploading = ref(false)
 const logoError = ref('')
 
-onMounted(async () => {
+// Gagal memuat = form berisi nilai bawaan → menyimpan akan menimpa pengaturan asli. Kunci tombol simpan.
+const memuat = ref(true)
+const galatMuat = ref(false)
+async function muat() {
+  memuat.value = true; galatMuat.value = false
   await store.fetch()
-  Object.assign(form, store.settings)
-})
+  if (store.loaded) Object.assign(form, store.settings)
+  else galatMuat.value = true
+  memuat.value = false
+}
+onMounted(muat)
 
 async function handleSave() {
+  if (saving.value || memuat.value || galatMuat.value) return
+  if (!String(form.company_name ?? '').trim()) { saveError.value = 'Nama PT / Badan Usaha wajib diisi'; saved.value = false; return }
   saving.value = true
   saved.value = false
   saveError.value = ''
@@ -150,19 +168,24 @@ async function handleSave() {
     await api.patch('/settings', payload)
     Object.assign(store.settings, payload)
     saved.value = true
+    toast('Pengaturan tersimpan')
     setTimeout(() => { saved.value = false }, 3000)
   } catch (e: any) {
-    saveError.value = e?.response?.data?.message ?? 'Gagal menyimpan'
+    saveError.value = pesanGalat(e, 'Gagal menyimpan pengaturan')
   } finally {
     saving.value = false
   }
 }
 
 async function handleLogoUpload(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  uploading.value = true
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  // kosongkan agar memilih berkas yang sama lagi (setelah gagal) tetap memicu unggah
+  input.value = ''
+  if (!file || uploading.value) return
   logoError.value = ''
+  if (file.size > 2 * 1024 * 1024) { logoError.value = 'Ukuran logo melebihi 2MB — perkecil dulu lalu unggah lagi.'; return }
+  uploading.value = true
   try {
     const fd = new FormData()
     fd.append('file', file)
@@ -170,10 +193,12 @@ async function handleLogoUpload(e: Event) {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     const url = r.data.data?.url ?? r.data?.url
+    if (!url) throw new Error('Server tidak mengembalikan alamat logo')
     form.company_logo_url = url
     store.settings.company_logo_url = url
+    toast('Logo diperbarui')
   } catch (err: any) {
-    logoError.value = 'Gagal upload logo: ' + (err?.response?.data?.message ?? err?.message ?? 'Unknown error')
+    logoError.value = 'Gagal mengunggah logo: ' + pesanGalat(err, 'kesalahan tidak diketahui')
   } finally {
     uploading.value = false
   }

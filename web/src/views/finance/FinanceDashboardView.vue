@@ -4,11 +4,13 @@ import { useRouter } from 'vue-router'
 import { useFinanceStore } from '@/stores/finance'
 import { fmtRupiah, fmtDateShort as fmtDate, statusLabel, todayLocal, monthLocal } from '@/composables/useFormat'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { pesanGalat } from '@/composables/useDialog'
 
 const router = useRouter()
 const finance = useFinanceStore()
 
 const loadError = ref('')
+const memuat = ref(false)
 
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Draft:       { bg: '#f1f5f9', color: '#64748b' },
@@ -35,28 +37,43 @@ onMounted(load)
 
 async function load() {
   loadError.value = ''
+  memuat.value = true
   try {
     await Promise.all([finance.fetchSummary(), finance.fetchAging()])
   } catch (err: any) {
-    loadError.value = err?.response?.data?.message ?? 'Gagal memuat data finance'
-  }
+    loadError.value = pesanGalat(err, 'Gagal memuat data finance')
+  } finally { memuat.value = false }
 }
 
 async function handleBulk() {
-  if (!bulkForm.value.periode || !bulkForm.value.tgl_invoice || !bulkForm.value.tgl_jatuh_tempo) {
+  if (submitting.value) return
+  const f = bulkForm.value
+  if (!f.periode || !f.tgl_invoice || !f.tgl_jatuh_tempo) {
     formError.value = 'Periode, tanggal invoice, dan jatuh tempo wajib diisi'
+    return
+  }
+  if (f.tgl_jatuh_tempo < f.tgl_invoice) {
+    formError.value = 'Jatuh tempo tidak boleh sebelum tanggal invoice'
+    return
+  }
+  const ppn = Number(f.ppn_persen)
+  if ((f.ppn_persen as any) === '' || isNaN(ppn) || ppn < 0 || ppn > 100) {
+    formError.value = 'PPN harus antara 0 dan 100%'
     return
   }
   submitting.value = true
   formError.value = ''
   try {
-    const res = await finance.generateBulk({ ...bulkForm.value })
+    const res = await finance.generateBulk({ ...f, ppn_persen: ppn })
     showBulkModal.value = false
-    bulkResult.value = `${res.dibuat} invoice dibuat, ${res.dilewati} dilewati (dari ${res.total_kontrak} kontrak)`
+    // Kontrak yang gagal dibuatkan invoice dilaporkan server di `gagal` — jangan sampai tersembunyi
+    const gagal: string[] = Array.isArray(res?.gagal) ? res.gagal : []
+    bulkResult.value = `${res?.dibuat ?? 0} invoice dibuat, ${res?.dilewati ?? 0} dilewati (dari ${res?.total_kontrak ?? 0} kontrak)`
+      + (gagal.length ? `. GAGAL ${gagal.length}: ${gagal.join(', ')}` : '')
     showBulkResult.value = true
     await load()
   } catch (err: any) {
-    formError.value = err?.response?.data?.message ?? 'Gagal generate invoice'
+    formError.value = pesanGalat(err, 'Gagal generate invoice')
   } finally {
     submitting.value = false
   }
@@ -76,7 +93,9 @@ async function handleBulk() {
       </div>
     </div>
 
-    <div v-if="loadError" class="alert-error">{{ loadError }}</div>
+    <div v-if="loadError" class="alert-error" role="alert">{{ loadError }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" :disabled="memuat" @click="load">↻ Coba lagi</button>
+    </div>
     <div v-else-if="!finance.summary && !finance.aging" class="loading-state">Memuat data finance...</div>
 
     <ConfirmDialog
@@ -108,7 +127,7 @@ async function handleBulk() {
       </div>
       <div class="kpi-card red">
         <div class="kpi-icon">⏰</div>
-        <div class="kpi-val">{{ finance.summary.jatuh_tempo_count }}</div>
+        <div class="kpi-val">{{ finance.summary.jatuh_tempo_count ?? 0 }}</div>
         <div class="kpi-label">Invoice Jatuh Tempo</div>
       </div>
     </div>
@@ -178,7 +197,7 @@ async function handleBulk() {
             <tr v-baris v-for="inv in finance.aging.invoices" :key="inv.id_invoice" class="row-link"
               @click="router.push(`/finance/invoice/${inv.id_invoice}`)">
               <td>
-                <div class="fw600">{{ inv.pelanggan }}</div>
+                <div class="fw600">{{ inv.pelanggan || '—' }}</div>
                 <div class="text-gray text-sm">{{ inv.site }}</div>
               </td>
               <td class="nomor">{{ inv.nomor_invoice }}</td>
@@ -213,7 +232,7 @@ async function handleBulk() {
           </div>
           <div class="field">
             <label>PPN (%)</label>
-            <input v-model.number="bulkForm.ppn_persen" type="number" min="0" />
+            <input v-model.number="bulkForm.ppn_persen" type="number" min="0" max="100" />
           </div>
           <div class="field">
             <label>Tanggal Invoice <span class="req">*</span></label>

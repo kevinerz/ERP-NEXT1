@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import portalApi from '@/services/portalApi'
 import { fmtDateTime } from '@/composables/useFormat'
+import { pesanGalat } from '@/composables/useDialog'
 
 const TICKET_LIMIT = 200
 
@@ -27,7 +28,8 @@ const saving   = ref(false)
 const formErr  = ref('')
 const form = ref({ id_site: 0, judul_tiket: '', deskripsi_masalah: '' })
 
-onMounted(async () => {
+async function muat() {
+  loading.value = true; loadErr.value = ''; refreshErr.value = ''
   try {
     const [t, s] = await Promise.all([
       portalApi.get('/portal/tickets', { params: { limit: TICKET_LIMIT } }),
@@ -36,11 +38,12 @@ onMounted(async () => {
     tickets.value = t.data.data ?? []
     sites.value   = s.data.data ?? []
   } catch (e: any) {
-    loadErr.value = e.response?.data?.message || 'Gagal memuat data tiket'
+    loadErr.value = pesanGalat(e, 'Gagal memuat data tiket')
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(muat)
 
 const filtered = computed(() => {
   let list = tickets.value
@@ -73,7 +76,7 @@ async function openDetail(t: any) {
     const r = await portalApi.get(`/portal/tickets/${t.id_ticket}`)
     detail.value = r.data.data
   } catch (e: any) {
-    detailErr.value = `Detail tiket ${t.nomor_tiket ?? ''} gagal dibuka: ${e.response?.data?.message || 'periksa koneksi lalu coba lagi'}`
+    detailErr.value = `Detail tiket ${t.nomor_tiket ?? ''} gagal dibuka: ${pesanGalat(e, 'periksa koneksi lalu coba lagi')}`
   } finally { detailMemuat.value = 0 }
 }
 
@@ -81,6 +84,7 @@ async function submitTicket() {
   if (!form.value.id_site || !form.value.judul_tiket.trim()) {
     formErr.value = 'Site dan judul tiket wajib diisi'; return
   }
+  if (saving.value) return
   saving.value = true; formErr.value = ''
   let baru: { nomor_tiket?: string; id_ticket?: number } = {}
   try {
@@ -91,7 +95,7 @@ async function submitTicket() {
     })
     baru = r.data?.data ?? {}
   } catch (e: any) {
-    formErr.value = e.response?.data?.message || 'Gagal membuat tiket'
+    formErr.value = pesanGalat(e, 'Gagal membuat tiket')
     saving.value = false
     return
   }
@@ -106,7 +110,7 @@ async function submitTicket() {
     loadErr.value = ''
     refreshErr.value = ''
   } catch {
-    refreshErr.value = 'Tiket berhasil dibuat, tetapi daftar tiket gagal dimuat ulang. Silakan muat ulang halaman.'
+    refreshErr.value = 'Tiket berhasil dibuat, tetapi daftar tiket gagal dimuat ulang.'
   } finally { saving.value = false }
 }
 
@@ -205,16 +209,16 @@ function waktuSelesai(t: any): string | null {
     <!-- Toolbar: tabs + search + filter -->
     <div class="toolbar">
       <div class="tabs">
-        <button :class="['tab', activeTab==='all'      && 'tab-active']" @click="activeTab='all'">
+        <button type="button" :class="['tab', activeTab==='all'      && 'tab-active']" @click="activeTab='all'">
           Semua <span class="tab-count">{{ kpi.total }}</span>
         </button>
-        <button :class="['tab', activeTab==='open'     && 'tab-active']" @click="activeTab='open'">
+        <button type="button" :class="['tab', activeTab==='open'     && 'tab-active']" @click="activeTab='open'">
           Terbuka <span class="tab-count">{{ kpi.open }}</span>
         </button>
-        <button :class="['tab', activeTab==='progress' && 'tab-active']" @click="activeTab='progress'">
+        <button type="button" :class="['tab', activeTab==='progress' && 'tab-active']" @click="activeTab='progress'">
           Diproses <span class="tab-count">{{ kpi.progress }}</span>
         </button>
-        <button :class="['tab', activeTab==='done'     && 'tab-active']" @click="activeTab='done'">
+        <button type="button" :class="['tab', activeTab==='done'     && 'tab-active']" @click="activeTab='done'">
           Selesai <span class="tab-count">{{ kpi.done }}</span>
         </button>
       </div>
@@ -239,12 +243,16 @@ function waktuSelesai(t: any): string | null {
       <button type="button" class="banner-x" aria-label="Tutup pesan" @click="sukses = ''">✕</button>
     </div>
     <div v-if="detailErr" class="form-err" role="alert" style="margin-bottom:16px">{{ detailErr }}</div>
-    <div v-if="refreshErr" class="form-err" style="margin-bottom:16px">{{ refreshErr }}</div>
+    <div v-if="refreshErr" class="form-err" role="alert" style="margin-bottom:16px">
+      {{ refreshErr }}
+      <button type="button" class="btn-ulang" @click="muat">Muat ulang daftar</button>
+    </div>
 
     <div v-if="loading" class="empty-state">Memuat data tiket…</div>
 
-    <div v-else-if="loadErr" class="empty-state" style="color:#dc2626">
-      {{ loadErr }}. Silakan muat ulang halaman.
+    <div v-else-if="loadErr" class="empty-state" role="alert" style="color:#dc2626">
+      {{ loadErr }}
+      <div style="margin-top:12px"><button type="button" class="btn-ulang" @click="muat">Coba lagi</button></div>
     </div>
 
     <!-- Table -->
@@ -271,8 +279,8 @@ function waktuSelesai(t: any): string | null {
         <tbody>
           <tr v-if="!filtered.length">
             <td colspan="6" class="empty-row">
-              <div class="empty-icon">🔍</div>
-              <div>Tidak ada tiket yang sesuai</div>
+              <div class="empty-icon">{{ tickets.length ? '🔍' : '🎫' }}</div>
+              <div>{{ tickets.length ? 'Tidak ada tiket yang sesuai dengan filter ini' : 'Belum ada tiket. Klik "+ Buat Tiket" bila Anda membutuhkan bantuan.' }}</div>
             </td>
           </tr>
           <tr v-for="t in filtered" :key="t.id_ticket" :class="['tbl-row', { sorot: t.id_ticket === sorotId, memuat: t.id_ticket === detailMemuat }]"
@@ -562,6 +570,7 @@ td { padding: 11px 14px; font-size: 13px; color: #0f172a; border-top: 1px solid 
 .inp { padding: 10px 13px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; font-family: inherit; color: #0f172a; background: #f8fafc; outline: none; transition: border-color .15s; width: 100%; box-sizing: border-box; }
 .inp:focus { border-color: #1A56DB; background: #fff; }
 .inp-area { resize: vertical; min-height: 90px; }
+.btn-ulang { margin-left: 8px; padding: 4px 12px; font-size: 12px; font-weight: 600; border: 1px solid #fecaca; background: #fff; color: #b91c1c; border-radius: 6px; cursor: pointer; }
 .form-err { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 13px; padding: 10px 14px; }
 
 .modal-foot { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 18px; margin-top: 4px; }

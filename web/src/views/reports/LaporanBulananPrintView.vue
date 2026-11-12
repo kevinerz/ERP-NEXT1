@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 
 // expose window.print for template
 const printPage = () => window.print()
@@ -14,18 +15,26 @@ const loading = ref(true)
 const error = ref('')
 const data = ref<any>(null)
 
-onMounted(async () => {
+async function muat() {
+  loading.value = true
+  error.value = ''
+  if (!pelanggan_id) {
+    error.value = 'Pelanggan belum dipilih. Buka laporan ini dari menu Laporan SLA → Laporan Bulanan.'
+    loading.value = false
+    return
+  }
   try {
     const res = await api.get('/reports/laporan-bulanan', {
       params: { pelanggan_id, bulan, tahun },
     })
     data.value = res.data.data
   } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Gagal memuat laporan'
+    error.value = pesanGalat(e, 'Gagal memuat laporan')
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(muat)
 
 // ── Format helpers ────────────────────────────────────────────────
 const BULAN_LABEL = ['Januari','Februari','Maret','April','Mei','Juni',
@@ -98,17 +107,17 @@ const sitesByLayanan = computed(() => {
 
 const sitesNotMeetSla = computed(() =>
   (data.value?.sites ?? []).filter((s: any) => !s.sla_ok)
-    .sort((a: any, b: any) => a.uptime_pct - b.uptime_pct)
+    .sort((a: any, b: any) => (Number(a.uptime_pct) || 0) - (Number(b.uptime_pct) || 0))
 )
 
 // ── Auto-generated summary paragraph ─────────────────────────────
 const summaryParagraf = computed(() => {
   if (!data.value) return ''
-  const s = data.value.summary
-  const p = data.value.pelanggan
-  return `Selama periode ${data.value.periode}, layanan internet ${p.nama_pelanggan} mencapai `
+  const s = data.value.summary ?? {}
+  const p = data.value.pelanggan ?? {}
+  return `Selama periode ${data.value.periode}, layanan internet ${p.nama_pelanggan || 'pelanggan'} mencapai `
     + `rata-rata uptime sebesar ${fmtPct(s.rata_rata_uptime)} dari ${s.total_site} site yang terpantau. `
-    + `Sebanyak ${s.site_memenuhi_sla} site (${Math.round(s.site_memenuhi_sla / Math.max(s.total_site, 1) * 100)}%) `
+    + `Sebanyak ${s.site_memenuhi_sla ?? 0} site (${Math.round((Number(s.site_memenuhi_sla) || 0) / Math.max(Number(s.total_site) || 0, 1) * 100)}%) `
     + `memenuhi target SLA yang disepakati, dengan ${s.site_tanpa_gangguan} site tidak mengalami gangguan sama sekali. `
     + `Total gangguan yang tercatat sebanyak ${s.total_tiket} tiket dengan rata-rata waktu penanganan (MTTR) `
     + `${fmtMttr(s.avg_mttr_menit)}.`
@@ -139,6 +148,7 @@ const ticketPages = computed(() => {
     <div v-else-if="error" class="error-screen">
       <h2>Gagal Memuat Laporan</h2>
       <p>{{ error }}</p>
+      <button v-if="pelanggan_id" type="button" class="btn-print" @click="muat">↻ Coba lagi</button>
     </div>
 
     <template v-else-if="data">
@@ -354,7 +364,7 @@ const ticketPages = computed(() => {
                 <td class="mono-sm">{{ s.durasi_str }}</td>
                 <td class="tc red-txt">{{ fmtPct(s.uptime_pct) }}</td>
                 <td class="tc">{{ s.target_sla }}%</td>
-                <td class="tc red-txt">-{{ fmtPct1(s.target_sla - s.uptime_pct) }}</td>
+                <td class="tc red-txt">-{{ fmtPct1((Number(s.target_sla) || 0) - (Number(s.uptime_pct) || 0)) }}</td>
               </tr>
             </tbody>
           </table>
@@ -517,7 +527,7 @@ const ticketPages = computed(() => {
                   'badge-resolved': t.status_tiket === 'Resolved' || t.status_tiket === 'Closed',
                   'badge-open': t.status_tiket === 'Open',
                   'badge-progress': t.status_tiket === 'In_Progress',
-                }">{{ t.status_tiket?.replace('_', ' ') }}</span>
+                }">{{ t.status_tiket?.replace(/_/g, ' ') }}</span>
               </td>
               <td class="date-sm">{{ fmtDateTime(t.tgl_open) }}</td>
               <td class="date-sm">{{ t.tgl_resolved ? fmtDateTime(t.tgl_resolved) : '—' }}</td>

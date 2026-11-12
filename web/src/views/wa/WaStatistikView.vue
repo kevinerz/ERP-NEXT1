@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
-import { alertError } from '@/composables/useDialog'
+import { pesanGalat, toastGalat } from '@/composables/useDialog'
 import StatBatang from './StatBatang.vue'
 
 // Warna seri (palet kategorikal tervalidasi CVD): masuk = biru, keluar = oranye
@@ -29,28 +29,37 @@ function pilihPreset(p: string) {
 
 const d = ref<any>(null)
 const memuat = ref(false)
+const galat = ref('')
 const diperbarui = ref<Date | null>(null)
-async function muat() {
+let urut = 0 // ganti filter cepat: hanya jawaban permintaan terakhir yang dipakai
+// latar = segarkan otomatis: tanpa bilah kemajuan, gagal cukup diam (data terakhir tetap tampil)
+async function muat(latar = false) {
+  const n = ++urut
   memuat.value = true
   try {
     const { data } = await api.get('/wa/statistik', {
       params: { dari: filter.dari, sampai: filter.sampai, jenis: filter.jenis, jam_kerja: filter.jam_kerja ? 1 : undefined },
+      senyap: latar,
     })
+    if (n !== urut) return
     d.value = data.data
+    galat.value = ''
     diperbarui.value = new Date()
   } catch (e) {
-    alertError(e, 'Gagal memuat statistik')
+    if (n !== urut || latar) return
+    galat.value = pesanGalat(e, 'Gagal memuat statistik')
+    if (d.value) toastGalat(e, 'Gagal memuat statistik')
   } finally {
-    memuat.value = false
+    if (n === urut) memuat.value = false
   }
 }
-watch(() => [filter.dari, filter.sampai, filter.jenis, filter.jam_kerja], muat)
+watch(() => [filter.dari, filter.sampai, filter.jenis, filter.jam_kerja], () => muat())
 
 // Segarkan otomatis tiap menit selama tab terlihat
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
   muat()
-  timer = setInterval(() => { if (document.visibilityState === 'visible' && !memuat.value) muat() }, 60_000)
+  timer = setInterval(() => { if (document.visibilityState === 'visible' && !memuat.value) muat(true) }, 60_000)
 })
 onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
@@ -118,7 +127,7 @@ const kelasTunggu = (s: number) => (s > 3600 ? 'merah' : s > 900 ? 'kuning' : ''
       </div>
       <div class="st-tombol">
         <button class="btn btn-ghost" @click="router.push('/whatsapp')">💬 Inbox</button>
-        <button class="btn btn-ghost" :disabled="memuat" @click="muat">{{ memuat ? 'Memuat…' : '↻ Segarkan' }}</button>
+        <button class="btn btn-ghost" :disabled="memuat" @click="muat()">{{ memuat ? 'Memuat…' : '↻ Segarkan' }}</button>
       </div>
     </div>
 
@@ -141,7 +150,13 @@ const kelasTunggu = (s: number) => (s > 3600 ? 'merah' : s > 900 ? 'kuning' : ''
       </label>
     </div>
 
-    <p v-if="!d && memuat" class="muted">Memuat statistik…</p>
+    <p v-if="!d && memuat" class="loading-state muted">Memuat statistik…</p>
+    <div v-else-if="!d && galat" class="galat-state" role="alert">
+      <span class="galat-ikon">!</span>
+      <span class="galat-judul">Statistik gagal dimuat</span>
+      <span>{{ galat }}</span>
+      <button class="btn btn-ghost" @click="muat()">Coba lagi</button>
+    </div>
     <template v-else-if="d">
       <!-- KPI chat -->
       <div class="st-kpi">

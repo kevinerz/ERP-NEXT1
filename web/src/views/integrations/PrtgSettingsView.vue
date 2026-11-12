@@ -4,7 +4,7 @@ import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 import { todayLocal } from '@/composables/useFormat'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, pesanGalat } from '@/composables/useDialog'
 
 const proyek = useProyekStore()
 const auth = useAuthStore()
@@ -15,7 +15,7 @@ const tab = ref<'monitor' | 'koneksi' | 'mapping' | 'audit' | 'graph' | 'provisi
 const status = ref<any>(null)
 const statusError = ref('')
 // pesan error dari server (untuk ditampilkan inline)
-const pesanErr = (e: any, f: string) => { const m = e?.response?.data?.message; return Array.isArray(m) ? m.join(', ') : m || f }
+const pesanErr = (e: any, f: string) => pesanGalat(e, f)
 async function fetchStatus() {
   try { status.value = (await api.get('/prtg/status')).data.data; statusError.value = '' }
   catch (e) { statusError.value = pesanErr(e, 'Gagal memuat status PRTG') }
@@ -78,14 +78,14 @@ async function fetchConfig() {
   } catch (e) { configLoadError.value = pesanErr(e, 'Gagal memuat konfigurasi PRTG') }
 }
 async function saveConfig() {
-  if (!configLoaded.value) return
+  if (!configLoaded.value || savingConfig.value) return
   savingConfig.value = true; configMsg.value = ''; configErr.value = false
   try {
     await api.patch('/prtg/config', configForm.value)
     configForm.value.passhash = ''
     configMsg.value = 'Konfigurasi disimpan.'
     await Promise.all([fetchConfig(), fetchStatus()])
-  } catch (e: any) { configErr.value = true; configMsg.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { configErr.value = true; configMsg.value = pesanGalat(e, 'Gagal menyimpan') }
   finally { savingConfig.value = false }
 }
 
@@ -96,8 +96,8 @@ let pendingInterval: ReturnType<typeof setInterval> | null = null
 
 async function fetchPending() {
   pendingLoading.value = true
-  try { pendingList.value = (await api.get('/prtg/pending')).data.data ?? [] }
-  catch {} finally { pendingLoading.value = false }
+  try { pendingList.value = (await api.get('/prtg/pending', { senyap: true })).data.data ?? [] }
+  catch { /* polling latar belakang — dicoba lagi pada putaran berikutnya */ } finally { pendingLoading.value = false }
 }
 
 function fmtSisa(sisa: number) {
@@ -175,15 +175,16 @@ async function submitMapping() {
     mapErr.value = true
     mapMsg.value = 'Nama device dan site wajib diisi'; return
   }
+  if (mapSubmitting.value) return
   mapSubmitting.value = true; mapMsg.value = ''; mapErr.value = false
   try {
     const r = await api.post('/prtg/mapping', mapForm.value)
-    mapMsg.value = r.data.message
+    mapMsg.value = r.data.message || 'Mapping disimpan.'
     mapForm.value = { device_name: '', id_site: 0 }
     mapSite.query.value = ''
     mapSite.open.value = false
     await fetchMapping()
-  } catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menyimpan mapping' }
+  } catch (e: any) { mapErr.value = true; mapMsg.value = pesanGalat(e, 'Gagal menyimpan mapping') }
   finally { mapSubmitting.value = false }
 }
 
@@ -196,7 +197,7 @@ async function hapusMapping(id: number, nama: string) {
   }))) return
   hapusMappingId.value = id; mapMsg.value = ''
   try { await api.delete(`/prtg/mapping/${id}`); await fetchMapping() }
-  catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menghapus mapping' }
+  catch (e: any) { mapErr.value = true; mapMsg.value = pesanGalat(e, 'Gagal menghapus mapping') }
   finally { hapusMappingId.value = 0 }
 }
 const mapErr = ref(false)
@@ -214,7 +215,7 @@ const AUDIT_PAGE_SIZE = 100
 async function fetchDevices() {
   auditLoading.value = true; auditError.value = ''
   try { devices.value = (await api.get('/prtg/devices')).data.data }
-  catch (e: any) { auditError.value = e.response?.data?.message || 'Gagal memuat daftar sensor' }
+  catch (e: any) { auditError.value = pesanGalat(e, 'Gagal memuat daftar sensor') }
   finally { auditLoading.value = false }
 }
 const filteredDevices = computed(() => {
@@ -252,15 +253,20 @@ const openSensorId = ref<number | null>(null)
 
 async function fetchGraphSensors() {
   if (!graphSiteId.value) return
+  const idSite = graphSiteId.value
   graphLoading.value = true; graphError.value = ''; graphDevices.value = null
+  openSensorId.value = null
+  if (graphBlobUrl.value) { URL.revokeObjectURL(graphBlobUrl.value); graphBlobUrl.value = null }
   try {
-    const r = await api.get(`/prtg/site/${graphSiteId.value}/sensors`)
+    const r = await api.get(`/prtg/site/${idSite}/sensors`)
+    // Site sudah diganti selagi menunggu — jangan timpa dengan data site lama.
+    if (idSite !== graphSiteId.value) return
     const d = r.data.data
     if (Array.isArray(d)) graphDevices.value = d
     else if (d?.device_name) graphDevices.value = [d]
     else graphDevices.value = []
-  } catch (e: any) { graphError.value = e.response?.data?.message || 'Gagal memuat sensor' }
-  finally { graphLoading.value = false }
+  } catch (e: any) { if (idSite === graphSiteId.value) graphError.value = pesanGalat(e, 'Gagal memuat sensor') }
+  finally { if (idSite === graphSiteId.value) graphLoading.value = false }
 }
 
 const graphBlobUrl     = ref<string | null>(null)
@@ -276,8 +282,10 @@ async function openSensorHistory(objid: number) {
   await loadGraph()
 }
 
+let urutanGraph = 0
 async function loadGraph() {
   if (!openSensorId.value) return
+  const urutan = ++urutanGraph
   if (graphBlobUrl.value) { URL.revokeObjectURL(graphBlobUrl.value); graphBlobUrl.value = null }
   graphBlobLoading.value = true; graphBlobError.value = false
   try {
@@ -285,9 +293,11 @@ async function loadGraph() {
       params: { graphid: graphHours.value },
       responseType: 'blob',
     })
+    // Sensor/rentang sudah diganti selagi menunggu — buang gambar lama.
+    if (urutan !== urutanGraph) return
     graphBlobUrl.value = URL.createObjectURL(r.data)
-  } catch { graphBlobError.value = true }
-  finally { graphBlobLoading.value = false }
+  } catch { if (urutan === urutanGraph) graphBlobError.value = true }
+  finally { if (urutan === urutanGraph) graphBlobLoading.value = false }
 }
 
 async function onGraphHoursChange() {
@@ -301,12 +311,12 @@ const monitorError   = ref('')
 const monitorLastAt  = ref<Date | null>(null)
 let   monitorTimer: ReturnType<typeof setInterval> | null = null
 
-async function fetchMonitor() {
+async function fetchMonitor(latar = false) {
   monitorLoading.value = true; monitorError.value = ''
   try {
-    monitorData.value = (await api.get('/prtg/monitor')).data.data ?? []
+    monitorData.value = (await api.get('/prtg/monitor', { senyap: latar === true })).data.data ?? []
     monitorLastAt.value = new Date()
-  } catch (e: any) { monitorError.value = e.response?.data?.message || 'Gagal memuat data monitor' }
+  } catch (e: any) { monitorError.value = pesanGalat(e, 'Gagal memuat data monitor') }
   finally { monitorLoading.value = false }
 }
 
@@ -331,7 +341,7 @@ onMounted(async () => {
   await Promise.all([fetchStatus(), fetchConfig(), fetchMapping(), proyek.fetchSiteList(), fetchPending(), fetchMonitor()])
   if (unmounted) return
   pendingInterval = setInterval(fetchPending, 15_000)
-  monitorTimer = setInterval(fetchMonitor, 60_000)
+  monitorTimer = setInterval(() => fetchMonitor(true), 60_000)
   monitorTickInterval = setInterval(() => monitorTick.value++, 5_000)
 })
 
@@ -340,6 +350,7 @@ onUnmounted(() => {
   if (pendingInterval) clearInterval(pendingInterval)
   if (monitorTimer) clearInterval(monitorTimer)
   if (monitorTickInterval) clearInterval(monitorTickInterval)
+  if (graphBlobUrl.value) URL.revokeObjectURL(graphBlobUrl.value)
 })
 
 // ─── PROVISION ────────────────────────────────────────────────
@@ -402,7 +413,7 @@ function clearInlineSite(deviceName: string) {
 
 async function quickProvision(device: any) {
   const siteId = inlineSiteId.value[device.device_name]
-  if (!siteId) return
+  if (!siteId || quickProvLoading.value[device.device_name]) return
   quickProvLoading.value[device.device_name] = true
   try {
     await api.post('/prtg/provision', {
@@ -425,7 +436,7 @@ async function fetchProvision() {
   provisionLoading.value = true; provisionError.value = ''; bulkResult.value = null
   try {
     provisionList.value = (await api.get('/prtg/provision/preview')).data.data ?? []
-  } catch (e: any) { provisionError.value = e.response?.data?.message || 'Gagal memuat data provision' }
+  } catch (e: any) { provisionError.value = pesanGalat(e, 'Gagal memuat data provision') }
   finally { provisionLoading.value = false }
 }
 
@@ -470,7 +481,7 @@ function filterBySearch(list: any[]) {
 const filteredBulk = computed(() => filterBySearch(bulkCandidates.value))
 
 async function doBulkProvision() {
-  if (!bulkCandidates.value.length) return
+  if (!bulkCandidates.value.length || bulkSubmitting.value) return
   bulkSubmitting.value = true; bulkResult.value = null
   try {
     const items = bulkCandidates.value.map((d: any) => ({
@@ -484,7 +495,7 @@ async function doBulkProvision() {
     const fresh = (await api.get('/prtg/provision/preview')).data.data ?? []
     provisionList.value = fresh
   } catch (e: any) {
-    bulkResult.value = { error: e.response?.data?.message || 'Gagal bulk provision' }
+    bulkResult.value = { error: pesanGalat(e, 'Gagal bulk provision') }
   } finally { bulkSubmitting.value = false }
 }
 
@@ -519,6 +530,7 @@ async function submitProvision() {
   if (!provSiteId.value) {
     provMsg.value = 'Site pelanggan wajib dipilih'; return
   }
+  if (provSubmitting.value) return
   provSubmitting.value = true; provMsg.value = ''
   try {
     if (!provProvisioned.value) {
@@ -546,7 +558,7 @@ async function submitProvision() {
           comment_text: provSelected.value.comments ?? '',
         })
       } catch (e: any) {
-        provMsg.value = `Perangkat sudah ditambahkan, tetapi import data komentar gagal: ${e.response?.data?.message || 'kesalahan tidak diketahui'}. Klik tombol lagi untuk mencoba import ulang, atau Batal.`
+        provMsg.value = `Perangkat sudah ditambahkan, tetapi import data komentar gagal: ${pesanGalat(e, 'kesalahan tidak diketahui')}. Klik tombol lagi untuk mencoba import ulang, atau Batal.`
         fetchProvision()
         return
       }
@@ -555,7 +567,7 @@ async function submitProvision() {
     clearInlineSite(provSelected.value.device_name)
     await fetchProvision()
   } catch (e: any) {
-    provMsg.value = e.response?.data?.message || 'Gagal menambahkan perangkat'
+    provMsg.value = pesanGalat(e, 'Gagal menambahkan perangkat')
   } finally { provSubmitting.value = false }
 }
 
@@ -567,7 +579,7 @@ function openImportModal(device: any) {
 
 async function doImportComment() {
   const d = importDevice.value
-  if (!d || !d.id_site) return
+  if (!d || !d.id_site || importLoading.value) return
   importLoading.value = true; importResult.value = null
   try {
     const r = await api.post('/prtg/import-comment', {
@@ -579,7 +591,7 @@ async function doImportComment() {
     })
     importResult.value = r.data.data
   } catch (e: any) {
-    importResult.value = { error: e.response?.data?.message || 'Gagal import' }
+    importResult.value = { error: pesanGalat(e, 'Gagal import') }
   } finally { importLoading.value = false }
 }
 
@@ -658,12 +670,12 @@ function exportKonfirmasiCSV() {
             <div class="mon-time">Diperbarui: {{ monitorLastAtDisplay }}</div>
           </div>
         </div>
-        <button class="btn-refresh" :disabled="monitorLoading" @click="fetchMonitor">
+        <button class="btn-refresh" :disabled="monitorLoading" @click="fetchMonitor()">
           <span v-if="monitorLoading">⏳</span><span v-else>🔄</span> Refresh
         </button>
       </div>
 
-      <div v-if="monitorError" class="alert-err">{{ monitorError }}</div>
+      <div v-if="monitorError" class="alert-err" role="alert">{{ monitorError }}</div>
       <div v-if="monitorLoading && !monitorData.length" class="loading-state">Mengambil data dari PRTG...</div>
 
       <div v-else-if="!monitorData.length && !monitorLoading" class="empty-monitor">
@@ -777,7 +789,7 @@ function exportKonfirmasiCSV() {
           <label class="chk"><input type="checkbox" v-model="onlyUnmatched" /> Hanya belum match</label>
           <button class="btn-secondary" @click="fetchDevices">🔄 Muat Ulang</button>
         </div>
-        <p v-if="auditError" class="msg err">{{ auditError }}</p>
+        <p v-if="auditError" class="msg err">⚠ {{ auditError }} <button type="button" class="btn-secondary" @click="fetchDevices">Coba lagi</button></p>
         <div v-if="auditLoading" class="loading">Memuat dari PRTG...</div>
         <template v-else>
           <p class="result-count">{{ filteredDevices.length }} dari {{ devices.length }} device</p>
@@ -904,7 +916,7 @@ function exportKonfirmasiCSV() {
           </div>
         </div>
         <div v-if="graphLoading" class="loading">Memuat sensor...</div>
-        <div v-if="graphError" class="msg err">{{ graphError }}</div>
+        <div v-if="graphError" class="msg err">⚠ {{ graphError }} <button type="button" class="btn-secondary" @click="fetchGraphSensors()">Coba lagi</button></div>
         <div v-if="!graphSiteId && !graphLoading" class="empty">Pilih site untuk melihat data Ping & Traffic</div>
       </div>
 
@@ -925,7 +937,7 @@ function exportKonfirmasiCSV() {
               <div v-if="openSensorId === s.objid" class="sensor-detail">
                 <p class="graph-label">PRTG Graph — {{ ['Live','48 jam','30 hari','365 hari'][graphHours] ?? 'Live' }}</p>
                 <div v-if="graphBlobLoading" class="loading" style="padding:12px">Memuat graph...</div>
-                <img v-else-if="graphBlobUrl" :src="graphBlobUrl" class="prtg-graph-img" />
+                <img v-else-if="graphBlobUrl" :src="graphBlobUrl" class="prtg-graph-img" alt="Grafik sensor PRTG" />
                 <p v-else-if="graphBlobError" class="msg err" style="padding:12px">⚠ Gagal memuat graph dari PRTG <button class="btn-secondary" @click="loadGraph">Coba lagi</button></p>
                 <p v-else class="empty" style="padding:12px">Graph tidak tersedia</p>
               </div>
@@ -967,7 +979,7 @@ function exportKonfirmasiCSV() {
       </div>
 
       <div v-if="provisionLoading" class="loading">Memuat data PRTG...</div>
-      <div v-else-if="provisionError" class="card"><p class="msg err">{{ provisionError }}</p></div>
+      <div v-else-if="provisionError" class="card"><p class="msg err">⚠ {{ provisionError }} <button type="button" class="btn-secondary" @click="fetchProvision">Coba lagi</button></p></div>
       <template v-else>
 
         <!-- SECTION 1: 100% MATCH — AUTO PROVISIONED -->

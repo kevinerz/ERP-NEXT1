@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { ConnectionQuality, DisconnectReason, getBrowser, Room, RoomEvent, Track, VideoPresets, type Participant, type RemoteTrack } from 'livekit-client'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, alertDialog, toast } from '@/composables/useDialog'
 import TrackVideo from './TrackVideo.vue'
 import { inisial, warnaNama } from './rapat-util'
 
@@ -103,10 +103,29 @@ function pasangAudioAda(r: Room) {
   r.remoteParticipants.forEach((p) => p.trackPublications.forEach((pub) => { if (pub.track && pub.kind === Track.Kind.Audio) pasangAudio(pub.track as RemoteTrack) }))
 }
 
+/** Alasan yang bisa ditindaklanjuti pengguna dari error perangkat (getUserMedia / getDisplayMedia) */
+function alasanPerangkat(e: any, jenis: 'Mikrofon' | 'Kamera' | 'Berbagi layar' | 'Perangkat') {
+  const nama = jenis === 'Berbagi layar' ? 'berbagi layar' : jenis.toLowerCase()
+  switch (e?.name) {
+    case 'NotAllowedError': case 'SecurityError':
+      return /system/i.test(e?.message || '')
+        ? `Izin ${nama} diblokir oleh sistem operasi. Buka pengaturan privasi (mis. macOS: Privasi & Keamanan → Rekam Layar/Kamera/Mikrofon), izinkan browser, lalu coba lagi.`
+        : `Izin ${nama} ditolak. Izinkan lewat ikon gembok di address bar browser, lalu coba lagi.`
+    case 'NotFoundError': case 'OverconstrainedError':
+      return `${jenis} tidak ditemukan. Pastikan perangkat terpasang atau pilih perangkat lain di ⚙️ Pengaturan.`
+    case 'NotReadableError': case 'AbortError':
+      return `${jenis} sedang dipakai aplikasi lain atau bermasalah. Tutup aplikasi lain (Zoom/Meet/kamera) lalu coba lagi.`
+    case 'NotSupportedError': case 'TypeError':
+      return `${jenis} tidak didukung di browser ini. Gunakan Chrome, Edge, atau Safari terbaru lewat HTTPS.`
+    default:
+      return `${jenis} tidak bisa dipakai${e?.message ? ` (${e.message})` : ''}.`
+  }
+}
+
 async function terapkanPerangkat(r: Room) {
   // Gagal (izin ditolak dll) → anggap dimatikan supaya Safari tidak terus meminta izin saat pemulihan
-  try { await r.localParticipant.setMicrophoneEnabled(ingin.mic) } catch (e: any) { ingin.mic = false; status.value = `Mikrofon tidak bisa dipakai: ${e?.message || e}` }
-  try { await r.localParticipant.setCameraEnabled(ingin.kamera) } catch (e: any) { ingin.kamera = false; status.value = `Kamera tidak bisa dipakai: ${e?.message || e}` }
+  try { await r.localParticipant.setMicrophoneEnabled(ingin.mic) } catch (e: any) { ingin.mic = false; toast(alasanPerangkat(e, 'Mikrofon'), 'warning', 9000) }
+  try { await r.localParticipant.setCameraEnabled(ingin.kamera) } catch (e: any) { ingin.kamera = false; toast(alasanPerangkat(e, 'Kamera'), 'warning', 9000) }
 }
 
 // ── Ketahanan: Safari/iOS ────────────────────────────────────────────────────
@@ -226,7 +245,7 @@ function pasangEvent(r: Room) {
     .on(RoomEvent.SignalReconnecting, () => { status.value = 'Koneksi tidak stabil, menyambung ulang…' })
     .on(RoomEvent.Reconnecting, () => { status.value = 'Koneksi terputus, menyambung ulang…' })
     .on(RoomEvent.Reconnected, async () => { status.value = ''; putarUlangMedia(); await pulihkanTrackLokal(r); segarkan() })
-    .on(RoomEvent.MediaDevicesError, (e: any) => { status.value = `Perangkat bermasalah: ${e?.message || e}` })
+    .on(RoomEvent.MediaDevicesError, (e: any) => { toast(alasanPerangkat(e, 'Perangkat'), 'warning', 9000) })
     // AirPods/headset dicabut → kembali ke perangkat bawaan
     .on(RoomEvent.MediaDevicesChanged, () => { pulihkanTrackLokal(r).then(segarkan) })
     .on(RoomEvent.DataReceived, (payload, p) => {
@@ -259,20 +278,35 @@ const sinyalLemah = computed(() => { void versi.value; return room.value?.localP
 const mic = computed(() => { void versi.value; return room.value?.localParticipant.isMicrophoneEnabled ?? false })
 const kamera = computed(() => { void versi.value; return room.value?.localParticipant.isCameraEnabled ?? false })
 const share = computed(() => { void versi.value; return room.value?.localParticipant.isScreenShareEnabled ?? false })
+const sibuk = { mic: false, kamera: false, share: false }
 async function toggle(jenis: 'mic' | 'kamera' | 'share') {
   const lp = room.value?.localParticipant
-  if (!lp) return
+  if (!lp || sibuk[jenis]) return
+  sibuk[jenis] = true
   try {
     if (jenis === 'mic') { ingin.mic = !lp.isMicrophoneEnabled; await lp.setMicrophoneEnabled(ingin.mic) }
     else if (jenis === 'kamera') { ingin.kamera = !lp.isCameraEnabled; await lp.setCameraEnabled(ingin.kamera) }
     else await lp.setScreenShareEnabled(!lp.isScreenShareEnabled, { audio: false })
   } catch (e: any) {
-    if (e?.name !== 'NotAllowedError' || jenis !== 'share') alertError(e, 'Perangkat tidak bisa dipakai')
+    // gagal menyalakan → kembalikan keinginan ke keadaan nyata agar pemulihan tidak terus meminta izin
+    if (jenis === 'mic') ingin.mic = lp.isMicrophoneEnabled
+    else if (jenis === 'kamera') ingin.kamera = lp.isCameraEnabled
+    // Batal memilih layar di dialog browser juga NotAllowedError — itu bukan galat, kecuali diblokir sistem
+    const batalShare = jenis === 'share' && e?.name === 'NotAllowedError' && !/system/i.test(e?.message || '')
+    if (!batalShare) {
+      alertDialog({
+        title: jenis === 'mic' ? 'Mikrofon tidak bisa dinyalakan' : jenis === 'kamera' ? 'Kamera tidak bisa dinyalakan' : 'Gagal berbagi layar',
+        message: alasanPerangkat(e, jenis === 'mic' ? 'Mikrofon' : jenis === 'kamera' ? 'Kamera' : 'Berbagi layar'),
+        variant: 'warning',
+      })
+    }
+  } finally {
+    sibuk[jenis] = false
   }
   segarkan()
 }
 async function nyalakanAudio() {
-  await room.value?.startAudio()
+  try { await room.value?.startAudio() } catch { toast('Suara belum bisa diputar — ketuk layar sekali lagi.', 'warning') }
   perluKlikAudio.value = !(room.value?.canPlaybackAudio ?? true)
 }
 
@@ -319,7 +353,13 @@ function tambahChat(dari: string, teks: string, saya: boolean) {
 async function kirimChat() {
   const t = teksChat.value.trim()
   if (!t || !room.value) return
-  await room.value.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: 'chat', text: t })), { reliable: true })
+  try {
+    await room.value.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: 'chat', text: t })), { reliable: true })
+  } catch {
+    toast('Pesan belum terkirim — koneksi bermasalah. Coba kirim lagi.', 'warning')
+    return
+  }
+  if (!room.value) return
   tambahChat(room.value.localParticipant.name || 'Saya', t, true)
   teksChat.value = ''
 }
@@ -410,7 +450,7 @@ const waktuRapat = computed(() => {
 const kualitas = (p: Participant) => p.connectionQuality === ConnectionQuality.Excellent ? 3 : p.connectionQuality === ConnectionQuality.Good ? 2 : p.connectionQuality === ConnectionQuality.Poor ? 1 : 0
 async function salinLink() {
   if (!props.linkUndangan) return
-  try { await navigator.clipboard.writeText(props.linkUndangan); tampilReaksi('🔗', 'Link disalin') } catch { /* abaikan */ }
+  try { await navigator.clipboard.writeText(props.linkUndangan); tampilReaksi('🔗', 'Link disalin') } catch { toast('Link gagal disalin — salin dari address bar', 'warning') }
 }
 
 // ── Pengaturan perangkat di dalam rapat ──────────────────────────────────────
@@ -425,7 +465,10 @@ async function muatPerangkat() {
   } catch { /* abaikan */ }
 }
 async function gantiPerangkat(jenis: 'audioinput' | 'videoinput' | 'audiooutput', id: string) {
-  try { await room.value?.switchActiveDevice(jenis, id); await muatPerangkat() } catch (e) { alertError(e, 'Perangkat tidak bisa dipakai') }
+  try { await room.value?.switchActiveDevice(jenis, id) } catch (e: any) {
+    alertDialog({ title: 'Gagal mengganti perangkat', message: alasanPerangkat(e, jenis === 'audioinput' ? 'Mikrofon' : jenis === 'videoinput' ? 'Kamera' : 'Perangkat'), variant: 'warning' })
+  }
+  await muatPerangkat()
 }
 
 // ── Pintasan keyboard ────────────────────────────────────────────────────────
@@ -464,7 +507,7 @@ async function aksi(jenis: 'keluarkan' | 'bisukan' | 'akhiri', p?: Participant) 
   try {
     await props.kelola(jenis, p?.identity, p?.getTrackPublication(Track.Source.Microphone)?.trackSid)
   } catch (e) {
-    alertError(e, 'Gagal')
+    alertError(e, jenis === 'akhiri' ? 'Gagal mengakhiri rapat' : jenis === 'keluarkan' ? 'Gagal mengeluarkan peserta' : 'Gagal membisukan peserta')
   }
 }
 </script>

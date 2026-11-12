@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
+import { pesanGalat } from '@/composables/useDialog'
 
 const logs    = ref<any[]>([])
 const meta    = ref({ total: 0, page: 1, limit: 50, total_pages: 0 })
@@ -29,18 +30,21 @@ const AKSI_STYLE: Record<string, { bg: string; color: string }> = {
   DELETE:  { bg: '#fef2f2', color: '#dc2626' },
 }
 
-onMounted(async () => {
-  await Promise.all([loadUsers(), fetchLogs()])
-})
+onMounted(() => { loadUsers(); fetchLogs() })
 
+// galat daftar user (filter) dipisah dari galat log — jangan saling menimpa
+const usersError = ref('')
 async function loadUsers() {
+  usersError.value = ''
   try {
     const r = await api.get('/admin/users')
-    users.value = r.data.data
-  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal memuat daftar user' }
+    users.value = r.data.data ?? []
+  } catch (e: any) { usersError.value = pesanGalat(e, 'Gagal memuat daftar user') }
 }
 
+let seqLog = 0
 async function fetchLogs() {
+  const seq = ++seqLog
   loading.value = true; error.value = ''
   try {
     const params: any = { page: page.value, limit: 50 }
@@ -52,10 +56,14 @@ async function fetchLogs() {
     if (fSearch.value) params.search    = fSearch.value
 
     const r = await api.get('/admin/logs', { params })
-    logs.value  = r.data.data
-    meta.value  = r.data.meta
-  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal memuat log aktivitas' }
-  finally { loading.value = false }
+    if (seq !== seqLog) return
+    logs.value  = r.data.data ?? []
+    meta.value  = { ...meta.value, ...(r.data.meta ?? {}) }
+  } catch (e: any) {
+    if (seq !== seqLog) return
+    logs.value = []
+    error.value = pesanGalat(e, 'Gagal memuat log aktivitas')
+  } finally { if (seq === seqLog) loading.value = false }
 }
 
 function doFilter() { page.value = 1; fetchLogs() }
@@ -87,7 +95,8 @@ const hasFilter = computed(() =>
       </div>
     </div>
 
-    <div v-if="error" class="alert-error" role="alert">{{ error }}</div>
+    <div v-if="error" class="alert-error" role="alert">{{ error }} <button type="button" class="btn-clear" @click="fetchLogs">↻ Coba lagi</button></div>
+    <div v-if="usersError" class="alert-error" role="alert">{{ usersError }} — filter user tidak tersedia. <button type="button" class="btn-clear" @click="loadUsers">↻ Coba lagi</button></div>
 
     <!-- Filter bar -->
     <div class="filter-card">
@@ -140,7 +149,7 @@ const hasFilter = computed(() =>
         </thead>
         <tbody>
           <tr v-if="!logs.length">
-            <td colspan="7" class="empty">Belum ada log aktivitas</td>
+            <td colspan="7" class="empty">{{ error ? 'Log gagal dimuat' : hasFilter ? 'Tidak ada log untuk filter ini' : 'Belum ada log aktivitas' }}</td>
           </tr>
           <tr v-for="log in logs" :key="log.id_log">
             <td class="td-time">{{ log.created_at ? fmtTime(log.created_at) : '—' }}</td>

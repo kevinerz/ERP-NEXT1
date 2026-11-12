@@ -5,6 +5,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useMasterStore } from '@/stores/master'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 import PetaLokasi from '@/components/PetaLokasi.vue'
+import { pesanGalat } from '@/composables/useDialog'
 
 const props = defineProps<{ site?: any | null; idPelangganAwal?: number }>()
 const emit = defineEmits<{ (e: 'tutup'): void; (e: 'tersimpan', site: any): void }>()
@@ -57,23 +58,26 @@ const hasilPeta = ref<any[]>([])
 const memuatPeta = ref(false)
 const bukaPeta = ref(false)
 let tunda: ReturnType<typeof setTimeout> | null = null
+let urutanPeta = 0
 function ketikPeta() {
   if (tunda) clearTimeout(tunda)
   tunda = setTimeout(async () => {
     const q = cariPeta.value.trim()
-    if (q.length < 2 || !HERE_KEY) { hasilPeta.value = []; return }
+    const ke = ++urutanPeta
+    if (q.length < 2 || !HERE_KEY) { hasilPeta.value = []; memuatPeta.value = false; return }
     memuatPeta.value = true
     try {
       const url = new URL('https://autosuggest.search.hereapi.com/v1/autosuggest')
       url.searchParams.set('q', q); url.searchParams.set('at', '-6.2,106.8'); url.searchParams.set('limit', '6'); url.searchParams.set('apiKey', HERE_KEY)
       const d = await (await fetch(url.toString())).json()
+      if (ke !== urutanPeta) return
       hasilPeta.value = (d.items || []).filter((x: any) => x.position).map((x: any) => ({
         name: (x.title.match(/^[^(]+\((.+)\)\s*$/)?.[1]) ?? x.title,
         address: x.address?.label || '', city: x.address?.city || x.address?.district || '', province: x.address?.state || '',
         lat: x.position.lat, lng: x.position.lng,
       }))
       bukaPeta.value = hasilPeta.value.length > 0
-    } catch { hasilPeta.value = [] } finally { memuatPeta.value = false }
+    } catch { if (ke === urutanPeta) hasilPeta.value = [] } finally { if (ke === urutanPeta) memuatPeta.value = false }
   }, 350)
 }
 function tutupSaranNanti() { setTimeout(() => (bukaPeta.value = false), 200) }
@@ -90,6 +94,7 @@ onUnmounted(() => { if (tunda) clearTimeout(tunda) })
 const linkGmaps = computed(() => form.value.koordinat_gps ? `https://www.google.com/maps?q=${encodeURIComponent(form.value.koordinat_gps)}` : '')
 
 async function simpan() {
+  if (menyimpan.value) return
   const f = form.value
   const wajib: [string, any, string][] = [
     ['id_pelanggan', f.id_pelanggan, 'Pelanggan'], ['id_layanan', f.id_layanan, 'Layanan'], ['kode_site', f.kode_site.trim(), 'Kode site'],
@@ -111,7 +116,7 @@ async function simpan() {
       hasil = await master.updateSite(props.site.id_site, payload)
     } else hasil = await master.createSite(payload)
     emit('tersimpan', hasil)
-  } catch (e: any) { galat.value = e.response?.data?.message || 'Gagal menyimpan site' }
+  } catch (e: any) { galat.value = pesanGalat(e, 'Gagal menyimpan site') }
   finally { menyimpan.value = false }
 }
 </script>

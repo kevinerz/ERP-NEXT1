@@ -25,20 +25,30 @@ const d = ref<any>(null)
 const pt = ref<any>(null)
 const memuat = ref(false)
 const galat = ref('')
+// Nomor urut: periode yang dipilih belakangan tidak boleh tertimpa jawaban periode sebelumnya
+let urutMuat = 0
 async function muat() {
-  memuat.value = true
+  const no = ++urutMuat
   galat.value = ''
+  if (!filter.dari || !filter.sampai || filter.dari > filter.sampai) {
+    galat.value = 'Rentang tanggal belum benar — tanggal "dari" harus diisi dan tidak boleh setelah tanggal "sampai".'
+    memuat.value = false
+    return
+  }
+  memuat.value = true
   try {
     const params = { dari: filter.dari, sampai: filter.sampai }
     const [a, b] = await Promise.all([api.get('/visit/statistik', { params }), api.get('/visit/peta', { params })])
+    if (no !== urutMuat) return
     d.value = a.data.data
     pt.value = b.data.data
     await nextTick()
     gambarPeta()
   } catch (e: any) {
+    if (no !== urutMuat) return
     const m = e?.response?.data?.message
     galat.value = (Array.isArray(m) ? m.join(', ') : m) || 'Gagal memuat statistik visit'
-  } finally { memuat.value = false }
+  } finally { if (no === urutMuat) memuat.value = false }
 }
 watch(() => [filter.dari, filter.sampai], muat)
 onMounted(muat)
@@ -117,7 +127,7 @@ onBeforeUnmount(() => { peta?.remove(); peta = null })
 
     <div v-if="galat" class="alert alert-danger st-galat" role="alert">
       <span>⚠ {{ galat }}<template v-if="d"> — menampilkan data sebelumnya.</template></span>
-      <button class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">Coba lagi</button>
+      <button type="button" class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">Coba lagi</button>
     </div>
     <p v-if="!d && memuat" class="muted">Memuat…</p>
     <template v-else-if="d">

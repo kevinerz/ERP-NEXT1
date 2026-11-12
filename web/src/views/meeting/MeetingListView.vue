@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
-import { alertError, toast } from '@/composables/useDialog'
+import { alertError, toast, pesanGalat } from '@/composables/useDialog'
 import { useFilterUrl } from '@/composables/useFilterUrl'
 import { exportCsv } from '@/composables/useExport'
 import FormRapat from './FormRapat.vue'
@@ -38,19 +38,23 @@ const peran = ref('')
 const status = ref('')
 useFilterUrl({ tab, q, kategori, peran, status })
 
+let seqMuat = 0
 async function muat(diam = false) {
+  const seq = ++seqMuat
   if (!diam) memuat.value = true
   try {
-    const { data } = await api.get('/meeting')
+    const { data } = await api.get('/meeting', diam ? { senyap: true } : undefined)
+    if (seq !== seqMuat) return
     aktif.value = data.data.aktif
     riwayat.value = data.data.riwayat
     statistik.value = data.data.statistik
     tindakSaya.value = data.data.tindak_saya
     error.value = ''
   } catch (e: any) {
-    if (!diam) error.value = e?.response?.data?.message || 'Gagal memuat rapat'
+    if (seq !== seqMuat) return
+    if (!diam) error.value = pesanGalat(e, 'Gagal memuat rapat')
   } finally {
-    memuat.value = false
+    if (seq === seqMuat) memuat.value = false
   }
 }
 
@@ -162,12 +166,16 @@ async function duplikat(r: Rapat) {
     router.push({ path: `/meeting/${data.data.id_rapat}`, query: { ubah: '1' } })
   } catch (e) { alertError(e, 'Gagal menyalin rapat') }
 }
+const tindakProses = ref(0)
 async function selesaikanTindak(t: TindakSaya) {
+  if (tindakProses.value) return
+  tindakProses.value = t.id_tindak
   try {
     await api.patch(`/meeting/${t.id_rapat}/tindak/${t.id_tindak}`, { selesai: true })
     tindakSaya.value = tindakSaya.value.filter((x) => x.id_tindak !== t.id_tindak)
     toast('Tugas ditandai selesai 🎉')
-  } catch (e) { alertError(e, 'Gagal') }
+  } catch (e) { alertError(e, 'Gagal menandai tugas selesai') }
+  finally { tindakProses.value = 0 }
 }
 
 function ekspor() {
@@ -238,7 +246,7 @@ function pintasan(e: KeyboardEvent) {
       <button type="button" class="mt-x" @click="bantuan = false">tutup ✕</button>
     </div>
 
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error" class="alert alert-danger" role="alert">{{ error }} <button type="button" class="btn btn-secondary btn-sm" :disabled="memuat" @click="muat()">↻ Coba lagi</button></div>
 
     <!-- SEDANG BERLANGSUNG -->
     <section v-for="r in berlangsung" :key="'live' + r.id_rapat" class="mt-live" @click="buka(r)">
@@ -449,7 +457,7 @@ function pintasan(e: KeyboardEvent) {
           <p v-if="!tindakSaya.length" class="mt-redup kecil">Tidak ada tindak lanjut yang menunggu Anda. 🎉</p>
           <ul class="mt-tugas">
             <li v-for="t in tindakSaya" :key="t.id_tindak">
-              <button type="button" class="mt-centang" title="Tandai selesai" @click="selesaikanTindak(t)"></button>
+              <button type="button" class="mt-centang" title="Tandai selesai" aria-label="Tandai selesai" :disabled="tindakProses === t.id_tindak" @click="selesaikanTindak(t)"></button>
               <div @click="router.push(`/meeting/${t.id_rapat}?tab=tindak`)">
                 <span>{{ t.judul }}</span>
                 <small><template v-if="t.tenggat"><b :class="{ merah: tenggatLewat(t) }">{{ tenggatLewat(t) ? '⚠️ ' : '' }}{{ tglPendek(t.tenggat) }}</b> · </template>{{ t.rapat }}</small>

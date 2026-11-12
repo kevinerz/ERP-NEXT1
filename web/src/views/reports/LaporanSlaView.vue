@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { exportCsv as exportCsvFile, type CsvSection } from '@/composables/useExport'
 import { fmtDateShort } from '@/composables/useFormat'
+import { alertDialog, alertError, pesanGalat, toast } from '@/composables/useDialog'
 
 const BULAN_LIST = [
   'Januari','Februari','Maret','April','Mei','Juni',
@@ -29,7 +30,7 @@ async function openLaporanModal() {
       const res = await api.get('/master/pelanggan', { params: { limit: 1000 } })
       pelangganList.value = res.data.data ?? res.data ?? []
     } catch (e: any) {
-      pelangganError.value = e?.response?.data?.message || 'Gagal memuat daftar pelanggan — tutup lalu buka lagi untuk mencoba ulang'
+      pelangganError.value = pesanGalat(e, 'Gagal memuat daftar pelanggan') + ' — tutup lalu buka lagi untuk mencoba ulang'
     } finally {
       pelangganLoading.value = false
     }
@@ -38,10 +39,14 @@ async function openLaporanModal() {
 
 function bukaLaporan() {
   if (!laporanPelangganId.value) return
-  window.open(
+  const win = window.open(
     `/reports/laporan-bulanan/print?pelanggan_id=${laporanPelangganId.value}&bulan=${laporanBulan.value}&tahun=${laporanTahun.value}`,
     '_blank'
   )
+  if (!win) {
+    alertDialog({ title: 'Pop-up Diblokir', message: 'Tab laporan diblokir browser. Izinkan pop-up untuk halaman ini lalu coba lagi.', variant: 'warning' })
+    return
+  }
   showLaporanModal.value = false
 }
 
@@ -66,7 +71,7 @@ async function loadData() {
     }
     data.value = (await api.get('/reports/sla', { params })).data.data
   } catch (e: any) {
-    loadError.value = e?.response?.data?.message || 'Gagal memuat laporan SLA. Periksa koneksi dan coba lagi.'
+    loadError.value = pesanGalat(e, 'Gagal memuat laporan SLA. Periksa koneksi dan coba lagi.')
   } finally {
     loading.value = false
   }
@@ -111,16 +116,18 @@ function barX(i: number, which: 0 | 1) {
   const gx = PAD_L + i * groupW.value + groupW.value * 0.08
   return gx + which * (barW.value + 2)
 }
-function barY(pct: number) { return yToSvg(pct) }
-function barH(pct: number) { return (Math.min(pct, 100) / 100) * chartH }
+// Nilai kosong/di luar 0–100 dijepit agar batang tidak keluar area grafik atau menjadi NaN
+const jepit = (pct: any) => Math.min(100, Math.max(0, Number(pct) || 0))
+function barY(pct: number) { return yToSvg(jepit(pct)) }
+function barH(pct: number) { return (jepit(pct) / 100) * chartH }
 
 const yTicks = [0, 25, 50, 75, 100]
 
 // ── Export CSV ───────────────────────────────────────────────────
-function exportCsv() {
-  if (!data.value) return
+async function exportCsv() {
+  if (!data.value || loading.value) return
   const d = data.value
-  const s = d.summary
+  const s = d.summary ?? {}
   const sections: CsvSection[] = [
     { title: `LAPORAN SLA — ${d.periode}`, headers: [], rows: [] },
     {
@@ -131,7 +138,7 @@ function exportCsv() {
     {
       title: 'PER LAYANAN',
       headers: ['Kode Layanan', 'Nama Layanan', 'FO', 'Target', 'Kepatuhan', 'Total Tiket', 'Breach', 'Status'],
-      rows: d.per_layanan.map((l: any) => [
+      rows: (d.per_layanan ?? []).map((l: any) => [
         l.kode_layanan, l.nama_layanan, l.is_fo ? 'Ya' : 'Tidak', `${l.target_pct}%`,
         fmtPct(l.compliance_pct), l.total_tiket, l.breach, l.status,
       ]),
@@ -139,7 +146,7 @@ function exportCsv() {
     {
       title: 'PER PELANGGAN',
       headers: ['Kode', 'Nama Pelanggan', 'Total Tiket', 'Breach', 'Target', 'Kepatuhan', 'Status'],
-      rows: d.per_pelanggan.map((p: any) => [
+      rows: (d.per_pelanggan ?? []).map((p: any) => [
         p.kode_pelanggan, p.nama_pelanggan, p.total_tiket, p.breach, `${p.target_pct}%`,
         fmtPct(p.compliance_pct), p.status,
       ]),
@@ -147,13 +154,18 @@ function exportCsv() {
     {
       title: 'DETAIL BREACH',
       headers: ['No Tiket', 'Pelanggan', 'Site', 'Layanan', 'Prioritas', 'Tgl Open', 'SLA Due', 'Terlambat', 'Status'],
-      rows: d.breach_detail.map((b: any) => [
+      rows: (d.breach_detail ?? []).map((b: any) => [
         b.nomor_tiket, b.nama_pelanggan, b.nama_site, b.kode_layanan, b.prioritas,
         fmtDate(b.tgl_open), fmtDate(b.sla_due), fmtMenit(b.terlambat_menit), b.status_tiket,
       ]),
     },
   ]
-  exportCsvFile(`SLA-${d.periode.replace(/\s+/g, '-')}.csv`, sections)
+  try {
+    exportCsvFile(`SLA-${String(d.periode || 'laporan').replace(/\s+/g, '-')}.csv`, sections)
+    toast('Laporan SLA diekspor')
+  } catch (e: any) {
+    await alertError(e, 'Gagal menyiapkan file CSV')
+  }
 }
 </script>
 
@@ -180,8 +192,8 @@ function exportCsv() {
             {{ loading ? 'Memuat...' : 'Tampilkan' }}
           </button>
         </div>
-        <button class="btn-export" @click="exportCsv" :disabled="!data || loading">⬇ Export CSV</button>
-        <button class="btn-laporan" @click="openLaporanModal">📄 Laporan Bulanan</button>
+        <button type="button" class="btn-export" @click="exportCsv" :disabled="!data || loading">⬇ Export CSV</button>
+        <button type="button" class="btn-laporan" @click="openLaporanModal">📄 Laporan Bulanan</button>
       </div>
     </div>
 
@@ -226,7 +238,9 @@ function exportCsv() {
       </div>
     </div>
 
-    <div v-if="loadError" class="error-banner">⚠ {{ loadError }}</div>
+    <div v-if="loadError" class="error-banner" role="alert">⚠ {{ loadError }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" :disabled="loading" @click="loadData">↻ Coba lagi</button>
+    </div>
     <div v-if="loading" class="loading-state">Memuat laporan SLA...</div>
 
     <template v-else-if="data">
@@ -328,14 +342,14 @@ function exportCsv() {
                   <div class="pct-cell">
                     <div class="pct-bar-wrap">
                       <div class="pct-bar-fill"
-                        :style="{ width: Math.min(l.compliance_pct, 100) + '%', background: l.status === 'OK' ? '#22c55e' : '#ef4444' }"></div>
+                        :style="{ width: jepit(l.compliance_pct) + '%', background: l.status === 'OK' ? '#22c55e' : '#ef4444' }"></div>
                     </div>
                     <span>{{ fmtPct(l.compliance_pct) }}</span>
                   </div>
                 </td>
                 <td><span class="status-badge" :class="(l.status || '').toLowerCase()">{{ l.status }}</span></td>
               </tr>
-              <tr v-if="!data.per_layanan.length">
+              <tr v-if="!data.per_layanan?.length">
                 <td colspan="8" class="empty">Tidak ada data layanan pada periode ini</td>
               </tr>
             </tbody>
@@ -370,14 +384,14 @@ function exportCsv() {
                   <div class="pct-cell">
                     <div class="pct-bar-wrap">
                       <div class="pct-bar-fill"
-                        :style="{ width: Math.min(p.compliance_pct, 100) + '%', background: p.status === 'OK' ? '#22c55e' : '#ef4444' }"></div>
+                        :style="{ width: jepit(p.compliance_pct) + '%', background: p.status === 'OK' ? '#22c55e' : '#ef4444' }"></div>
                     </div>
                     <span>{{ fmtPct(p.compliance_pct) }}</span>
                   </div>
                 </td>
                 <td><span class="status-badge" :class="(p.status || '').toLowerCase()">{{ p.status }}</span></td>
               </tr>
-              <tr v-if="!data.per_pelanggan.length">
+              <tr v-if="!data.per_pelanggan?.length">
                 <td colspan="7" class="empty">Tidak ada data pelanggan pada periode ini</td>
               </tr>
             </tbody>
@@ -417,7 +431,7 @@ function exportCsv() {
                 <td class="red-text">{{ fmtMenit(b.terlambat_menit) }}</td>
                 <td><span class="status-tiket">{{ (b.status_tiket || '').replace(/_/g, ' ') }}</span></td>
               </tr>
-              <tr v-if="!data.breach_detail.length">
+              <tr v-if="!data.breach_detail?.length">
                 <td colspan="10" class="empty">Tidak ada breach pada periode ini</td>
               </tr>
             </tbody>

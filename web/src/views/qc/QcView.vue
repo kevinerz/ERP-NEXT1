@@ -4,7 +4,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, pesanGalat, promptDialog } from '@/composables/useDialog'
+import KeadaanData from '@/components/KeadaanData.vue'
 import { fmtDateTime } from '@/composables/useFormat'
 import { eksporExcel, type QcModul, type QcCatatan, WARNA_STATUS, WARNA_PRIORITAS, IKON_JENIS } from './qc'
 
@@ -15,13 +16,15 @@ const pengelola = computed(() => ['Admin', 'Director', 'Manager_Ops'].some((r) =
 const modul = ref<QcModul[]>([])
 const meta = ref({ status_modul: [] as string[], jenis: [] as string[], prioritas: [] as string[], status_catatan: [] as string[] })
 const memuat = ref(false)
+const galat = ref('')
 async function muat() {
   memuat.value = true
+  galat.value = ''
   try {
     const { data } = await api.get('/qc/modul')
     modul.value = data.data
     if (data.meta) meta.value = data.meta
-  } catch (e) { alertError(e) } finally { memuat.value = false }
+  } catch (e) { galat.value = pesanGalat(e, 'Gagal memuat daftar modul QC') } finally { memuat.value = false }
 }
 onMounted(muat)
 
@@ -65,16 +68,28 @@ const ringkas = computed(() => {
 })
 
 // ── Ubah modul (pengelola) ──
-async function ubahModul(m: QcModul, data: Partial<Pick<QcModul, 'status' | 'skor' | 'pic' | 'deskripsi'>>) {
+async function ubahModul(m: QcModul, data: Partial<Pick<QcModul, 'status' | 'skor' | 'pic' | 'deskripsi'>>): Promise<boolean> {
   try {
     const { data: r } = await api.put(`/qc/modul/${m.id}`, data)
     Object.assign(m, r.data)
-  } catch (e) { alertError(e, 'Gagal menyimpan') }
+    return true
+  } catch (e) { alertError(e, 'Gagal menyimpan'); return false }
+}
+// Select yang gagal disimpan dikembalikan ke nilai tersimpan — jangan menampilkan pilihan yang tidak tersimpan
+async function pilihStatusModul(m: QcModul, ev: Event) {
+  const el = ev.target as HTMLSelectElement
+  if (!(await ubahModul(m, { status: el.value }))) el.value = m.status
 }
 const editDesk = ref<number | null>(null)
 const teksDesk = ref('')
 function mulaiEditDesk(m: QcModul) { editDesk.value = m.id; teksDesk.value = m.deskripsi ?? '' }
-async function simpanDesk(m: QcModul) { await ubahModul(m, { deskripsi: teksDesk.value }); editDesk.value = null }
+const menyimpanDesk = ref(false)
+async function simpanDesk(m: QcModul) {
+  if (menyimpanDesk.value) return
+  menyimpanDesk.value = true
+  // Editor hanya ditutup bila tersimpan, supaya teks yang diketik tidak hilang saat gagal
+  try { if (await ubahModul(m, { deskripsi: teksDesk.value })) editDesk.value = null } finally { menyimpanDesk.value = false }
+}
 async function ubahPic(m: QcModul) {
   const v = await promptDialog({ title: 'PIC Modul', message: `Penanggung jawab modul "${m.nama}"`, label: 'PIC', defaultValue: m.pic ?? '' })
   if (v !== null) ubahModul(m, { pic: v })
@@ -84,7 +99,7 @@ async function ubahPic(m: QcModul) {
 const formCat = reactive({ id_modul: 0, jenis: 'Revisi', prioritas: 'Sedang', judul: '', isi: '', simpan: false })
 function bukaForm(m: QcModul) { Object.assign(formCat, { id_modul: m.id, jenis: 'Revisi', prioritas: 'Sedang', judul: '', isi: '', simpan: false }) }
 async function simpanCatatan(m: QcModul) {
-  if (!formCat.judul.trim()) return
+  if (!formCat.judul.trim() || formCat.simpan) return
   formCat.simpan = true
   try {
     const { data } = await api.post(`/qc/modul/${m.id}/catatan`, { jenis: formCat.jenis, prioritas: formCat.prioritas, judul: formCat.judul, isi: formCat.isi || undefined })
@@ -93,11 +108,16 @@ async function simpanCatatan(m: QcModul) {
   } catch (e) { alertError(e, 'Gagal menyimpan catatan') } finally { formCat.simpan = false }
 }
 const bolehUbah = (c: QcCatatan) => pengelola.value || (!!auth.user?.id_karyawan && c.id_karyawan === auth.user.id_karyawan)
-async function ubahCatatan(c: QcCatatan, data: Partial<QcCatatan>) {
+async function ubahCatatan(c: QcCatatan, data: Partial<QcCatatan>): Promise<boolean> {
   try {
     const { data: r } = await api.put(`/qc/catatan/${c.id}`, data)
     Object.assign(c, r.data)
-  } catch (e) { alertError(e, 'Gagal menyimpan') }
+    return true
+  } catch (e) { alertError(e, 'Gagal menyimpan'); return false }
+}
+async function pilihCatatan(c: QcCatatan, kolom: 'status' | 'prioritas', ev: Event) {
+  const el = ev.target as HTMLSelectElement
+  if (!(await ubahCatatan(c, { [kolom]: el.value }))) el.value = c[kolom]
 }
 async function hapusCatatan(m: QcModul, c: QcCatatan) {
   if (!(await confirmDialog({ title: 'Hapus catatan?', message: c.judul, confirmLabel: 'Hapus', variant: 'danger' }))) return
@@ -109,12 +129,16 @@ async function hapusCatatan(m: QcModul, c: QcCatatan) {
 
 // ── Tambah modul (pengelola) ──
 const formModul = reactive({ buka: false, grup: '', nama: '', path: '', deskripsi: '' })
+const menyimpanModul = ref(false)
 async function simpanModul() {
+  if (menyimpanModul.value) return
+  if (!formModul.grup.trim() || !formModul.nama.trim()) return alertError('Grup dan nama modul wajib diisi')
+  menyimpanModul.value = true
   try {
     const { data } = await api.post('/qc/modul', { grup: formModul.grup, nama: formModul.nama, path: formModul.path || undefined, deskripsi: formModul.deskripsi || undefined })
     modul.value.push({ ...data.data, catatan: [] })
     Object.assign(formModul, { buka: false, grup: '', nama: '', path: '', deskripsi: '' })
-  } catch (e) { alertError(e, 'Gagal menambah modul') }
+  } catch (e) { alertError(e, 'Gagal menambah modul') } finally { menyimpanModul.value = false }
 }
 
 // ── Ekspor ──
@@ -150,7 +174,7 @@ const tgl = (d: string) => new Date(d).toLocaleDateString('id-ID', { day: '2-dig
       <input v-model="formModul.nama" class="form-input" placeholder="Nama modul" required />
       <input v-model="formModul.path" class="form-input" placeholder="Alamat halaman (opsional, mis. /finance)" />
       <input v-model="formModul.deskripsi" class="form-input qc-lebar" placeholder="Deskripsi singkat (opsional)" />
-      <button type="submit" class="btn btn-primary btn-sm">Simpan</button>
+      <button type="submit" class="btn btn-primary btn-sm" :disabled="menyimpanModul">{{ menyimpanModul ? 'Menyimpan…' : 'Simpan' }}</button>
       <button type="button" class="btn btn-ghost btn-sm" @click="formModul.buka = false">Batal</button>
     </form>
 
@@ -184,7 +208,7 @@ const tgl = (d: string) => new Date(d).toLocaleDateString('id-ID', { day: '2-dig
       <span class="muted">{{ tampil.length }} modul</span>
     </div>
 
-    <p v-if="memuat && !modul.length" class="muted">Memuat…</p>
+    <KeadaanData v-if="!modul.length" :memuat="memuat" :galat="galat" :kosong="!modul.length" judul-kosong="Belum ada modul QC" teks-memuat="Memuat modul…" @ulang="muat" />
     <section v-for="[grup, ms] in perGrup" :key="grup" class="qc-grup">
       <h3>{{ grup }} <small>{{ ms.length }} modul</small></h3>
       <article v-for="m in ms" :key="m.id" class="card qc-modul" :style="{ '--w': WARNA_STATUS[m.status] }">
@@ -194,19 +218,19 @@ const tgl = (d: string) => new Date(d).toLocaleDateString('id-ID', { day: '2-dig
             <RouterLink v-if="m.path" :to="m.path" class="qc-path">{{ m.path }}</RouterLink>
           </div>
           <div class="qc-modul-aksi">
-            <select v-if="pengelola" class="form-select qc-status" :value="m.status" :style="{ color: WARNA_STATUS[m.status] }" @change="ubahModul(m, { status: ($event.target as HTMLSelectElement).value })">
+            <select v-if="pengelola" class="form-select qc-status" :value="m.status" :style="{ color: WARNA_STATUS[m.status] }" @change="pilihStatusModul(m, $event)">
               <option v-for="s in meta.status_modul" :key="s" :value="s">{{ s }}</option>
             </select>
             <span v-else class="qc-badge" :style="{ color: WARNA_STATUS[m.status], borderColor: WARNA_STATUS[m.status] }">{{ m.status }}</span>
             <span class="qc-skor" :title="pengelola ? 'Klik untuk memberi skor' : 'Skor'">
-              <button v-for="n in 5" :key="n" type="button" :class="{ isi: (m.skor ?? 0) >= n }" :disabled="!pengelola" @click="ubahModul(m, { skor: m.skor === n ? null : n })">★</button>
+              <button v-for="n in 5" :key="n" type="button" :class="{ isi: (m.skor ?? 0) >= n }" :aria-label="`Skor ${n}`" :disabled="!pengelola" @click="ubahModul(m, { skor: m.skor === n ? null : n })">★</button>
             </span>
           </div>
         </header>
         <div v-if="editDesk === m.id" class="qc-desk-edit">
           <textarea v-model="teksDesk" class="form-input" rows="2"></textarea>
-          <button class="btn btn-primary btn-sm" @click="simpanDesk(m)">Simpan</button>
-          <button class="btn btn-ghost btn-sm" @click="editDesk = null">Batal</button>
+          <button type="button" class="btn btn-primary btn-sm" :disabled="menyimpanDesk" @click="simpanDesk(m)">{{ menyimpanDesk ? 'Menyimpan…' : 'Simpan' }}</button>
+          <button type="button" class="btn btn-ghost btn-sm" @click="editDesk = null">Batal</button>
         </div>
         <p v-else class="qc-desk">
           {{ m.deskripsi || '—' }}
@@ -229,14 +253,14 @@ const tgl = (d: string) => new Date(d).toLocaleDateString('id-ID', { day: '2-dig
               <small class="muted">{{ c.pembuat }} · {{ fmtDateTime(c.created_at) }}<template v-if="c.selesai_at"> · selesai {{ tgl(c.selesai_at) }}</template></small>
             </div>
             <div class="qc-cat-aksi">
-              <select v-if="bolehUbah(c)" class="form-select qc-cat-status" :value="c.status" @change="ubahCatatan(c, { status: ($event.target as HTMLSelectElement).value })">
+              <select v-if="bolehUbah(c)" class="form-select qc-cat-status" :value="c.status" @change="pilihCatatan(c, 'status', $event)">
                 <option v-for="s in meta.status_catatan" :key="s" :value="s">{{ s }}</option>
               </select>
               <span v-else class="qc-badge">{{ c.status }}</span>
-              <select v-if="bolehUbah(c)" class="form-select qc-cat-status" :value="c.prioritas" title="Prioritas" @change="ubahCatatan(c, { prioritas: ($event.target as HTMLSelectElement).value })">
+              <select v-if="bolehUbah(c)" class="form-select qc-cat-status" :value="c.prioritas" title="Prioritas" @change="pilihCatatan(c, 'prioritas', $event)">
                 <option v-for="p in meta.prioritas" :key="p" :value="p">{{ p }}</option>
               </select>
-              <button v-if="bolehUbah(c)" type="button" class="qc-hapus" title="Hapus catatan" @click="hapusCatatan(m, c)">🗑</button>
+              <button v-if="bolehUbah(c)" type="button" class="qc-hapus" title="Hapus catatan" aria-label="Hapus catatan" @click="hapusCatatan(m, c)">🗑</button>
             </div>
           </li>
         </ul>

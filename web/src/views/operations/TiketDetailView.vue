@@ -8,7 +8,7 @@ import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import { printLaporanTiket } from '@/composables/usePrint'
 import { fmtDateTime as fmtDt, statusLabel, escapeHtml } from '@/composables/useFormat'
-import { confirmDialog, alertError, toast } from '@/composables/useDialog'
+import { confirmDialog, alertError, toast, toastGalat } from '@/composables/useDialog'
 import { useFilterUrl } from '@/composables/useFilterUrl'
 import { SERI } from '@/components/grafik/warna'
 import api from '@/services/api'
@@ -204,16 +204,23 @@ async function fetchPrtgSensors() {
 const prtgStatusColor = (raw: number) => ({ 3: '#16a34a', 4: '#f59e0b', 5: '#ef4444', 13: '#f97316', 14: '#f97316' } as Record<number, string>)[raw] ?? '#64748b'
 const prtgStatusLabel = (raw: number) => ({ 3: 'Up', 4: 'Warning', 5: 'Down', 13: 'Down (Ack)', 14: 'Partial Down' } as Record<number, string>)[raw] ?? '?'
 const sensorDown = computed(() => prtgSensors.value.filter((s) => [5, 13, 14].includes(s.status_raw)).length)
-async function loadGraphBlob(sensorId: number, graphId: number) {
+// Nomor urut: grafik sensor/rentang yang dipilih belakangan tidak boleh tertimpa jawaban lama
+let urutGrafik = 0
+async function loadGraphBlob(sensorId: number, graphId: number, latar = false) {
   if (!sensorId) return
-  graphLoading.value = true; graphLoadError.value = false
-  if (graphBlobUrl.value) { URL.revokeObjectURL(graphBlobUrl.value); graphBlobUrl.value = '' }
+  const no = ++urutGrafik
+  if (!latar) {
+    graphLoading.value = true
+    if (graphBlobUrl.value) { URL.revokeObjectURL(graphBlobUrl.value); graphBlobUrl.value = '' }
+  }
   try {
-    const resp = await api.get(`/prtg/sensor/${sensorId}/graph.png`, { params: { graphid: graphId }, responseType: 'blob', timeout: 20000 })
-    if (unmounted) return
+    const resp = await api.get(`/prtg/sensor/${sensorId}/graph.png`, { params: { graphid: graphId }, responseType: 'blob', timeout: 20000, senyap: latar })
+    if (unmounted || no !== urutGrafik) return
+    if (graphBlobUrl.value) URL.revokeObjectURL(graphBlobUrl.value)
     graphBlobUrl.value = URL.createObjectURL(resp.data)
-  } catch { graphLoadError.value = true }
-  finally { graphLoading.value = false }
+    graphLoadError.value = false
+  } catch { if (no === urutGrafik && (!latar || !graphBlobUrl.value)) graphLoadError.value = true }
+  finally { if (no === urutGrafik) graphLoading.value = false }
 }
 function pilihSensor(s: any) { selectedSensorId.value = s.objid; loadGraphBlob(s.objid, selectedGraphId.value) }
 
@@ -247,7 +254,7 @@ function initMap() {
 async function fetchTeknisiLokasi() {
   if (!t.value?.teknisi) return
   try {
-    const { data } = await api.get('/mobile/lokasi/all')
+    const { data } = await api.get('/mobile/lokasi/all', { senyap: true })
     const list: any[] = data.data ?? data
     const match = list.find((l: any) => l.id_karyawan === t.value!.teknisi!.id_karyawan)
     if (match) { teknisiLokasi.value = { ...match, ...match.karyawan }; updateTeknisiMarker(match.latitude, match.longitude) }
@@ -280,22 +287,31 @@ const jenisGangguanList = ref<string[]>([])
 async function fetchJenisGangguan() {
   try { const r = await api.get('/master/jenis-gangguan', { params: { is_aktif: 'true' } }); jenisGangguanList.value = (r.data.data as any[]).map((j) => j.nama) } catch { /* opsional */ }
 }
-async function muatUlang() { await ops.fetchOne(id) }
+// Muat ulang setelah aksi: bila gagal, tiket yang sedang tampil dipertahankan (bukan diganti layar galat)
+async function muatUlang() {
+  try { const { data } = await api.get(`/operations/${id}`); ops.current = data.data }
+  catch (e) { toastGalat(e, 'Gagal memuat ulang data tiket') }
+}
 let unmounted = false
-onMounted(async () => {
-  ops.current = null
-  window.addEventListener('keydown', tombol)
-  tJam = setInterval(() => { sekarang.value = Date.now() }, 15_000)
+async function muatAwal() {
   await Promise.all([ops.fetchOne(id), ops.fetchTeknisiList(), ops.fetchKontakTeknisiList(), fetchJenisGangguan()])
   if (unmounted || !t.value) return
   fetchFotos()
   fetchTeknisiLokasi()
+  if (lokasiInterval) clearInterval(lokasiInterval)
   lokasiInterval = setInterval(fetchTeknisiLokasi, 15000)
   await nextTick()
   if (tab.value === 'lapangan') initMap()
   await Promise.all([fetchPrtgSensors(), fetchPrtgTicketEvents(), fetchNoc()])
   if (unmounted) return
-  graphRefreshTimer = setInterval(() => { if (tab.value === 'monitoring' && selectedGraphId.value === 0 && selectedSensorId.value) loadGraphBlob(selectedSensorId.value, 0) }, 60_000)
+  if (graphRefreshTimer) clearInterval(graphRefreshTimer)
+  graphRefreshTimer = setInterval(() => { if (tab.value === 'monitoring' && selectedGraphId.value === 0 && selectedSensorId.value) loadGraphBlob(selectedSensorId.value, 0, true) }, 60_000)
+}
+onMounted(() => {
+  ops.current = null
+  window.addEventListener('keydown', tombol)
+  tJam = setInterval(() => { sekarang.value = Date.now() }, 15_000)
+  muatAwal()
 })
 onUnmounted(() => {
   unmounted = true
@@ -320,6 +336,7 @@ async function keStatus(s: string) {
 }
 async function handleTangani() {
   if (!auth.user?.id_karyawan) return alertError(null, 'Akun Anda belum terhubung ke data karyawan')
+  if (sibuk.value) return
   sibuk.value = true
   try {
     await ops.update(id, { id_teknisi_pic: auth.user.id_karyawan, ...(t.value?.status_tiket === 'Open' ? { status_tiket: 'In_Progress' } : {}) })
@@ -335,14 +352,19 @@ function bukaTutup(s = 'Resolved') {
   tutup.value = { buka: true, status: s, jenis: t.value?.jenis_gangguan || '', root_cause: t.value?.root_cause || '', catatan: '', simpan: false }
 }
 async function simpanTutup() {
+  if (tutup.value.simpan) return
   if (!tutup.value.root_cause.trim()) return alertError(null, 'Isi root cause / tindakan perbaikan dulu — penting untuk laporan RCA')
   tutup.value.simpan = true
   try {
     await ops.update(id, { status_tiket: tutup.value.status, root_cause: tutup.value.root_cause.trim(), ...(tutup.value.jenis ? { jenis_gangguan: tutup.value.jenis } : {}) })
-    if (tutup.value.catatan.trim()) await ops.addLog({ id_ticket: id, catatan: tutup.value.catatan.trim() })
+    // Tiket sudah tertutup; kegagalan menyimpan catatan tambahan tidak boleh dilaporkan sebagai "gagal menutup"
+    let logGagal = false
+    if (tutup.value.catatan.trim()) {
+      try { await ops.addLog({ id_ticket: id, catatan: tutup.value.catatan.trim() }) } catch (e) { logGagal = true; toastGalat(e, 'Tiket ditutup, tetapi catatan tambahan gagal disimpan') }
+    }
     await muatUlang()
     tutup.value.buka = false
-    toast('🎉 Gangguan ditutup — kerja bagus!')
+    if (!logGagal) toast('🎉 Gangguan ditutup — kerja bagus!')
   } catch (e) { alertError(e, 'Gagal menutup tiket') }
   finally { tutup.value.simpan = false }
 }
@@ -354,6 +376,7 @@ const kirimLog = ref(false)
 const inputCatatan = ref<HTMLTextAreaElement | null>(null)
 async function kirimCatatan() {
   if (!catatan.value.trim() && !catatanStatus.value) return
+  if (kirimLog.value) return
   if (catatanStatus.value === 'Resolved') { bukaTutup('Resolved'); tutup.value.catatan = catatan.value; return }
   kirimLog.value = true
   try {
@@ -377,10 +400,12 @@ function openEdit() {
   }
 }
 async function simpanEdit() {
+  if (editSimpan.value) return
+  if (!String(edit.value.judul_tiket ?? '').trim()) return alertError(null, 'Judul tiket wajib diisi')
   editSimpan.value = true
   try {
     const e = edit.value
-    const payload: any = { judul_tiket: e.judul_tiket, deskripsi_masalah: e.deskripsi_masalah, prioritas: e.prioritas, jenis_gangguan: e.jenis_gangguan || undefined, root_cause: e.root_cause || undefined }
+    const payload: any = { judul_tiket: e.judul_tiket.trim(), deskripsi_masalah: e.deskripsi_masalah, prioritas: e.prioritas, jenis_gangguan: e.jenis_gangguan || undefined, root_cause: e.root_cause || undefined }
     if (e.tipe_assign === 'internal') payload.id_teknisi_pic = e.id_teknisi_pic || null
     else payload.id_kontak_teknisi = e.id_kontak_teknisi || null
     await ops.update(id, payload)
@@ -394,7 +419,9 @@ const wo = ref({ buka: false, jenis_wo: 'Troubleshoot', tipe_eksekutor: 'Interna
 function bukaWo() { wo.value = { buka: true, jenis_wo: 'Troubleshoot', tipe_eksekutor: 'Internal_NEXT1', id_teknisi_internal: t.value?.teknisi?.id_karyawan || 0, fee_vendor: 0, tgl_jadwal: '', deskripsi_tugas: t.value?.judul_tiket || '', simpan: false } }
 async function simpanWo() {
   const w = wo.value
+  if (w.simpan) return
   if (!w.tgl_jadwal || !w.deskripsi_tugas.trim()) return alertError(null, 'Jadwal dan deskripsi tugas wajib diisi')
+  if (!t.value?.site?.id_site) return alertError(null, 'Tiket ini belum terhubung ke site')
   w.simpan = true
   try {
     await proyek.createWo({
@@ -409,7 +436,7 @@ async function simpanWo() {
 const antreVisitProses = ref(false)
 async function antreVisit() {
   const x = t.value
-  if (!x?.site?.id_site) return
+  if (!x?.site?.id_site || antreVisitProses.value) return
   antreVisitProses.value = true
   try {
     const { data } = await api.post('/visit', { id_site: x.site.id_site, id_ticket: id, jenis_wo: 'Perbaikan', prioritas: ['Critical', 'High'].includes(x.prioritas) ? 'Tinggi' : 'Normal', deskripsi_tugas: x.judul_tiket })
@@ -433,13 +460,17 @@ const journeyStep = computed(() => {
 })
 
 // ── Lain-lain ────────────────────────────────────────────────────────────────
+const menghapus = ref(false)
 async function hapusTiket() {
+  if (menghapus.value) return
   if (!(await confirmDialog({ title: `Hapus tiket ${t.value?.nomor_tiket}?`, message: 'Semua log & data terkait tiket ini ikut terhapus dan tidak bisa dikembalikan.', confirmLabel: 'Ya, hapus', variant: 'danger' }))) return
+  menghapus.value = true
   try { await api.delete(`/operations/${id}`); toast('Tiket dihapus'); router.push('/operations') }
   catch (e) { alertError(e, 'Gagal menghapus tiket') }
+  finally { menghapus.value = false }
 }
 async function salin(teks: string, pesan = 'Disalin') {
-  try { await navigator.clipboard.writeText(teks); toast(pesan, 'default', 2000) } catch { /* abaikan */ }
+  try { await navigator.clipboard.writeText(teks); toast(pesan, 'default', 2000) } catch { toast('Tidak bisa menyalin — izin clipboard ditolak browser', 'warning') }
 }
 const ringkasanTeks = computed(() => {
   const x = t.value
@@ -471,7 +502,7 @@ function tombol(e: KeyboardEvent) {
 <template>
   <div class="page td">
     <div v-if="ops.loading && !t" class="td-skeleton"><div class="sk h" /><div class="sk" /><div class="sk" /></div>
-    <div v-else-if="ops.error" class="alert alert-danger">{{ ops.error }} <RouterLink to="/operations">← Kembali</RouterLink></div>
+    <div v-else-if="ops.error && !t" class="alert alert-danger">{{ ops.error }} <button type="button" class="btn btn-sm btn-secondary" :disabled="ops.loading" @click="muatAwal">Coba lagi</button> <RouterLink to="/operations">← Kembali</RouterLink></div>
 
     <template v-else-if="t">
       <!-- ── HERO ─────────────────────────────────────────────────────── -->
@@ -479,10 +510,10 @@ function tombol(e: KeyboardEvent) {
         <div class="td-hero-atas">
           <button type="button" class="td-kembali" @click="router.push('/operations')">← Pusat Gangguan</button>
           <div class="td-hero-aksi-kecil">
-            <button type="button" title="Salin ringkasan untuk dibagikan" @click="salin(ringkasanTeks, 'Ringkasan tiket disalin 📋')">📋</button>
-            <button type="button" title="Timeline lengkap (T)" @click="showTimeline = true">🕒</button>
-            <button type="button" title="Cetak laporan" @click="printLaporanTiket(t)">🖨️</button>
-            <button type="button" title="Muat ulang" @click="muatUlang(); fetchNoc(); fetchFotos()">🔄</button>
+            <button type="button" title="Salin ringkasan untuk dibagikan" aria-label="Salin ringkasan" @click="salin(ringkasanTeks, 'Ringkasan tiket disalin 📋')">📋</button>
+            <button type="button" title="Timeline lengkap (T)" aria-label="Timeline lengkap" @click="showTimeline = true">🕒</button>
+            <button type="button" title="Cetak laporan" aria-label="Cetak laporan" @click="printLaporanTiket(t)">🖨️</button>
+            <button type="button" title="Muat ulang" aria-label="Muat ulang" @click="muatUlang(); fetchNoc(); fetchFotos()">🔄</button>
           </div>
         </div>
         <div class="td-hero-isi">
@@ -537,13 +568,13 @@ function tombol(e: KeyboardEvent) {
             <button type="button" class="td-btn" @click="tab = 'aktivitas'; $nextTick(() => inputCatatan?.focus())">💬 Catatan <kbd>C</kbd></button>
             <button type="button" class="td-btn" @click="openEdit">✏️ Edit <kbd>E</kbd></button>
             <div class="td-menu">
-              <button type="button" class="td-btn" :aria-expanded="menuLain" @click="menuLain = !menuLain">⋯</button>
+              <button type="button" class="td-btn" :aria-expanded="menuLain" aria-label="Aksi lainnya" title="Aksi lainnya" @click="menuLain = !menuLain">⋯</button>
               <div v-if="menuLain" class="td-menu-isi" @click="menuLain = false">
                 <button type="button" @click="bukaWo">🛠️ Buat surat tugas</button>
                 <button type="button" :disabled="antreVisitProses" @click="antreVisit">🗓️ Masukkan antrean visit</button>
                 <button type="button" @click="salin(`${asal}/operations/${t.id_ticket}`, 'Tautan disalin')">🔗 Salin tautan</button>
                 <button type="button" @click="printLaporanTiket(t)">🖨️ Cetak laporan</button>
-                <button v-if="auth.hasRole('Admin')" type="button" class="bahaya" @click="hapusTiket">🗑️ Hapus tiket</button>
+                <button v-if="auth.hasRole('Admin')" type="button" class="bahaya" :disabled="menghapus" @click="hapusTiket">🗑️ Hapus tiket</button>
               </div>
             </div>
           </div>
@@ -637,7 +668,7 @@ function tombol(e: KeyboardEvent) {
             <div class="td-kartu">
               <div class="td-kartu-kepala">
                 <h4>🛰️ Pembanding NOCaaS</h4>
-                <button type="button" class="td-ikon-btn" :disabled="nocLoading" title="Muat ulang" @click="fetchNoc"><span :class="{ putar: nocLoading }">↻</span></button>
+                <button type="button" class="td-ikon-btn" :disabled="nocLoading" title="Muat ulang" aria-label="Muat ulang status NOCaaS" @click="fetchNoc"><span :class="{ putar: nocLoading }">↻</span></button>
               </div>
               <small class="muted">Status router dari NOCaaS (VPN NS/UN + heartbeat syslog) + ping tunnel dari ERP</small>
               <div v-if="nocLoading && !noc" class="td-kosong-kecil">Memuat status NOCaaS…</div>
@@ -682,7 +713,7 @@ function tombol(e: KeyboardEvent) {
             <div class="td-kartu">
               <div class="td-kartu-kepala">
                 <h4>📡 Sensor PRTG <small v-if="prtgDeviceName" class="muted">· {{ prtgDeviceName }}</small></h4>
-                <button type="button" class="td-ikon-btn" :disabled="prtgLoading" title="Muat ulang" @click="fetchPrtgSensors"><span :class="{ putar: prtgLoading }">↻</span></button>
+                <button type="button" class="td-ikon-btn" :disabled="prtgLoading" title="Muat ulang" aria-label="Muat ulang sensor PRTG" @click="fetchPrtgSensors"><span :class="{ putar: prtgLoading }">↻</span></button>
               </div>
               <div v-if="prtgLoading" class="td-kosong-kecil">Memuat sensor PRTG…</div>
               <div v-else-if="prtgError" class="alert alert-danger">{{ prtgError }}</div>
@@ -850,7 +881,7 @@ function tombol(e: KeyboardEvent) {
               </div>
               <small v-if="isp.nomor_pelanggan_isp" class="td-isp-no">
                 No. pelanggan ISP: <b>{{ isp.nomor_pelanggan_isp }}</b>
-                <button type="button" class="td-salin" title="Salin" @click="salin(isp.nomor_pelanggan_isp, 'Nomor pelanggan ISP disalin')">⧉</button>
+                <button type="button" class="td-salin" title="Salin" aria-label="Salin nomor pelanggan ISP" @click="salin(isp.nomor_pelanggan_isp, 'Nomor pelanggan ISP disalin')">⧉</button>
               </small>
               <div v-if="isp.vendor?.no_telp || isp.vendor?.email_pic" class="td-isp-kontak">
                 <small v-if="isp.vendor?.kontak_pic">PIC {{ isp.vendor.kontak_pic }}</small>

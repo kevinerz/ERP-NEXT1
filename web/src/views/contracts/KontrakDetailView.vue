@@ -3,9 +3,9 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useContractsStore } from '@/stores/contracts'
 import { printKontrak, printInvoice } from '@/composables/usePrint'
-import { fmtRupiah, fmtDate, statusLabel } from '@/composables/useFormat'
+import { fmtRupiah, fmtDate, statusLabel, todayLocal } from '@/composables/useFormat'
 import api from '@/services/api'
-import { confirmDialog, alertDialog, alertError, toast } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,40 +35,53 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 
 const k = computed(() => contracts.current)
 
-onMounted(() => contracts.fetchOne(id))
+function muat() {
+  // Kosongkan kontrak sebelumnya agar data kontrak lain tidak tampil (dan tidak ikut tersimpan lewat Edit) selama memuat
+  if (contracts.current?.id_kontrak !== id) contracts.current = null
+  return contracts.fetchOne(id)
+}
+onMounted(muat)
 
 function openEdit() {
   if (!k.value) return
   editForm.value = {
     tgl_berakhir: k.value.tgl_berakhir ? k.value.tgl_berakhir.split('T')[0]! : '',
     durasi_bulan: k.value.durasi_bulan,
-    harga_mrc: k.value.harga_mrc,
-    harga_otc: k.value.harga_otc,
+    // Kolom Decimal datang dari API sebagai string, sedangkan server mewajibkan angka
+    harga_mrc: Number(k.value.harga_mrc) || 0,
+    harga_otc: Number(k.value.harga_otc) || 0,
     status_kontrak: k.value.status_kontrak,
   }
   showEditModal.value = true; formError.value = ''
 }
 
 async function handleEdit() {
+  if (submitting.value) return
+  const f = editForm.value
+  const durasi = Number(f.durasi_bulan), mrc = Number(f.harga_mrc), otc = Number(f.harga_otc)
+  if (!Number.isInteger(durasi) || durasi < 1) { formError.value = 'Durasi harus bilangan bulat minimal 1 bulan'; return }
+  if ((f.harga_mrc as any) === '' || isNaN(mrc) || mrc < 0) { formError.value = 'Harga MRC wajib diisi dan tidak boleh negatif'; return }
+  if (isNaN(otc) || otc < 0) { formError.value = 'Harga OTC tidak boleh negatif'; return }
   submitting.value = true; formError.value = ''
   try {
-    const payload: any = { ...editForm.value }
+    const payload: any = { ...f, durasi_bulan: durasi, harga_mrc: mrc, harga_otc: Number(f.harga_otc) || 0 }
     if (!payload.tgl_berakhir) delete payload.tgl_berakhir
     await contracts.update(id, payload)
     showEditModal.value = false
     toast('Kontrak tersimpan')
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal menyimpan kontrak') }
   finally { submitting.value = false }
 }
 
 async function handleTerminasi() {
+  if (submitting.value) return
   if (!terminasiForm.value.tanggal_terminasi) { formError.value = 'Tanggal terminasi wajib diisi'; return }
   submitting.value = true; formError.value = ''
   try {
     await contracts.terminasi(id, terminasiForm.value)
     showTerminasiModal.value = false
     toast('Kontrak diterminasi')
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal terminasi' }
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal memproses terminasi') }
   finally { submitting.value = false }
 }
 
@@ -82,12 +95,16 @@ async function openProjectModal() {
     const r = await api.get('/projects/pm-list')
     pmList.value = r.data.data
   } catch (e: any) {
-    formError.value = e?.response?.data?.message ?? 'Gagal memuat daftar PM'
+    formError.value = pesanGalat(e, 'Gagal memuat daftar PM')
   }
 }
 
 async function handleBuatProject() {
+  if (submitting.value) return
   if (!projectForm.value.id_pm) { formError.value = 'Project Manager wajib dipilih'; return }
+  if (projectForm.value.tgl_mulai && projectForm.value.tgl_target_selesai && projectForm.value.tgl_target_selesai < projectForm.value.tgl_mulai) {
+    formError.value = 'Tanggal target selesai tidak boleh sebelum tanggal mulai'; return
+  }
   submitting.value = true; formError.value = ''
   try {
     const payload: any = { id_pm: projectForm.value.id_pm }
@@ -99,13 +116,22 @@ async function handleBuatProject() {
     showProjectModal.value = false
     await alertDialog({ message: 'Project berhasil dibuat', variant: 'success' })
   } catch (e: any) {
-    formError.value = e?.response?.data?.message ?? 'Gagal membuat project'
+    formError.value = pesanGalat(e, 'Gagal membuat project')
   } finally { submitting.value = false }
 }
 
+// Selisih hari kalender (zona lokal) antara hari ini dan tanggal berakhir — bukan selisih jam,
+// yang membuat kontrak berakhir hari ini terbaca "1 hari lagi" pada pagi hari.
 function sisaHari(d?: string) {
   if (!d) return null
-  return Math.ceil((new Date(d).getTime() - Date.now()) / 86400000)
+  const akhir = Date.parse(String(d).slice(0, 10))
+  if (isNaN(akhir)) return null
+  return Math.round((akhir - Date.parse(todayLocal())) / 86400000)
+}
+function teksSisa(d?: string) {
+  const s = sisaHari(d)
+  if (s === null) return ''
+  return s < 0 ? `lewat ${-s} hari` : s === 0 ? 'berakhir hari ini' : `${s} hari lagi`
 }
 
 const STATUS_LIST = ['Aktif', 'Akan_Berakhir', 'Berakhir', 'Terminasi']
@@ -120,6 +146,7 @@ async function handleDelete() {
   }))) return
   try {
     await api.delete('/contracts/' + id)
+    toast('Kontrak dihapus')
     router.push('/contracts')
   } catch (e: any) { await alertError(e, 'Gagal menghapus kontrak') }
 }
@@ -134,14 +161,16 @@ async function handleDelete() {
     </div>
 
     <div v-if="contracts.loading && !k" class="loading-full">Memuat...</div>
-    <div v-else-if="contracts.error" class="alert-error">{{ contracts.error }}</div>
+    <div v-else-if="contracts.error" class="alert-error" role="alert">{{ contracts.error }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="muat">↻ Coba lagi</button>
+    </div>
     <template v-else-if="k">
 
       <!-- Header -->
       <div class="page-header">
         <div class="header-left">
           <div class="nomor">{{ k.nomor_kontrak }}</div>
-          <h2>{{ k.site?.pelanggan?.nama_pelanggan }}</h2>
+          <h2>{{ k.site?.pelanggan?.nama_pelanggan || '—' }}</h2>
           <div class="sub-row">
             <span class="sub">{{ k.site?.nama_site }}</span>
             <span class="status-badge"
@@ -165,19 +194,19 @@ async function handleDelete() {
       <div class="info-bar">
         <div class="info-item">
           <div class="info-label">Layanan</div>
-          <div class="info-value">{{ k.layanan?.nama_layanan }}</div>
+          <div class="info-value">{{ k.layanan?.nama_layanan || '—' }}</div>
         </div>
         <div class="info-item">
           <div class="info-label">MRC / Bulan</div>
           <div class="info-value mrc">{{ fmtRupiah(k.harga_mrc) }}</div>
         </div>
-        <div class="info-item" v-if="k.harga_otc">
+        <div class="info-item" v-if="Number(k.harga_otc) > 0">
           <div class="info-label">OTC</div>
           <div class="info-value">{{ fmtRupiah(k.harga_otc) }}</div>
         </div>
         <div class="info-item">
           <div class="info-label">Durasi</div>
-          <div class="info-value">{{ k.durasi_bulan }} bulan</div>
+          <div class="info-value">{{ k.durasi_bulan ? `${k.durasi_bulan} bulan` : '—' }}</div>
         </div>
         <div class="info-item">
           <div class="info-label">Tgl Mulai</div>
@@ -188,7 +217,7 @@ async function handleDelete() {
           <div class="info-value">{{ fmtDate(k.tgl_berakhir) }}</div>
           <div class="sisa" v-if="k.status_kontrak === 'Aktif'"
             :class="{ warn: (sisaHari(k.tgl_berakhir) ?? 999) <= 30 }">
-            {{ (sisaHari(k.tgl_berakhir) ?? 0) < 0 ? `lewat ${-(sisaHari(k.tgl_berakhir) ?? 0)} hari` : `${sisaHari(k.tgl_berakhir)} hari lagi` }}
+            {{ teksSisa(k.tgl_berakhir) }}
           </div>
         </div>
         <div class="info-item" v-if="k.quotation">
@@ -212,7 +241,7 @@ async function handleDelete() {
         <div v-baris v-for="p in k.projects" :key="p.id_project"
           class="project-item" @click="router.push(`/projects/${p.id_project}`)">
           <span class="proj-nomor">{{ p.nomor_project }}</span>
-          <span class="proj-status" :class="`pstatus-${p.status_project.toLowerCase()}`">
+          <span class="proj-status" :class="`pstatus-${(p.status_project || '').toLowerCase()}`">
             {{ p.status_project }}
           </span>
           <span class="proj-arrow">›</span>
@@ -224,7 +253,7 @@ async function handleDelete() {
       <div class="terminasi-card" v-if="k.status_kontrak === 'Terminasi'">
         <div class="t-icon">⚠️</div>
         <div>
-          <div class="t-label">Kontrak diterminasi pada {{ fmtDate(k.tanggal_terminasi!) }}</div>
+          <div class="t-label">Kontrak diterminasi pada {{ fmtDate(k.tanggal_terminasi) }}</div>
           <div class="t-alasan" v-if="k.alasan_terminasi">{{ k.alasan_terminasi }}</div>
         </div>
       </div>

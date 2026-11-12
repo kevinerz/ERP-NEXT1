@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { toast, pesanGalat } from '@/composables/useDialog'
 import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { fmtDateTime } from '@/composables/useFormat'
@@ -12,6 +13,7 @@ const aset = useAsetStore()
 
 const id = Number(route.params.id)
 const scanInput = ref('')
+const scanEl = ref<HTMLInputElement | null>(null)
 const scanMsg = ref('')
 const scanIsError = ref(false)
 const scanning = ref(false)
@@ -33,7 +35,7 @@ async function load() {
   try {
     aset.opnameCurrent = (await api.get(`/assets/stok-opname/${id}`)).data.data
   } catch (e: any) {
-    const pesan = e?.response?.status === 404 ? '' : (e?.response?.data?.message || 'Gagal memuat sesi opname')
+    const pesan = e?.response?.status === 404 ? '' : pesanGalat(e, 'Gagal memuat sesi opname')
     if (aset.opnameCurrent) actionError.value = pesan ? `Gagal memuat ulang: ${pesan}` : 'Sesi opname tidak ditemukan'
     else loadError.value = pesan
   } finally { memuat.value = false }
@@ -49,7 +51,7 @@ const isBerjalan = computed(() => o.value?.status_opname === 'Berjalan')
 
 async function handleScan() {
   const kode = scanInput.value.trim()
-  if (!kode) return
+  if (!kode || scanning.value) return
   scanning.value = true; scanMsg.value = ''; scanIsError.value = false
   try {
     const r = await aset.scanOpname(id, { kode_aset: kode })
@@ -58,9 +60,13 @@ async function handleScan() {
     scanInput.value = ''
     await load()
   } catch (e: any) {
-    scanMsg.value = e.response?.data?.message || 'Gagal mencatat scan'
+    scanMsg.value = pesanGalat(e, 'Gagal mencatat scan')
     scanIsError.value = true
-  } finally { scanning.value = false }
+  } finally {
+    scanning.value = false
+    // kolom scan dikunci selama proses → kembalikan fokus agar scan berikutnya langsung masuk
+    nextTick(() => scanEl.value?.focus())
+  }
 }
 
 // id item yang sedang diproses — checkbox dikunci agar tidak diklik ganda
@@ -74,7 +80,7 @@ async function toggleManual(item: any, ev?: Event) {
     await aset.toggleOpnameItem(item.id_item, !item.ditemukan)
     await load()
   } catch (e: any) {
-    actionError.value = e.response?.data?.message || 'Gagal update item'
+    actionError.value = pesanGalat(e, 'Gagal memperbarui item')
     if (cb) cb.checked = item.ditemukan   // kembalikan centang bila gagal
   }
   finally { togglingId.value = null }
@@ -83,23 +89,29 @@ async function toggleManual(item: any, ev?: Event) {
 function selesaikan() { confirmSelesai.value = true }
 async function doSelesaikan() {
   confirmSelesai.value = false
+  if (finishing.value) return
   finishing.value = true
   actionError.value = ''
   try {
     await aset.selesaikanOpname(id)
+    toast('Opname diselesaikan')
     await load()
-  } catch (e: any) { actionError.value = e.response?.data?.message || 'Gagal menyelesaikan opname' }
+  } catch (e: any) { actionError.value = pesanGalat(e, 'Gagal menyelesaikan opname') }
   finally { finishing.value = false }
 }
 
 function batalkan() { confirmBatal.value = true }
 async function doBatalkan() {
   confirmBatal.value = false
+  if (finishing.value) return
+  finishing.value = true
   actionError.value = ''
   try {
     await aset.removeOpname(id)
+    toast('Sesi opname dibatalkan')
     router.push('/assets/stok-opname')
-  } catch (e: any) { actionError.value = e.response?.data?.message || 'Gagal membatalkan opname' }
+  } catch (e: any) { actionError.value = pesanGalat(e, 'Gagal membatalkan opname') }
+  finally { finishing.value = false }
 }
 </script>
 
@@ -124,7 +136,7 @@ async function doBatalkan() {
       @cancel="confirmBatal = false"
     />
 
-    <div v-if="actionError" class="action-error">{{ actionError }}</div>
+    <div v-if="actionError" class="action-error" role="alert">{{ actionError }}</div>
 
     <div class="page-header">
       <div>
@@ -150,8 +162,8 @@ async function doBatalkan() {
     <div v-if="isBerjalan" class="scan-box">
       <label>Scan / Ketik Kode Aset</label>
       <div class="scan-input-row">
-        <input v-model="scanInput" @keyup.enter="handleScan" placeholder="AST-202607-0042" autofocus :disabled="scanning" />
-        <button class="btn-scan" @click="handleScan" :disabled="scanning || !scanInput.trim()">Tandai Ditemukan</button>
+        <input ref="scanEl" v-model="scanInput" @keyup.enter="handleScan" placeholder="AST-202607-0042" autofocus :disabled="scanning" />
+        <button type="button" class="btn-scan" @click="handleScan" :disabled="scanning || !scanInput.trim()">Tandai Ditemukan</button>
       </div>
       <p v-if="scanMsg" :class="['scan-msg', scanIsError ? 'scan-err' : 'scan-ok']">{{ scanMsg }}</p>
     </div>
@@ -201,7 +213,7 @@ async function doBatalkan() {
           <tr v-for="it in anomaliItems" :key="it.id_item">
             <td class="kode">{{ it.aset?.kode_aset }}</td>
             <td>{{ it.aset?.nama_perangkat }}</td>
-            <td class="text-sm">{{ fmtDateTime(it.waktu_scan!) }}</td>
+            <td class="text-sm">{{ it.waktu_scan ? fmtDateTime(it.waktu_scan) : '—' }}</td>
           </tr>
         </tbody>
       </table>

@@ -3,10 +3,17 @@
 // Nama lurus: PRTG = "nama site" atau "nama site - keterangan"; ganti nama baku → site ERP & semua device site itu ikut berubah.
 // Backend: /api/prtg-rekon (aktif hanya bila PRTG_REKON_ENABLED=true).
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
-import { confirmDialog, promptDialog } from '@/composables/useDialog'
-import { useRekonApi, pesanError } from '@/composables/useRekonApi'
+import { confirmDialog, promptDialog, pesanGalat } from '@/composables/useDialog'
+import { useRekonApi, pesanError as pesanErrorRekon } from '@/composables/useRekonApi'
+import { todayLocal } from '@/composables/useFormat'
 
 const { http, butuhLogin, passInput, passErr, masuk, tanganiGagalLogin } = useRekonApi()
+// Pesan server / 401 / 404 dari helper rekon; selain itu (koneksi putus, 500 tanpa pesan) pakai pesan ramah.
+function pesanError(e: any): string {
+  const m = e?.response?.data?.message
+  const s = e?.response?.status
+  return s === 401 || s === 404 || (Array.isArray(m) ? m.length : m) ? pesanErrorRekon(e) : pesanGalat(e, 'Gagal')
+}
 
 interface Site {
   id_site: number; kode_site: string; nama_site: string
@@ -209,6 +216,7 @@ async function pasangkan(s: Site, d: Dev) {
     if (!ok) return
   }
   const u = ui[d.objid]
+  if (u?.busy) return
   if (u) u.busy = true
   try {
     const { data } = await http.patch(`/${d.objid}`, { device_name: d.device_name, id_site: s.id_site })
@@ -235,6 +243,7 @@ async function lepas(s: Site, d: Dev) {
   })
   if (!ok) return
   const u = ui[d.objid]
+  if (u?.busy) return
   if (u) u.busy = true
   try {
     // id_site 0 = sengaja dilepas (tidak kembali ke tebakan otomatis)
@@ -270,6 +279,7 @@ async function terapkan(s: Site, d: Dev) {
   })
   if (!ok) return
   const u = ui[d.objid]
+  if (u?.busy) return
   if (u) u.busy = true
   flash(d, '')
   try {
@@ -309,7 +319,9 @@ function terapkanHasilDevice(meta: any) {
   }
 }
 async function dismantle(s: Site) {
-  const hariIni = new Date().toISOString().slice(0, 10)
+  if (siteUi[s.id_site]?.busy) return
+  // tanggal lokal (WIB) — toISOString() memberi tanggal kemarin sebelum pukul 07.00
+  const hariIni = todayLocal()
   const tanggal = await promptDialog({
     title: `Dismantle: ${s.nama_site}`,
     label: 'Tanggal dismantle (YYYY-MM-DD)',
@@ -337,7 +349,7 @@ async function dismantle(s: Site) {
     confirmLabel: 'Dismantle',
     variant: 'danger',
   })
-  if (!ok) return
+  if (!ok || siteUi[s.id_site]?.busy) return
   siteUi[s.id_site] = { busy: true, msg: '', err: false }
   try {
     const { data } = await http.post(`/site/${s.id_site}/dismantle`, { tanggal: tanggal.trim(), catatan: catatan.trim() || undefined })
@@ -360,7 +372,7 @@ async function batalDismantle(s: Site) {
     confirmLabel: 'Batalkan dismantle',
     variant: 'warning',
   })
-  if (!ok) return
+  if (!ok || siteUi[s.id_site]?.busy) return
   siteUi[s.id_site] = { busy: true, msg: '', err: false }
   try {
     const { data } = await http.post(`/site/${s.id_site}/batal-dismantle`)

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import MasterNav from './MasterNav.vue'
 import { ref, onMounted } from 'vue'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, pesanGalat } from '@/composables/useDialog'
 import api from '@/services/api'
 
 export interface Gudang {
@@ -36,7 +36,7 @@ async function fetchData() {
     const r = await api.get('/master/gudang')
     list.value = r.data.data
   } catch (e: any) {
-    error.value = e.response?.data?.message ?? 'Gagal memuat data gudang'
+    error.value = pesanGalat(e, 'Gagal memuat data gudang')
   } finally {
     loading.value = false
   }
@@ -65,7 +65,8 @@ function openEdit(g: Gudang) {
 }
 
 async function handleSubmit() {
-  if (!form.value.kode_gudang || !form.value.nama_gudang) {
+  if (submitting.value) return
+  if (!form.value.kode_gudang.trim() || !form.value.nama_gudang.trim()) {
     formError.value = 'Kode dan Nama wajib diisi'
     return
   }
@@ -83,14 +84,17 @@ async function handleSubmit() {
     setTimeout(() => (successMsg.value = ''), 3000)
     fetchData()
   } catch (e: any) {
-    formError.value = e.response?.data?.message ?? 'Terjadi kesalahan'
+    formError.value = pesanGalat(e, 'Gagal menyimpan gudang')
   } finally {
     submitting.value = false
   }
 }
 
+const busyId = ref<number | null>(null)
 async function hapusGudang(g: Gudang) {
+  if (busyId.value !== null) return
   if (!(await confirmDialog({ title: 'Hapus Gudang?', message: 'Hapus gudang ' + g.nama_gudang + '?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  busyId.value = g.id_gudang
   try {
     await api.delete(`/master/gudang/${g.id_gudang}`)
     list.value = list.value.filter((x) => x.id_gudang !== g.id_gudang)
@@ -98,6 +102,8 @@ async function hapusGudang(g: Gudang) {
     setTimeout(() => (successMsg.value = ''), 3000)
   } catch (e: any) {
     await alertError(e, 'Gagal menghapus gudang')
+  } finally {
+    busyId.value = null
   }
 }
 </script>
@@ -115,7 +121,7 @@ async function hapusGudang(g: Gudang) {
 
     <!-- Alert -->
     <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error" class="alert alert-danger">{{ error }} <button type="button" class="btn btn-sm btn-secondary" @click="fetchData">Coba lagi</button></div>
 
     <!-- Table -->
     <div class="table-card">
@@ -132,7 +138,7 @@ async function hapusGudang(g: Gudang) {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!list.length">
+          <tr v-if="!list.length && !error">
             <td colspan="6">
               <div class="empty-state">
                 <div class="empty-icon">🏬</div>
@@ -157,7 +163,7 @@ async function hapusGudang(g: Gudang) {
             <td>
               <div class="actions">
                 <button type="button" class="btn btn-sm btn-soft-blue" @click="openEdit(g)">Edit</button>
-                <button type="button" class="btn btn-sm btn-soft-danger" @click="hapusGudang(g)">Hapus</button>
+                <button type="button" class="btn btn-sm btn-soft-danger" :disabled="busyId === g.id_gudang" @click="hapusGudang(g)">{{ busyId === g.id_gudang ? '…' : 'Hapus' }}</button>
               </div>
             </td>
           </tr>

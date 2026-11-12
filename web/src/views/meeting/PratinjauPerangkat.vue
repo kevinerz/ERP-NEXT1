@@ -13,8 +13,27 @@ const video = ref<HTMLVideoElement | null>(null)
 const level = ref(0)
 const daftarMic = ref<MediaDeviceInfo[]>([])
 const daftarCam = ref<MediaDeviceInfo[]>([])
-const galat = ref('')
+const galatCam = ref('')
+const galatMic = ref('')
 const memuat = ref(false)
+// nomor urut permintaan: izin yang baru dijawab setelah toggle/ganti perangkat/keluar tidak boleh menyalakan stream basi
+let seqCam = 0
+let seqMic = 0
+
+/** Alasan yang bisa ditindaklanjuti pengguna dari error getUserMedia */
+function alasanMedia(e: any, jenis: 'Kamera' | 'Mikrofon') {
+  switch (e?.name) {
+    case 'NotAllowedError': case 'SecurityError':
+      return `Izin ${jenis.toLowerCase()} ditolak — izinkan di pengaturan browser (ikon gembok di address bar), lalu nyalakan lagi.`
+    case 'NotFoundError': case 'OverconstrainedError':
+      return `${jenis} tidak ditemukan. Pastikan perangkat terpasang, atau pilih "Bawaan sistem".`
+    case 'NotReadableError': case 'AbortError':
+      return `${jenis} sedang dipakai aplikasi lain atau bermasalah. Tutup aplikasi lain (Zoom/Meet/kamera) lalu coba lagi.`
+    default:
+      return `${jenis} tidak bisa dipakai${e?.message ? ` (${e.message})` : ''}.`
+  }
+}
+const TANPA_MEDIA = 'Browser ini tidak mengizinkan akses kamera/mikrofon (halaman harus dibuka lewat HTTPS dengan browser terbaru).'
 let streamCam: MediaStream | null = null
 let streamMic: MediaStream | null = null
 let ctx: AudioContext | null = null
@@ -43,27 +62,37 @@ function hentikanMic() {
 }
 
 async function nyalakanCam() {
+  const seq = ++seqCam
   hentikanCam()
-  if (!kamera.value || !navigator.mediaDevices?.getUserMedia) return
+  if (!kamera.value) { memuat.value = false; return }
+  if (!navigator.mediaDevices?.getUserMedia) { galatCam.value = TANPA_MEDIA; kamera.value = false; return }
   memuat.value = true
   try {
-    streamCam = await navigator.mediaDevices.getUserMedia({ video: camId.value ? { deviceId: { exact: camId.value } } : { width: 960, height: 540 } })
+    const s = await navigator.mediaDevices.getUserMedia({ video: camId.value ? { deviceId: { exact: camId.value } } : { width: 960, height: 540 } })
+    if (seq !== seqCam) { s.getTracks().forEach((t) => t.stop()); return }
+    streamCam = s
     if (video.value) { video.value.srcObject = streamCam; video.value.play().catch(() => {}) }
-    galat.value = ''
+    galatCam.value = ''
     await muatPerangkat()
   } catch (e: any) {
-    galat.value = e?.name === 'NotAllowedError' ? 'Izin kamera ditolak — izinkan di pengaturan browser (ikon gembok di address bar).' : `Kamera tidak bisa dipakai: ${e?.message || e}`
+    if (seq !== seqCam) return
+    galatCam.value = alasanMedia(e, 'Kamera')
     kamera.value = false
   } finally {
-    memuat.value = false
+    if (seq === seqCam) memuat.value = false
   }
 }
 
 async function nyalakanMic() {
+  const seq = ++seqMic
   hentikanMic()
-  if (!mic.value || !navigator.mediaDevices?.getUserMedia) return
+  if (!mic.value) return
+  if (!navigator.mediaDevices?.getUserMedia) { galatMic.value = TANPA_MEDIA; mic.value = false; return }
   try {
-    streamMic = await navigator.mediaDevices.getUserMedia({ audio: micId.value ? { deviceId: { exact: micId.value } } : true })
+    const s = await navigator.mediaDevices.getUserMedia({ audio: micId.value ? { deviceId: { exact: micId.value } } : true })
+    if (seq !== seqMic) { s.getTracks().forEach((t) => t.stop()); return }
+    streamMic = s
+    galatMic.value = ''
     const AC = window.AudioContext || (window as any).webkitAudioContext
     ctx = new AC()
     const an = ctx.createAnalyser()
@@ -80,7 +109,8 @@ async function nyalakanMic() {
     loop()
     await muatPerangkat()
   } catch (e: any) {
-    galat.value = e?.name === 'NotAllowedError' ? 'Izin mikrofon ditolak — izinkan di pengaturan browser.' : `Mikrofon tidak bisa dipakai: ${e?.message || e}`
+    if (seq !== seqMic) return
+    galatMic.value = alasanMedia(e, 'Mikrofon')
     mic.value = false
   }
 }
@@ -91,7 +121,7 @@ onMounted(() => { muatPerangkat(); nyalakanCam(); nyalakanMic() })
 onBeforeUnmount(lepas)
 
 /** Lepas kamera & mikrofon (dipanggil sebelum masuk rapat supaya perangkat tidak dipakai dobel) */
-function lepas() { hentikanCam(); hentikanMic() }
+function lepas() { seqCam++; seqMic++; memuat.value = false; hentikanCam(); hentikanMic() }
 defineExpose({ lepas })
 
 const label = (d: MediaDeviceInfo, i: number, jenis: string) => d.label || `${jenis} ${i + 1}`
@@ -100,18 +130,19 @@ const label = (d: MediaDeviceInfo, i: number, jenis: string) => d.label || `${je
 <template>
   <div class="pp">
     <div class="pp-layar">
-      <video v-show="kamera && !galat" ref="video" autoplay playsinline muted></video>
-      <div v-if="!kamera || galat" class="pp-avatar" :style="{ background: warnaNama(nama || 'A') }">{{ inisial(nama || 'Anda') }}</div>
+      <video v-show="kamera && !galatCam" ref="video" autoplay playsinline muted></video>
+      <div v-if="!kamera || galatCam" class="pp-avatar" :style="{ background: warnaNama(nama || 'A') }">{{ inisial(nama || 'Anda') }}</div>
       <span v-if="memuat" class="pp-memuat">Menyalakan kamera…</span>
       <div class="pp-level" :class="{ mati: !mic }" title="Indikator suara mikrofon">
         <i v-for="n in 12" :key="n" :class="{ on: mic && level * 12 >= n }"></i>
       </div>
       <div class="pp-tombol">
-        <button type="button" :class="{ mati: !mic }" :title="mic ? 'Matikan mikrofon' : 'Nyalakan mikrofon'" @click="mic = !mic">{{ mic ? '🎙️' : '🔇' }}</button>
-        <button type="button" :class="{ mati: !kamera }" :title="kamera ? 'Matikan kamera' : 'Nyalakan kamera'" @click="kamera = !kamera; galat = ''">{{ kamera ? '📷' : '🚫' }}</button>
+        <button type="button" :class="{ mati: !mic }" :title="mic ? 'Matikan mikrofon' : 'Nyalakan mikrofon'" @click="mic = !mic; galatMic = ''">{{ mic ? '🎙️' : '🔇' }}</button>
+        <button type="button" :class="{ mati: !kamera }" :title="kamera ? 'Matikan kamera' : 'Nyalakan kamera'" @click="kamera = !kamera; galatCam = ''">{{ kamera ? '📷' : '🚫' }}</button>
       </div>
     </div>
-    <p v-if="galat" class="pp-galat">{{ galat }}</p>
+    <p v-if="galatCam" class="pp-galat" role="alert">{{ galatCam }}</p>
+    <p v-if="galatMic" class="pp-galat" role="alert">{{ galatMic }}</p>
     <div class="pp-pilih">
       <label>
         <span>🎙️ Mikrofon</span>

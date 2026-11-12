@@ -8,7 +8,7 @@ import { useOperationsStore } from '@/stores/operations'
 import { useAuthStore } from '@/stores/auth'
 import { fmtDateTime, statusLabel } from '@/composables/useFormat'
 import { useFilterUrl } from '@/composables/useFilterUrl'
-import { confirmDialog, promptDialog, alertError, toast } from '@/composables/useDialog'
+import { confirmDialog, promptDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 import { exportCsv } from '@/composables/useExport'
 import BasePagination from '@/components/BasePagination.vue'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
@@ -53,6 +53,8 @@ const TAMPILAN = [
   { k: 'semua', label: 'Semua', ikon: '🗂️' },
 ]
 const NOC_WARNA: Record<string, string> = { online: '#16a34a', partial: '#d97706', internet_ok: '#7c3aed', macet: '#ea580c', offline: '#dc2626' }
+// Hanya nilai yang diterima API buat-tiket (CreateTicketDto.sumber_tiket)
+const SUMBER_FORM = [{ v: 'Internal', label: 'Internal' }, { v: 'WA', label: 'WhatsApp' }, { v: 'Portal', label: 'Portal' }, { v: 'PRTG', label: 'PRTG' }]
 const TEMPLATE_JUDUL = ['Link down', 'Internet lambat', 'Koneksi putus-putus', 'Mati total', 'Port WAN down', 'Tidak bisa akses situs tertentu', 'Perangkat mati / restart']
 
 // ── Filter (tersimpan di URL) ────────────────────────────────────────────────
@@ -112,39 +114,71 @@ const memuatPapan = ref(false)
 const terakhir = ref<Date | null>(null)
 const sekarang = ref(Date.now())
 
+const galatInsight = ref(false)
+let urutInsight = 0
 async function muatInsight(cekBaru = false) {
+  const no = ++urutInsight
   try {
-    const { data } = await api.get('/operations/insight', { params: { hari: hariInsight.value } })
+    const { data } = await api.get('/operations/insight', { params: { hari: hariInsight.value }, senyap: cekBaru })
+    if (no !== urutInsight) return
     const lama = insight.value?.kpi.masuk_hari_ini ?? null
     insight.value = data.data
+    galatInsight.value = false
     const baru = (insight.value?.kpi.masuk_hari_ini ?? 0) - (lama ?? 0)
     if (cekBaru && lama !== null && baru > 0) {
       toast(`🔔 ${baru} gangguan baru masuk`, 'warning', 6000)
       denting()
     }
-  } catch { /* panel analitik opsional */ }
+  } catch { if (no === urutInsight && !insight.value) galatInsight.value = true }
 }
-async function muatDaftar() {
-  if (mode.value === 'papan') return muatPapan()
-  await ops.fetchList(params())
-  terakhir.value = new Date()
+// Nomor urut permintaan: jawaban lama (pencarian/filter sebelumnya) tidak boleh menimpa yang baru.
+let urutDaftar = 0
+async function muatDaftar(latar = false) {
+  if (mode.value === 'papan') return muatPapan(latar)
+  const no = ++urutDaftar
+  memuatPapan.value = false
+  if (!latar) ops.loading = true
+  try {
+    const { data } = await api.get('/operations', { params: params(), senyap: latar })
+    if (no !== urutDaftar) return
+    const meta = data.meta ?? ops.meta
+    // Halaman terakhir menjadi kosong (mis. setelah aksi massal) → mundur ke halaman terakhir yang ada
+    if (!(data.data ?? []).length && page.value > 1 && meta.total_pages >= 1 && page.value > meta.total_pages) {
+      page.value = meta.total_pages
+      return muatDaftar(latar)
+    }
+    ops.list = data.data ?? []
+    ops.meta = meta
+    ops.error = ''
+    terakhir.value = new Date()
+  } catch (e) {
+    // Penyegaran otomatis yang gagal tidak mengganggu daftar yang sudah tampil
+    if (no === urutDaftar && (!latar || !ops.list.length)) ops.error = pesanGalat(e, 'Gagal memuat tiket')
+  } finally { if (no === urutDaftar) ops.loading = false }
 }
-async function muatPapan() {
-  memuatPapan.value = true
+async function muatPapan(latar = false) {
+  const no = ++urutDaftar
+  ops.loading = false // permintaan tabel yang tertunda sudah diabaikan
+  if (!latar) memuatPapan.value = true
   try {
     // Papan: tiket aktif + yang selesai hari ini, maksimal 300
     const p = params({ page: 1, limit: 300, urut: 'sla' })
     delete p.tampilan
     const [a, b] = await Promise.all([
-      api.get('/operations', { params: { ...p, tampilan: tampilan.value === 'semua' || tampilan.value === 'selesai_hari_ini' ? 'aktif' : tampilan.value } }),
-      api.get('/operations', { params: { ...p, tampilan: 'selesai_hari_ini', limit: 60 } }),
+      api.get('/operations', { params: { ...p, tampilan: tampilan.value === 'semua' || tampilan.value === 'selesai_hari_ini' ? 'aktif' : tampilan.value }, senyap: latar }),
+      api.get('/operations', { params: { ...p, tampilan: 'selesai_hari_ini', limit: 60 }, senyap: latar }),
     ])
-    papan.value = [...(a.data.data ?? []), ...(b.data.data ?? [])]
+    if (no !== urutDaftar) return
+    // Tiket bisa muncul di kedua jawaban bila statusnya berubah di antara dua permintaan
+    const unik = new Map<number, any>()
+    for (const x of [...(a.data.data ?? []), ...(b.data.data ?? [])]) unik.set(x.id_ticket, x)
+    papan.value = [...unik.values()]
+    ops.error = ''
     terakhir.value = new Date()
-  } catch (e: any) { ops.error = e?.response?.data?.message || 'Gagal memuat papan' }
-  finally { memuatPapan.value = false }
+  } catch (e) { if (no === urutDaftar && (!latar || !papan.value.length)) ops.error = pesanGalat(e, 'Gagal memuat papan') }
+  finally { if (no === urutDaftar) memuatPapan.value = false }
 }
-function segarkan(cekBaru = false) { muatDaftar(); muatInsight(cekBaru) }
+function segarkan(latar = false) { muatDaftar(latar); muatInsight(latar) }
 function terapkan() { page.value = 1; pilih.value = new Set(); muatDaftar() }
 
 let tCari: ReturnType<typeof setTimeout> | undefined
@@ -157,11 +191,15 @@ watch(status, (v) => { if (v && !AKTIF.includes(v) && ['aktif', 'tanpa_pic', 'le
 // Status router NOCaaS untuk tiket aktif yang tampil
 const nocStatus = ref<Record<number, { status: string; label: string }>>({})
 const barisTampil = computed<any[]>(() => (mode.value === 'papan' ? papan.value : ops.list))
+let nocDiambil = 0
 watch(barisTampil, async (list) => {
-  const ids = [...new Set(list.filter((t) => AKTIF.includes(t.status_tiket)).map((t) => t.id_site))].filter((id) => !(id in nocStatus.value))
+  // Status yang sudah diambil dipakai ulang paling lama 1 menit, supaya router yang pulih/putus ikut terbarui
+  const basi = Date.now() - nocDiambil > 60_000
+  const ids = [...new Set(list.filter((t) => AKTIF.includes(t.status_tiket)).map((t) => t.id_site))].filter((id) => basi || !(id in nocStatus.value))
   if (!ids.length) return
+  if (basi) nocDiambil = Date.now()
   try {
-    const { data } = await api.get('/nocaas/status-site', { params: { ids: ids.slice(0, 200).join(',') } })
+    const { data } = await api.get('/nocaas/status-site', { params: { ids: ids.slice(0, 200).join(',') }, senyap: true })
     nocStatus.value = { ...nocStatus.value, ...data.data }
   } catch { /* NOCaaS opsional */ }
 })
@@ -272,7 +310,7 @@ async function massalJenis() {
 // ── Aksi cepat per tiket ─────────────────────────────────────────────────────
 const sibuk = ref<number | null>(null)
 async function ubahStatus(t: any, ke: string, tanya = true) {
-  if (t.status_tiket === ke) return
+  if (t.status_tiket === ke || sibuk.value !== null) return
   if (tanya && !(await confirmDialog({
     title: `${t.nomor_tiket} → ${statusLabel(ke)}?`,
     message: `${t.site?.nama_site ?? ''}\nPelanggan akan menerima notifikasi WhatsApp perubahan status.`,
@@ -289,6 +327,7 @@ async function ubahStatus(t: any, ke: string, tanya = true) {
 }
 async function ambil(t: any) {
   if (!auth.user?.id_karyawan) return alertError(null, 'Akun Anda belum terhubung ke data karyawan')
+  if (sibuk.value !== null) return
   if (!(await confirmDialog({ title: `Ambil ${t.nomor_tiket}?`, message: `Anda akan menjadi PIC untuk ${t.site?.nama_site ?? 'tiket ini'} dan status menjadi "Dikerjakan".`, confirmLabel: 'Ambil tiket' }))) return
   sibuk.value = t.id_ticket
   try {
@@ -299,7 +338,7 @@ async function ambil(t: any) {
   finally { sibuk.value = null }
 }
 async function salinNomor(t: any) {
-  try { await navigator.clipboard.writeText(`${t.nomor_tiket} — ${t.judul_tiket} — ${t.site?.nama_site ?? ''}`); toast('Disalin ke clipboard', 'default', 2000) } catch { /* abaikan */ }
+  try { await navigator.clipboard.writeText(`${t.nomor_tiket} — ${t.judul_tiket} — ${t.site?.nama_site ?? ''}`); toast('Disalin ke clipboard', 'default', 2000) } catch { toast('Tidak bisa menyalin — izin clipboard ditolak browser', 'warning') }
 }
 const buka = (t: any) => router.push(`/operations/${t.id_ticket}`)
 
@@ -317,14 +356,18 @@ async function jatuhkan(s: string) {
 // ── Ekspor CSV ───────────────────────────────────────────────────────────────
 const mengekspor = ref(false)
 async function ekspor() {
+  if (mengekspor.value) return
   mengekspor.value = true
   try {
     const semua: any[] = []
+    let total = 0
     for (let hal = 1; hal <= 10; hal++) {
       const { data } = await api.get('/operations', { params: params({ page: hal, limit: 500 }) })
       semua.push(...(data.data ?? []))
+      total = data.meta?.total ?? semua.length
       if (hal >= (data.meta?.total_pages ?? 1)) break
     }
+    if (!semua.length) { toast('Tidak ada tiket untuk diekspor pada filter ini', 'warning'); return }
     exportCsv(`gangguan-${new Date().toISOString().slice(0, 10)}.csv`, [{
       headers: ['No. Tiket', 'Judul', 'Status', 'Prioritas', 'Sumber', 'Jenis Gangguan', 'Kode Site', 'Site', 'Pelanggan', 'Kota', 'Teknisi', 'Dibuka', 'Selesai', 'Durasi (menit)', 'SLA Due', 'Lewat SLA', 'Root Cause'],
       rows: semua.map((t) => [
@@ -334,7 +377,8 @@ async function ekspor() {
         Math.round(umurMenit(t)), t.sla_due ? fmtDateTime(t.sla_due) : '', t.sla_breached || (AKTIF.includes(t.status_tiket) && t.sla_due && +new Date(t.sla_due) < Date.now()) ? 'Ya' : 'Tidak', t.root_cause,
       ]),
     }])
-    toast(`${semua.length} tiket diekspor`)
+    if (total > semua.length) toast(`Hanya ${semua.length.toLocaleString('id-ID')} dari ${total.toLocaleString('id-ID')} tiket yang diekspor — persempit filter tanggal`, 'warning')
+    else toast(`${semua.length} tiket diekspor`)
   } catch (e) { alertError(e, 'Ekspor gagal') }
   finally { mengekspor.value = false }
 }
@@ -352,6 +396,7 @@ async function cariSite(q: string): Promise<OpsiCari[]> {
 }
 function bukaForm() { form.value = formKosong(); siteLabel.value = ''; formError.value = ''; formBuka.value = true }
 async function simpanTiket() {
+  if (submitting.value) return
   if (!form.value.id_site) { formError.value = 'Pilih site terlebih dahulu'; return }
   if (!form.value.judul_tiket.trim()) { formError.value = 'Judul tiket wajib diisi'; return }
   submitting.value = true; formError.value = ''
@@ -362,7 +407,7 @@ async function simpanTiket() {
     formBuka.value = false
     toast(`Tiket ${r.nomor_tiket ?? ''} dibuat`)
     router.push(`/operations/${r.id_ticket}`)
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal membuat tiket' }
+  } catch (e) { formError.value = pesanGalat(e, 'Gagal membuat tiket') }
   finally { submitting.value = false }
 }
 
@@ -413,7 +458,7 @@ function tombol(e: KeyboardEvent) {
 onMounted(async () => {
   ops.fetchTeknisiList()
   segarkan()
-  tAuto = setInterval(() => { if (autoRefresh.value && document.visibilityState === 'visible' && !pilih.value.size && !seret.value) segarkan(true) }, 30_000)
+  tAuto = setInterval(() => { if (autoRefresh.value && document.visibilityState === 'visible' && !pilih.value.size && !seret.value && sibuk.value === null) segarkan(true) }, 30_000)
   tJam = setInterval(() => { sekarang.value = Date.now() }, 15_000)
   window.addEventListener('keydown', tombol)
 })
@@ -443,9 +488,9 @@ onBeforeUnmount(() => { clearInterval(tAuto); clearInterval(tJam); clearTimeout(
         </div>
       </div>
       <div class="gg-hero-aksi">
-        <button type="button" class="gg-btn-kaca" title="Muat ulang (R)" @click="segarkan()">🔄</button>
+        <button type="button" class="gg-btn-kaca" title="Muat ulang (R)" aria-label="Muat ulang" @click="segarkan()">🔄</button>
         <button type="button" class="gg-btn-kaca" :disabled="mengekspor" title="Ekspor CSV sesuai filter" @click="ekspor">{{ mengekspor ? '⏳' : '📥' }} <span class="hp-sembunyi">Ekspor</span></button>
-        <button type="button" class="gg-btn-kaca" title="Pintasan keyboard (?)" @click="bantuan = !bantuan">⌨️</button>
+        <button type="button" class="gg-btn-kaca" title="Pintasan keyboard (?)" aria-label="Pintasan keyboard" @click="bantuan = !bantuan">⌨️</button>
         <button type="button" class="gg-btn-baru" @click="bukaForm">＋ Buat tiket <kbd>N</kbd></button>
       </div>
     </section>
@@ -504,6 +549,11 @@ onBeforeUnmount(() => { clearInterval(tAuto); clearInterval(tJam); clearTimeout(
         </div>
       </div>
     </section>
+
+    <div v-if="galatInsight" class="alert alert-warning">
+      Ringkasan KPI & analitik gagal dimuat — angka di atas belum tentu benar.
+      <button type="button" class="btn btn-sm btn-secondary" @click="muatInsight()">Coba lagi</button>
+    </div>
 
     <!-- ── ANALITIK ──────────────────────────────────────────────────────── -->
     <section class="gg-analitik-kepala">
@@ -643,12 +693,17 @@ onBeforeUnmount(() => { clearInterval(tAuto); clearInterval(tJam); clearTimeout(
       </Transition>
     </section>
 
-    <div v-if="ops.error" class="alert alert-danger">{{ ops.error }}</div>
+    <div v-if="ops.error" class="alert alert-danger">{{ ops.error }} <button type="button" class="btn btn-sm btn-secondary" @click="segarkan()">Coba lagi</button></div>
 
     <!-- ── TABEL ─────────────────────────────────────────────────────────── -->
     <section v-if="mode === 'tabel'" class="gg-tabel-kartu">
       <div v-if="ops.loading && !ops.list.length" class="gg-skeleton">
         <div v-for="i in 6" :key="i" class="gg-sk-baris" :style="{ animationDelay: `${i * 80}ms` }" />
+      </div>
+      <div v-else-if="!ops.list.length && ops.error" class="gg-kosong">
+        <div class="gg-kosong-ikon">⚠️</div>
+        <b>Daftar tiket belum bisa ditampilkan</b>
+        <small>Periksa koneksi lalu tekan “Coba lagi” di atas.</small>
       </div>
       <div v-else-if="!ops.list.length" class="gg-kosong">
         <div class="gg-kosong-ikon">{{ tampilan === 'aktif' || tampilan === 'lewat_sla' || tampilan === 'tanpa_pic' ? '🌤️' : '🔍' }}</div>
@@ -713,9 +768,9 @@ onBeforeUnmount(() => { clearInterval(tAuto); clearInterval(tJam); clearTimeout(
               </td>
               <td class="c-aksi" @click.stop>
                 <div class="gg-aksi">
-                  <button v-if="t.status_tiket === 'Open'" type="button" title="Mulai kerjakan" :disabled="sibuk === t.id_ticket" @click="ubahStatus(t, 'In_Progress')">▶️</button>
-                  <button v-if="AKTIF.includes(t.status_tiket)" type="button" title="Tandai selesai" :disabled="sibuk === t.id_ticket" @click="ubahStatus(t, 'Resolved')">✅</button>
-                  <button type="button" title="Salin ringkasan tiket" @click="salinNomor(t)">📋</button>
+                  <button v-if="t.status_tiket === 'Open'" type="button" title="Mulai kerjakan" aria-label="Mulai kerjakan" :disabled="sibuk === t.id_ticket" @click="ubahStatus(t, 'In_Progress')">▶️</button>
+                  <button v-if="AKTIF.includes(t.status_tiket)" type="button" title="Tandai selesai" aria-label="Tandai selesai" :disabled="sibuk === t.id_ticket" @click="ubahStatus(t, 'Resolved')">✅</button>
+                  <button type="button" title="Salin ringkasan tiket" aria-label="Salin ringkasan tiket" @click="salinNomor(t)">📋</button>
                   <a :href="`/operations/${t.id_ticket}`" target="_blank" rel="noopener" title="Buka di tab baru">↗</a>
                 </div>
               </td>
@@ -757,7 +812,7 @@ onBeforeUnmount(() => { clearInterval(tAuto); clearInterval(tJam); clearTimeout(
                 <span class="gg-sumber">{{ SUMBER_IKON[t.sumber_tiket] ?? '•' }} {{ durasi(umurMenit(t)) }}</span>
                 <span v-if="nocDari(t)" class="gg-noc kecil" :style="{ color: NOC_WARNA[nocDari(t)!.status], borderColor: NOC_WARNA[nocDari(t)!.status] }">🛰️ {{ nocDari(t)!.label }}</span>
                 <span v-if="t.teknisi || t.kontak_teknisi" class="ava kecil" :title="t.teknisi?.nama_lengkap ?? t.kontak_teknisi?.nama" :style="{ background: warnaNama(t.teknisi?.nama_lengkap ?? t.kontak_teknisi?.nama) }">{{ inisial(t.teknisi?.nama_lengkap ?? t.kontak_teknisi?.nama) }}</span>
-                <button v-else-if="AKTIF.includes(t.status_tiket)" type="button" class="gg-ambil kecil" @click.stop="ambil(t)">🙋</button>
+                <button v-else-if="AKTIF.includes(t.status_tiket)" type="button" class="gg-ambil kecil" title="Ambil tiket ini" aria-label="Ambil tiket ini" :disabled="sibuk === t.id_ticket" @click.stop="ambil(t)">🙋</button>
               </div>
             </article>
           </TransitionGroup>
@@ -824,7 +879,7 @@ onBeforeUnmount(() => { clearInterval(tAuto); clearInterval(tJam); clearTimeout(
             <label class="gg-field">
               <span class="form-label">Sumber laporan</span>
               <select v-model="form.sumber_tiket" class="form-select">
-                <option v-for="s in ['Internal', 'WhatsApp', 'Telepon', 'Email', 'PRTG']" :key="s" :value="s">{{ SUMBER_IKON[s] }} {{ s }}</option>
+                <option v-for="s in SUMBER_FORM" :key="s.v" :value="s.v">{{ SUMBER_IKON[s.v] }} {{ s.label }}</option>
               </select>
             </label>
             <label class="gg-field">
@@ -843,7 +898,7 @@ onBeforeUnmount(() => { clearInterval(tAuto); clearInterval(tJam); clearTimeout(
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" @click="formBuka = false">Batal</button>
-          <button type="button" class="btn btn-primary" :disabled="submitting" @click="simpanTiket">{{ submitting ? 'Membuat…' : '🚀 Buat tiket' }}</button>
+          <button type="button" class="btn btn-primary" :disabled="submitting" :aria-busy="submitting" @click="simpanTiket">{{ submitting ? 'Membuat…' : '🚀 Buat tiket' }}</button>
         </div>
       </div>
     </div>

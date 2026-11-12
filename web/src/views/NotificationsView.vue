@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNotificationStore } from '@/stores/notification'
 import { fmtRelativeTime } from '@/composables/useFormat'
+import { toast } from '@/composables/useDialog'
 
 const router = useRouter()
 const notif = useNotificationStore()
@@ -14,9 +15,26 @@ function goNotif(n: any) {
   if (n.url) router.push(n.url)
 }
 
-function loadMore() {
-  if (notif.meta.page < notif.meta.total_pages) {
-    notif.fetchNotifications(notif.meta.page + 1)
+// Store mengganti daftar dengan halaman yang diminta → halaman berikutnya disambungkan di sini
+async function loadMore() {
+  if (notif.loading || notif.meta.page >= notif.meta.total_pages) return
+  const lama = notif.notifications
+  await notif.fetchNotifications(notif.meta.page + 1)
+  if (notif.error) { toast(notif.error, 'danger'); return }
+  const ada = new Set(lama.map((n: any) => n.id_notif))
+  notif.notifications = [...lama, ...notif.notifications.filter((n: any) => !ada.has(n.id_notif))]
+}
+
+// markAllRead di store menelan error; berhasil = hitungan belum dibaca jadi 0
+const menandai = ref(false)
+async function tandaiSemua() {
+  if (menandai.value) return
+  menandai.value = true
+  try {
+    await notif.markAllRead()
+    if (notif.count > 0) toast('Gagal menandai semua notifikasi sebagai dibaca. Coba lagi.', 'danger')
+  } finally {
+    menandai.value = false
   }
 }
 
@@ -42,9 +60,10 @@ function fmtTime(d: string) {
         v-if="notif.count > 0"
         type="button"
         class="btn-read-all"
-        @click="notif.markAllRead()"
+        :disabled="menandai"
+        @click="tandaiSemua"
       >
-        Tandai semua dibaca
+        {{ menandai ? 'Menandai…' : 'Tandai semua dibaca' }}
       </button>
     </div>
 
@@ -107,6 +126,7 @@ function fmtTime(d: string) {
 .sub { margin: 0; font-size: 13px; color: #64748b; }
 .btn-read-all { padding: 8px 16px; background: #eff6ff; color: #1d4ed8; border: 1.5px solid #bfdbfe; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
 .btn-read-all:hover { background: #dbeafe; }
+.btn-read-all:disabled { opacity: 0.6; cursor: progress; }
 
 .notif-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
 

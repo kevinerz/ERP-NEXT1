@@ -5,7 +5,7 @@ import { useFinanceStore } from '@/stores/finance'
 import { printInvoiceDoc } from '@/composables/usePrint'
 import { fmtRupiah, fmtDate, statusLabel, todayLocal } from '@/composables/useFormat'
 import api from '@/services/api'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,8 +35,10 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 const METODE_LIST = ['Transfer', 'Tunai', 'Virtual Account', 'Cek', 'Lainnya']
 
 const inv = computed(() => finance.currentInvoice)
-const sisa = computed(() => (Number(inv.value?.total) || 0) - (Number(inv.value?.jumlah_dibayar) || 0))
-const canBayar = computed(() => inv.value && inv.value.status !== 'Lunas' && inv.value.status !== 'Batal')
+// Dibulatkan ke sen agar selisih floating-point tidak muncul di form/peringatan
+const sisa = computed(() => Math.round(((Number(inv.value?.total) || 0) - (Number(inv.value?.jumlah_dibayar) || 0)) * 100) / 100)
+// Server menolak pembayaran untuk invoice Draft (harus dikirim dulu), Lunas, dan Batal
+const canBayar = computed(() => inv.value && !['Draft', 'Lunas', 'Batal'].includes(inv.value.status))
 
 const showBayarModal = ref(false)
 const submitting = ref(false)
@@ -63,7 +65,7 @@ async function load() {
   try {
     await finance.fetchOne(id)
   } catch (err: any) {
-    loadError.value = err?.response?.data?.message ?? 'Gagal memuat invoice'
+    loadError.value = pesanGalat(err, 'Gagal memuat invoice')
   }
 }
 
@@ -130,6 +132,7 @@ async function handleHapus() {
   processing.value = true
   try {
     await finance.remove(id)
+    toast('Invoice dihapus')
     router.push('/finance/invoice')
   } catch (err: any) {
     await alertError(err, 'Gagal menghapus invoice')
@@ -151,6 +154,7 @@ function openBayar() {
 }
 
 async function handleBayar() {
+  if (submitting.value) return
   if (!bayarForm.value.tgl_bayar || !bayarForm.value.jumlah) {
     formError.value = 'Tanggal bayar dan jumlah wajib diisi'
     return
@@ -159,24 +163,23 @@ async function handleBayar() {
     formError.value = 'Jumlah bayar harus lebih dari 0'
     return
   }
-  // bayar melebihi sisa tagihan → minta konfirmasi (bisa salah ketik)
-  if (Number(bayarForm.value.jumlah) > sisa.value && !(await confirmDialog({
-    title: 'Jumlah melebihi sisa tagihan',
-    message: `Jumlah bayar ${fmtRupiah(bayarForm.value.jumlah)} lebih besar dari sisa tagihan ${fmtRupiah(sisa.value)}. Tetap catat pembayaran ini?`,
-    variant: 'warning',
-    confirmLabel: 'Ya, Catat',
-  }))) return
+  // Server selalu menolak pembayaran melebihi sisa tagihan — beri tahu sebelum dikirim
+  if (Number(bayarForm.value.jumlah) > sisa.value + 0.01) {
+    formError.value = `Jumlah bayar ${fmtRupiah(bayarForm.value.jumlah)} melebihi sisa tagihan ${fmtRupiah(sisa.value)}`
+    return
+  }
   submitting.value = true
   formError.value = ''
   try {
     const payload: any = { ...bayarForm.value }
     if (!payload.referensi) delete payload.referensi
     if (!payload.catatan) delete payload.catatan
-    await finance.addPembayaran(id, payload)
+    await finance.addPembayaran(id, { ...payload, jumlah: Number(payload.jumlah) })
     showBayarModal.value = false
+    toast('Pembayaran dicatat')
     await load()
   } catch (err: any) {
-    formError.value = err?.response?.data?.message ?? 'Gagal mencatat pembayaran'
+    formError.value = pesanGalat(err, 'Gagal mencatat pembayaran')
   } finally {
     submitting.value = false
   }
@@ -195,6 +198,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
   hapusPayId.value = idPembayaran
   try {
     await finance.removePembayaran(idPembayaran)
+    toast('Pembayaran dihapus')
     await load()
   } catch (err: any) {
     await alertError(err, 'Gagal menghapus pembayaran')
@@ -214,14 +218,16 @@ async function handleHapusPembayaran(idPembayaran: number) {
     </div>
 
     <div v-if="finance.loading && !inv" class="loading-full">Memuat...</div>
-    <div v-else-if="loadError" class="alert-error">{{ loadError }}</div>
+    <div v-else-if="loadError" class="alert-error" role="alert">{{ loadError }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="load">↻ Coba lagi</button>
+    </div>
     <template v-else-if="inv">
 
       <!-- Header -->
       <div class="page-header">
         <div class="header-left">
           <div class="nomor">{{ inv.nomor_invoice }}</div>
-          <h2>{{ inv.site?.pelanggan?.nama_pelanggan }}</h2>
+          <h2>{{ inv.site?.pelanggan?.nama_pelanggan || '—' }}</h2>
           <div class="sub-row">
             <span class="sub">Periode {{ inv.periode }}</span>
             <span class="status-badge"
@@ -254,7 +260,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
       <div class="info-bar">
         <div class="info-item">
           <div class="info-label">Site</div>
-          <div class="info-value">{{ inv.site?.kode_site }} — {{ inv.site?.nama_site }}</div>
+          <div class="info-value">{{ inv.site ? `${inv.site.kode_site} — ${inv.site.nama_site}` : '—' }}</div>
         </div>
         <div class="info-item" v-if="inv.kontrak">
           <div class="info-label">Kontrak</div>
@@ -279,7 +285,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
           <span class="a-val">{{ fmtRupiah(inv.subtotal) }}</span>
         </div>
         <div class="amount-row">
-          <span class="a-label">PPN {{ Number(inv.ppn_persen) }}%</span>
+          <span class="a-label">PPN {{ Number(inv.ppn_persen) || 0 }}%</span>
           <span class="a-val">{{ fmtRupiah(inv.ppn_nominal) }}</span>
         </div>
         <div class="amount-row total">
@@ -335,7 +341,7 @@ async function handleHapusPembayaran(idPembayaran: number) {
           </div>
           <div class="field">
             <label>Jumlah (Rp) <span class="req">*</span></label>
-            <input v-model.number="bayarForm.jumlah" type="number" min="0" />
+            <input v-model.number="bayarForm.jumlah" type="number" min="0" step="0.01" />
           </div>
           <div class="field">
             <label>Metode</label>

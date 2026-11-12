@@ -1,18 +1,28 @@
 <script setup lang="ts">
 // Laporan QC ERP siap cetak / simpan PDF (Ctrl+P → Simpan sebagai PDF). Filter dari halaman /qc lewat query.
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 import { type QcModul, WARNA_STATUS, WARNA_PRIORITAS, IKON_JENIS } from './qc'
 
 const route = useRoute()
 const q = (k: string) => String(route.query[k] ?? '')
 const modul = ref<QcModul[]>([])
 const siap = ref(false)
+const galat = ref('')
+let timerCetak: ReturnType<typeof setTimeout> | null = null
 const terbuka = (s: string) => s === 'Baru' || s === 'Dikerjakan'
 
-onMounted(async () => {
-  const { data } = await api.get('/qc/modul')
+async function muat() {
+  galat.value = ''
+  let data: any
+  try {
+    data = (await api.get('/qc/modul')).data
+  } catch (e) {
+    galat.value = pesanGalat(e, 'Gagal memuat data QC')
+    return
+  }
   const cari = q('cari').toLowerCase()
   modul.value = (data.data as QcModul[]).map((m) => ({
     ...m,
@@ -23,8 +33,10 @@ onMounted(async () => {
   siap.value = true
   await nextTick()
   // ?pratinjau=1 → tampilkan saja tanpa langsung membuka dialog cetak
-  if (q('pratinjau') !== '1') setTimeout(() => window.print(), 400)
-})
+  if (q('pratinjau') !== '1') timerCetak = setTimeout(() => window.print(), 400)
+}
+onMounted(muat)
+onBeforeUnmount(() => { if (timerCetak) clearTimeout(timerCetak) })
 
 const ringkas = computed(() => {
   const semua = modul.value.flatMap((m) => m.catatan)
@@ -52,7 +64,12 @@ const tgl = (d: string) => new Date(d).toLocaleDateString('id-ID', { day: '2-dig
       <button class="btn btn-primary" @click="cetak">🖨 Cetak / Simpan PDF</button>
       <span>Pilih tujuan <b>"Simpan sebagai PDF"</b> di jendela cetak.</span>
     </div>
-    <p v-if="!siap">Memuat…</p>
+    <div v-if="galat" class="galat-state" role="alert">
+      <div class="galat-judul">Gagal memuat data</div>
+      <div>{{ galat }}</div>
+      <button type="button" class="btn btn-secondary btn-sm" @click="muat">↻ Coba lagi</button>
+    </div>
+    <p v-else-if="!siap">Memuat…</p>
     <template v-else>
       <header class="ct-kepala">
         <div>

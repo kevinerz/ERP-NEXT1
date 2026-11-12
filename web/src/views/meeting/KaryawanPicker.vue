@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
+import { pesanGalat } from '@/composables/useDialog'
 import { inisial, warnaNama } from './rapat-util'
 
 // Pilih banyak karyawan (aktif) — dikelompokkan per departemen, bisa dicari
@@ -13,10 +14,18 @@ const auth = useAuthStore()
 
 const semua = ref<Karyawan[]>([])
 const cari = ref('')
-onMounted(async () => {
-  const { data } = await api.get('/meeting/karyawan')
-  semua.value = data.data
-})
+const memuat = ref(true)
+const galat = ref('')
+async function muat() {
+  memuat.value = true; galat.value = ''
+  try {
+    const { data } = await api.get('/meeting/karyawan')
+    semua.value = data.data ?? []
+  } catch (e: any) {
+    galat.value = pesanGalat(e, 'Gagal memuat daftar karyawan')
+  } finally { memuat.value = false }
+}
+onMounted(muat)
 const sembunyi = computed(() => new Set([...(props.kecuali || []), auth.user?.id_karyawan ?? -1]))
 const terlihat = computed(() => {
   const q = cari.value.trim().toLowerCase()
@@ -56,7 +65,10 @@ function pilihDept(list: Karyawan[]) {
     </div>
     <input v-model="cari" class="form-input" placeholder="Cari nama, jabatan, departemen…" />
     <div class="kp-list">
-      <p v-if="!semua.length" class="muted">Memuat…</p>
+      <p v-if="memuat" class="muted">Memuat…</p>
+      <p v-else-if="galat" class="muted" role="alert">⚠ {{ galat }} <button type="button" class="btn btn-ghost btn-sm" @click="muat">↻ Coba lagi</button></p>
+      <p v-else-if="!semua.length" class="muted">Belum ada karyawan aktif.</p>
+      <p v-else-if="!perDept.length" class="muted">Tidak ada yang cocok dengan “{{ cari }}”.</p>
       <div v-for="[dept, list] in perDept" :key="dept" class="kp-dept">
         <div class="kp-dept-judul">
           <b>{{ dept }}</b>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, toast, pesanGalat } from '@/composables/useDialog'
 import { useRoute, useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
@@ -23,6 +23,7 @@ const formError = ref('')
 const sumberList = ref<any[]>([])
 const linkSimId = ref<number | null>(null)
 const linkSimSubmitting = ref(false)
+const unlinkSubmitting = ref(false)
 const linkSimError = ref('')
 const simError = ref('')
 
@@ -52,9 +53,13 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 
 const a = computed(() => aset.current)
 
-onMounted(async () => {
-  await Promise.all([aset.fetchOne(id), proyek.fetchSiteList()])
-})
+// Store dipakai bersama: buang aset lain yang masih tersisa agar tidak sempat tampil sebagai aset ini
+if (aset.current?.id_aset !== id) aset.current = null
+
+function muat() {
+  return Promise.all([aset.fetchOne(id), proyek.fetchSiteList()])
+}
+onMounted(muat)
 
 async function openLinkSim() {
   linkSimId.value = null; linkSimError.value = ''; simError.value = ''
@@ -63,18 +68,20 @@ async function openLinkSim() {
     sumberList.value = r.data.data
     showLinkSimModal.value = true
   } catch (e: any) {
-    simError.value = e.response?.data?.message || 'Gagal memuat daftar sumber internet'
+    simError.value = pesanGalat(e, 'Gagal memuat daftar sumber internet')
   }
 }
 
 async function handleLinkSim() {
+  if (linkSimSubmitting.value) return
   if (!linkSimId.value) { linkSimError.value = 'Pilih sumber internet terlebih dahulu'; return }
   linkSimSubmitting.value = true; linkSimError.value = ''
   try {
     await api.patch(`/master/sumber-internet/${linkSimId.value}`, { id_aset_sim: id })
     await aset.fetchOne(id)
     showLinkSimModal.value = false
-  } catch (e: any) { linkSimError.value = e.response?.data?.message || 'Gagal menghubungkan' }
+    toast('SIM dihubungkan ke sumber internet')
+  } catch (e: any) { linkSimError.value = pesanGalat(e, 'Gagal menghubungkan') }
   finally { linkSimSubmitting.value = false }
 }
 
@@ -82,13 +89,15 @@ async function handleUnlinkSim() {
   const sumber = (a.value as any)?.sumber_internet
   if (!sumber) return
   if (!(await confirmDialog({ title: 'Putuskan SIM?', message: `Putuskan SIM dari ${sumber.nomor_pelanggan_isp}?`, variant: 'warning', confirmLabel: 'Ya, Putuskan' }))) return
-  simError.value = ''
+  if (unlinkSubmitting.value) return
+  unlinkSubmitting.value = true; simError.value = ''
   try {
     await api.patch(`/master/sumber-internet/${sumber.id_sumber}`, { id_aset_sim: null })
     await aset.fetchOne(id)
+    toast('Link SIM diputuskan')
   } catch (e: any) {
-    simError.value = e.response?.data?.message || 'Gagal memutuskan link SIM'
-  }
+    simError.value = pesanGalat(e, 'Gagal memutuskan link SIM')
+  } finally { unlinkSubmitting.value = false }
 }
 
 function openEdit() {
@@ -104,12 +113,15 @@ function openEdit() {
 }
 
 async function handleEdit() {
+  if (submitting.value) return
+  if (!editForm.value.nama_perangkat.trim()) { formError.value = 'Nama perangkat wajib diisi'; return }
   submitting.value = true; formError.value = ''
   try {
     // status & lokasi TIDAK diedit di sini — wajib lewat mutasi (jejak gudang)
     await aset.update(id, { ...editForm.value })
     showEditModal.value = false
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal menyimpan perubahan' }
+    toast('Perubahan aset tersimpan')
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal menyimpan perubahan') }
   finally { submitting.value = false }
 }
 
@@ -140,6 +152,9 @@ async function loadGudang() {
 }
 
 async function handleMutasi() {
+  if (submitting.value) return
+  if (mutasiForm.value.jenis_mutasi === 'Transfer' && !mutasiForm.value.id_gudang_tujuan) { formError.value = 'Pilih gudang tujuan transfer'; return }
+  if (!a.value?.is_serialized && !(Number(mutasiForm.value.jumlah) >= 1)) { formError.value = 'Jumlah minimal 1'; return }
   submitting.value = true; formError.value = ''
   try {
     const payload: any = { ...mutasiForm.value }
@@ -148,7 +163,8 @@ async function handleMutasi() {
     if (!payload.id_gudang_tujuan) delete payload.id_gudang_tujuan
     await aset.createMutasi(payload)
     showMutasiModal.value = false
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal mencatat mutasi' }
+    toast('Mutasi tercatat')
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal mencatat mutasi') }
   finally { submitting.value = false }
 }
 
@@ -169,7 +185,12 @@ const mutasiColor: Record<string, string> = {
     </div>
 
     <div v-if="aset.loading && !a" class="loading-full">Memuat...</div>
-    <div v-else-if="aset.error" class="alert-error">{{ aset.error }}</div>
+    <div v-else-if="aset.error && !a" class="galat-state" role="alert">
+      <div class="galat-ikon">!</div>
+      <div class="galat-judul">Gagal memuat data</div>
+      <div>{{ aset.error }}</div>
+      <button type="button" class="btn btn-secondary btn-sm" @click="muat">↻ Coba lagi</button>
+    </div>
     <template v-else-if="a">
 
       <!-- Header -->
@@ -232,8 +253,8 @@ const mutasiColor: Record<string, string> = {
       <div class="section sim-section" v-if="(a as any).sumber_internet || a.kategori?.toLowerCase().includes('sim')">
         <div class="sim-header">
           <h3>SIM Card — Sumber Internet</h3>
-          <button v-if="!(a as any).sumber_internet" class="btn-link-sim" @click="openLinkSim">+ Link ke Sumber Internet</button>
-          <button v-else class="btn-unlink-sim" @click="handleUnlinkSim">Putuskan Link</button>
+          <button v-if="!(a as any).sumber_internet" type="button" class="btn-link-sim" @click="openLinkSim">+ Link ke Sumber Internet</button>
+          <button v-else type="button" class="btn-unlink-sim" :disabled="unlinkSubmitting" @click="handleUnlinkSim">{{ unlinkSubmitting ? 'Memutuskan…' : 'Putuskan Link' }}</button>
         </div>
         <div v-if="simError" class="alert-error">{{ simError }}</div>
         <div v-if="(a as any).sumber_internet" class="sim-info">

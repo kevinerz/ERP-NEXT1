@@ -5,7 +5,7 @@ import { useFinanceStore } from '@/stores/finance'
 import { exportCsv, type CsvSection } from '@/composables/useExport'
 import { fmtRupiah, fmtDateShort as fmtDate, statusLabel, todayLocal, monthLocal } from '@/composables/useFormat'
 import api from '@/services/api'
-import { confirmDialog, alertDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 import BasePagination from '@/components/BasePagination.vue'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 
@@ -70,7 +70,9 @@ async function cariSite(q: string): Promise<OpsiCari[]> {
   }))
 }
 
+let nomorMuat = 0
 async function fetchData() {
+  const nomor = ++nomorMuat
   listError.value = ''
   const params: any = { page: page.value }
   if (search.value) params.search = search.value
@@ -79,7 +81,8 @@ async function fetchData() {
   try {
     await finance.fetchAll(params)
   } catch (err: any) {
-    listError.value = err?.response?.data?.message ?? 'Gagal memuat invoice'
+    // Hanya galat dari permintaan terakhir yang relevan (filter bisa diganti beruntun)
+    if (nomor === nomorMuat) listError.value = pesanGalat(err, 'Gagal memuat invoice')
   }
 }
 function doFilter() { page.value = 1; fetchData() }
@@ -94,16 +97,26 @@ async function handleSubmit() {
     formError.value = 'Subtotal harus lebih dari 0'
     return
   }
+  if (form.value.tgl_jatuh_tempo < form.value.tgl_invoice) {
+    formError.value = 'Jatuh tempo tidak boleh sebelum tanggal invoice'
+    return
+  }
+  const ppn = Number(form.value.ppn_persen)
+  if ((form.value.ppn_persen as any) === '' || isNaN(ppn) || ppn < 0 || ppn > 100) {
+    formError.value = 'PPN harus antara 0 dan 100%'
+    return
+  }
+  if (submitting.value) return
   submitting.value = true
   formError.value = ''
   try {
-    const payload: any = { ...form.value }
+    const payload: any = { ...form.value, subtotal: Number(form.value.subtotal), ppn_persen: ppn }
     if (!payload.catatan) delete payload.catatan
     const result = await finance.create(payload)
     showModal.value = false
     router.push(`/finance/invoice/${result.id_invoice}`)
   } catch (err: any) {
-    formError.value = err?.response?.data?.message ?? 'Gagal membuat invoice'
+    formError.value = pesanGalat(err, 'Gagal membuat invoice')
   } finally {
     submitting.value = false
   }
@@ -138,6 +151,7 @@ async function handleHapus(id: number, nomor: string, ev: Event) {
   processingId.value = id
   try {
     await finance.remove(id)
+    toast(`Invoice ${nomor} dihapus`)
     fetchData()
   } catch (err: any) {
     await alertError(err, 'Gagal menghapus invoice')
@@ -188,14 +202,19 @@ async function handleExport() {
       inv.nomor_invoice,
       inv.site?.pelanggan?.nama_pelanggan ?? '',
       inv.periode,
-      inv.total,
-      inv.jumlah_dibayar,
+      Number(inv.total) || 0,
+      Number(inv.jumlah_dibayar) || 0,
       (Number(inv.total) || 0) - (Number(inv.jumlah_dibayar) || 0),
       statusLabel(inv.status),
       fmtDate(inv.tgl_jatuh_tempo),
     ]),
   }]
-  exportCsv(`Invoice-${todayLocal()}.csv`, sections)
+  try {
+    exportCsv(`Invoice-${todayLocal()}.csv`, sections)
+    toast(`${invoices.length} invoice diekspor`)
+  } catch (err: any) {
+    await alertError(err, 'Gagal menyiapkan file CSV')
+  }
 }
 
 function sisa(inv: { total: number; jumlah_dibayar: number }) {
@@ -227,7 +246,9 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
       <button class="btn-search" @click="doFilter">Cari</button>
     </div>
 
-    <div v-if="listError" class="alert-error">{{ listError }}</div>
+    <div v-if="listError" class="alert-error" role="alert">{{ listError }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="fetchData">↻ Coba lagi</button>
+    </div>
 
     <div class="table-card">
       <div v-if="finance.loading" class="loading">Memuat...</div>
@@ -248,14 +269,14 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!finance.invoices.length">
-              <td colspan="10" class="empty">Belum ada data invoice</td>
+            <tr v-if="!finance.invoices.length && !listError">
+              <td colspan="10" class="empty">{{ search || filterStatus || filterPeriode ? 'Tidak ada invoice yang cocok dengan pencarian/filter ini' : 'Belum ada data invoice' }}</td>
             </tr>
             <tr v-baris v-for="inv in finance.invoices" :key="inv.id_invoice" class="row-link"
               @click="router.push(`/finance/invoice/${inv.id_invoice}`)">
               <td class="nomor">{{ inv.nomor_invoice }}</td>
               <td>
-                <div class="fw600">{{ inv.site?.pelanggan?.nama_pelanggan }}</div>
+                <div class="fw600">{{ inv.site?.pelanggan?.nama_pelanggan || '—' }}</div>
                 <div class="text-gray text-sm">{{ inv.site?.nama_site }}</div>
               </td>
               <td class="text-sm text-gray">{{ inv.periode }}</td>
@@ -304,7 +325,7 @@ function sisa(inv: { total: number; jumlah_dibayar: number }) {
           </div>
           <div class="field">
             <label>PPN (%)</label>
-            <input v-model.number="form.ppn_persen" type="number" min="0" />
+            <input v-model.number="form.ppn_persen" type="number" min="0" max="100" />
           </div>
           <div class="field">
             <label>Tanggal Invoice <span class="req">*</span></label>

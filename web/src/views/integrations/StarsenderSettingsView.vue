@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import api from '@/services/api'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, pesanGalat, toast, toastGalat } from '@/composables/useDialog'
 
 type Tab = 'config' | 'internal-groups' | 'pelanggan-groups' | 'templates'
 const tab = ref<Tab>('config')
@@ -15,6 +15,7 @@ const msg      = ref('')
 const msgType  = ref<'ok'|'err'>('ok')
 const form     = ref({ api_key: '', is_active: false })
 const testPhone = ref('')
+const configError = ref('')
 
 // ── Groups shared logic ──────────────────────────────────────────
 type Group = { id: number; group_id: string; nama_group: string; is_active: boolean }
@@ -30,6 +31,8 @@ function useGroups(endpoint: string) {
   const editForm    = ref({ group_id: '', nama_group: '' })
   const testingId   = ref<number | null>(null)
   const testResult  = ref<{ id: number; text: string; ok: boolean } | null>(null)
+  // id grup yang sedang disimpan/diubah/dihapus — cegah klik ganda
+  const busyId      = ref<number | null>(null)
 
   async function load() {
     listLoading.value = true; listError.value = ''
@@ -37,18 +40,18 @@ function useGroups(endpoint: string) {
       const r = await api.get(endpoint)
       list.value = Array.isArray(r.data) ? r.data : (r.data?.data ?? [])
     } catch (e: any) {
-      listError.value = e.response?.data?.message || `Gagal memuat — error ${e.response?.status ?? ''}`
+      listError.value = pesanGalat(e, 'Gagal memuat daftar grup')
     } finally { listLoading.value = false }
   }
 
   async function add() {
-    if (!addForm.value.group_id || !addForm.value.nama_group) return
+    if (!addForm.value.group_id.trim() || !addForm.value.nama_group.trim() || adding.value) return
     adding.value = true; addError.value = ''
     try {
       await api.post(endpoint, addForm.value)
       addForm.value = { group_id: '', nama_group: '' }; await load()
     } catch (e: any) {
-      addError.value = e.response?.data?.message || 'Gagal menyimpan'
+      addError.value = pesanGalat(e, 'Gagal menyimpan')
     } finally { adding.value = false }
   }
 
@@ -56,43 +59,54 @@ function useGroups(endpoint: string) {
     editId.value = g.id; editForm.value = { group_id: g.group_id, nama_group: g.nama_group }
   }
 
+  // Gagal simpan/ubah/hapus cukup di-toast — jangan mengganti seluruh daftar dengan kotak error.
   async function saveEdit(id: number) {
+    if (busyId.value) return
+    if (!editForm.value.group_id.trim() || !editForm.value.nama_group.trim()) {
+      toast('Nama grup dan Group ID wajib diisi', 'warning'); return
+    }
+    busyId.value = id
     try {
       await api.patch(`${endpoint}/${id}`, editForm.value)
-      editId.value = null; await load()
+      editId.value = null; toast('Grup disimpan'); await load()
     } catch (e: any) {
-      listError.value = e.response?.data?.message || 'Gagal menyimpan'
-    }
+      toastGalat(e, 'Gagal menyimpan grup')
+    } finally { busyId.value = null }
   }
 
   async function toggle(g: Group) {
+    if (busyId.value) return
+    busyId.value = g.id
     try {
       await api.patch(`${endpoint}/${g.id}`, { is_active: !g.is_active }); await load()
     } catch (e: any) {
-      listError.value = e.response?.data?.message || 'Gagal mengubah status'
-    }
+      toastGalat(e, 'Gagal mengubah status grup')
+    } finally { busyId.value = null }
   }
 
   async function remove(id: number) {
+    if (busyId.value) return
     if (!(await confirmDialog({ title: 'Hapus grup ini?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+    busyId.value = id
     try {
-      await api.delete(`${endpoint}/${id}`); await load()
+      await api.delete(`${endpoint}/${id}`); toast('Grup dihapus'); await load()
     } catch (e: any) {
-      listError.value = e.response?.data?.message || 'Gagal menghapus'
-    }
+      toastGalat(e, 'Gagal menghapus grup')
+    } finally { busyId.value = null }
   }
 
   async function testGroup(g: Group) {
+    if (testingId.value) return
     testingId.value = g.id; testResult.value = null
     try {
       await api.post('/starsender/test-group', { group_id: g.group_id })
       testResult.value = { id: g.id, text: `✓ Test terkirim ke "${g.nama_group}"`, ok: true }
     } catch (e: any) {
-      testResult.value = { id: g.id, text: e.response?.data?.message || 'Gagal kirim test', ok: false }
+      testResult.value = { id: g.id, text: pesanGalat(e, 'Gagal kirim test'), ok: false }
     } finally { testingId.value = null }
   }
 
-  return { list, listLoading, listError, addForm, adding, addError, editId, editForm, testingId, testResult, load, add, startEdit, saveEdit, toggle, remove, testGroup }
+  return { list, listLoading, listError, addForm, adding, addError, editId, editForm, testingId, testResult, busyId, load, add, startEdit, saveEdit, toggle, remove, testGroup }
 }
 
 const ig = useGroups('/starsender/internal-groups')
@@ -172,18 +186,19 @@ async function loadTemplates() {
     templates.value = r.data.data
     editingTpl.value = { ...r.data.data }
   } catch (e: any) {
-    tplError.value = e.response?.data?.message || `Gagal memuat template (${e.response?.status ?? 'network error'})`
+    tplError.value = pesanGalat(e, 'Gagal memuat template')
   } finally { tplLoading.value = false }
 }
 
 async function saveTpl() {
+  if (tplSaving.value) return
   tplSaving.value = true; tplMsg.value = ''
   try {
     const r = await api.patch('/starsender/templates', editingTpl.value)
     templates.value = r.data.data; editingTpl.value = { ...r.data.data }
     tplMsg.value = 'Template berhasil disimpan'; tplMsgType.value = 'ok'
   } catch (e: any) {
-    tplMsg.value = e.response?.data?.message || 'Gagal menyimpan'; tplMsgType.value = 'err'
+    tplMsg.value = pesanGalat(e, 'Gagal menyimpan'); tplMsgType.value = 'err'
   } finally { tplSaving.value = false }
 }
 
@@ -194,13 +209,14 @@ async function resetTpl() {
     variant: 'danger',
     confirmLabel: 'Ya, Reset',
   }))) return
+  if (tplSaving.value) return
   tplSaving.value = true; tplMsg.value = ''
   try {
     const r = await api.post('/starsender/templates/reset')
     templates.value = r.data.data; editingTpl.value = { ...r.data.data }
     tplMsg.value = 'Template direset ke default'; tplMsgType.value = 'ok'
   } catch (e: any) {
-    tplMsg.value = e.response?.data?.message || 'Gagal reset'; tplMsgType.value = 'err'
+    tplMsg.value = pesanGalat(e, 'Gagal reset'); tplMsgType.value = 'err'
   } finally { tplSaving.value = false }
 }
 
@@ -212,12 +228,13 @@ function insertPlaceholder(ph: string) {
 onMounted(load)
 
 async function load() {
-  loading.value = true
+  loading.value = true; configError.value = ''
   try {
     const r = await api.get('/starsender/config')
     config.value = r.data.data; form.value.is_active = config.value.is_active
-  } catch {
-    // silent — save() akan handle error-nya sendiri
+  } catch (e: any) {
+    // Jangan biarkan form tampil seolah "belum dikonfigurasi" — menyimpan saat itu bisa mematikan notifikasi WA.
+    configError.value = pesanGalat(e, 'Gagal memuat konfigurasi StarSender')
   } finally { loading.value = false }
 }
 
@@ -229,6 +246,7 @@ function switchTab(t: Tab) {
 }
 
 async function save() {
+  if (saving.value || configError.value) return
   saving.value = true; msg.value = ''
   try {
     const payload: any = { is_active: form.value.is_active }
@@ -237,18 +255,18 @@ async function save() {
     msg.value = 'Konfigurasi berhasil disimpan'; msgType.value = 'ok'
     form.value.api_key = ''; await load()
   } catch (e: any) {
-    msg.value = e.response?.data?.message || 'Gagal menyimpan'; msgType.value = 'err'
+    msg.value = pesanGalat(e, 'Gagal menyimpan'); msgType.value = 'err'
   } finally { saving.value = false }
 }
 
 async function test() {
-  if (!testPhone.value) return
+  if (!testPhone.value.trim() || testing.value) return
   testing.value = true; msg.value = ''
   try {
     const r = await api.post('/starsender/test', { phone: testPhone.value })
-    msg.value = r.data.message; msgType.value = 'ok'
+    msg.value = r.data.message || 'Pesan test terkirim'; msgType.value = 'ok'
   } catch (e: any) {
-    msg.value = e.response?.data?.message || 'Gagal kirim test WA'; msgType.value = 'err'
+    msg.value = pesanGalat(e, 'Gagal kirim test WA'); msgType.value = 'err'
   } finally { testing.value = false }
 }
 </script>
@@ -276,6 +294,7 @@ async function test() {
     <!-- ══ TAB CONFIG ══ -->
     <template v-if="tab === 'config'">
       <div v-if="loading" class="loading-state"><div class="spinner"></div>Memuat...</div>
+      <div v-else-if="configError" class="error-box" role="alert">⚠️ {{ configError }}<button type="button" class="btn-sm" style="margin-left:8px" @click="load()">Coba Lagi</button></div>
       <template v-else>
         <div :class="['status-banner', config.is_active ? 'banner-active' : 'banner-inactive']">
           <div class="banner-dot"></div>
@@ -367,7 +386,7 @@ async function test() {
         <p class="card-desc">Notifikasi tiket baru, update status, dan alert monitoring dikirim ke semua grup aktif. Group ID dari dashboard StarSender.</p>
 
         <div v-if="ig.listLoading.value" class="loading-state"><div class="spinner"></div>Memuat...</div>
-        <div v-else-if="ig.listError.value" class="error-box">⚠️ {{ ig.listError.value }}<div class="error-hint">Coba logout → login ulang.</div></div>
+        <div v-else-if="ig.listError.value" class="error-box" role="alert">⚠️ {{ ig.listError.value }}<button type="button" class="btn-sm" style="margin-left:8px" @click="ig.load()">Coba Lagi</button></div>
         <template v-else>
           <div v-if="ig.list.value.length" class="group-list">
             <div v-for="g in ig.list.value" :key="g.id" class="group-row">
@@ -376,7 +395,7 @@ async function test() {
                   <input v-model="ig.editForm.value.nama_group" class="edit-input" placeholder="Nama grup" />
                   <input v-model="ig.editForm.value.group_id" class="edit-input mono" placeholder="Group ID" />
                   <div class="edit-actions">
-                    <button class="btn-sm btn-primary-sm" @click="ig.saveEdit(g.id)">Simpan</button>
+                    <button class="btn-sm btn-primary-sm" :disabled="ig.busyId.value === g.id" @click="ig.saveEdit(g.id)">{{ ig.busyId.value === g.id ? 'Menyimpan...' : 'Simpan' }}</button>
                     <button class="btn-sm" @click="ig.editId.value = null">Batal</button>
                   </div>
                 </div>
@@ -391,8 +410,8 @@ async function test() {
                   <span :class="['badge', g.is_active ? 'badge-on' : 'badge-off']">{{ g.is_active ? 'Aktif' : 'Nonaktif' }}</span>
                   <button class="btn-sm" @click="ig.testGroup(g)" :disabled="ig.testingId.value === g.id || !config.configured">{{ ig.testingId.value === g.id ? '⏳' : '📤 Test' }}</button>
                   <button class="btn-sm" @click="ig.startEdit(g)">Edit</button>
-                  <button class="btn-sm" @click="ig.toggle(g)">{{ g.is_active ? 'Nonaktifkan' : 'Aktifkan' }}</button>
-                  <button class="btn-sm btn-danger-sm" @click="ig.remove(g.id)">Hapus</button>
+                  <button class="btn-sm" :disabled="ig.busyId.value === g.id" @click="ig.toggle(g)">{{ g.is_active ? 'Nonaktifkan' : 'Aktifkan' }}</button>
+                  <button class="btn-sm btn-danger-sm" :disabled="ig.busyId.value === g.id" @click="ig.remove(g.id)">Hapus</button>
                 </div>
               </template>
             </div>
@@ -422,7 +441,7 @@ async function test() {
         <p class="card-desc">Notifikasi tiket dikirim ke semua grup aktif di sini (diprioritaskan di atas grup per-pelanggan atau HP PIC). Cocok untuk grup WA umum pelanggan, grup koordinasi external, atau grup per area/segmen.</p>
 
         <div v-if="pg.listLoading.value" class="loading-state"><div class="spinner"></div>Memuat...</div>
-        <div v-else-if="pg.listError.value" class="error-box">⚠️ {{ pg.listError.value }}<div class="error-hint">Coba logout → login ulang.</div></div>
+        <div v-else-if="pg.listError.value" class="error-box" role="alert">⚠️ {{ pg.listError.value }}<button type="button" class="btn-sm" style="margin-left:8px" @click="pg.load()">Coba Lagi</button></div>
         <template v-else>
           <div v-if="pg.list.value.length" class="group-list">
             <div v-for="g in pg.list.value" :key="g.id" class="group-row">
@@ -431,7 +450,7 @@ async function test() {
                   <input v-model="pg.editForm.value.nama_group" class="edit-input" placeholder="Nama grup" />
                   <input v-model="pg.editForm.value.group_id" class="edit-input mono" placeholder="Group ID" />
                   <div class="edit-actions">
-                    <button class="btn-sm btn-primary-sm" @click="pg.saveEdit(g.id)">Simpan</button>
+                    <button class="btn-sm btn-primary-sm" :disabled="pg.busyId.value === g.id" @click="pg.saveEdit(g.id)">{{ pg.busyId.value === g.id ? 'Menyimpan...' : 'Simpan' }}</button>
                     <button class="btn-sm" @click="pg.editId.value = null">Batal</button>
                   </div>
                 </div>
@@ -446,8 +465,8 @@ async function test() {
                   <span :class="['badge', g.is_active ? 'badge-on' : 'badge-off']">{{ g.is_active ? 'Aktif' : 'Nonaktif' }}</span>
                   <button class="btn-sm" @click="pg.testGroup(g)" :disabled="pg.testingId.value === g.id || !config.configured">{{ pg.testingId.value === g.id ? '⏳' : '📤 Test' }}</button>
                   <button class="btn-sm" @click="pg.startEdit(g)">Edit</button>
-                  <button class="btn-sm" @click="pg.toggle(g)">{{ g.is_active ? 'Nonaktifkan' : 'Aktifkan' }}</button>
-                  <button class="btn-sm btn-danger-sm" @click="pg.remove(g.id)">Hapus</button>
+                  <button class="btn-sm" :disabled="pg.busyId.value === g.id" @click="pg.toggle(g)">{{ g.is_active ? 'Nonaktifkan' : 'Aktifkan' }}</button>
+                  <button class="btn-sm btn-danger-sm" :disabled="pg.busyId.value === g.id" @click="pg.remove(g.id)">Hapus</button>
                 </div>
               </template>
             </div>

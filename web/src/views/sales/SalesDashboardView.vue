@@ -2,6 +2,8 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
+import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 
 const router = useRouter()
 const sales = useSalesStore()
@@ -22,16 +24,24 @@ function fmt(n: number) {
   return n.toLocaleString('id-ID')
 }
 
-onMounted(async () => {
-  try { await sales.fetchPipeline() }
-  catch (e: any) { loadError.value = e?.response?.data?.message || 'Gagal memuat data pipeline' }
+// Dimuat langsung (bukan lewat store.fetchPipeline yang menelan galat) agar kegagalan terlihat & bisa diulang
+async function load() {
+  loadError.value = ''
+  loaded.value = false
+  try {
+    const { data } = await api.get('/sales/pipeline')
+    sales.pipeline = data.data ?? []
+  } catch (e: any) { loadError.value = pesanGalat(e, 'Gagal memuat data pipeline') }
   finally { loaded.value = true }
-})
+}
+onMounted(load)
 </script>
 
 <template>
   <div class="page">
-    <div v-if="loadError" class="error-banner">⚠ {{ loadError }}</div>
+    <div v-if="loadError" class="error-banner" role="alert">⚠ {{ loadError }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="load">↻ Coba lagi</button>
+    </div>
     <div class="page-header">
       <div>
         <h2>Sales & CRM</h2>
@@ -52,10 +62,10 @@ onMounted(async () => {
         :key="p.tahapan"
         class="pipeline-card"
         :style="{ borderTopColor: TAHAPAN_COLOR[p.tahapan] || '#94a3b8' }"
-        @click="router.push(`/sales/opportunity?tahapan=${p.tahapan}`)"
+        @click="router.push({ path: '/sales/opportunity', query: { tahapan: p.tahapan } })"
       >
         <div class="p-tahapan">{{ p.tahapan }}</div>
-        <div class="p-count">{{ p.count }}</div>
+        <div class="p-count">{{ p.count ?? 0 }}</div>
         <div class="p-nilai">Rp {{ fmt(p.total_nilai) }}</div>
       </div>
     </div>

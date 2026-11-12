@@ -8,6 +8,7 @@
     <div v-else-if="!profile" class="card empty-state">
       <div class="empty-icon">⚠️</div>
       <div class="empty-title">Gagal memuat profil</div>
+      <div v-if="loadError" class="empty-desc">{{ loadError }}</div>
       <button type="button" class="btn btn-secondary btn-sm" style="margin-top:12px" @click="fetchProfile">Coba Lagi</button>
     </div>
 
@@ -172,11 +173,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/services/api'
 import { useAuthStore, ALL_MODULS } from '@/stores/auth'
 import { fmtDate as formatDate, fmtDateTime as formatDateTime } from '@/composables/useFormat'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, pesanGalat } from '@/composables/useDialog'
 
 const auth = useAuthStore()
 
@@ -200,6 +201,11 @@ const MODUL_LABEL: Record<string, string> = {
 // ─── STATE ────────────────────────────────────────────
 const profile = ref<any>(null)
 const loading = ref(true)
+const loadError = ref('')
+// Pesan sukses hilang sendiri; pesan gagal tetap tampil sampai aksi berikutnya.
+let timerProfil: ReturnType<typeof setTimeout> | undefined
+let timerPass: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => { clearTimeout(timerProfil); clearTimeout(timerPass) })
 const editMode = ref(false)
 const saving = ref(false)
 const profileMsg = ref('')
@@ -264,14 +270,14 @@ const canSubmitPass = computed(() =>
 
 // ─── METHODS ──────────────────────────────────────────
 async function fetchProfile() {
-  loading.value = true
+  loading.value = true; loadError.value = ''
   try {
     const r = await api.get('/auth/me')
     profile.value = r.data.data
     form.value.email = profile.value?.email || ''
     form.value.no_hp = profile.value?.no_hp || ''
   } catch (e) {
-    console.error('[Profile] fetchProfile error:', (e as any)?.message ?? 'unknown')
+    loadError.value = pesanGalat(e, 'Periksa koneksi lalu coba lagi.')
   } finally {
     loading.value = false
   }
@@ -289,7 +295,7 @@ async function handleFotoUpload(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  if (!file) return
+  if (!file || fotoUploading.value) return
 
   fotoError.value = ''
   fotoUploading.value = true
@@ -297,13 +303,14 @@ async function handleFotoUpload(e: Event) {
     await auth.uploadFoto(file)
     profile.value.foto_url = auth.user?.foto_url
   } catch (err: any) {
-    fotoError.value = err.response?.data?.message || 'Gagal mengunggah foto'
+    fotoError.value = pesanGalat(err, 'Gagal mengunggah foto')
   } finally {
     fotoUploading.value = false
   }
 }
 
 async function handleFotoRemove() {
+  if (fotoUploading.value) return
   if (!(await confirmDialog({ title: 'Hapus foto profil?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   fotoError.value = ''
   fotoUploading.value = true
@@ -311,14 +318,19 @@ async function handleFotoRemove() {
     await auth.removeFoto()
     profile.value.foto_url = null
   } catch (err: any) {
-    fotoError.value = err.response?.data?.message || 'Gagal menghapus foto'
+    fotoError.value = pesanGalat(err, 'Gagal menghapus foto')
   } finally {
     fotoUploading.value = false
   }
 }
 
 async function saveProfile() {
+  if (saving.value) return
+  if (form.value.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.value.email.trim())) {
+    profileMsg.value = 'Format email belum benar'; profileMsgType.value = 'error'; return
+  }
   saving.value = true
+  clearTimeout(timerProfil)
   profileMsg.value = ''
   try {
     await api.patch('/auth/me', { email: form.value.email, no_hp: form.value.no_hp })
@@ -327,17 +339,19 @@ async function saveProfile() {
     editMode.value = false
     profileMsg.value = 'Profil berhasil diperbarui'
     profileMsgType.value = 'success'
+    timerProfil = setTimeout(() => { profileMsg.value = '' }, 4000)
   } catch (e: any) {
-    profileMsg.value = e.response?.data?.message || 'Gagal menyimpan'
+    profileMsg.value = pesanGalat(e, 'Gagal menyimpan profil')
     profileMsgType.value = 'error'
   } finally {
     saving.value = false
-    setTimeout(() => { profileMsg.value = '' }, 4000)
   }
 }
 
 async function changePassword() {
+  if (changingPass.value || !canSubmitPass.value) return
   changingPass.value = true
+  clearTimeout(timerPass)
   passMsg.value = ''
   try {
     const r = await api.post('/auth/change-password', {
@@ -345,15 +359,15 @@ async function changePassword() {
       password_baru: pass.value.baru,
       konfirmasi: pass.value.konfirmasi,
     })
-    passMsg.value = r.data.message
+    passMsg.value = r.data.message || 'Password berhasil diubah'
     passMsgType.value = 'success'
     pass.value = { lama: '', baru: '', konfirmasi: '' }
+    timerPass = setTimeout(() => { passMsg.value = '' }, 5000)
   } catch (e: any) {
-    passMsg.value = e.response?.data?.message || 'Gagal mengubah password'
+    passMsg.value = pesanGalat(e, 'Gagal mengubah password')
     passMsgType.value = 'error'
   } finally {
     changingPass.value = false
-    setTimeout(() => { passMsg.value = '' }, 5000)
   }
 }
 

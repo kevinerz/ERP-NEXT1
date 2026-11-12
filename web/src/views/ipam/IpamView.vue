@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import api from '@/services/api'
-import { alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, promptDialog, pesanGalat, toast } from '@/composables/useDialog'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -35,36 +35,48 @@ const blok = ref<(Blok & { network: string }) | null>(null)
 const zona = ref<Zona[]>([])
 const alokasi = ref<Alokasi[]>([])
 const memuat = ref(false)
+const memuatDaftarBlok = ref(true)
 const error = ref('')
 const bolehKelolaBlok = computed(() => ['Admin', 'Director', 'Manager_Ops'].some((r) => auth.hasRole(r)))
 
+// Tidak melempar: galat ditampilkan di halaman (dengan "Coba lagi") supaya simpan yang sudah berhasil tidak dilaporkan gagal
 async function muatDaftar() {
-  const { data } = await api.get('/ipam/blok')
-  daftarBlok.value = data.data
-  if (!idBlok.value && daftarBlok.value.length) idBlok.value = daftarBlok.value[0]!.id_blok
+  memuatDaftarBlok.value = true
+  try {
+    const { data } = await api.get('/ipam/blok')
+    daftarBlok.value = data.data ?? []
+    if (!idBlok.value && daftarBlok.value.length) idBlok.value = daftarBlok.value[0]!.id_blok
+    return true
+  } catch (e: any) {
+    error.value = pesanGalat(e, 'Gagal memuat daftar blok IP')
+    return false
+  } finally {
+    memuatDaftarBlok.value = false
+  }
 }
+let urutanBlok = 0
 async function muatBlok() {
   if (!idBlok.value) return
+  const ke = ++urutanBlok
   memuat.value = true
   error.value = ''
   try {
     const { data } = await api.get(`/ipam/blok/${idBlok.value}`)
+    if (ke !== urutanBlok) return
     blok.value = { ...(daftarBlok.value.find((b) => b.id_blok === idBlok.value) as Blok), ...data.data.blok }
     zona.value = data.data.zona
     alokasi.value = data.data.alokasi
   } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Gagal memuat data IP'
+    if (ke === urutanBlok) error.value = pesanGalat(e, 'Gagal memuat data IP')
   } finally {
-    memuat.value = false
+    if (ke === urutanBlok) memuat.value = false
   }
 }
 async function muatUlang() {
-  await muatDaftar()
-  await muatBlok()
+  error.value = ''
+  if (await muatDaftar()) await muatBlok()
 }
-onMounted(async () => {
-  try { await muatDaftar() } catch (e: any) { error.value = e?.response?.data?.message || 'Gagal memuat data IP' }
-})
+onMounted(() => { muatDaftar() })
 watch(idBlok, muatBlok)
 
 // ── Hitung IP (sisi tampilan) ────────────────────────────────────────────────
@@ -210,7 +222,7 @@ const infoForm = computed(() => {
   }
 })
 async function simpanForm() {
-  if (!idBlok.value) return
+  if (!idBlok.value || form.simpan) return
   form.simpan = true
   form.err = ''
   try {
@@ -223,7 +235,7 @@ async function simpanForm() {
     await muatUlang()
   } catch (e: any) {
     const m = e?.response?.data?.message
-    form.err = Array.isArray(m) ? m.join(', ') : m || 'Gagal menyimpan'
+    form.err = Array.isArray(m) ? m.join(', ') : pesanGalat(e, 'Gagal menyimpan alokasi')
   } finally {
     form.simpan = false
   }
@@ -257,12 +269,12 @@ async function muatRiwayat(a: Alokasi) {
     if (detail.value?.id_alokasi === a.id_alokasi) riwayat.value = data.data
   } catch (e: any) {
     const m = e?.response?.data?.message
-    riwayatGalat.value = (Array.isArray(m) ? m.join(', ') : m) || 'Gagal memuat riwayat'
+    riwayatGalat.value = Array.isArray(m) ? m.join(', ') : pesanGalat(e, 'Gagal memuat riwayat')
   } finally { riwayatMemuat.value = false }
 }
 async function simpanUbah() {
   const a = detail.value
-  if (!a) return
+  if (!a || ubah.simpan) return
   ubah.simpan = true
   ubah.err = ''
   try {
@@ -274,19 +286,21 @@ async function simpanUbah() {
     if (siteUbah.s.dipilih) body.id_site = siteUbah.s.dipilih.id_site
     else if (ubah.hapusSite) body.id_site = null
     await api.patch(`/ipam/alokasi/${a.id_alokasi}`, body)
+    toast('Perubahan alokasi disimpan')
     await muatUlang()
     const baru = alokasi.value.find((x) => x.id_alokasi === a.id_alokasi)
     if (baru) await bukaDetail(baru)
   } catch (e: any) {
     const m = e?.response?.data?.message
-    ubah.err = Array.isArray(m) ? m.join(', ') : m || 'Gagal menyimpan'
+    ubah.err = Array.isArray(m) ? m.join(', ') : pesanGalat(e, 'Gagal menyimpan perubahan')
   } finally {
     ubah.simpan = false
   }
 }
+const melepas = ref(false)
 async function lepas(langsung: boolean) {
   const a = detail.value
-  if (!a) return
+  if (!a || melepas.value) return
   const pakaiKarantina = !langsung && a.status === 'Dipakai'
   const alasan = await promptDialog({
     title: pakaiKarantina ? `Lepas ${a.prefix} (karantina 30 hari)` : `Lepas ${a.prefix} sekarang`,
@@ -296,12 +310,16 @@ async function lepas(langsung: boolean) {
     confirmLabel: 'Lepas', variant: pakaiKarantina ? 'warning' : 'danger',
   })
   if (alasan === null) return
+  melepas.value = true
   try {
     await api.post(`/ipam/alokasi/${a.id_alokasi}/lepas`, { langsung, alasan: alasan || undefined })
     detail.value = null
+    toast(`${a.prefix} dilepas`)
     await muatUlang()
   } catch (e) {
     alertError(e, 'Gagal melepas IP')
+  } finally {
+    melepas.value = false
   }
 }
 async function salin(teks: string) {
@@ -333,7 +351,7 @@ function editZona(z?: Zona) {
     : { id_zona: null, prefix: '', nama: '', peruntukan: 'Pelanggan', catatan: '', err: '' })
 }
 async function simpanZona() {
-  if (!idBlok.value) return
+  if (!idBlok.value || formZona.simpan) return
   formZona.simpan = true
   formZona.err = ''
   try {
@@ -344,7 +362,7 @@ async function simpanZona() {
     await muatBlok()
   } catch (e: any) {
     const m = e?.response?.data?.message
-    formZona.err = Array.isArray(m) ? m.join(', ') : m || 'Gagal menyimpan zona'
+    formZona.err = Array.isArray(m) ? m.join(', ') : pesanGalat(e, 'Gagal menyimpan zona')
   } finally {
     formZona.simpan = false
   }
@@ -360,6 +378,7 @@ async function hapusZona(z: Zona) {
 // ── Blok baru ────────────────────────────────────────────────────────────────
 const formBlok = reactive({ buka: false, prefix: '', asn: 'AS155058', nama: '', err: '', simpan: false })
 async function simpanBlok() {
+  if (formBlok.simpan) return
   formBlok.simpan = true
   formBlok.err = ''
   try {
@@ -369,7 +388,7 @@ async function simpanBlok() {
     await muatUlang()
   } catch (e: any) {
     const m = e?.response?.data?.message
-    formBlok.err = Array.isArray(m) ? m.join(', ') : m || 'Gagal menyimpan blok'
+    formBlok.err = Array.isArray(m) ? m.join(', ') : pesanGalat(e, 'Gagal menyimpan blok')
   } finally {
     formBlok.simpan = false
   }
@@ -396,8 +415,9 @@ async function simpanBlok() {
       </div>
     </div>
 
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
-    <div v-if="!memuat && !daftarBlok.length && !error" class="alert alert-info">Belum ada blok IP. Tambahkan blok (mis. 180.214.165.0/24).</div>
+    <div v-if="error" class="alert alert-danger">{{ error }} <button type="button" class="btn btn-sm btn-secondary" @click="muatUlang">Coba lagi</button></div>
+    <div v-if="memuatDaftarBlok && !daftarBlok.length" class="loading-state">Memuat blok IP…</div>
+    <div v-else-if="!memuat && !daftarBlok.length && !error" class="alert alert-info">Belum ada blok IP. Tambahkan blok (mis. 180.214.165.0/24).</div>
 
     <template v-if="blok">
       <!-- Ringkasan -->
@@ -648,8 +668,8 @@ async function simpanBlok() {
         </div>
         <div class="modal-footer ipam-footer">
           <div>
-            <button v-if="detail.status === 'Dipakai'" type="button" class="btn btn-secondary" @click="lepas(false)">Lepas (karantina 30 hari)</button>
-            <button type="button" class="btn btn-danger" @click="lepas(true)">{{ detail.status === 'Karantina' ? 'Akhiri karantina' : 'Lepas langsung' }}</button>
+            <button v-if="detail.status === 'Dipakai'" type="button" class="btn btn-secondary" :disabled="melepas" @click="lepas(false)">Lepas (karantina 30 hari)</button>
+            <button type="button" class="btn btn-danger" :disabled="melepas" @click="lepas(true)">{{ detail.status === 'Karantina' ? 'Akhiri karantina' : 'Lepas langsung' }}</button>
           </div>
           <div>
             <button type="button" class="btn btn-ghost" @click="detail = null">Tutup</button>
@@ -748,7 +768,7 @@ async function simpanBlok() {
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-ghost" @click="formBlok.buka = false">Batal</button>
-          <button type="button" class="btn btn-primary" :disabled="formBlok.simpan || !formBlok.prefix.trim() || !formBlok.nama.trim()" @click="simpanBlok">Simpan</button>
+          <button type="button" class="btn btn-primary" :disabled="formBlok.simpan || !formBlok.prefix.trim() || !formBlok.nama.trim()" @click="simpanBlok">{{ formBlok.simpan ? 'Menyimpan…' : 'Simpan' }}</button>
         </div>
       </div>
     </div>

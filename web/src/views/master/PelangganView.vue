@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import MasterNav from './MasterNav.vue'
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { pesanGalat, toastGalat } from '@/composables/useDialog'
 import { useMasterStore } from '@/stores/master'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import api from '@/services/api'
@@ -34,7 +35,8 @@ function openEditGrup(g: any) {
 }
 
 async function handleGrupSubmit() {
-  if (!grupForm.value.kode_grup || !grupForm.value.nama_grup) {
+  if (grupSubmitting.value) return
+  if (!grupForm.value.kode_grup.trim() || !grupForm.value.nama_grup.trim()) {
     grupFormError.value = 'Kode dan Nama Grup wajib diisi'
     return
   }
@@ -53,7 +55,7 @@ async function handleGrupSubmit() {
     showGrupModal.value = false
     master.fetchGrupPelanggan()
   } catch (e: any) {
-    grupFormError.value = e.response?.data?.message || 'Gagal menyimpan grup'
+    grupFormError.value = pesanGalat(e, 'Gagal menyimpan grup')
   } finally {
     grupSubmitting.value = false
   }
@@ -80,7 +82,7 @@ async function doHapusGrup() {
     flash('Grup dihapus')
     master.fetchGrupPelanggan()
   } catch (e: any) {
-    hapusGrupError.value = e.response?.data?.message || 'Gagal menghapus grup'
+    hapusGrupError.value = pesanGalat(e, 'Gagal menghapus grup')
     confirmHapusGrup.value = false
   } finally { hapusGrupLoading.value = false }
 }
@@ -199,12 +201,13 @@ async function openEditById(id: number) {
     const { data } = await api.get(`/master/pelanggan/${id}`)
     openEdit(data.data ?? data)
   } catch (e: any) {
-    master.error = e.response?.data?.message || 'Gagal memuat data pelanggan'
+    toastGalat(e, 'Gagal memuat data pelanggan')
   }
 }
 
 async function handleSubmit() {
-  if (!form.value.kode_pelanggan || !form.value.nama_pelanggan) {
+  if (submitting.value) return
+  if (!form.value.kode_pelanggan.trim() || !form.value.nama_pelanggan.trim()) {
     formError.value = 'Kode dan Nama Perusahaan wajib diisi'
     return
   }
@@ -212,8 +215,14 @@ async function handleSubmit() {
   formError.value = ''
   try {
     const payload: any = { ...form.value }
-    if (!payload.id_grup) delete payload.id_grup
-    Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k] })
+    if (editId.value) {
+      // Saat ubah, isian yang dikosongkan harus benar-benar terhapus (null) — termasuk kembali ke "Standalone"
+      if (!payload.id_grup) payload.id_grup = null
+      Object.keys(payload).forEach(k => { if (typeof payload[k] === 'string' && payload[k].trim() === '') payload[k] = null })
+    } else {
+      if (!payload.id_grup) delete payload.id_grup
+      Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k] })
+    }
     if (editId.value) {
       await master.updatePelanggan(editId.value, payload)
       flash('Data pelanggan diperbarui')
@@ -226,7 +235,7 @@ async function handleSubmit() {
     master.fetchGrupPelanggan()
     master.pelangganDropdown = []
   } catch (e: any) {
-    formError.value = e.response?.data?.message || 'Gagal menyimpan'
+    formError.value = pesanGalat(e, 'Gagal menyimpan pelanggan')
   } finally {
     submitting.value = false
   }
@@ -255,7 +264,7 @@ async function doHapusPelanggan() {
     fetchData()
     master.fetchGrupPelanggan()
   } catch (e: any) {
-    hapusError.value = e.response?.data?.message || 'Gagal menghapus pelanggan'
+    hapusError.value = pesanGalat(e, 'Gagal menghapus pelanggan')
     confirmHapus.value = false
   } finally { hapusLoading.value = false }
 }
@@ -267,6 +276,8 @@ function grupColor(idx: number) { return grupColors[idx % grupColors.length] }
 // Cari otomatis saat mengetik
 let tundaCari: ReturnType<typeof setTimeout> | undefined
 watch(search, () => { if (viewMode.value !== 'list') return; clearTimeout(tundaCari); tundaCari = setTimeout(doSearch, 350) })
+onBeforeUnmount(() => clearTimeout(tundaCari))
+function muatUlang() { fetchData(); master.fetchGrupPelanggan() }
 const WARNA_AV = ['#2a78d6', '#eb6834', '#1baf7a', '#6250d6', '#e87ba4', '#0e9fb3', '#eda100', '#e34948']
 function warnaAvatar(n: string) { let h = 0; for (const c of n || '') h = (h * 31 + c.charCodeAt(0)) >>> 0; return WARNA_AV[h % WARNA_AV.length] }
 function inisial(n: string) {
@@ -302,7 +313,7 @@ function inisial(n: string) {
       : 'Grup menyatukan beberapa perusahaan (PT) milik satu holding, mis. Kawan Lama Group.' }}</p>
 
     <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
-    <div v-if="master.error" class="alert alert-danger">{{ master.error }}</div>
+    <div v-if="master.error" class="alert alert-danger">{{ master.error }} <button type="button" class="btn btn-sm btn-secondary" @click="muatUlang">Coba lagi</button></div>
     <div v-if="hapusError" class="alert alert-danger">{{ hapusError }}</div>
     <div v-if="hapusGrupError" class="alert alert-danger">{{ hapusGrupError }}</div>
 
@@ -426,7 +437,7 @@ function inisial(n: string) {
           </div>
         </div>
 
-        <div v-if="!master.grupList.length && !standalonePelanggan.length" class="grup-card empty-state">
+        <div v-if="!master.grupList.length && !standalonePelanggan.length && !master.error" class="grup-card empty-state">
           <div class="empty-icon">🏢</div>
           <div class="empty-title">Belum ada grup atau pelanggan</div>
           <div class="empty-desc">Tambahkan grup / holding atau pelanggan baru untuk memulai.</div>
@@ -443,6 +454,7 @@ function inisial(n: string) {
       </div>
 
       <div v-if="master.pelangganLoading && !master.pelangganList.length" class="pl-kosong">Memuat pelanggan…</div>
+      <div v-else-if="!master.pelangganList.length && master.error" class="pl-kosong">Daftar pelanggan belum dapat dimuat.</div>
       <div v-else-if="!master.pelangganList.length" class="pl-kosong">
         <span class="pl-maskot">🏢</span><b>{{ search ? `Tidak ada pelanggan yang cocok dengan “${search}”` : 'Belum ada pelanggan' }}</b>
       </div>

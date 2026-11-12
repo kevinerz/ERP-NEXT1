@@ -3,7 +3,7 @@
 // Hanya mengisi kolom KOSONG — data ERP yang sudah ada tidak pernah ditimpa. Khusus Admin / Director / Manager Ops.
 import { ref } from 'vue'
 import api from '@/services/api'
-import { confirmDialog, toast } from '@/composables/useDialog'
+import { confirmDialog, toast, toastGalat } from '@/composables/useDialog'
 
 const buka = ref(false)
 const memuat = ref(false)
@@ -13,7 +13,7 @@ const hasil = ref<any>(null)
 async function hitung() {
   buka.value = true; memuat.value = true; hasil.value = null
   try { pratinjau.value = (await api.get('/nocaas/sinkron-perangkat')).data.data }
-  catch (e: any) { toast(e.response?.data?.message || 'Gagal menghitung', 'danger'); buka.value = false }
+  catch (e) { toastGalat(e, 'Gagal menghitung'); buka.value = false }
   finally { memuat.value = false }
 }
 // ── Catat perangkat site sebagai aset ──
@@ -24,11 +24,12 @@ const hasilAset = ref<any>(null)
 async function hitungAset() {
   bukaAset.value = true; memuatAset.value = true; hasilAset.value = null
   try { pratinjauAset.value = (await api.get('/nocaas/catat-aset')).data.data }
-  catch (e: any) { toast(e.response?.data?.message || 'Gagal menghitung', 'danger'); bukaAset.value = false }
+  catch (e) { toastGalat(e, 'Gagal menghitung'); bukaAset.value = false }
   finally { memuatAset.value = false }
 }
 async function jalankanAset() {
   const p = pratinjauAset.value
+  if (!p || memuatAset.value) return
   if (!(await confirmDialog({
     title: `Catat ${p.aset_baru} perangkat sebagai aset?`,
     message: `${p.aset_baru} aset baru berstatus Terpasang di site masing-masing${p.ditautkan ? `, ${p.ditautkan} ditautkan ke aset ber-SN sama yang sudah ada` : ''}. Cadangan disimpan dulu.`,
@@ -39,12 +40,13 @@ async function jalankanAset() {
     const r = await api.post('/nocaas/catat-aset')
     hasilAset.value = r.data.data; pratinjauAset.value = null
     toast(r.data.message)
-  } catch (e: any) { toast(e.response?.data?.message || 'Pencatatan gagal', 'danger') }
+  } catch (e) { toastGalat(e, 'Pencatatan gagal') }
   finally { memuatAset.value = false }
 }
 
 async function jalankan() {
   const p = pratinjau.value
+  if (!p || memuat.value) return
   if (!(await confirmDialog({
     title: `Isi data perangkat ${p.site} site?`,
     message: `${p.isi_kolom} kolom kosong akan diisi dari NOCaaS${p.buat_perangkat ? `, ${p.buat_perangkat} perangkat router baru dibuat` : ''}. Data yang sudah ada tidak diubah, dan salinan cadangan disimpan dulu.`,
@@ -56,7 +58,7 @@ async function jalankan() {
     hasil.value = r.data.data
     toast(r.data.message)
     pratinjau.value = null
-  } catch (e: any) { toast(e.response?.data?.message || 'Sinkron gagal', 'danger') }
+  } catch (e) { toastGalat(e, 'Sinkron gagal') }
   finally { memuat.value = false }
 }
 </script>

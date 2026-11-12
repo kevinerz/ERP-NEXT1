@@ -4,7 +4,7 @@ import api from '@/services/api'
 import { exportCsv, type CsvSection } from '@/composables/useExport'
 import { printLaporan } from '@/composables/usePrint'
 import { fmtRupiah } from '@/composables/useFormat'
-import { alertDialog } from '@/composables/useDialog'
+import { alertDialog, alertError, toast } from '@/composables/useDialog'
 
 // KPI
 const kpi = ref<any>(null)
@@ -41,23 +41,34 @@ const BULAN_LIST = [
 
 const TAHUN_LIST = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i)
 
-onMounted(() => {
+function muatSemua() {
+  loadError.value = ''
   loadKpi()
   loadRevenue()
   loadTickets()
   loadProyek()
   loadAset()
   loadNocMetrics()
-})
+}
+onMounted(muatSemua)
+
+function tandaiGagal() { loadError.value = 'Gagal memuat sebagian data laporan.' }
+
+// Nomor permintaan per bagian berfilter: bila bulan/tahun diganti beruntun,
+// jawaban periode lama yang datang belakangan tidak boleh menimpa periode baru.
+let seqTiket = 0
+let seqNoc = 0
 
 async function loadNocMetrics() {
+  const seq = ++seqNoc
   nocLoading.value = true
   try {
-    nocMetrics.value = (await api.get('/operations/metrics', {
+    const hasil = (await api.get('/operations/metrics', {
       params: { bulan: filterBulan.value, tahun: filterTahun.value }
     })).data.data
-  } catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
-  finally { nocLoading.value = false }
+    if (seq === seqNoc) nocMetrics.value = hasil
+  } catch { if (seq === seqNoc) { nocMetrics.value = null; tandaiGagal() } }
+  finally { if (seq === seqNoc) nocLoading.value = false }
 }
 
 function fmtMenit(m: number | null) {
@@ -71,40 +82,49 @@ function fmtMenit(m: number | null) {
 async function loadKpi() {
   kpiLoading.value = true
   try { kpi.value = (await api.get('/reports/kpi')).data.data }
-  catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
+  catch { tandaiGagal() }
   finally { kpiLoading.value = false }
 }
 async function loadRevenue() {
   revenueLoading.value = true
-  try { revenue.value = (await api.get('/reports/revenue')).data.data }
-  catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
+  try { revenue.value = (await api.get('/reports/revenue')).data.data ?? [] }
+  catch { tandaiGagal() }
   finally { revenueLoading.value = false }
 }
 async function loadTickets() {
+  const seq = ++seqTiket
   ticketLoading.value = true
   try {
-    ticketReport.value = (await api.get('/reports/tickets', {
+    const hasil = (await api.get('/reports/tickets', {
       params: { bulan: filterBulan.value, tahun: filterTahun.value }
     })).data.data
-  } catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
-  finally { ticketLoading.value = false }
+    if (seq === seqTiket) ticketReport.value = hasil
+  } catch { if (seq === seqTiket) { ticketReport.value = null; tandaiGagal() } }
+  finally { if (seq === seqTiket) ticketLoading.value = false }
 }
 async function loadProyek() {
   proyekLoading.value = true
   try { proyekReport.value = (await api.get('/reports/projects')).data.data }
-  catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
+  catch { tandaiGagal() }
   finally { proyekLoading.value = false }
 }
 async function loadAset() {
   asetLoading.value = true
   try { asetReport.value = (await api.get('/reports/assets')).data.data }
-  catch { loadError.value = 'Gagal memuat sebagian data laporan. Coba muat ulang halaman.' }
+  catch { tandaiGagal() }
   finally { asetLoading.value = false }
 }
 
 const periodeLabel = () => `${BULAN_LIST[filterBulan.value - 1]} ${filterTahun.value}`
 
+// Saat masih memuat, data periode lama bisa ikut terekspor dengan label periode baru
+const masihMemuat = () => kpiLoading.value || revenueLoading.value || ticketLoading.value || proyekLoading.value || asetLoading.value
+
 async function handleExportExcel() {
+  if (masihMemuat()) {
+    await alertDialog({ title: 'Data Masih Dimuat', message: 'Tunggu hingga semua bagian laporan selesai dimuat, lalu ekspor lagi.', variant: 'warning' })
+    return
+  }
   const sections: CsvSection[] = []
   const k = kpi.value
   if (k) {
@@ -166,10 +186,19 @@ async function handleExportExcel() {
     await alertDialog({ title: 'Data Belum Siap', message: 'Data laporan belum siap.', variant: 'warning' })
     return
   }
-  exportCsv(`Laporan-${filterTahun.value}-${String(filterBulan.value).padStart(2, '0')}.csv`, sections)
+  try {
+    exportCsv(`Laporan-${filterTahun.value}-${String(filterBulan.value).padStart(2, '0')}.csv`, sections)
+    if (loadError.value) toast('Sebagian data gagal dimuat — file hanya berisi bagian yang tersedia', 'warning')
+  } catch (e: any) {
+    await alertError(e, 'Gagal menyiapkan file Excel')
+  }
 }
 
-function handleExportPdf() {
+async function handleExportPdf() {
+  if (masihMemuat()) {
+    await alertDialog({ title: 'Data Masih Dimuat', message: 'Tunggu hingga semua bagian laporan selesai dimuat, lalu cetak lagi.', variant: 'warning' })
+    return
+  }
   printLaporan({
     periode: periodeLabel(),
     kpi: kpi.value,
@@ -182,8 +211,8 @@ function handleExportPdf() {
 
 // Bar chart helper — max width 100% dari nilai tertinggi
 function barWidth(val: number, data: any[]) {
-  const max = Math.max(...data.map((d: any) => d.mrc || d.count || 1))
-  return Math.round((val / max) * 100)
+  const max = Math.max(1, ...data.map((d: any) => Number(d.mrc ?? d.count) || 0))
+  return Math.min(100, Math.max(0, Math.round(((Number(val) || 0) / max) * 100)))
 }
 
 const STATUS_TIKET_COLOR: Record<string, string> = {
@@ -202,7 +231,9 @@ const STATUS_ASET_COLOR: Record<string, string> = {
 
 <template>
   <div class="page">
-    <div v-if="loadError" class="error-banner">⚠ {{ loadError }}</div>
+    <div v-if="loadError" class="error-banner" role="alert">⚠ {{ loadError }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="muatSemua">↻ Coba lagi</button>
+    </div>
     <div class="page-header">
       <div>
         <h2>Laporan</h2>
@@ -229,9 +260,9 @@ const STATUS_ASET_COLOR: Record<string, string> = {
       </div>
       <div class="kpi-card yellow">
         <div class="kpi-icon">🎫</div>
-        <div class="kpi-val">{{ kpi.tiket_open + kpi.tiket_in_progress }}</div>
+        <div class="kpi-val">{{ (Number(kpi.tiket_open) || 0) + (Number(kpi.tiket_in_progress) || 0) }}</div>
         <div class="kpi-label">Tiket Open / In Progress</div>
-        <div class="kpi-sub">{{ kpi.tiket_open }} open · {{ kpi.tiket_in_progress }} in progress</div>
+        <div class="kpi-sub">{{ kpi.tiket_open ?? 0 }} open · {{ kpi.tiket_in_progress ?? 0 }} in progress</div>
       </div>
       <div class="kpi-card purple">
         <div class="kpi-icon">📋</div>
@@ -245,6 +276,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
       </div>
     </div>
     <div v-else-if="kpiLoading" class="loading-row">Memuat KPI...</div>
+    <div v-else class="loading-row">KPI tidak tersedia.</div>
 
     <div class="two-col">
       <!-- Revenue Chart -->
@@ -296,17 +328,18 @@ const STATUS_ASET_COLOR: Record<string, string> = {
           <div class="donut-legend">
             <div v-for="s in ticketReport.by_status" :key="s.status" class="legend-item">
               <span class="legend-dot" :style="{ background: STATUS_TIKET_COLOR[s.status] || '#94a3b8' }"></span>
-              <span class="legend-label">{{ s.status.replace('_', ' ') }}</span>
+              <span class="legend-label">{{ String(s.status || '').replace(/_/g, ' ') }}</span>
               <span class="legend-val">{{ s.count }}</span>
             </div>
           </div>
           <div class="donut-legend mt8">
             <div v-for="p in ticketReport.by_prioritas" :key="p.prioritas" class="legend-item">
-              <span class="prio-badge" :class="p.prioritas.toLowerCase()">{{ p.prioritas }}</span>
+              <span class="prio-badge" :class="String(p.prioritas || '').toLowerCase()">{{ p.prioritas }}</span>
               <span class="legend-val">{{ p.count }}</span>
             </div>
           </div>
         </template>
+        <div v-else class="loading-sm">Data tiket tidak tersedia untuk periode ini.</div>
       </div>
     </div>
 
@@ -332,9 +365,9 @@ const STATUS_ASET_COLOR: Record<string, string> = {
           </div>
           <div class="metric">
             <div class="metric-val" :class="(nocMetrics.sla_compliance ?? 100) >= 90 ? 'green-val' : 'red-val'">
-              {{ nocMetrics.sla_compliance ?? '—' }}{{ nocMetrics.sla_compliance !== null ? '%' : '' }}
+              {{ nocMetrics.sla_compliance ?? '—' }}{{ nocMetrics.sla_compliance != null ? '%' : '' }}
             </div>
-            <div class="metric-label">Kepatuhan SLA ({{ nocMetrics.sla_breach }} telat)</div>
+            <div class="metric-label">Kepatuhan SLA ({{ nocMetrics.sla_breach ?? 0 }} telat)</div>
           </div>
         </div>
         <div class="noc-tables">
@@ -366,6 +399,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
           </div>
         </div>
       </template>
+      <div v-else class="loading-sm">Metrik NOC tidak tersedia untuk periode ini.</div>
     </div>
 
     <div class="two-col">
@@ -417,7 +451,7 @@ const STATUS_ASET_COLOR: Record<string, string> = {
           <div class="donut-legend">
             <div v-for="s in asetReport.by_status" :key="s.status" class="legend-item">
               <span class="legend-dot" :style="{ background: STATUS_ASET_COLOR[s.status] || '#94a3b8' }"></span>
-              <span class="legend-label">{{ s.status.replace('_', ' ') }}</span>
+              <span class="legend-label">{{ String(s.status || '').replace(/_/g, ' ') }}</span>
               <span class="legend-val">{{ s.count }} unit</span>
             </div>
           </div>

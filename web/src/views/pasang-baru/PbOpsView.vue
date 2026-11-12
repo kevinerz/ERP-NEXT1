@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Tampilan OPS: antrian survey yang harus dicek dan order di tahap OPS — terlama di atas
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 import { fmtDate, fmtRupiah } from '@/composables/useFormat'
 import { KELAS_SURVEY, umur } from './pb'
 
@@ -33,7 +34,9 @@ const order = ref<Order[]>([])
 const memuat = ref(false)
 const error = ref('')
 
+let urutMuat = 0
 async function muat() {
+  const urut = ++urutMuat
   memuat.value = true
   error.value = ''
   const c = cari.value.trim() || undefined
@@ -44,20 +47,22 @@ async function muat() {
       api.get('/pasang-baru/survey', { params: { status: 'Siap SPH,Hold,Lanjut SPH', cari: c } }),
       api.get('/pasang-baru/order', { params: { tahap: 'OPS', cari: c } }),
     ])
+    if (urut !== urutMuat) return // jawaban pencarian lama tidak boleh menimpa yang baru
     const lama = (x: Survey, y: Survey) => x.status_at.localeCompare(y.status_at)
     antrian.value = (a.data.data as Survey[]).sort(lama)
     teknis.value = (b.data.data as Survey[]).sort(lama)
     riwayat.value = d.data.data
     order.value = e.data.data
   } catch (err: any) {
-    error.value = err?.response?.data?.message || 'Gagal memuat data'
+    if (urut === urutMuat) error.value = pesanGalat(err, 'Gagal memuat data')
   } finally {
-    memuat.value = false
+    if (urut === urutMuat) memuat.value = false
   }
 }
 onMounted(muat)
 let timer: ReturnType<typeof setTimeout> | null = null
 watch(cari, () => { if (timer) clearTimeout(timer); timer = setTimeout(muat, 350) })
+onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
 
 const jam = (d: string) => (Date.now() - new Date(d).getTime()) / 3600_000
 // Lama antre: >24 jam kuning, >48 jam merah
@@ -79,7 +84,7 @@ const KET: Record<string, string> = { ajukan: 'Diajukan Sales', teknis_selesai: 
       <div v-for="k in kpi" :key="k.t" class="po-kpi-item" :class="k.n ? k.w : ''"><b>{{ k.n }}</b><span>{{ k.t }}</span></div>
     </div>
 
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error" class="alert alert-danger" role="alert">{{ error }} <button type="button" class="btn btn-sm btn-ghost" @click="muat">↻ Coba lagi</button></div>
 
     <div class="po-tab">
       <button v-for="x in TAB" :key="x.k" :class="{ aktif: tab === x.k }" @click="tab = x.k">
@@ -98,8 +103,8 @@ const KET: Record<string, string> = { ajukan: 'Diajukan Sales', teknis_selesai: 
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!memuat && !(tab === 'antrian' ? antrian : teknis).length">
-            <td colspan="7" class="muted pusat">{{ tab === 'antrian' ? 'Antrian kosong — tidak ada survey menunggu OPS. 👍' : 'Tidak ada survey di Teknis.' }}</td>
+          <tr v-if="!memuat && !error && !(tab === 'antrian' ? antrian : teknis).length">
+            <td colspan="7" class="muted pusat">{{ cari.trim() ? 'Tidak ada survey yang cocok dengan pencarian.' : tab === 'antrian' ? 'Antrian kosong — tidak ada survey menunggu OPS. 👍' : 'Tidak ada survey di Teknis.' }}</td>
           </tr>
           <tr v-baris v-for="s in (tab === 'antrian' ? antrian : teknis)" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
             <td><b class="po-umur" :class="kelasUmur(s.status_at)">{{ umur(s.status_at) }}</b></td>
@@ -123,7 +128,7 @@ const KET: Record<string, string> = { ajukan: 'Diajukan Sales', teknis_selesai: 
       <table v-else-if="tab === 'order'" class="data-table">
         <thead><tr><th>Lama</th><th>No. PB · Site</th><th>Pelanggan</th><th>Layanan</th><th>Link vendor</th><th class="kanan">Modal · IKG</th><th>RFS</th></tr></thead>
         <tbody>
-          <tr v-if="!memuat && !order.length"><td colspan="7" class="muted pusat">Tidak ada order di tahap OPS. 👍</td></tr>
+          <tr v-if="!memuat && !error && !order.length"><td colspan="7" class="muted pusat">{{ cari.trim() ? 'Tidak ada order yang cocok dengan pencarian.' : 'Tidak ada order di tahap OPS. 👍' }}</td></tr>
           <tr v-baris v-for="o in order" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
             <td><b class="po-umur" :class="kelasUmur(o.tahap_at)">{{ umur(o.tahap_at) }}</b></td>
             <td><b>{{ o.nomor_pb }}</b> · {{ o.nama_site }}<br /><small class="muted">{{ o.site?.kode_site }}<template v-if="o.kota"> · {{ o.kota }}</template></small></td>
@@ -140,7 +145,7 @@ const KET: Record<string, string> = { ajukan: 'Diajukan Sales', teknis_selesai: 
       <table v-else class="data-table">
         <thead><tr><th>Survey · Perusahaan</th><th>Hasil</th><th class="kanan">Modal / bln</th><th class="kanan">IKG</th><th>Status</th><th>OPS</th></tr></thead>
         <tbody>
-          <tr v-if="!memuat && !riwayat.length"><td colspan="6" class="muted pusat">Belum ada.</td></tr>
+          <tr v-if="!memuat && !error && !riwayat.length"><td colspan="6" class="muted pusat">{{ cari.trim() ? 'Tidak ada survey yang cocok dengan pencarian.' : 'Belum ada survey yang selesai dicek OPS.' }}</td></tr>
           <tr v-baris v-for="s in riwayat" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
             <td><b>{{ s.nama_perusahaan }}</b><br /><small class="muted">{{ s.nomor_survey }}</small></td>
             <td><span class="hijau">{{ s.cover }} cover</span><template v-if="s.tidak_cover"> · <span class="oranye">{{ s.tidak_cover }} tidak cover</span></template></td>
@@ -151,7 +156,7 @@ const KET: Record<string, string> = { ajukan: 'Diajukan Sales', teknis_selesai: 
           </tr>
         </tbody>
       </table>
-      <p v-if="memuat" class="muted pusat">Memuat…</p>
+      <p v-if="memuat" class="loading-state">Memuat…</p>
     </div>
   </div>
 </template>

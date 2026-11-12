@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
+import { pesanGalat } from '@/composables/useDialog'
 
 const logs    = ref<any[]>([])
 const meta    = ref({ total: 0, page: 1, limit: 50, total_pages: 0 })
@@ -38,7 +39,9 @@ async function fetchStats() {
   } catch (e: any) { /* stats opsional, jangan blok halaman */ }
 }
 
+let urutLog = 0 // ganti halaman / filter cepat: hanya jawaban terakhir yang dipakai
 async function fetchLogs() {
+  const n = ++urutLog
   loading.value = true; error.value = ''
   try {
     const params: any = { page: page.value, limit: 50 }
@@ -49,10 +52,11 @@ async function fetchLogs() {
     if (fSearch.value) params.search    = fSearch.value
 
     const r = await api.get('/mailer/logs', { params, timeout: 12000 })
+    if (n !== urutLog) return
     logs.value = r.data.data
     meta.value = r.data.meta
-  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal memuat log email' }
-  finally { loading.value = false }
+  } catch (e: any) { if (n === urutLog) error.value = pesanGalat(e, 'Gagal memuat log email') }
+  finally { if (n === urutLog) loading.value = false }
 }
 
 function doFilter() { page.value = 1; fetchLogs() }
@@ -65,7 +69,9 @@ function clearFilter() {
 }
 
 function fmtTime(d: string) {
-  return new Date(d).toLocaleString('id-ID', {
+  const t = new Date(d)
+  if (isNaN(t.getTime())) return '—'
+  return t.toLocaleString('id-ID', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
   })
@@ -91,6 +97,7 @@ function openTest() {
 }
 
 async function sendTest() {
+  if (sending.value) return
   if (!testTo.value.trim()) { testErr.value = 'Isi alamat email tujuan'; return }
   sending.value = true; testOk.value = ''; testErr.value = ''
   try {
@@ -104,11 +111,9 @@ async function sendTest() {
   } catch (e: any) {
     const res = e.response
     if (!res) {
-      testErr.value = `Tidak ada respons dari server (${e.message || 'network error'}). Kemungkinan koneksi SMTP timeout / deploy belum selesai.`
+      testErr.value = `${pesanGalat(e, 'Tidak ada respons dari server.')} Kemungkinan koneksi SMTP timeout / deploy belum selesai.`
     } else {
-      const m = res.data?.message
-      const msg = Array.isArray(m) ? m.join(', ') : (m || (typeof res.data === 'string' ? res.data.slice(0, 200) : 'tanpa detail'))
-      testErr.value = `Gagal (HTTP ${res.status}): ${msg}`
+      testErr.value = `Gagal (HTTP ${res.status}): ${pesanGalat(e, 'tanpa detail')}`
     }
   } finally { sending.value = false }
 }
@@ -192,7 +197,10 @@ async function sendTest() {
         </thead>
         <tbody>
           <tr v-if="!logs.length">
-            <td colspan="6" class="empty">Belum ada email terkirim</td>
+            <td v-if="error" colspan="6" class="empty">
+              Log email gagal dimuat. <button type="button" class="btn-refresh" @click="fetchLogs">Coba lagi</button>
+            </td>
+            <td v-else colspan="6" class="empty">{{ hasFilter ? 'Tidak ada log yang cocok dengan filter ini' : 'Belum ada email terkirim' }}</td>
           </tr>
           <tr v-for="log in logs" :key="log.id_email_log">
             <td class="td-time">{{ log.created_at ? fmtTime(log.created_at) : '—' }}</td>

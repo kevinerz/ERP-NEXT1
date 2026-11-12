@@ -3,7 +3,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '@/services/api'
 import { fmtRupiah } from '@/composables/useFormat'
-import { alertError, confirmDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, toast } from '@/composables/useDialog'
 
 const props = defineProps<{ order: any }>()
 const emit = defineEmits<{ tutup: []; selesai: [] }>()
@@ -16,6 +16,9 @@ interface Tarif {
 }
 
 const memuat = ref(false)
+// Pemesanan kurir berbayar sedang dikirim — modal tidak boleh ditutup / dipesan ulang di tengah jalan
+const memesan = ref(false)
+function tutup() { if (!memesan.value) emit('tutup') }
 const saldo = ref<number | null>(null)
 const alamat = ref<Alamat[]>([])
 const provinsi = ref<Lokasi[]>([])
@@ -109,12 +112,16 @@ onMounted(async () => {
 })
 
 // Tebak provinsi/kota tujuan dari nama kota site / teks alamat teknisi
+let urutTebak = 0
 async function tebakTujuan(teks: string | null | undefined) {
+  const urut = ++urutTebak
   const cari = String(teks || '').toLowerCase().replace(/^(kota|kab\.?|kabupaten)\s+/, '').trim()
   if (!cari) return
   const norm = (n: string) => n.toLowerCase().replace(/^(kota|kab\.?|kabupaten)\s+/, '').replace(/\s*\(.*\)$/, '').trim()
   for (const p of provinsi.value) {
     const ks = await ambil<Lokasi[]>('/pasang-baru/kurir-api/kota', { province: p.code }).catch(() => [])
+    // tujuan sudah diganti / dipilih manual selama pencarian → hasil tebakan lama dibuang
+    if (urut !== urutTebak || tujuan.province_code) return
     // kota site: nama kota mengandung teks; alamat teknisi: teks alamat mengandung nama kota
     const cocok = ks.find((k) => norm(k.name).includes(cari) || (norm(k.name).length > 3 && cari.includes(norm(k.name))))
     if (cocok) {
@@ -147,7 +154,7 @@ watch(() => baru.city_code, async (v) => {
 watch([() => tujuan.district_code, pengirim, () => ({ ...paket })], () => { tarif.value = null; dipilih.value = null }, { deep: true })
 
 function gantiTujuan(t: 'Store' | 'Teknisi') {
-  if (tujuanKirim.value === t) return
+  if (tujuanKirim.value === t || memesan.value) return
   tujuanKirim.value = t
   isiPenerima()
   Object.assign(tujuan, { province_code: '', city_code: '', district_code: '' })
@@ -156,6 +163,7 @@ function gantiTujuan(t: 'Store' | 'Teknisi') {
 }
 const baruSiap = computed(() => baru.label.trim() && baru.contact_name.trim() && baru.contact_phone.trim() && baru.district_code && baru.address_line.trim())
 async function simpanAlamat() {
+  if (memuat.value) return
   memuat.value = true
   try {
     const { data } = await api.post('/pasang-baru/kurir-api/alamat', { ...baru, buka: undefined, is_default: !alamat.value.length })
@@ -166,6 +174,7 @@ async function simpanAlamat() {
 }
 
 async function cekOngkir() {
+  if (memuat.value) return
   memuat.value = true
   try {
     tarif.value = await ambil(`/pasang-baru/order/${props.order.id_pb}/kurir-api/ongkir`, {
@@ -180,12 +189,21 @@ async function cekOngkir() {
 const siapPesan = computed(() => !!dipilih.value && penerima.recipient_name.trim().length >= 3 && penerima.recipient_phone.trim() && penerima.recipient_address.trim()
   && penerima.product_name.trim() && (paket.sender_type === 'dropped' || penerima.picked_up_time))
 async function pesan() {
-  const t = dipilih.value!
-  if (!(await confirmDialog({
-    title: 'Pesan kurir',
-    message: `${t.courier_name} ${t.service_name} — total ${fmtRupiah(t.total_price)} akan dipotong dari saldo api.co.id${saldo.value !== null ? ` (saldo ${fmtRupiah(saldo.value)})` : ''}. Lanjutkan?`,
-    confirmLabel: 'Pesan',
-  }))) return
+  const t = dipilih.value
+  if (!t || !tarif.value || memuat.value || memesan.value) return
+  // Kunci sejak dialog konfirmasi dibuka: klik ganda tidak boleh memunculkan dua konfirmasi / dua order berbayar
+  memesan.value = true
+  try {
+    if (!(await confirmDialog({
+      title: 'Pesan kurir (berbayar)',
+      message: `${t.courier_name} ${t.service_name} untuk ${penerima.recipient_name} — total ${fmtRupiah(t.total_price)} akan dipotong dari saldo api.co.id${saldo.value !== null ? ` (saldo ${fmtRupiah(saldo.value)})` : ''}. Order kurir sungguhan langsung dibuat. Lanjutkan?`,
+      confirmLabel: 'Ya, pesan kurir',
+      variant: 'warning',
+    }))) return
+    await kirimPesanan(t)
+  } finally { memesan.value = false }
+}
+async function kirimPesanan(t: Tarif) {
   memuat.value = true
   try {
     await api.post(`/pasang-baru/order/${props.order.id_pb}/kurir-api/pesan`, {
@@ -193,18 +211,19 @@ async function pesan() {
       quantity: 1, insurance: paket.insurance, tujuan_kirim: tujuanKirim.value,
       picked_up_time: paket.sender_type === 'dropped' ? undefined : new Date(penerima.picked_up_time).toISOString(),
     })
+    toast('Order kurir dibuat — resi akan terisi otomatis')
     emit('selesai')
-  } catch (e) { alertError(e) } finally { memuat.value = false }
+  } catch (e) { alertError(e, 'Gagal memesan kurir') } finally { memuat.value = false }
 }
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="emit('tutup')">
+  <div class="modal-overlay" @click.self="tutup">
     <div class="modal modal-xl">
       <div class="modal-header">
         <h3 class="modal-title">📦 Pesan kurir via api.co.id</h3>
         <span class="ka-saldo" :class="{ merah: saldo === 0 }">Saldo {{ saldo === null ? '-' : fmtRupiah(saldo) }}</span>
-        <button class="btn-modal-close" @click="emit('tutup')">×</button>
+        <button type="button" class="btn-modal-close" aria-label="Tutup" :disabled="memesan" @click="tutup">×</button>
       </div>
       <div class="modal-body">
         <div v-if="saldo === 0" class="alert alert-warning">Saldo api.co.id Rp 0 — top up dulu di dashboard api.co.id. Cek ongkir Rp 5 per cek, ongkir dipotong saat order dibuat.</div>
@@ -272,7 +291,7 @@ async function pesan() {
             <table class="data-table">
               <thead><tr><th></th><th>Kurir</th><th>Layanan</th><th>Estimasi</th><th class="kanan">Total</th></tr></thead>
               <tbody>
-                <tr v-baris v-for="r in tarif.rates" :key="r.courier_code + r.service_code" class="klik" :class="{ pilih: dipilih === r }" @click="dipilih = r">
+                <tr v-baris v-for="r in tarif.rates" :key="r.courier_code + r.service_code" class="klik" :class="{ pilih: dipilih === r }" @click="!memesan && (dipilih = r)">
                   <td><input type="radio" :checked="dipilih === r" /></td>
                   <td><b>{{ r.courier_name }}</b> <span v-if="r.is_cheapest" class="badge badge-green">termurah</span> <span v-if="r.is_fastest" class="badge badge-blue">tercepat</span></td>
                   <td>{{ r.service_name }}</td>
@@ -301,9 +320,10 @@ async function pesan() {
         <p v-if="memuat" class="muted">Memuat…</p>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-ghost" @click="emit('tutup')">Tutup</button>
-        <button v-if="tarif" class="btn btn-primary" :disabled="!siapPesan || memuat" @click="pesan">
-          Pesan {{ dipilih ? `${dipilih.courier_name} · ${fmtRupiah(dipilih.total_price)}` : 'kurir' }}
+        <button type="button" class="btn btn-ghost" :disabled="memesan" @click="tutup">Tutup</button>
+        <button v-if="tarif" type="button" class="btn btn-primary" :class="{ 'is-loading': memesan && memuat }" :disabled="!siapPesan || memuat || memesan" @click="pesan">
+          <template v-if="memesan && memuat">Memesan…</template>
+          <template v-else>Pesan {{ dipilih ? `${dipilih.courier_name} · ${fmtRupiah(dipilih.total_price)}` : 'kurir' }}</template>
         </button>
       </div>
     </div>

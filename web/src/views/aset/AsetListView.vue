@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { ref, computed, onMounted } from 'vue'
+import { confirmDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 import { useRouter } from 'vue-router'
 import { useAsetStore } from '@/stores/aset'
 import { useProyekStore } from '@/stores/proyek'
@@ -25,6 +25,7 @@ const gudangList = ref<GudangOpt[]>([])
 
 const showModal = ref(false)
 const submitting = ref(false)
+const menghapus = ref(0)
 const formError = ref('')
 const form = ref({
   nama_perangkat: '',
@@ -74,7 +75,8 @@ async function pilihSemuaSesuaiFilter() {
       setTimeout(() => { selectNotif.value = '' }, 6000)
     }
   } catch (e: any) {
-    selectNotif.value = e.response?.data?.message || 'Gagal memilih semua aset'
+    selectNotif.value = pesanGalat(e, 'Gagal memilih semua aset')
+    setTimeout(() => { selectNotif.value = '' }, 6000)
   } finally { selectingAll.value = false }
 }
 function cetakLabelTerpilih() {
@@ -98,9 +100,10 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   Disposed:   { bg: '#f1f5f9', color: '#64748b' },
 }
 
-onMounted(async () => {
-  await Promise.all([aset.fetchSummary(), aset.fetchKategori(), proyek.fetchSiteList(), fetchGudang()])
+onMounted(() => {
+  // daftar utama tidak menunggu data pendukung — kegagalan salah satunya tidak boleh mengosongkan tabel
   fetchData()
+  aset.fetchSummary(); aset.fetchKategori(); proyek.fetchSiteList(); fetchGudang()
 })
 
 const gudangLoadError = ref(false)
@@ -111,6 +114,8 @@ async function fetchGudang() {
     gudangList.value = r.data.data
   } catch { gudangLoadError.value = true }
 }
+
+const adaFilter = computed(() => !!(filterStatus.value || filterKategori.value || filterKondisi.value || filterGudang.value || search.value.trim()))
 
 function fetchData() {
   const params: any = { page: page.value }
@@ -136,8 +141,12 @@ function resetForm() {
 }
 
 async function handleSubmit() {
-  if (!form.value.nama_perangkat || !form.value.kategori) {
+  if (submitting.value) return
+  if (!form.value.nama_perangkat.trim() || !form.value.kategori.trim()) {
     formError.value = 'Nama perangkat dan kategori wajib diisi'; return
+  }
+  if (!form.value.is_serialized && !(Number(form.value.stok_jumlah) >= 1)) {
+    formError.value = 'Jumlah stok minimal 1'; return
   }
   submitting.value = true; formError.value = ''
   try {
@@ -146,23 +155,31 @@ async function handleSubmit() {
     if (!payload.id_gudang) delete payload.id_gudang
     if (!payload.serial_number) delete payload.serial_number
     if (!payload.tgl_perolehan) delete payload.tgl_perolehan
+    if (typeof payload.harga_perolehan !== 'number') payload.harga_perolehan = 0
     const result = await aset.create(payload)
     showModal.value = false
-    await aset.fetchSummary()
+    toast('Aset ditambahkan')
+    aset.fetchSummary()
     router.push(`/assets/${result.id_aset}`)
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal menambah aset' }
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal menambah aset') }
   finally { submitting.value = false }
 }
 
 async function hapusAset(id: number, nama: string) {
   if (!(await confirmDialog({ title: 'Hapus Aset?', message: `Hapus aset "${nama}" ini?`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  if (menghapus.value) return
+  menghapus.value = id
   try {
     await api.delete(`/assets/${id}`)
-    await aset.fetchSummary()
+    selectedItems.value.delete(id)
+    toast('Aset dihapus')
+    // baris terakhir di halaman ini terhapus → mundur satu halaman agar tabel tidak kosong
+    if (aset.list.length === 1 && page.value > 1) page.value--
+    aset.fetchSummary()
     fetchData()
   } catch (e: any) {
     await alertError(e, 'Gagal menghapus aset')
-  }
+  } finally { menghapus.value = 0 }
 }
 
 function fmtRupiah(n: number) {
@@ -227,7 +244,10 @@ function fmtRupiah(n: number) {
       <button class="btn-search" @click="doFilter">Cari</button>
     </div>
 
-    <div v-if="aset.error" class="alert-error">{{ aset.error }}</div>
+    <div v-if="aset.error" class="alert-error" role="alert">
+      {{ aset.error }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="fetchData">↻ Coba lagi</button>
+    </div>
     <div v-if="selectNotif" class="select-notif">{{ selectNotif }}</div>
 
     <div v-if="selectedItems.size > 0" class="selection-bar">
@@ -260,7 +280,7 @@ function fmtRupiah(n: number) {
         </thead>
         <tbody>
           <tr v-if="!aset.list.length">
-            <td colspan="10" class="empty">Belum ada data aset</td>
+            <td colspan="10" class="empty">{{ aset.error ? 'Data aset gagal dimuat' : adaFilter ? 'Tidak ada aset yang cocok dengan filter ini' : 'Belum ada data aset' }}</td>
           </tr>
           <tr v-baris v-for="a in aset.list" :key="a.id_aset" class="row-link" @click="router.push(`/assets/${a.id_aset}`)">
             <td class="center" @click.stop>
@@ -292,7 +312,9 @@ function fmtRupiah(n: number) {
             <td @click.stop>
               <button
                 v-if="a.status_aset === 'Di_Gudang'"
+                type="button"
                 class="btn-hapus"
+                :disabled="menghapus === a.id_aset"
                 @click="hapusAset(a.id_aset, a.nama_perangkat)"
               >Hapus</button>
             </td>

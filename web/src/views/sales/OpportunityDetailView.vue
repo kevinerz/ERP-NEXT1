@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useMasterStore } from '@/stores/master'
 import { fmtRupiahPenuh, fmtDateShort, fmtDateTime, todayLocal, toDatetimeLocal } from '@/composables/useFormat'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, pesanGalat } from '@/composables/useDialog'
 
 const router = useRouter()
 const route = useRoute()
@@ -34,7 +34,7 @@ const approveError = ref('')
 
 // Buat Site dari Opportunity
 const showBuatSite = ref(false)
-const siteForm = ref({ id_pelanggan: 0, kode_site: '', nama_site: '', alamat_lengkap: '', kota: '', status_site: 'Prospek' })
+const siteForm = ref({ id_pelanggan: 0, kode_site: '', nama_site: '', alamat_lengkap: '', kota: '', provinsi: '', status_site: 'Prospek' })
 const siteSubmitting = ref(false)
 const siteError = ref('')
 
@@ -61,7 +61,8 @@ const QT_STATUS_COLOR: Record<string, string> = {
 const pageLoading = ref(true)
 const loadError = ref('')
 
-onMounted(async () => {
+async function muat() {
+  pageLoading.value = true; loadError.value = ''
   sales.currentOpp = null
   try {
     const [opp] = await Promise.all([
@@ -72,10 +73,11 @@ onMounted(async () => {
     ])
     if (!opp) loadError.value = sales.error || 'Opportunity tidak ditemukan'
   } catch (e: any) {
-    if (!sales.currentOpp) loadError.value = e.response?.data?.message || 'Gagal memuat opportunity'
+    if (!sales.currentOpp) loadError.value = pesanGalat(e, 'Gagal memuat opportunity')
   } finally { pageLoading.value = false }
   if (sales.salesList.length) approveForm.value.id_approver = sales.salesList[0]!.id_karyawan
-})
+}
+onMounted(muat)
 
 function openEditOpp() {
   const o = sales.currentOpp
@@ -83,7 +85,7 @@ function openEditOpp() {
     nama_opportunity: o.nama_opportunity,
     id_layanan: o.id_layanan || 0,
     id_sales_pic: o.id_sales_pic,
-    estimasi_nilai: Number(o.estimasi_nilai),
+    estimasi_nilai: Number(o.estimasi_nilai) || 0,
     tahapan: o.tahapan,
     alasan_lost: o.alasan_lost || '',
     tgl_target_close: o.tgl_target_close ? o.tgl_target_close.substring(0, 10) : '',
@@ -94,10 +96,16 @@ function openEditOpp() {
 }
 
 async function handleEditOpp() {
+  if (editSubmitting.value) return
+  if (!String(editForm.value.nama_opportunity || '').trim()) { editError.value = 'Nama opportunity wajib diisi'; return }
+  const nilai = Number(editForm.value.estimasi_nilai) || 0
+  if (nilai < 0) { editError.value = 'Estimasi nilai tidak boleh negatif'; return }
   editSubmitting.value = true; editError.value = ''
   try {
     await sales.updateOpportunity(id, {
       ...editForm.value,
+      nama_opportunity: editForm.value.nama_opportunity.trim(),
+      estimasi_nilai: nilai,
       id_layanan: editForm.value.id_layanan || undefined,
       tgl_target_close: editForm.value.tgl_target_close || undefined,
       alasan_lost: editForm.value.alasan_lost || undefined,
@@ -105,11 +113,17 @@ async function handleEditOpp() {
     await sales.fetchOneOpportunity(id)
     showEditOpp.value = false
     flash('Opportunity diperbarui')
-  } catch (e: any) { editError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { editError.value = pesanGalat(e, 'Gagal menyimpan opportunity') }
   finally { editSubmitting.value = false }
 }
 
 async function handleAddQt() {
+  if (qtSubmitting.value) return
+  const f = qtForm.value
+  const mrc = Number(f.harga_mrc) || 0, otc = Number(f.harga_otc) || 0
+  if (!f.tgl_quotation) { qtError.value = 'Tanggal quotation wajib diisi'; return }
+  if (mrc < 0 || otc < 0) { qtError.value = 'Harga tidak boleh negatif'; return }
+  if (f.tgl_berlaku_sampai && f.tgl_berlaku_sampai < f.tgl_quotation) { qtError.value = 'Tanggal berlaku sampai tidak boleh sebelum tanggal quotation'; return }
   qtSubmitting.value = true; qtError.value = ''
   try {
     await sales.createQuotation({
@@ -117,15 +131,15 @@ async function handleAddQt() {
       id_sales_pic: sales.currentOpp.id_sales_pic,
       tgl_quotation: qtForm.value.tgl_quotation,
       tgl_berlaku_sampai: qtForm.value.tgl_berlaku_sampai || undefined,
-      harga_mrc: qtForm.value.harga_mrc,
-      harga_otc: qtForm.value.harga_otc,
+      harga_mrc: mrc,
+      harga_otc: otc,
       catatan: qtForm.value.catatan || undefined,
     })
     await sales.fetchOneOpportunity(id)
     showAddQt.value = false
     qtForm.value = { tgl_quotation: todayLocal(), tgl_berlaku_sampai: '', harga_mrc: 0, harga_otc: 0, catatan: '' }
     flash('Quotation dibuat')
-  } catch (e: any) { qtError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { qtError.value = pesanGalat(e, 'Gagal membuat quotation') }
   finally { qtSubmitting.value = false }
 }
 
@@ -137,13 +151,14 @@ function openApprove(qtId: number) {
 }
 
 async function handleApprove() {
+  if (approveSubmitting.value) return
   approveSubmitting.value = true; approveError.value = ''
   try {
     await sales.approveQuotation(approveId.value, approveForm.value)
     await sales.fetchOneOpportunity(id)
     showApprove.value = false
-    flash(`Quotation ${approveForm.value.status_approval}`)
-  } catch (e: any) { approveError.value = e.response?.data?.message || 'Gagal approve' }
+    flash(approveForm.value.status_approval === 'Approved' ? 'Quotation disetujui' : 'Quotation ditolak')
+  } catch (e: any) { approveError.value = pesanGalat(e, 'Gagal memproses approval') }
   finally { approveSubmitting.value = false }
 }
 
@@ -181,7 +196,9 @@ async function hapusActivity(a: any) {
 }
 
 async function handleAddActivity() {
-  if (!actForm.value.ringkasan) { actError.value = 'Ringkasan wajib diisi'; return }
+  if (actSubmitting.value) return
+  if (!actForm.value.ringkasan.trim()) { actError.value = 'Ringkasan wajib diisi'; return }
+  if (!actForm.value.tanggal_aktivitas || isNaN(new Date(actForm.value.tanggal_aktivitas).getTime())) { actError.value = 'Tanggal & waktu aktivitas wajib diisi'; return }
   actSubmitting.value = true; actError.value = ''
   try {
     if (editingActivityId.value) {
@@ -206,7 +223,7 @@ async function handleAddActivity() {
     flash(editingActivityId.value ? 'Aktivitas diperbarui' : 'Aktivitas dicatat')
     editingActivityId.value = null
     actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: toDatetimeLocal(new Date()), ringkasan: '', hasil: 'Netral' }
-  } catch (e: any) { actError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { actError.value = pesanGalat(e, 'Gagal menyimpan aktivitas') }
   finally { actSubmitting.value = false }
 }
 
@@ -218,34 +235,51 @@ function openBuatSite() {
     nama_site: opp.lead?.nama_perusahaan || opp.lead?.nama_prospek || '',
     alamat_lengkap: '',
     kota: '',
+    provinsi: '',
     status_site: 'Prospek',
   }
-  siteError.value = ''
+  siteError.value = opp.id_layanan ? '' : 'Opportunity ini belum punya layanan. Isi layanan lewat tombol Edit sebelum membuat site.'
   showBuatSite.value = true
 }
 
 async function handleBuatSite() {
-  if (!siteForm.value.id_pelanggan || !siteForm.value.kode_site || !siteForm.value.nama_site || !siteForm.value.alamat_lengkap) {
+  if (siteSubmitting.value) return
+  const s = siteForm.value
+  if (!sales.currentOpp.id_layanan) {
+    siteError.value = 'Opportunity ini belum punya layanan. Isi layanan lewat tombol Edit sebelum membuat site.'; return
+  }
+  if (!s.id_pelanggan || !s.kode_site.trim() || !s.nama_site.trim() || !s.alamat_lengkap.trim()) {
     siteError.value = 'Pelanggan, Kode, Nama, dan Alamat wajib diisi'; return
+  }
+  // Server mewajibkan kota & provinsi (min. 2 huruf) — dipakai NOC board & laporan per wilayah
+  if (s.kota.trim().length < 2 || s.provinsi.trim().length < 2) {
+    siteError.value = 'Kota dan Provinsi wajib diisi'; return
   }
   siteSubmitting.value = true; siteError.value = ''
   try {
     const r = await api.post('/master/site', {
       id_pelanggan: siteForm.value.id_pelanggan,
       id_layanan: sales.currentOpp.id_layanan,
-      kode_site: siteForm.value.kode_site,
-      nama_site: siteForm.value.nama_site,
-      alamat_lengkap: siteForm.value.alamat_lengkap,
-      kota: siteForm.value.kota || undefined,
+      kode_site: s.kode_site.trim(),
+      nama_site: s.nama_site.trim(),
+      alamat_lengkap: s.alamat_lengkap.trim(),
+      kota: s.kota.trim(),
+      provinsi: s.provinsi.trim(),
       status_site: siteForm.value.status_site,
     })
     showBuatSite.value = false
     router.push(`/master/site/${r.data.data.id_site}`)
-  } catch (e: any) { siteError.value = e.response?.data?.message || 'Gagal membuat site' }
+  } catch (e: any) { siteError.value = pesanGalat(e, 'Gagal membuat site') }
   finally { siteSubmitting.value = false }
 }
 
-function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
+let flashTimer: ReturnType<typeof setTimeout> | undefined
+function flash(msg: string) {
+  successMsg.value = msg
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => successMsg.value = '', 3000)
+}
+onBeforeUnmount(() => clearTimeout(flashTimer))
 const fmt = fmtRupiahPenuh
 const fmtDate = fmtDateShort
 // Samakan dengan LeadDetail (pakai tahun, aman untuk nilai kosong)
@@ -256,8 +290,9 @@ const fmtDatetime = fmtDateTime
   <div class="page">
     <div v-if="pageLoading" class="loading-page">Memuat...</div>
     <div v-else-if="loadError || !sales.currentOpp" class="loading-page">
-      <p class="form-error">{{ loadError || 'Opportunity tidak ditemukan' }}</p>
-      <button class="btn-back" @click="router.push('/sales/opportunity')">← Kembali ke Opportunity</button>
+      <p class="form-error" role="alert">{{ loadError || 'Opportunity tidak ditemukan' }}</p>
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-bottom:12px" @click="muat">↻ Coba lagi</button>
+      <button class="btn-back" style="margin:0 auto" @click="router.push('/sales/opportunity')">← Kembali ke Opportunity</button>
     </div>
     <template v-else>
       <!-- Header -->
@@ -296,7 +331,7 @@ const fmtDatetime = fmtDateTime
         </div>
         <div class="info-chip">
           <span class="ic-label">Sales PIC</span>
-          <span class="ic-value">{{ sales.currentOpp.sales_pic?.nama_lengkap }}</span>
+          <span class="ic-value">{{ sales.currentOpp.sales_pic?.nama_lengkap || '—' }}</span>
         </div>
         <div class="info-chip">
           <span class="ic-label">Target Close</span>
@@ -351,7 +386,7 @@ const fmtDatetime = fmtDateTime
           </div>
           <div class="act-right">
             <p class="act-ringkasan">{{ a.ringkasan }}</p>
-            <span :class="['act-hasil', `hasil-${a.hasil?.toLowerCase()}`]">{{ a.hasil }}</span>
+            <span v-if="a.hasil" :class="['act-hasil', `hasil-${a.hasil.toLowerCase()}`]">{{ a.hasil }}</span>
           </div>
           <div class="act-actions">
             <button class="btn-act-edit" @click="openEditActivity(a)">Edit</button>
@@ -386,7 +421,7 @@ const fmtDatetime = fmtDateTime
             </div>
             <div class="field">
               <label>Estimasi Nilai (Rp)</label>
-              <input v-model.number="editForm.estimasi_nilai" type="number" />
+              <input v-model.number="editForm.estimasi_nilai" type="number" min="0" />
             </div>
             <div class="field">
               <label>Target Close</label>
@@ -432,11 +467,11 @@ const fmtDatetime = fmtDateTime
             </div>
             <div class="field">
               <label>Harga MRC (Rp/bln)</label>
-              <input v-model.number="qtForm.harga_mrc" type="number" placeholder="0" />
+              <input v-model.number="qtForm.harga_mrc" type="number" min="0" placeholder="0" />
             </div>
             <div class="field">
               <label>Harga OTC (Rp)</label>
-              <input v-model.number="qtForm.harga_otc" type="number" placeholder="0" />
+              <input v-model.number="qtForm.harga_otc" type="number" min="0" placeholder="0" />
             </div>
             <div class="field full">
               <label>Catatan</label>
@@ -517,8 +552,12 @@ const fmtDatetime = fmtDateTime
               <textarea v-model="siteForm.alamat_lengkap" rows="2" placeholder="Jl. ..."></textarea>
             </div>
             <div class="field">
-              <label>Kota</label>
-              <input v-model="siteForm.kota" placeholder="Opsional" />
+              <label>Kota <span class="req">*</span></label>
+              <input v-model="siteForm.kota" placeholder="Mis: Manado" />
+            </div>
+            <div class="field">
+              <label>Provinsi <span class="req">*</span></label>
+              <input v-model="siteForm.provinsi" placeholder="Mis: Sulawesi Utara" />
             </div>
             <div class="field">
               <label>Status Site</label>

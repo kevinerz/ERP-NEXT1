@@ -2,7 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, toast, pesanGalat } from '@/composables/useDialog'
 import { infoDept, inisial, masaKerjaTeks, umur } from './hris-util'
 import { onBeforeUnmount } from 'vue'
 
@@ -100,9 +100,9 @@ async function muatDepartemen() {
   departemenGagal.value = !hris.departemenList.length
 }
 
-onMounted(async () => {
-  await muatDepartemen()
-  await loadForm()
+onMounted(() => {
+  muatDepartemen()
+  loadForm()
 })
 
 onBeforeRouteLeave(async () => {
@@ -113,8 +113,10 @@ onBeforeRouteLeave(async () => {
 watch(() => route.params.id, () => { loadForm() })
 
 async function submit() {
+  // jangan kirim saat data edit belum/ gagal termuat (Ctrl+S tetap aktif di keadaan itu)
+  if (submitting.value || muatForm.value || muatError.value) return
   errorMsg.value = ''
-  if (!form.value.nip || !form.value.nama_lengkap || !form.value.jabatan || !form.value.departemen) {
+  if (!form.value.nip.trim() || !form.value.nama_lengkap.trim() || !form.value.jabatan.trim() || !form.value.departemen) {
     errorMsg.value = 'NIP, Nama, Jabatan, dan Departemen wajib diisi'
     return
   }
@@ -158,14 +160,16 @@ async function submit() {
     if (isEdit.value && id.value) {
       await hris.updateKaryawan(id.value, payload)
       tersimpan.value = true
+      toast('Perubahan profil tersimpan')
       router.push(`/hris/karyawan/${id.value}`)
     } else {
       const result = await hris.createKaryawan(payload)
       tersimpan.value = true
+      toast('Karyawan ditambahkan ke Buku Tim')
       router.push(`/hris/karyawan/${result.id_karyawan}`)
     }
   } catch (e: any) {
-    errorMsg.value = e.response?.data?.message || 'Terjadi kesalahan'
+    errorMsg.value = pesanGalat(e, 'Gagal menyimpan data karyawan')
   } finally {
     submitting.value = false
   }

@@ -120,7 +120,7 @@ export class PublicWoService {
     if (!wo) throw new NotFoundException('Work Order tidak ditemukan');
 
     const updateData: any = { ...dto };
-    if (dto.status_wo === 'Selesai') updateData.completed_at = new Date();
+    if (dto.status_wo === 'Selesai' || dto.status_wo === 'Completed') updateData.completed_at = new Date();
 
     const data = await this.prisma.workOrder.update({
       where: { id_wo: id },

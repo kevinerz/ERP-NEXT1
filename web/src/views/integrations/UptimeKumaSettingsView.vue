@@ -3,7 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useProyekStore } from '@/stores/proyek'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, pesanGalat } from '@/composables/useDialog'
 
 const proyek = useProyekStore()
 const auth = useAuthStore()
@@ -16,7 +16,7 @@ watch(bisaKelolaKoneksi, (v) => { if (!v && tab.value === 'koneksi') tab.value =
 const status = ref<any>(null)
 const statusError = ref('')
 // pesan error dari server (untuk ditampilkan inline)
-const pesanErr = (e: any, f: string) => { const m = e?.response?.data?.message; return Array.isArray(m) ? m.join(', ') : m || f }
+const pesanErr = (e: any, f: string) => pesanGalat(e, f)
 async function fetchStatus() {
   try { status.value = (await api.get('/uptime-kuma/status')).data.data; statusError.value = '' }
   catch (e) { statusError.value = pesanErr(e, 'Gagal memuat status Uptime Kuma') }
@@ -45,16 +45,17 @@ async function fetchConfig() {
   } catch (e) { configLoadError.value = pesanErr(e, 'Gagal memuat konfigurasi Uptime Kuma') }
 }
 async function saveConfig() {
-  if (!configLoaded.value) return
+  if (!configLoaded.value || savingConfig.value) return
   savingConfig.value = true; configMsg.value = ''; configErr.value = false
   try {
     await api.patch('/uptime-kuma/config', configForm.value)
     configMsg.value = 'Konfigurasi disimpan.'
     await Promise.all([fetchConfig(), fetchStatus()])
-  } catch (e: any) { configErr.value = true; configMsg.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { configErr.value = true; configMsg.value = pesanGalat(e, 'Gagal menyimpan') }
   finally { savingConfig.value = false }
 }
 async function buatTokenBaru() {
+  if (regenerating.value) return
   if (webhookPath.value && !(await confirmDialog({
     title: 'Buat token baru?',
     message: 'URL webhook lama tidak akan berlaku lagi — kamu harus update di Uptime Kuma.',
@@ -65,9 +66,9 @@ async function buatTokenBaru() {
   try {
     const r = await api.post('/uptime-kuma/config/regenerate-token')
     webhookPath.value = r.data.data.webhook_path
-    configMsg.value = r.data.message
+    configMsg.value = r.data.message || 'Token webhook baru dibuat.'
     await fetchStatus()
-  } catch (e: any) { configErr.value = true; configMsg.value = e.response?.data?.message || 'Gagal membuat token' }
+  } catch (e: any) { configErr.value = true; configMsg.value = pesanGalat(e, 'Gagal membuat token') }
   finally { regenerating.value = false }
 }
 async function salinUrl() {
@@ -105,17 +106,18 @@ async function fetchMapping() {
 }
 
 async function submitMapping() {
-  if (!mapForm.value.monitor_id || !mapForm.value.monitor_name || !mapForm.value.id_site) {
+  if (!String(mapForm.value.monitor_id).trim() || !mapForm.value.monitor_name.trim() || !mapForm.value.id_site) {
     mapErr.value = true
     mapMsg.value = 'ID monitor, nama monitor, dan site wajib diisi'; return
   }
+  if (mapSubmitting.value) return
   mapSubmitting.value = true; mapMsg.value = ''; mapErr.value = false
   try {
     const r = await api.post('/uptime-kuma/mapping', mapForm.value)
-    mapMsg.value = r.data.message
+    mapMsg.value = r.data.message || 'Mapping disimpan.'
     mapForm.value = { monitor_id: '', monitor_name: '', id_site: 0 }
     await fetchMapping()
-  } catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menyimpan mapping' }
+  } catch (e: any) { mapErr.value = true; mapMsg.value = pesanGalat(e, 'Gagal menyimpan mapping') }
   finally { mapSubmitting.value = false }
 }
 
@@ -126,9 +128,10 @@ async function hapusMapping(id: number, nama: string) {
     variant: 'danger',
     confirmLabel: 'Ya, Hapus',
   }))) return
+  if (hapusMappingId.value) return
   hapusMappingId.value = id; mapMsg.value = ''
   try { await api.delete(`/uptime-kuma/mapping/${id}`); await fetchMapping() }
-  catch (e: any) { mapErr.value = true; mapMsg.value = e.response?.data?.message || 'Gagal menghapus mapping' }
+  catch (e: any) { mapErr.value = true; mapMsg.value = pesanGalat(e, 'Gagal menghapus mapping') }
   finally { hapusMappingId.value = 0 }
 }
 
@@ -143,9 +146,9 @@ async function fetchMonitors() {
   auditLoading.value = true; auditError.value = ''
   try {
     const r = (await api.get('/uptime-kuma/devices')).data
-    monitors.value = r.data
-    if (!r.data.length && r.message) auditError.value = r.message
-  } catch (e: any) { auditError.value = e.response?.data?.message || 'Gagal memuat daftar monitor' }
+    monitors.value = Array.isArray(r.data) ? r.data : []
+    if (!monitors.value.length && r.message) auditError.value = r.message
+  } catch (e: any) { auditError.value = pesanGalat(e, 'Gagal memuat daftar monitor') }
   finally { auditLoading.value = false }
 }
 const filteredMonitors = computed(() => {
@@ -284,7 +287,7 @@ onMounted(async () => {
           <label class="chk"><input type="checkbox" v-model="onlyUnmatched" /> Hanya yang belum match</label>
           <button class="btn-secondary" @click="fetchMonitors">🔄 Muat Ulang</button>
         </div>
-        <p v-if="auditError" class="msg err">{{ auditError }}</p>
+        <p v-if="auditError" class="msg err">⚠ {{ auditError }} <button type="button" class="btn-secondary" @click="fetchMonitors">Coba lagi</button></p>
         <div v-if="auditLoading" class="loading">Memuat dari Uptime Kuma...</div>
         <template v-else>
           <p class="result-count">{{ filteredMonitors.length }} dari {{ monitors.length }} monitor</p>

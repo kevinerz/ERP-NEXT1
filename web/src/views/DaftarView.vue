@@ -10,8 +10,8 @@
       <div v-if="result" class="state-box success">
         <span class="state-icon">✅</span>
         <h3>Pendaftaran Berhasil!</h3>
-        <p>{{ result.message }}</p>
-        <div v-if="!result.data.email_sent" class="credential-box">
+        <p>{{ result.message || 'Data Anda sudah kami terima.' }}</p>
+        <div v-if="result.data && !result.data.email_sent" class="credential-box">
           <div class="cred-row"><span class="cred-label">Username</span><span class="cred-value">{{ result.data.username }}</span></div>
           <div class="cred-row"><span class="cred-label">Password</span><span class="cred-value">{{ result.data.password }}</span></div>
           <p class="cred-warning">⚠️ Catat sekarang — password ini tidak akan ditampilkan lagi.</p>
@@ -182,8 +182,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 
 const departemenList = ref<string[]>([])
 const departemenError = ref('')
@@ -216,7 +217,7 @@ async function fetchDepartemenList() {
   } catch (e: any) {
     // pilihan wajib kosong tanpa penjelasan → tampilkan pesan + coba lagi
     departemenList.value = []
-    departemenError.value = e?.response?.data?.message || 'Gagal memuat daftar departemen'
+    departemenError.value = pesanGalat(e, 'Gagal memuat daftar departemen')
   }
 }
 
@@ -228,7 +229,8 @@ async function fetchCaptcha() {
     captchaQuestion.value = r.data.data.question
     captchaToken.value = r.data.data.captcha_token
   } catch {
-    captchaQuestion.value = 'Gagal memuat captcha, coba muat ulang halaman'
+    captchaToken.value = ''
+    captchaQuestion.value = 'Gagal memuat pertanyaan verifikasi — klik ↻ untuk mencoba lagi'
   } finally {
     loadingCaptcha.value = false
   }
@@ -239,11 +241,24 @@ function handleFotoChange(e: Event) {
   const file = input.files?.[0]
   if (!file) return
   foto.value = file
+  if (fotoPreview.value) URL.revokeObjectURL(fotoPreview.value)
   fotoPreview.value = URL.createObjectURL(file)
 }
+onBeforeUnmount(() => { if (fotoPreview.value) URL.revokeObjectURL(fotoPreview.value) })
 
 async function submit() {
+  if (submitting.value) return
   submitError.value = ''
+  const f = form.value
+  // atribut `required` meloloskan isian yang hanya berisi spasi
+  if (![f.nama_lengkap, f.jabatan, f.departemen, f.no_hp, f.email, captchaAnswer.value].every((v) => v.trim())) {
+    submitError.value = 'Lengkapi semua isian bertanda * termasuk jawaban verifikasi'
+    return
+  }
+  if (!captchaToken.value) {
+    submitError.value = 'Pertanyaan verifikasi belum termuat — klik ↻ untuk memuat ulang'
+    return
+  }
   submitting.value = true
   try {
     const fd = new FormData()
@@ -257,7 +272,7 @@ async function submit() {
     })
     result.value = r.data
   } catch (e: any) {
-    submitError.value = e.response?.data?.message || 'Gagal mengirim pendaftaran'
+    submitError.value = pesanGalat(e, 'Gagal mengirim pendaftaran')
     await fetchCaptcha()
   } finally {
     submitting.value = false

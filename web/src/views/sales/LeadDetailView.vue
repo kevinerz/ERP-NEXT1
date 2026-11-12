@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import api from '@/services/api'
 import { useSalesStore } from '@/stores/sales'
 import { useMasterStore } from '@/stores/master'
 import { fmtRupiahPenuh, fmtDateShort, fmtDateTime, toDatetimeLocal } from '@/composables/useFormat'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, pesanGalat } from '@/composables/useDialog'
 
 const router = useRouter()
 const route = useRoute()
@@ -48,7 +48,8 @@ const TAHAPAN_COLOR: Record<string, string> = {
 const pageLoading = ref(true)
 const loadError = ref('')
 
-onMounted(async () => {
+async function muat() {
+  pageLoading.value = true; loadError.value = ''
   sales.currentLead = null
   try {
     const [lead] = await Promise.all([
@@ -58,9 +59,10 @@ onMounted(async () => {
     ])
     if (!lead) loadError.value = sales.error || 'Lead tidak ditemukan'
   } catch (e: any) {
-    if (!sales.currentLead) loadError.value = e.response?.data?.message || 'Gagal memuat lead'
+    if (!sales.currentLead) loadError.value = pesanGalat(e, 'Gagal memuat lead')
   } finally { pageLoading.value = false }
-})
+}
+onMounted(muat)
 
 function openEditLead() {
   const l = sales.currentLead
@@ -79,26 +81,32 @@ function openEditLead() {
 }
 
 async function handleEditLead() {
+  if (editSubmitting.value) return
+  if (!String(editForm.value.nama_prospek || '').trim()) { editError.value = 'Nama prospek wajib diisi'; return }
   editSubmitting.value = true; editError.value = ''
   try {
-    await sales.updateLead(id, editForm.value)
+    // Email kosong dikirim null: string kosong ditolak validasi email di server
+    await sales.updateLead(id, { ...editForm.value, nama_prospek: editForm.value.nama_prospek.trim(), email: editForm.value.email?.trim() || null })
     await sales.fetchOneLead(id)
     showEditLead.value = false
     flash('Lead diperbarui')
-  } catch (e: any) { editError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { editError.value = pesanGalat(e, 'Gagal menyimpan lead') }
   finally { editSubmitting.value = false }
 }
 
 async function handleAddOpp() {
-  if (!oppForm.value.nama_opportunity) { oppError.value = 'Nama opportunity wajib diisi'; return }
+  if (oppSubmitting.value) return
+  if (!oppForm.value.nama_opportunity.trim()) { oppError.value = 'Nama opportunity wajib diisi'; return }
+  const nilai = Number(oppForm.value.estimasi_nilai) || 0
+  if (nilai < 0) { oppError.value = 'Estimasi nilai tidak boleh negatif'; return }
   oppSubmitting.value = true; oppError.value = ''
   try {
     await sales.createOpportunity({
       id_lead: id,
       id_sales_pic: sales.currentLead.id_sales_pic,
-      nama_opportunity: oppForm.value.nama_opportunity,
+      nama_opportunity: oppForm.value.nama_opportunity.trim(),
       id_layanan: oppForm.value.id_layanan || undefined,
-      estimasi_nilai: oppForm.value.estimasi_nilai || 0,
+      estimasi_nilai: nilai,
       tahapan: oppForm.value.tahapan,
       tgl_target_close: oppForm.value.tgl_target_close || undefined,
       catatan: oppForm.value.catatan || undefined,
@@ -107,7 +115,7 @@ async function handleAddOpp() {
     showAddOpp.value = false
     oppForm.value = { nama_opportunity: '', id_layanan: 0, estimasi_nilai: 0, tahapan: 'Prospecting', tgl_target_close: '', catatan: '' }
     flash('Opportunity dibuat')
-  } catch (e: any) { oppError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { oppError.value = pesanGalat(e, 'Gagal membuat opportunity') }
   finally { oppSubmitting.value = false }
 }
 
@@ -145,7 +153,9 @@ async function hapusActivity(a: any) {
 }
 
 async function handleAddActivity() {
-  if (!actForm.value.ringkasan) { actError.value = 'Ringkasan wajib diisi'; return }
+  if (actSubmitting.value) return
+  if (!actForm.value.ringkasan.trim()) { actError.value = 'Ringkasan wajib diisi'; return }
+  if (!actForm.value.tanggal_aktivitas || isNaN(new Date(actForm.value.tanggal_aktivitas).getTime())) { actError.value = 'Tanggal & waktu aktivitas wajib diisi'; return }
   actSubmitting.value = true; actError.value = ''
   try {
     if (editingActivityId.value) {
@@ -170,14 +180,17 @@ async function handleAddActivity() {
     flash(editingActivityId.value ? 'Aktivitas diperbarui' : 'Aktivitas dicatat')
     editingActivityId.value = null
     actForm.value = { jenis_aktivitas: 'Call', tanggal_aktivitas: toDatetimeLocal(new Date()), ringkasan: '', hasil: 'Netral' }
-  } catch (e: any) { actError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { actError.value = pesanGalat(e, 'Gagal menyimpan aktivitas') }
   finally { actSubmitting.value = false }
 }
 
+let flashTimer: ReturnType<typeof setTimeout> | undefined
 function flash(msg: string) {
   successMsg.value = msg
-  setTimeout(() => successMsg.value = '', 3000)
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => successMsg.value = '', 3000)
 }
+onBeforeUnmount(() => clearTimeout(flashTimer))
 
 const fmt = fmtRupiahPenuh
 const fmtDate = fmtDateShort
@@ -188,8 +201,9 @@ const fmtDatetime = fmtDateTime
   <div class="page">
     <div v-if="pageLoading" class="loading-page">Memuat...</div>
     <div v-else-if="loadError || !sales.currentLead" class="loading-page">
-      <p class="form-error">{{ loadError || 'Lead tidak ditemukan' }}</p>
-      <button class="btn-back" @click="router.push('/sales/lead')">← Kembali ke Lead</button>
+      <p class="form-error" role="alert">{{ loadError || 'Lead tidak ditemukan' }}</p>
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-bottom:12px" @click="muat">↻ Coba lagi</button>
+      <button class="btn-back" style="margin:0 auto" @click="router.push('/sales/lead')">← Kembali ke Lead</button>
     </div>
     <template v-else>
       <!-- Header -->
@@ -214,7 +228,7 @@ const fmtDatetime = fmtDateTime
           <div class="info-row"><span class="info-label">Sumber</span><span>{{ sales.currentLead.sumber_lead }}</span></div>
           <div class="info-row"><span class="info-label">No. Kontak</span><span>{{ sales.currentLead.no_kontak || '—' }}</span></div>
           <div class="info-row"><span class="info-label">Email</span><span>{{ sales.currentLead.email || '—' }}</span></div>
-          <div class="info-row"><span class="info-label">Sales PIC</span><span>{{ sales.currentLead.sales_pic?.nama_lengkap }}</span></div>
+          <div class="info-row"><span class="info-label">Sales PIC</span><span>{{ sales.currentLead.sales_pic?.nama_lengkap || '—' }}</span></div>
           <div class="info-row"><span class="info-label">Tanggal</span><span>{{ fmtDate(sales.currentLead.created_at) }}</span></div>
           <div v-if="sales.currentLead.catatan_awal" class="catatan-box">{{ sales.currentLead.catatan_awal }}</div>
         </div>
@@ -256,7 +270,7 @@ const fmtDatetime = fmtDateTime
           </div>
           <div class="act-right">
             <p class="act-ringkasan">{{ a.ringkasan }}</p>
-            <span :class="['act-hasil', `hasil-${a.hasil?.toLowerCase()}`]">{{ a.hasil }}</span>
+            <span v-if="a.hasil" :class="['act-hasil', `hasil-${a.hasil.toLowerCase()}`]">{{ a.hasil }}</span>
           </div>
           <div class="act-actions">
             <button class="btn-act-edit" @click="openEditActivity(a)">Edit</button>
@@ -345,7 +359,7 @@ const fmtDatetime = fmtDateTime
             </div>
             <div class="field">
               <label>Estimasi Nilai (Rp)</label>
-              <input v-model.number="oppForm.estimasi_nilai" type="number" placeholder="0" />
+              <input v-model.number="oppForm.estimasi_nilai" type="number" min="0" placeholder="0" />
             </div>
             <div class="field">
               <label>Target Close</label>

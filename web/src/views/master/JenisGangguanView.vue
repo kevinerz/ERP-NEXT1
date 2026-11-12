@@ -2,7 +2,7 @@
 import MasterNav from './MasterNav.vue'
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, pesanGalat, toastGalat } from '@/composables/useDialog'
 
 interface JenisGangguan {
   id_jenis: number
@@ -33,7 +33,7 @@ async function fetchData() {
     const r = await api.get('/master/jenis-gangguan')
     rows.value = r.data.data
   } catch (e: any) {
-    error.value = e.response?.data?.message || 'Gagal memuat data'
+    error.value = pesanGalat(e, 'Gagal memuat jenis gangguan')
   } finally { loading.value = false }
 }
 
@@ -52,6 +52,7 @@ function openEdit(row: JenisGangguan) {
 }
 
 async function handleSubmit() {
+  if (submitting.value) return
   if (!form.value.nama.trim()) { formError.value = 'Nama wajib diisi'; return }
   submitting.value = true; formError.value = ''
   try {
@@ -65,7 +66,7 @@ async function handleSubmit() {
     }
     showModal.value = false
     await fetchData()
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal menyimpan jenis gangguan') }
   finally { submitting.value = false }
 }
 
@@ -79,7 +80,7 @@ async function toggleAktif(row: JenisGangguan) {
     await api.patch(`/master/jenis-gangguan/${row.id_jenis}/toggle`)
     await fetchData()
     flash(row.is_aktif ? 'Dinonaktifkan' : 'Diaktifkan')
-  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { toastGalat(e, 'Gagal mengubah status jenis gangguan') }
   finally { busyId.value = null }
 }
 
@@ -96,7 +97,7 @@ async function hapus(row: JenisGangguan) {
     await api.delete(`/master/jenis-gangguan/${row.id_jenis}`)
     flash(`"${row.nama}" dihapus`)
     await fetchData()
-  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal hapus' }
+  } catch (e: any) { toastGalat(e, 'Gagal menghapus jenis gangguan') }
   finally { busyId.value = null }
 }
 </script>

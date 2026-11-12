@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import portalApi from '@/services/portalApi'
+import { pesanGalat } from '@/composables/useDialog'
 
 const sites     = ref<any[]>([])
 const loading   = ref(true)
@@ -8,14 +9,16 @@ const loadError = ref('')
 const search    = ref('')
 const expanded  = ref<number | null>(null)
 
-onMounted(async () => {
+async function muat() {
+  loading.value = true; loadError.value = ''
   try {
     const res  = await portalApi.get('/portal/sites/list')
-    sites.value = res.data.data
+    sites.value = res.data.data ?? []
   } catch (e: any) {
-    loadError.value = e?.response?.data?.message || 'Gagal memuat data site.'
+    loadError.value = pesanGalat(e, 'Gagal memuat data site.')
   } finally { loading.value = false }
-})
+}
+onMounted(muat)
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -34,11 +37,12 @@ function toggle(id: number) {
 
 function fmtDate(d: string | null) {
   if (!d) return '—'
+  if (isNaN(new Date(d).getTime())) return '—'
   return new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function fmtRupiah(n: number | string | null) {
-  if (n == null) return '—'
+  if (n == null || n === '' || isNaN(Number(n))) return '—'
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 }
 
@@ -75,7 +79,7 @@ function mapsRouteLink(gps: string | null) {
           <div class="sl-eyebrow">MASTER DATA</div>
           <h1 class="sl-title">Daftar Site</h1>
         </div>
-        <div class="sl-count" v-if="!loading">{{ filtered.length }} site</div>
+        <div class="sl-count" v-if="!loading && !loadError">{{ filtered.length }} site</div>
       </div>
 
       <div class="sl-toolbar">
@@ -95,7 +99,10 @@ function mapsRouteLink(gps: string | null) {
     <div v-if="loading" class="sl-state">
       <span class="spinner"></span> Memuat data site…
     </div>
-    <div v-else-if="loadError" class="sl-error">{{ loadError }}</div>
+    <div v-else-if="loadError" class="sl-error" role="alert">
+      {{ loadError }}
+      <button type="button" class="btn-ulang" @click="muat">Coba lagi</button>
+    </div>
     <div v-else-if="!filtered.length" class="sl-state">
       {{ search ? 'Tidak ada site yang cocok dengan pencarian.' : 'Tidak ada site terdaftar.' }}
     </div>
@@ -275,6 +282,7 @@ function mapsRouteLink(gps: string | null) {
 </template>
 
 <style scoped>
+.btn-ulang { margin-left: 8px; padding: 4px 12px; font-size: 12px; font-weight: 600; border: 1px solid #fecaca; background: #fff; color: #b91c1c; border-radius: 6px; cursor: pointer; }
 
 * { box-sizing: border-box; }
 .sl-page {

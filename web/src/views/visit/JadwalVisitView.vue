@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateTime } from '@/composables/useFormat'
-import { alertDialog, alertError, promptDialog } from '@/composables/useDialog'
+import { alertDialog, alertError, promptDialog, toast, pesanGalat } from '@/composables/useDialog'
 
 interface Visit {
   id_wo: number; nomor_wo: string; jenis_wo: string; prioritas: string; status_wo: string
@@ -32,14 +32,24 @@ const route = useRoute()
 const router = useRouter()
 const papan = ref<Papan | null>(null)
 const memuat = ref(false)
+const galatMuat = ref('')
 const cari = ref('')
 
-async function muat(mulai = papan.value?.mulai) {
+// Nomor urut: minggu yang dipilih belakangan tidak boleh tertimpa jawaban permintaan sebelumnya
+let urutMuat = 0
+async function muat(mulai = papan.value?.mulai, latar = false) {
+  const no = ++urutMuat
   memuat.value = true
   try {
-    const { data } = await api.get('/visit/papan', { params: mulai ? { mulai } : {} })
+    const { data } = await api.get('/visit/papan', { params: mulai ? { mulai } : {}, senyap: latar })
+    if (no !== urutMuat) return
     papan.value = data.data
-  } catch (e) { alertError(e, 'Gagal memuat jadwal') } finally { memuat.value = false }
+    galatMuat.value = ''
+  } catch (e) {
+    if (no !== urutMuat) return
+    if (!papan.value) galatMuat.value = pesanGalat(e, 'Gagal memuat jadwal')
+    else if (!latar) alertError(e, 'Gagal memuat jadwal')
+  } finally { if (no === urutMuat) memuat.value = false }
 }
 function geser(hari: number) {
   if (!papan.value) return
@@ -92,7 +102,7 @@ async function jatuhkan(id_teknisi: number | null, tgl: string | null) {
   }
   try {
     await api.patch(`/visit/${v.id_wo}/jadwal`, { tgl, id_teknisi })
-  } catch (e) { alertError(e) }
+  } catch (e) { alertError(e, 'Gagal memindahkan visit — jadwal dikembalikan') }
   muat()
 }
 
@@ -111,31 +121,41 @@ async function bukaId(id: number) {
   try {
     const { data } = await api.get(`/visit/${id}`)
     if (!sel.value || sel.value.id_wo === id) buka(data.data)
-  } catch (e) { alertError(e) }
+  } catch (e) { alertError(e, 'Gagal memuat detail visit') }
 }
 const lihatFoto = ref<string | null>(null)
 const tersalin = ref(false)
 async function salinLink() {
   if (!sel.value?.link) return
-  try { await navigator.clipboard.writeText(sel.value.link); tersalin.value = true; setTimeout(() => (tersalin.value = false), 1500) } catch { window.prompt('Salin link:', sel.value.link) }
+  const link = sel.value.link
+  try { await navigator.clipboard.writeText(link); tersalin.value = true; setTimeout(() => (tersalin.value = false), 1500) }
+  catch {
+    // Clipboard ditolak browser: tampilkan link agar bisa disalin manual
+    await promptDialog({ title: 'Salin link lapor teknisi', message: 'Browser tidak mengizinkan salin otomatis. Salin link di bawah secara manual.', defaultValue: link, inputType: 'url', confirmLabel: 'Tutup' })
+  }
 }
 const aktif = computed(() => !!sel.value && ['Open', 'In_Progress'].includes(sel.value.status_wo))
 const jadwalBerubah = computed(() => !!sel.value && (fJadwal.value.tgl !== (sel.value.tgl || '') || fJadwal.value.jam !== (sel.value.jam || '') || fJadwal.value.id_teknisi !== (sel.value.id_teknisi || 0)))
 const infoBerubah = computed(() => !!sel.value && (fInfo.value.jenis_wo !== sel.value.jenis_wo || fInfo.value.prioritas !== sel.value.prioritas || fInfo.value.deskripsi_tugas !== sel.value.deskripsi))
-async function aksi(fn: () => Promise<any>) {
+async function aksi(fn: () => Promise<any>, gagal = 'Gagal menyimpan perubahan visit') {
+  if (proses.value) return
   proses.value = true
   try {
     const { data } = await fn()
     if (data?.data) buka(data.data)
+    if (data?.message) toast(data.message)
     await muat()
-  } catch (e) { alertError(e) } finally { proses.value = false }
+  } catch (e) { alertError(e, gagal) } finally { proses.value = false }
 }
 function simpanJadwal() {
   const f = fJadwal.value
   if ((f.tgl && !f.id_teknisi) || (!f.tgl && f.id_teknisi)) { alertDialog({ title: 'Lengkapi jadwal', message: 'Isi tanggal dan teknisi sekaligus (atau kosongkan keduanya untuk kembali ke antrean).' }); return }
   aksi(() => api.patch(`/visit/${sel.value!.id_wo}/jadwal`, { tgl: f.tgl || null, jam: f.jam || null, id_teknisi: f.id_teknisi || null }))
 }
-function simpanInfo() { aksi(() => api.patch(`/visit/${sel.value!.id_wo}`, fInfo.value)) }
+function simpanInfo() {
+  if (fInfo.value.deskripsi_tugas.trim().length < 3) { alertDialog({ title: 'Isi keperluan', message: 'Tulis keperluan / keluhan visit.' }); return }
+  aksi(() => api.patch(`/visit/${sel.value!.id_wo}`, fInfo.value))
+}
 function keAntrean() { aksi(() => api.patch(`/visit/${sel.value!.id_wo}/jadwal`, { tgl: null, jam: null, id_teknisi: null })) }
 async function ubahStatus(status: string) {
   let catatan: string | null | undefined
@@ -146,7 +166,7 @@ async function ubahStatus(status: string) {
     catatan = await promptDialog({ title: 'Visit selesai', label: 'Catatan hasil (opsional)', confirmLabel: 'Tandai selesai' })
     if (catatan === null) return
   }
-  aksi(() => api.post(`/visit/${sel.value!.id_wo}/status`, { status, catatan: catatan || undefined }))
+  aksi(() => api.post(`/visit/${sel.value!.id_wo}/status`, { status, catatan: catatan || undefined }), 'Gagal mengubah status visit')
 }
 
 // ── Kirim WA per visit ──────────────────────────────────────────────────────
@@ -156,17 +176,19 @@ async function siapkanWa(ke: 'teknisi' | 'pic') {
   try {
     const { data } = await api.get(`/visit/${sel.value!.id_wo}/wa`, { params: { ke } })
     waForm.value = { ke, nama: data.data.nama, nomor: data.data.nomor || '', teks: data.data.teks }
-  } catch (e) { alertError(e) }
+  } catch (e) { alertError(e, 'Gagal menyiapkan pesan WhatsApp') }
 }
 async function kirimWa() {
-  const f = waForm.value!
+  const f = waForm.value
+  if (!f || proses.value) return
   proses.value = true
   try {
     const { data } = await api.post(`/visit/${sel.value!.id_wo}/wa`, { ke: f.ke, nomor: f.nomor, teks: f.teks })
     waForm.value = null
     buka(data.data)
+    if (data.message) toast(data.message)
     muat()
-  } catch (e) { alertError(e) } finally { proses.value = false }
+  } catch (e) { alertError(e, 'Gagal mengirim WhatsApp') } finally { proses.value = false }
 }
 
 // ── Kirim jadwal harian ke semua teknisi ────────────────────────────────────
@@ -178,17 +200,18 @@ async function bukaHarian(h: { tgl: string; label: string }) {
     if (!data.data.length) { alertDialog({ title: 'Tidak ada jadwal', message: `Belum ada visit aktif pada ${h.label}.` }); return }
     hasilHarian.value = null
     harian.value = { ...h, daftar: data.data, pilih: data.data.filter((r: any) => r.nomor).map((r: any) => r.id_teknisi) }
-  } catch (e) { alertError(e) }
+  } catch (e) { alertError(e, 'Gagal memuat rekap jadwal harian') }
 }
 const lihatTeks = ref<number | null>(null)
 async function kirimHarian() {
-  const h = harian.value!
+  const h = harian.value
+  if (!h || proses.value) return
   proses.value = true
   try {
     const { data } = await api.post('/visit/wa-harian', { tgl: h.tgl, id_teknisi: h.pilih })
     hasilHarian.value = data.data
     muat()
-  } catch (e) { alertError(e) } finally { proses.value = false }
+  } catch (e) { alertError(e, 'Gagal mengirim jadwal harian') } finally { proses.value = false }
 }
 
 // ── Visit baru ──────────────────────────────────────────────────────────────
@@ -201,11 +224,16 @@ watch(() => baru.value?.q, (q) => {
   clearTimeout(timerCari)
   if (!baru.value || !q || q.trim().length < 2) { if (baru.value) baru.value.hasil = []; return }
   timerCari = setTimeout(async () => {
-    try { const { data } = await api.get('/visit/site', { params: { q } }); if (baru.value) baru.value.hasil = data.data } catch { /* abaikan */ }
+    try {
+      const { data } = await api.get('/visit/site', { params: { q } })
+      // Abaikan jawaban untuk kata kunci yang sudah diganti
+      if (baru.value && baru.value.q === q) baru.value.hasil = data.data
+    } catch (e) { if (baru.value?.q === q) toast(pesanGalat(e, 'Gagal mencari site'), 'danger') }
   }, 300)
 })
 async function simpanBaru() {
-  const b = baru.value!
+  const b = baru.value
+  if (!b || proses.value) return
   if (!b.site) { alertDialog({ title: 'Pilih site', message: 'Cari dan pilih store/site yang akan dikunjungi.' }); return }
   if (b.deskripsi_tugas.trim().length < 3) { alertDialog({ title: 'Isi keperluan', message: 'Tulis keperluan / keluhan visit.' }); return }
   if (!!b.tgl !== !!b.id_teknisi) { alertDialog({ title: 'Lengkapi jadwal', message: 'Isi tanggal dan teknisi sekaligus, atau kosongkan keduanya untuk masuk antrean.' }); return }
@@ -216,8 +244,9 @@ async function simpanBaru() {
       tgl: b.tgl || undefined, jam: b.jam || undefined, id_teknisi: b.id_teknisi || undefined,
     })
     baru.value = null
+    toast('Visit baru dibuat')
     muat()
-  } catch (e) { alertError(e) } finally { proses.value = false }
+  } catch (e) { alertError(e, 'Gagal membuat visit') } finally { proses.value = false }
 }
 
 // ── Penyegaran otomatis ─────────────────────────────────────────────────────
@@ -227,10 +256,10 @@ onMounted(async () => {
   const wo = Number(route.query.wo)
   if (wo) { bukaId(wo); router.replace({ query: {} }) }
   timer = setInterval(() => {
-    if (document.visibilityState === 'visible' && !sel.value && !baru.value && !harian.value && !diseret.value) muat()
+    if (document.visibilityState === 'visible' && !sel.value && !baru.value && !harian.value && !diseret.value && !memuat.value) muat(undefined, true)
   }, 60_000)
 })
-onBeforeUnmount(() => clearInterval(timer))
+onBeforeUnmount(() => { clearInterval(timer); clearTimeout(timerCari) })
 
 function waktuLalu(s: string | null) { return s ? fmtDateTime(s) : '' }
 function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase() }
@@ -254,7 +283,10 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
       </div>
     </div>
 
-    <p v-if="!papan" class="muted">Memuat…</p>
+    <div v-if="!papan && galatMuat" class="alert alert-danger" role="alert">
+      {{ galatMuat }} <button type="button" class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat()">{{ memuat ? 'Memuat…' : 'Coba lagi' }}</button>
+    </div>
+    <p v-else-if="!papan" class="muted">Memuat…</p>
     <div v-else class="jv-isi">
       <!-- Antrean -->
       <aside
@@ -458,7 +490,7 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" @click="waForm = null">Batal</button>
-          <button class="btn btn-success" :disabled="proses || waForm.nomor.length < 8 || !waForm.teks.trim()" @click="kirimWa">Kirim WA</button>
+          <button class="btn btn-success" :disabled="proses || waForm.nomor.length < 8 || !waForm.teks.trim()" @click="kirimWa">{{ proses ? 'Mengirim…' : 'Kirim WA' }}</button>
         </div>
       </div>
     </div>
@@ -490,7 +522,7 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" @click="harian = null">{{ hasilHarian ? 'Tutup' : 'Batal' }}</button>
-          <button v-if="!hasilHarian" class="btn btn-success" :disabled="proses || !harian.pilih.length" @click="kirimHarian">Kirim ke {{ harian.pilih.length }} teknisi</button>
+          <button v-if="!hasilHarian" class="btn btn-success" :disabled="proses || !harian.pilih.length" @click="kirimHarian">{{ proses ? 'Mengirim…' : `Kirim ke ${harian.pilih.length} teknisi` }}</button>
         </div>
       </div>
     </div>
@@ -544,7 +576,7 @@ function inisial(n: string) { return n.split(/\s+/).slice(0, 2).map((x) => x[0])
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" @click="baru = null">Batal</button>
-          <button class="btn btn-primary" :disabled="proses" @click="simpanBaru">Simpan</button>
+          <button class="btn btn-primary" :disabled="proses" @click="simpanBaru">{{ proses ? 'Menyimpan…' : 'Simpan' }}</button>
         </div>
       </div>
     </div>

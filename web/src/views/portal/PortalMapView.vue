@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import portalApi from '@/services/portalApi'
 import { escapeHtml } from '@/composables/useFormat'
+import { pesanGalat } from '@/composables/useDialog'
 
 const sites      = ref<any[]>([])
 const downStatus = ref<{ id_site: number; sensors: string[] }[]>([])
@@ -113,21 +114,28 @@ async function initMap() {
   }
 }
 
-onMounted(async () => {
+async function muat() {
+  loading.value = true; loadError.value = ''; downError.value = false
   try {
     const [sitesRes, downRes] = await Promise.all([
       portalApi.get('/portal/sites'),
       portalApi.get('/portal/sites/down-status').catch(() => { downError.value = true; return { data: { data: [] } } }),
     ])
-    sites.value      = sitesRes.data.data
+    sites.value      = sitesRes.data.data ?? []
     downStatus.value = downRes.data.data ?? []
   } catch (e: any) {
-    loadError.value = e?.response?.data?.message || 'Gagal memuat data site.'
+    loadError.value = pesanGalat(e, 'Gagal memuat data site.')
   } finally {
     loading.value = false
-    await initMap()
   }
-})
+  if (loadError.value) return
+  try {
+    await initMap()
+  } catch {
+    loadError.value = 'Peta gagal dimuat. Periksa koneksi internet Anda lalu coba lagi.'
+  }
+}
+onMounted(muat)
 
 onUnmounted(() => {
   if (leafletMap) { leafletMap.remove(); leafletMap = null }
@@ -171,7 +179,10 @@ const sitesDown       = () => downStatus.value.length
       <div v-if="loading" class="map-state">
         <span class="spinner"></span> Memuat peta…
       </div>
-      <div v-else-if="loadError" class="map-error">{{ loadError }}</div>
+      <div v-else-if="loadError" class="map-error" role="alert">
+        {{ loadError }}
+        <button type="button" class="btn-ulang" @click="muat">Coba lagi</button>
+      </div>
       <template v-else>
         <div v-if="downError" class="map-down-warn" role="status">⚠ Status gangguan tidak tersedia saat ini — warna penanda belum mencerminkan kondisi terkini.</div>
         <div id="portal-geo-map" class="geo-map"></div>
@@ -184,6 +195,7 @@ const sitesDown       = () => downStatus.value.length
 </template>
 
 <style scoped>
+.btn-ulang { margin-left: 8px; padding: 4px 12px; font-size: 12px; font-weight: 600; border: 1px solid #fecaca; background: #fff; color: #b91c1c; border-radius: 6px; cursor: pointer; }
 .map-down-warn { background: #fffbeb; color: #92400e; border-bottom: 1px solid #fde68a; padding: 10px 24px; font-size: 13px; text-align: center; }
 
 * { box-sizing: border-box; }

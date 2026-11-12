@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { toast, pesanGalat } from '@/composables/useDialog'
 import { useAsetStore } from '@/stores/aset'
 import { fmtDateTime } from '@/composables/useFormat'
 import api from '@/services/api'
@@ -22,9 +23,9 @@ const formCatatan = ref('')
 const submitting = ref(false)
 const formError = ref('')
 
-onMounted(async () => {
-  await fetchGudang()
+onMounted(() => {
   fetchData()
+  fetchGudang()
 })
 
 // gagal muat gudang → hint di form (pilihan wajib), bukan dropdown kosong diam-diam
@@ -47,13 +48,15 @@ function doFilter() { page.value = 1; fetchData() }
 function goPage(p: number) { page.value = p; fetchData() }
 
 async function mulaiOpname() {
+  if (submitting.value) return
   if (!formGudang.value) { formError.value = 'Pilih gudang dulu'; return }
   submitting.value = true; formError.value = ''
   try {
-    const result = await aset.createOpname({ id_gudang: formGudang.value, catatan: formCatatan.value || undefined })
+    const result = await aset.createOpname({ id_gudang: formGudang.value, catatan: formCatatan.value.trim() || undefined })
     showModal.value = false
+    toast('Sesi opname dimulai')
     router.push(`/assets/stok-opname/${result.id_opname}`)
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal membuat sesi opname' }
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal membuat sesi opname') }
   finally { submitting.value = false }
 }
 
@@ -71,7 +74,7 @@ function persenSelesai(o: any) {
         <h2>Stok Opname</h2>
         <p class="sub">Audit fisik aset per gudang — cocokkan data sistem dengan barang di lapangan</p>
       </div>
-      <button type="button" class="btn btn-primary" @click="showModal = true; formGudang = 0; formCatatan = ''; formError = ''">+ Mulai Opname</button>
+      <button type="button" class="btn btn-primary" @click="showModal = true; formGudang = 0; formCatatan = ''; formError = ''; gudangLoadError && fetchGudang()">+ Mulai Opname</button>
     </div>
 
     <div class="filter-bar">
@@ -86,7 +89,10 @@ function persenSelesai(o: any) {
       </select>
     </div>
 
-    <div v-if="aset.error" class="alert-error">{{ aset.error }}</div>
+    <div v-if="aset.error" class="alert-error" role="alert">
+      {{ aset.error }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="fetchData">↻ Coba lagi</button>
+    </div>
 
     <div class="table-card">
       <div v-if="aset.loading" class="loading">Memuat...</div>
@@ -104,7 +110,7 @@ function persenSelesai(o: any) {
         </thead>
         <tbody>
           <tr v-if="!aset.opnameList.length">
-            <td colspan="7" class="empty">Belum ada sesi stok opname</td>
+            <td colspan="7" class="empty">{{ aset.error ? 'Data opname gagal dimuat' : (filterGudang || filterStatus) ? 'Tidak ada sesi opname untuk filter ini' : 'Belum ada sesi stok opname' }}</td>
           </tr>
           <tr v-baris v-for="o in aset.opnameList" :key="o.id_opname" class="row-link" @click="router.push(`/assets/stok-opname/${o.id_opname}`)">
             <td class="kode">#{{ o.id_opname }}</td>

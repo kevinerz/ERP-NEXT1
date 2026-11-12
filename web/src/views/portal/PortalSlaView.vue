@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import portalApi from '@/services/portalApi'
 import { fmtDateTime } from '@/composables/useFormat'
+import { pesanGalat } from '@/composables/useDialog'
 
 // ── Period selector ───────────────────────────────────────
 const BULAN_LIST = [
@@ -34,7 +35,7 @@ async function fetchSla() {
     const res  = await portalApi.get('/portal/sla', { params })
     data.value = res.data.data
   } catch (e: any) {
-    error.value = 'Gagal memuat data SLA. Silakan coba lagi.'
+    error.value = pesanGalat(e, 'Gagal memuat data SLA. Silakan coba lagi.')
   } finally {
     loading.value = false
   }
@@ -150,7 +151,10 @@ function prioritasCls(p: string) {
 
     <!-- Loading / Error -->
     <div v-if="loading" class="loading">Memuat data SLA...</div>
-    <div v-else-if="error" class="error-msg">{{ error }}</div>
+    <div v-else-if="error" class="error-msg" role="alert">
+      {{ error }}
+      <button type="button" class="btn-ulang" @click="fetchSla">Coba lagi</button>
+    </div>
 
     <!-- Content -->
     <template v-else-if="data">
@@ -358,6 +362,7 @@ function prioritasCls(p: string) {
 </template>
 
 <style scoped>
+.btn-ulang { margin-left: 8px; padding: 4px 12px; font-size: 12px; font-weight: 600; border: 1px solid #fecaca; background: #fff; color: #b91c1c; border-radius: 6px; cursor: pointer; }
 .page        { padding: 28px 32px; max-width: 960px; }
 /* block: judul & subjudul ditumpuk (global .page-header = flex row) */
 .page-header { display: block; margin-bottom: 20px; }

@@ -6,7 +6,7 @@ import type { Karyawan } from '@/stores/hris'
 import { useSettingsStore } from '@/stores/settings'
 import { useFilterUrl } from '@/composables/useFilterUrl'
 import { exportCsv } from '@/composables/useExport'
-import { toast } from '@/composables/useDialog'
+import { toast, pesanGalat } from '@/composables/useDialog'
 import { infoDept, inisial, kelengkapan, masaKerjaBulan, masaKerjaTeks, hariMenuju, umur, tgl, tglPendek, nomorWa } from './hris-util'
 
 type K = Karyawan & { ada_foto?: boolean }
@@ -38,7 +38,7 @@ async function muat() {
       }).catch(() => {})
     }
   } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Gagal memuat data karyawan'
+    error.value = pesanGalat(e, 'Gagal memuat data karyawan')
   } finally {
     memuat.value = false
   }
@@ -115,7 +115,7 @@ const struktur = computed(() => {
 const buka = (k: K) => router.push(`/hris/karyawan/${k.id_karyawan}`)
 async function salinKontak(k: K) {
   const teks = `${k.nama_lengkap} — ${k.jabatan} (${k.departemen})${k.no_hp ? `\n📱 ${k.no_hp}` : ''}${k.email ? `\n✉️ ${k.email}` : ''}`
-  try { await navigator.clipboard.writeText(teks); toast('Kontak disalin') } catch { /* abaikan */ }
+  try { await navigator.clipboard.writeText(teks); toast('Kontak disalin') } catch { toast('Kontak gagal disalin — salin manual', 'warning') }
 }
 function ekspor() {
   exportCsv(`karyawan-${new Date().toISOString().slice(0, 10)}`, [{
@@ -154,7 +154,7 @@ const tanggalHariIni = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/
       <svg class="bt-hias" viewBox="0 0 200 200" aria-hidden="true"><circle cx="150" cy="40" r="90" /><circle cx="40" cy="170" r="50" /></svg>
     </header>
 
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error && semua.length" class="alert alert-danger" role="alert">{{ error }} <button type="button" class="btn btn-secondary btn-sm" @click="muat">↻ Coba lagi</button></div>
 
     <!-- ANGKA -->
     <section class="bt-angka">
@@ -185,7 +185,7 @@ const tanggalHariIni = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/
           <div class="bt-cari">
             <span>⌕</span>
             <input ref="cariEl" v-model="q" placeholder="Cari nama, NIP, jabatan, nomor HP…  ( / )" />
-            <button v-if="q" type="button" @click="q = ''">✕</button>
+            <button v-if="q" type="button" aria-label="Hapus pencarian" @click="q = ''">✕</button>
           </div>
           <div class="bt-segmen">
             <button v-for="s in [['aktif', 'Aktif'], ['nonaktif', 'Nonaktif'], ['', 'Semua']]" :key="s[0]" type="button" :class="{ on: status === s[0] }" @click="status = s[0]!">{{ s[1] }}</button>
@@ -216,6 +216,19 @@ const tanggalHariIni = new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/
         </p>
 
         <div v-if="memuat" class="bt-grid"><div v-for="n in 6" :key="n" class="bt-kartu kerangka"></div></div>
+
+        <div v-else-if="error && !semua.length" class="bt-kosong" role="alert">
+          <div>🍂</div>
+          <b>Gagal memuat data karyawan</b>
+          <p>{{ error }}</p>
+          <button type="button" class="bt-btn garis" @click="muat">↻ Coba lagi</button>
+        </div>
+
+        <div v-else-if="!semua.length" class="bt-kosong">
+          <div>🌿</div>
+          <b>Buku Tim masih kosong</b>
+          <p>Tambahkan karyawan pertama, atau undang rekan mengisi datanya sendiri.</p>
+        </div>
 
         <div v-else-if="!saring.length" class="bt-kosong">
           <div>🌿</div>

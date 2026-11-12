@@ -4,12 +4,15 @@ import { useRoute } from 'vue-router'
 import axios from 'axios'
 import RuangRapat from './RuangRapat.vue'
 import PratinjauPerangkat from './PratinjauPerangkat.vue'
+import { pesanGalat } from '@/composables/useDialog'
 
 // Halaman tamu rapat (tanpa login ERP) — /rapat/tamu/:kode
 const route = useRoute()
 const kode = String(route.params.kode || '')
 const info = ref<{ judul: string; jadwal_at: string | null; status: string; pembuat: string } | null>(null)
 const error = ref('')
+// gangguan jaringan/server ≠ link tidak berlaku — tamu perlu tahu bisa mencoba lagi
+const galatMuat = ref('')
 const pesan = ref('')
 const nama = ref('')
 const instansi = ref('')
@@ -24,17 +27,23 @@ const sesi = ref<{ url: string; token: string; judul: string } | null>(null)
 const simpanLokal = (k: string, v: string) => { try { localStorage.setItem(k, v) } catch { /* abaikan */ } }
 const bacaLokal = (k: string) => { try { return localStorage.getItem(k) || '' } catch { return '' } }
 
-onMounted(async () => {
-  document.title = 'Rapat — NEXT1'
-  nama.value = bacaLokal('rapat_tamu_nama')
-  instansi.value = bacaLokal('rapat_tamu_instansi')
+async function muatInfo() {
+  galatMuat.value = ''; error.value = ''
   try {
     const { data } = await axios.get(`/api/meeting/tamu/${encodeURIComponent(kode)}`)
     info.value = data.data
     document.title = `${data.data.judul} — Rapat NEXT1`
   } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Link rapat tidak berlaku'
+    const st = e?.response?.status
+    if (st && st < 500) error.value = pesanGalat(e, 'Link rapat tidak berlaku')
+    else galatMuat.value = pesanGalat(e, 'Gagal memuat info rapat')
   }
+}
+onMounted(() => {
+  document.title = 'Rapat — NEXT1'
+  nama.value = bacaLokal('rapat_tamu_nama')
+  instansi.value = bacaLokal('rapat_tamu_instansi')
+  muatInfo()
 })
 
 async function masuk() {
@@ -48,8 +57,7 @@ async function masuk() {
     lobi.value?.lepas()
     sesi.value = data.data
   } catch (e: any) {
-    const m = e?.response?.data?.message
-    pesan.value = Array.isArray(m) ? m.join(', ') : m || 'Gagal masuk rapat'
+    pesan.value = pesanGalat(e, 'Gagal masuk rapat')
   } finally {
     menyambung.value = false
   }
@@ -87,6 +95,11 @@ const fmt = (d: string | null) => (d ? new Date(d).toLocaleString('id-ID', { wee
           <button type="submit" :disabled="nama.trim().length < 2 || menyambung">{{ menyambung ? 'Menyambungkan…' : 'Masuk rapat' }}</button>
         </form>
         <p class="tm-redup kecil">Browser akan meminta izin kamera & mikrofon. Gunakan Chrome, Edge, atau Safari terbaru — tanpa instal aplikasi.</p>
+      </template>
+      <template v-else-if="galatMuat">
+        <h2>Gagal memuat rapat</h2>
+        <p class="tm-redup">{{ galatMuat }}</p>
+        <form class="tm-form" @submit.prevent="muatInfo"><button type="submit">↻ Coba lagi</button></form>
       </template>
       <p v-else class="tm-redup">Memuat…</p>
     </div>

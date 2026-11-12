@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import MasterNav from './MasterNav.vue'
 import { ref, onMounted } from 'vue'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, pesanGalat, toastGalat } from '@/composables/useDialog'
 import { useMasterStore, type Layanan } from '@/stores/master'
 import api from '@/services/api'
 
@@ -52,7 +52,8 @@ function openEdit(l: Layanan) {
 }
 
 async function handleSubmit() {
-  if (!form.value.kode_layanan || !form.value.nama_layanan) {
+  if (submitting.value) return
+  if (!form.value.kode_layanan.trim() || !form.value.nama_layanan.trim()) {
     formError.value = 'Kode dan Nama wajib diisi'
     return
   }
@@ -70,24 +71,32 @@ async function handleSubmit() {
     setTimeout(() => successMsg.value = '', 3000)
     doSearch()
   } catch (e: any) {
-    formError.value = e.response?.data?.message || 'Terjadi kesalahan'
+    formError.value = pesanGalat(e, 'Gagal menyimpan layanan')
   } finally {
     submitting.value = false
   }
 }
 
+const busyId = ref<number | null>(null)
 async function handleToggle(l: Layanan) {
+  if (busyId.value !== null) return
+  busyId.value = l.id_layanan
+  const sebelumnya = l.is_aktif
   try {
     await master.toggleLayanan(l.id_layanan)
-    successMsg.value = `Layanan ${!l.is_aktif ? 'diaktifkan' : 'dinonaktifkan'}`
+    successMsg.value = `Layanan ${!sebelumnya ? 'diaktifkan' : 'dinonaktifkan'}`
     setTimeout(() => successMsg.value = '', 3000)
   } catch (e: any) {
-    master.error = e.response?.data?.message || 'Gagal ubah status'
+    toastGalat(e, 'Gagal mengubah status layanan')
+  } finally {
+    busyId.value = null
   }
 }
 
 async function hapusLayanan(layanan: Layanan) {
+  if (busyId.value !== null) return
   if (!(await confirmDialog({ title: 'Hapus Layanan?', message: 'Hapus layanan ' + layanan.nama_layanan + '?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  busyId.value = layanan.id_layanan
   try {
     await api.delete('/master/layanan/' + layanan.id_layanan)
     master.layananList = master.layananList.filter((l: Layanan) => l.id_layanan !== layanan.id_layanan)
@@ -95,6 +104,8 @@ async function hapusLayanan(layanan: Layanan) {
     setTimeout(() => successMsg.value = '', 3000)
   } catch (e: any) {
     await alertError(e, 'Gagal menghapus layanan')
+  } finally {
+    busyId.value = null
   }
 }
 </script>
@@ -123,7 +134,7 @@ async function hapusLayanan(layanan: Layanan) {
 
     <!-- Alert -->
     <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
-    <div v-if="master.error" class="alert alert-danger">{{ master.error }}</div>
+    <div v-if="master.error" class="alert alert-danger">{{ master.error }} <button type="button" class="btn btn-sm btn-secondary" @click="doSearch">Coba lagi</button></div>
 
     <!-- Table -->
     <div class="table-card">
@@ -141,12 +152,12 @@ async function hapusLayanan(layanan: Layanan) {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!master.layananList.length">
+          <tr v-if="!master.layananList.length && !master.error">
             <td colspan="7">
               <div class="empty-state">
                 <div class="empty-icon">🌐</div>
-                <div class="empty-title">Belum ada layanan</div>
-                <div class="empty-desc">Tambahkan layanan internet pertama Anda</div>
+                <div class="empty-title">{{ search || filterAktif !== '' ? 'Tidak ada layanan yang cocok' : 'Belum ada layanan' }}</div>
+                <div class="empty-desc">{{ search || filterAktif !== '' ? 'Ubah kata kunci atau filter status' : 'Tambahkan layanan internet pertama Anda' }}</div>
               </div>
             </td>
           </tr>
@@ -171,12 +182,14 @@ async function hapusLayanan(layanan: Layanan) {
                 <button
                   type="button"
                   :class="['btn btn-sm', l.is_aktif ? 'btn-soft-warning' : 'btn-soft-success']"
+                  :disabled="busyId === l.id_layanan"
                   @click="handleToggle(l)"
                 >{{ l.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
                 <button
                   v-if="!l.is_aktif"
                   type="button"
                   class="btn btn-sm btn-soft-danger"
+                  :disabled="busyId === l.id_layanan"
                   @click="hapusLayanan(l)"
                 >Hapus</button>
               </div>

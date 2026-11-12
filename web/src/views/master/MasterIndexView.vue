@@ -21,18 +21,19 @@ interface Hasil {
 }
 const hasil = ref<Hasil | null>(null)
 const mencari = ref(false)
+const galatCari = ref(false)
 let tunda: ReturnType<typeof setTimeout> | undefined
 let urutan = 0
 watch(q, (v) => {
   clearTimeout(tunda)
-  if (v.trim().length < 2) { hasil.value = null; mencari.value = false; return }
+  if (v.trim().length < 2) { hasil.value = null; mencari.value = false; galatCari.value = false; return }
   mencari.value = true
   tunda = setTimeout(async () => {
     const ke = ++urutan
     try {
       const { data } = await api.get('/master/cari', { params: { q: v.trim() } })
-      if (ke === urutan) hasil.value = data.data
-    } catch { if (ke === urutan) hasil.value = null } finally { if (ke === urutan) mencari.value = false }
+      if (ke === urutan) { hasil.value = data.data; galatCari.value = false }
+    } catch { if (ke === urutan) { hasil.value = null; galatCari.value = true } } finally { if (ke === urutan) mencari.value = false }
   }, 250)
 })
 const totalHasil = computed(() => (hasil.value ? Object.values(hasil.value).reduce((a, x) => a + x.length, 0) : 0))
@@ -62,7 +63,13 @@ function pintas(e: KeyboardEvent) {
   const t = e.target as HTMLElement
   if (e.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) { e.preventDefault(); cariEl.value?.focus() }
 }
-onMounted(() => { muatRingkasan(true); window.addEventListener('keydown', pintas); cariEl.value?.focus() })
+const ringkasanGagal = ref(false)
+async function muatPanel() {
+  ringkasanGagal.value = false
+  ringkasanGagal.value = !(await muatRingkasan(true))
+}
+onMounted(() => { muatPanel(); window.addEventListener('keydown', pintas); cariEl.value?.focus() })
+onBeforeUnmount(() => clearTimeout(tunda))
 onBeforeUnmount(() => window.removeEventListener('keydown', pintas))
 
 const GRUP = ['Pelanggan', 'Jaringan', 'Operasional'] as const
@@ -94,11 +101,14 @@ const relatif = (d: string) => {
         <span>🔎</span>
         <input ref="cariEl" v-model="q" placeholder="Ketik nama, kode, kota, atau nomor HP…" @keydown="tombolCari" />
         <small v-if="mencari">mencari…</small>
-        <button v-else-if="q" type="button" @click="q = ''">✕</button>
+        <button v-else-if="q" type="button" aria-label="Hapus pencarian" @click="q = ''">✕</button>
         <kbd v-else>/</kbd>
       </div>
 
       <!-- HASIL CARI -->
+      <div v-if="q.trim().length >= 2 && galatCari && !mencari" class="md-hasil">
+        <p class="md-kosong">Pencarian gagal — periksa koneksi lalu ketik ulang.</p>
+      </div>
       <div v-if="q.trim().length >= 2 && hasil" class="md-hasil">
         <p v-if="!totalHasil" class="md-kosong">Tidak ada yang cocok dengan “{{ q }}”.</p>
         <template v-else>
@@ -137,7 +147,9 @@ const relatif = (d: string) => {
       <aside class="md-samping">
         <section class="md-panel">
           <h3>🕘 Site terakhir diubah</h3>
-          <p v-if="!ringkasan" class="md-redup">Memuat…</p>
+          <p v-if="!ringkasan && ringkasanGagal" class="md-redup">Gagal memuat. <button type="button" class="md-ulang" @click="muatPanel">Coba lagi</button></p>
+          <p v-else-if="!ringkasan" class="md-redup">Memuat…</p>
+          <p v-else-if="!ringkasan.site_terbaru?.length" class="md-redup">Belum ada perubahan site.</p>
           <button v-for="s in ringkasan?.site_terbaru ?? []" :key="s.id_site" type="button" class="md-terbaru" @click="router.push(`/master/site/${s.id_site}`)">
             <i :style="{ background: warnaStatus(s.status_site) }"></i>
             <div><b>{{ s.nama_site }}</b><small>{{ s.pelanggan }} · {{ relatif(s.updated_at) }}</small></div>
@@ -162,6 +174,7 @@ const relatif = (d: string) => {
 <style scoped>
 .md { padding: 22px 24px 50px; max-width: 1240px; }
 .md-redup { color: #94a3b8; font-size: 13px; margin: 0; }
+.md-ulang { border: 0; background: none; padding: 0; color: #4f46e5; font: inherit; font-weight: 700; cursor: pointer; }
 kbd { display: inline-block; min-width: 16px; padding: 0 5px; border-radius: 5px; border: 1px solid #cbd5e1; border-bottom-width: 2px; font: 700 10.5px/16px ui-monospace, monospace; text-align: center; background: #fff; color: #475569; margin: 0 1px; }
 
 .md-kepala { position: relative; margin-bottom: 22px; }

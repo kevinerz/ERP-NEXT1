@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import MasterNav from './MasterNav.vue'
 import { ref, onMounted, computed, watch } from 'vue'
-import { confirmDialog, toast, alertError } from '@/composables/useDialog'
+import { confirmDialog, toast, alertError, toastGalat, pesanGalat } from '@/composables/useDialog'
 import { printBaPengambilan } from '@/composables/usePrint'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
@@ -92,7 +92,7 @@ async function loadSite() {
   try {
     const r = await api.get(`/master/site/${id}`)
     site.value = r.data.data
-  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal memuat site' }
+  } catch (e: any) { error.value = pesanGalat(e, 'Gagal memuat site') }
   finally { loading.value = false }
 }
 
@@ -137,7 +137,7 @@ async function loadDokumen() {
   try {
     const r = await api.get(`/master/site/${id}/dokumen`)
     dokumenList.value = r.data.data || []
-  } catch (e: any) { dokumenLoadError.value = e?.response?.data?.message || 'Gagal memuat dokumen' }
+  } catch (e: any) { dokumenLoadError.value = pesanGalat(e, 'Gagal memuat dokumen') }
   finally { dokumenLoading.value = false }
 }
 
@@ -147,6 +147,7 @@ function onFileSelected(e: Event) {
 }
 
 async function uploadDokumen() {
+  if (dokumenUploading.value) return
   if (!dokumenFile.value) { dokumenError.value = 'Pilih file terlebih dahulu'; return }
   dokumenUploading.value = true; dokumenError.value = ''
   try {
@@ -159,8 +160,9 @@ async function uploadDokumen() {
     dokumenFile.value = null
     dokumenKeterangan.value = ''
     if (fileInputRef.value) fileInputRef.value.value = ''
+    toast('Dokumen terunggah')
     await loadDokumen()
-  } catch (e: any) { dokumenError.value = e.response?.data?.message || 'Gagal upload' }
+  } catch (e: any) { dokumenError.value = pesanGalat(e, 'Gagal mengunggah dokumen') }
   finally { dokumenUploading.value = false }
 }
 
@@ -169,7 +171,7 @@ async function deleteDokumen(doc: any) {
   try {
     await api.delete(`/master/site/dokumen/${doc.id_dokumen}`)
     await loadDokumen()
-  } catch (e: any) { dokumenError.value = e.response?.data?.message || 'Gagal menghapus' }
+  } catch (e: any) { toastGalat(e, 'Gagal menghapus dokumen') }
 }
 
 function fmtBytes(bytes: number) {
@@ -215,6 +217,7 @@ function openEditSumber(s: any) {
 }
 
 async function saveSumber() {
+  if (sumberSubmitting.value) return
   if (!sumberForm.value.id_vendor_isp) { sumberError.value = 'Vendor wajib dipilih'; return }
   sumberSubmitting.value = true; sumberError.value = ''
   try {
@@ -229,16 +232,16 @@ async function saveSumber() {
     }
     showSumberModal.value = false
     await loadSite()
-  } catch (e: any) { sumberError.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { sumberError.value = pesanGalat(e, 'Gagal menyimpan sumber internet') }
   finally { sumberSubmitting.value = false }
 }
 
 async function deleteSumber(s: any) {
-  if (!(await confirmDialog({ title: 'Hapus Sumber Internet?', message: `Hapus sumber internet ${s.vendor?.nama_vendor}?`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  if (!(await confirmDialog({ title: 'Hapus Sumber Internet?', message: `Hapus sumber internet ${s.vendor?.nama_vendor ?? ''}?`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete(`/master/sumber-internet/${s.id_sumber}`)
     await loadSite()
-  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal menghapus' }
+  } catch (e: any) { toastGalat(e, 'Gagal menghapus sumber internet') }
 }
 
 // ─── Perangkat ────────────────────────────────────────────────
@@ -271,6 +274,7 @@ watch(() => perangkatForm.value.id_aset, (val) => {
 })
 
 async function savePerangkat() {
+  if (perangkatSubmitting.value) return
   if (!perangkatForm.value.id_aset) { perangkatError.value = 'Aset wajib dipilih'; return }
   perangkatSubmitting.value = true; perangkatError.value = ''
   try {
@@ -291,7 +295,7 @@ async function savePerangkat() {
     }
     showPerangkatModal.value = false
     await loadSite()
-  } catch (e: any) { perangkatError.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { perangkatError.value = pesanGalat(e, 'Gagal menyimpan perangkat') }
   finally { perangkatSubmitting.value = false }
 }
 
@@ -300,7 +304,7 @@ async function deletePerangkat(p: any) {
   try {
     await api.delete(`/master/perangkat/${p.id_perangkat}`)
     await loadSite()
-  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal menghapus' }
+  } catch (e: any) { toastGalat(e, 'Gagal menghapus perangkat') }
 }
 
 // ─── PIC ──────────────────────────────────────────────────────
@@ -318,7 +322,8 @@ function openEditPic(p: any) {
 }
 
 async function savePic() {
-  if (!picForm.value.nama_pic) { picError.value = 'Nama PIC wajib diisi'; return }
+  if (picSubmitting.value) return
+  if (!picForm.value.nama_pic?.trim()) { picError.value = 'Nama PIC wajib diisi'; return }
   picSubmitting.value = true; picError.value = ''
   try {
     if (editPic.value) {
@@ -328,7 +333,7 @@ async function savePic() {
     }
     showPicModal.value = false
     await loadSite()
-  } catch (e: any) { picError.value = e.response?.data?.message || 'Gagal menyimpan' }
+  } catch (e: any) { picError.value = pesanGalat(e, 'Gagal menyimpan PIC') }
   finally { picSubmitting.value = false }
 }
 
@@ -337,7 +342,7 @@ async function deletePic(p: any) {
   try {
     await api.delete(`/master/pic/${p.id_pic}`)
     await loadSite()
-  } catch (e: any) { error.value = e.response?.data?.message || 'Gagal menghapus' }
+  } catch (e: any) { toastGalat(e, 'Gagal menghapus PIC') }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────
@@ -355,7 +360,7 @@ const ubahSite = ref(false)
 async function setelahUbah() { ubahSite.value = false; await loadSite() }
 const kodeTersalin = ref(false), alamatTersalin = ref(false)
 async function salin(teks: string, jenis: 'kode' | 'alamat') {
-  try { await navigator.clipboard.writeText(teks || '') } catch { /* abaikan */ }
+  try { await navigator.clipboard.writeText(teks || '') } catch { toast('Gagal menyalin — salin manual', 'warning'); return }
   const r = jenis === 'kode' ? kodeTersalin : alamatTersalin
   r.value = true; setTimeout(() => (r.value = false), 1500)
 }
@@ -369,12 +374,16 @@ const perluTarik = computed(() => {
   if (barang) return `masih ada ${barang} perangkat tercatat di lokasi`
   return ''
 })
+const menyiapkanBa = ref(false)
 async function cetakBaTarik() {
+  if (menyiapkanBa.value) return
+  menyiapkanBa.value = true
   try {
     const { data } = await api.get('/master/site/dismantle-perangkat')
     const s = (data.data ?? []).find((x: any) => x.id_site === site.value?.id_site)
     if (s) printBaPengambilan([s])
-  } catch (e) { alertError(e, 'Gagal menyiapkan BA') }
+    else toast('Site ini tidak ada di daftar tarik perangkat', 'warning')
+  } catch (e) { alertError(e, 'Gagal menyiapkan BA') } finally { menyiapkanBa.value = false }
 }
 const picUtama = computed(() => site.value?.pic?.find((p: any) => p.is_utama) ?? site.value?.pic?.[0] ?? null)
 const waNomor = (n: string) => n.replace(/\D/g, '').replace(/^0/, '62')
@@ -430,7 +439,8 @@ async function bukaDokumenFs(doc: any) {
   <div class="page">
     <MasterNav />
     <div v-if="loading && !site" class="loading-state">Memuat data site...</div>
-    <div v-else-if="error && !site" class="alert alert-danger">{{ error }}</div>
+    <div v-else-if="error && !site" class="alert alert-danger">{{ error }} <button type="button" class="btn btn-sm btn-secondary" @click="loadSite">Coba lagi</button></div>
+    <div v-else-if="!site" class="alert alert-danger">Site tidak ditemukan.</div>
 
     <template v-else-if="site">
       <div v-if="error" class="alert alert-danger page-alert">{{ error }}</div>
@@ -461,7 +471,7 @@ async function bukaDokumenFs(doc: any) {
           <b>Site sudah Dismantle, tapi {{ perluTarik }}.</b>
           <small>Jadwalkan teknisi untuk mengambil perangkat dan bawa Berita Acara Pengambilan Barang.</small>
         </div>
-        <button type="button" class="btn btn-primary btn-sm" @click="cetakBaTarik">🖨️ Cetak BA pengambilan</button>
+        <button type="button" class="btn btn-primary btn-sm" :disabled="menyiapkanBa" @click="cetakBaTarik">{{ menyiapkanBa ? 'Menyiapkan…' : '🖨️ Cetak BA pengambilan' }}</button>
       </div>
 
       <!-- ═══ Ringkasan cepat ═══ -->
@@ -527,7 +537,7 @@ async function bukaDokumenFs(doc: any) {
       <div v-if="activeTab === 'sumber'" class="tab-content">
         <div class="tab-header">
           <h3>Sumber Internet</h3>
-          <button class="btn-add" @click="openAddSumber">+ Tambah Link</button>
+          <button type="button" class="btn-add" @click="openAddSumber">+ Tambah Link</button>
         </div>
         <div v-if="!site.sumber_internet?.length" class="empty-state">Belum ada sumber internet terdaftar</div>
         <div v-else class="sumber-list">
@@ -583,7 +593,7 @@ async function bukaDokumenFs(doc: any) {
       <div v-if="activeTab === 'perangkat'" class="tab-content">
         <div class="tab-header">
           <h3>Perangkat Terpasang</h3>
-          <button class="btn-add" @click="openAddPerangkat">+ Tambah Perangkat</button>
+          <button type="button" class="btn-add" @click="openAddPerangkat">+ Tambah Perangkat</button>
         </div>
         <div v-if="!site.perangkat?.length" class="empty-state">Belum ada perangkat terdaftar</div>
         <div v-else class="table-card table-wrap">
@@ -653,7 +663,7 @@ async function bukaDokumenFs(doc: any) {
       <div v-if="activeTab === 'pic'" class="tab-content">
         <div class="tab-header">
           <h3>PIC Kontak</h3>
-          <button class="btn-add" @click="openAddPic">+ Tambah PIC</button>
+          <button type="button" class="btn-add" @click="openAddPic">+ Tambah PIC</button>
         </div>
         <div v-if="!site.pic?.length" class="empty-state">Belum ada PIC terdaftar</div>
         <div v-else class="pic-list">
@@ -682,7 +692,7 @@ async function bukaDokumenFs(doc: any) {
       <div v-if="activeTab === 'proyek'" class="tab-content">
         <div class="tab-header">
           <h3>Project</h3>
-          <button class="btn-add" @click="router.push('/projects?new=1')">+ Buat Project</button>
+          <button type="button" class="btn-add" @click="router.push('/projects?new=1')">+ Buat Project</button>
         </div>
         <div v-if="!site.projects?.length" class="empty-state">Belum ada project untuk site ini</div>
         <div v-else class="list-rows">
@@ -712,7 +722,7 @@ async function bukaDokumenFs(doc: any) {
       <div v-if="activeTab === 'tiket'" class="tab-content">
         <div class="tab-header">
           <h3>Tiket Operasional</h3>
-          <button class="btn-add" @click="router.push('/operations')">Lihat Semua</button>
+          <button type="button" class="btn-add" @click="router.push('/operations')">Lihat Semua</button>
         </div>
         <div v-if="!site.tickets?.length" class="empty-state">Belum ada tiket untuk site ini</div>
         <div v-else class="list-rows">

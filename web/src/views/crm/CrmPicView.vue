@@ -5,6 +5,7 @@ import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 import { fmtDateShort } from '@/composables/useFormat'
+import { toast, pesanGalat } from '@/composables/useDialog'
 
 const router = useRouter()
 
@@ -48,7 +49,7 @@ async function fetchList() {
     meta.value = res.data.meta
     loadError.value = ''
   } catch (e: any) {
-    loadError.value = e?.response?.data?.message || 'Gagal memuat daftar PIC'
+    loadError.value = pesanGalat(e, 'Gagal memuat daftar PIC')
   } finally { loading.value = false }
 }
 
@@ -134,15 +135,15 @@ function parseCsv(text: string) {
 }
 
 async function doImport() {
-  if (!importRows.value.length) return
-  importing.value = true
+  if (!importRows.value.length || importing.value) return
+  importing.value = true; importError.value = ''
   try {
     const res = await api.post('/crm/pic/import', { rows: importRows.value })
     importResult.value = res.data.data
     importDone.value = true
     await Promise.all([fetchList(), fetchStats()])
   } catch (e: any) {
-    importError.value = `Import gagal: ${e?.response?.data?.message || 'periksa koneksi lalu coba lagi'}. Tidak ada baris yang tersimpan dari percobaan ini.`
+    importError.value = `Import gagal: ${pesanGalat(e, 'periksa koneksi lalu coba lagi')} Tidak ada baris yang tersimpan dari percobaan ini.`
   } finally { importing.value = false }
 }
 
@@ -154,13 +155,16 @@ async function openAdd() {
 }
 
 async function handleAdd() {
-  if (!addForm.value.id_site || !addForm.value.nama_pic) { addError.value = 'Site dan nama wajib diisi'; return }
+  if (addSubmit.value) return
+  if (!addForm.value.id_site || !addForm.value.nama_pic.trim()) { addError.value = 'Site dan nama wajib diisi'; return }
   addSubmit.value = true; addError.value = ''
   try {
-    await api.post('/crm/pic', addForm.value)
+    // Tanggal lahir kosong tidak dikirim: string kosong ditolak validasi tanggal di server
+    await api.post('/crm/pic', { ...addForm.value, nama_pic: addForm.value.nama_pic.trim(), tgl_lahir: addForm.value.tgl_lahir || undefined })
     showAdd.value = false
+    toast('PIC ditambahkan')
     await Promise.all([fetchList(), fetchStats()])
-  } catch (e: any) { addError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { addError.value = pesanGalat(e, 'Gagal menambah PIC') }
   finally { addSubmit.value = false }
 }
 
@@ -189,7 +193,7 @@ async function cariSite(q: string): Promise<OpsiCari[]> {
         <p class="sub">Kontak penanggung jawab IT di setiap pelanggan</p>
       </div>
       <div class="header-actions">
-        <button type="button" class="btn-import" @click="showImport = true; importDone = false; importRows = []; importResult = []">⬆ Import CSV</button>
+        <button type="button" class="btn-import" @click="showImport = true; importDone = false; importRows = []; importResult = []; importError = ''; importDilewati = 0">⬆ Import CSV</button>
         <button type="button" class="btn btn-primary" @click="openAdd">+ Tambah PIC</button>
       </div>
     </div>
@@ -197,11 +201,11 @@ async function cariSite(q: string): Promise<OpsiCari[]> {
     <!-- Stats -->
     <div class="stats-row" v-if="stats">
       <div class="stat-card">
-        <div class="stat-num">{{ stats.total }}</div>
+        <div class="stat-num">{{ stats.total ?? 0 }}</div>
         <div class="stat-label">Total PIC</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num">{{ stats.updated_30_hari }}</div>
+        <div class="stat-num">{{ stats.updated_30_hari ?? 0 }}</div>
         <div class="stat-label">Update 30 Hari</div>
       </div>
       <div class="stat-card" v-for="m in stats.by_media?.filter((x:any) => x.media_komunikasi)" :key="m.media_komunikasi">
@@ -234,7 +238,7 @@ async function cariSite(q: string): Promise<OpsiCari[]> {
         </thead>
         <tbody>
           <tr v-if="!list.length">
-            <td colspan="7" class="empty">Tidak ada data PIC</td>
+            <td colspan="7" class="empty">{{ search ? 'Tidak ada PIC yang cocok dengan pencarian ini' : 'Belum ada data PIC' }}</td>
           </tr>
           <tr v-baris v-for="p in list" :key="p.id_pic" class="row-link" @click="router.push(`/crm/pic/${p.id_pic}`)">
             <td>
@@ -242,7 +246,7 @@ async function cariSite(q: string): Promise<OpsiCari[]> {
               <div class="text-sm text-gray">{{ p.email || '—' }}</div>
             </td>
             <td>
-              <div class="fw">{{ p.site?.pelanggan?.nama_pelanggan }}</div>
+              <div class="fw">{{ p.site?.pelanggan?.nama_pelanggan || '—' }}</div>
               <div class="text-sm text-gray">{{ p.site?.nama_site }}</div>
             </td>
             <td class="text-gray">{{ p.jabatan || '—' }}</td>

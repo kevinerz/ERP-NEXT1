@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, pesanGalat } from '@/composables/useDialog'
 import { useRouter, useRoute } from 'vue-router'
 import { useHrisStore } from '@/stores/hris'
 import { fmtDate as formatDate } from '@/composables/useFormat'
@@ -36,12 +36,23 @@ onUnmounted(() => { if (successTimer) clearTimeout(successTimer) })
 // jadi tanpa ini state "tidak ditemukan" sempat berkedip saat memuat).
 const loaded = ref(false)
 
-onMounted(async () => {
+// Store dipakai bersama: jangan sempat menampilkan profil karyawan lain yang tersisa
+if (hris.current?.id_karyawan !== id) hris.current = null
+const galatMuat = ref('')
+async function muatProfil() {
+  loaded.value = false; galatMuat.value = ''
   try {
-    await hris.fetchRoles()
-    await hris.fetchOne(id)
-  } catch { /* error ditampilkan lewat hris.error jika ada */ }
-  finally { loaded.value = true }
+    const { data } = await api.get(`/hris/karyawan/${id}`)
+    hris.current = data.data
+  } catch (e: any) {
+    // 404 = memang tidak ada; selain itu tampilkan alasan + "Coba lagi"
+    if (e?.response?.status !== 404) galatMuat.value = pesanGalat(e, 'Gagal memuat data karyawan')
+  } finally { loaded.value = true }
+}
+
+onMounted(async () => {
+  hris.fetchRoles()
+  await muatProfil()
   muatAktivitas()
 })
 
@@ -55,6 +66,7 @@ async function handleToggleStatus() {
     variant: 'warning',
     confirmLabel: 'Ya, Nonaktifkan',
   }))) return
+  if (togglingStatus.value) return
   actionError.value = ''
   togglingStatus.value = true
   try {
@@ -62,7 +74,7 @@ async function handleToggleStatus() {
     await hris.fetchOne(id)
     setSuccess('Status karyawan diperbarui')
   } catch (e: any) {
-    actionError.value = e.response?.data?.message || 'Gagal'
+    actionError.value = pesanGalat(e, 'Gagal mengubah status karyawan')
   } finally { togglingStatus.value = false }
 }
 
@@ -71,20 +83,26 @@ const deleting = ref(false)
 async function handleDelete() {
   if (!hris.current) return
   if (!(await confirmDialog({ title: 'Hapus Karyawan?', message: `Hapus karyawan "${hris.current.nama_lengkap}"? Tindakan ini tidak bisa dibatalkan.`, variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  if (deleting.value) return
   actionError.value = ''
   deleting.value = true
   try {
     await hris.deleteKaryawan(id)
+    toast('Karyawan dihapus')
     router.push('/hris/karyawan')
   } catch (e: any) {
-    actionError.value = e.response?.data?.message || 'Gagal menghapus karyawan'
+    actionError.value = pesanGalat(e, 'Gagal menghapus karyawan')
   } finally {
     deleting.value = false
   }
 }
 
 async function handleCreateUser() {
+  if (actionLoading.value) return
   actionError.value = ''
+  if (!userForm.value.username.trim()) { actionError.value = 'Username wajib diisi'; return }
+  if (userForm.value.password.length < 8) { actionError.value = 'Password minimal 8 karakter'; return }
+  if (!userForm.value.role_ids.length) { actionError.value = 'Pilih minimal satu role'; return }
   actionLoading.value = true
   try {
     await hris.createUserAccount(id, userForm.value)
@@ -93,13 +111,14 @@ async function handleCreateUser() {
     userForm.value = { username: '', password: '', role_ids: [] }
     setSuccess('Akun user berhasil dibuat')
   } catch (e: any) {
-    actionError.value = e.response?.data?.message || 'Gagal membuat akun'
+    actionError.value = pesanGalat(e, 'Gagal membuat akun')
   } finally {
     actionLoading.value = false
   }
 }
 
 async function handleResetPw() {
+  if (actionLoading.value) return
   if (!newPassword.value || newPassword.value.length < 8) {
     actionError.value = 'Password minimal 8 karakter'
     return
@@ -112,7 +131,7 @@ async function handleResetPw() {
     newPassword.value = ''
     setSuccess('Password berhasil direset')
   } catch (e: any) {
-    actionError.value = e.response?.data?.message || 'Gagal reset password'
+    actionError.value = pesanGalat(e, 'Gagal reset password')
   } finally {
     actionLoading.value = false
   }
@@ -120,10 +139,12 @@ async function handleResetPw() {
 
 function openEditRoles() {
   editRoleIds.value = hris.current?.user?.user_roles.map(ur => ur.role.id_role) ?? []
+  actionError.value = ''
   showEditRoles.value = true
 }
 
 async function handleEditRoles() {
+  if (actionLoading.value) return
   if (!editRoleIds.value.length) {
     actionError.value = 'Pilih minimal satu role'
     return
@@ -136,7 +157,7 @@ async function handleEditRoles() {
     showEditRoles.value = false
     setSuccess('Role berhasil diperbarui')
   } catch (e: any) {
-    actionError.value = e.response?.data?.message || 'Gagal update role'
+    actionError.value = pesanGalat(e, 'Gagal memperbarui role')
   } finally {
     actionLoading.value = false
   }
@@ -181,6 +202,7 @@ function openEditModul() {
   const raw: string[] = hris.current?.user?.modul_akses ?? []
   semuaModul.value     = raw.length === 0
   editModulAkses.value = raw.length ? [...raw] : []
+  actionError.value    = ''
   showEditModul.value  = true
 }
 
@@ -194,6 +216,12 @@ function applyPreset(moduls: string[]) {
 }
 
 async function handleEditModul() {
+  if (actionLoading.value) return
+  // daftar kosong = akses SEMUA modul di backend → jangan sampai terkirim tanpa sengaja
+  if (!semuaModul.value && !editModulAkses.value.length) {
+    actionError.value = 'Pilih minimal satu modul, atau centang Administrator untuk akses semua modul'
+    return
+  }
   actionLoading.value = true
   actionError.value   = ''
   try {
@@ -203,7 +231,7 @@ async function handleEditModul() {
     showEditModul.value = false
     setSuccess('Akses modul berhasil diperbarui')
   } catch (e: any) {
-    actionError.value = e.response?.data?.message || 'Gagal update modul akses'
+    actionError.value = pesanGalat(e, 'Gagal memperbarui akses modul')
   } finally {
     actionLoading.value = false
   }
@@ -218,6 +246,7 @@ async function handleToggleUserStatus() {
     variant: 'warning',
     confirmLabel: 'Ya, Nonaktifkan',
   }))) return
+  if (togglingUser.value) return
   actionError.value = ''
   togglingUser.value = true
   try {
@@ -225,7 +254,7 @@ async function handleToggleUserStatus() {
     await hris.fetchOne(id)
     setSuccess('Status akun diperbarui')
   } catch (e: any) {
-    actionError.value = e.response?.data?.message || 'Gagal'
+    actionError.value = pesanGalat(e, 'Gagal mengubah status akun')
   } finally { togglingUser.value = false }
 }
 
@@ -240,7 +269,7 @@ const samar = (v?: string | null) => (!v ? '—' : tampilRahasia.value ? v : `${
 const menuLain = ref(false)
 const ultahLagi = computed(() => hariMenuju(k.value?.tgl_lahir))
 async function salin(teks: string, label: string) {
-  try { await navigator.clipboard.writeText(teks); toast(`${label} disalin`) } catch { /* abaikan */ }
+  try { await navigator.clipboard.writeText(teks); toast(`${label} disalin`) } catch { toast(`${label} gagal disalin — salin manual`, 'warning') }
 }
 const JENIS_KELAMIN: Record<string, string> = { L: 'Laki-laki', P: 'Perempuan' }
 
@@ -251,15 +280,23 @@ interface Aktivitas {
   tiket_terbaru: { id_ticket: number; nomor_tiket: string; judul_tiket: string; status_tiket: string; updated_at: string }[]
 }
 const aktivitas = ref<Aktivitas | null>(null)
+const aktivitasGagal = ref(false)
 async function muatAktivitas() {
-  try { const { data } = await api.get(`/hris/karyawan/${id}/aktivitas`); aktivitas.value = data.data } catch { /* opsional */ }
+  aktivitasGagal.value = false
+  try { const { data } = await api.get(`/hris/karyawan/${id}/aktivitas`); aktivitas.value = data.data } catch { aktivitasGagal.value = true }
 }
 const modulLabel = (key: string) => ALL_MODULS.find((m) => m.key === key) ?? { key, label: key, icon: '•' }
 </script>
 
 <template>
   <div class="pf">
-    <div v-if="!hris.current && loaded" class="pf-hilang">
+    <div v-if="!hris.current && loaded && galatMuat" class="pf-hilang" role="alert">
+      <div>🍂</div><b>Gagal memuat data karyawan</b>
+      <span class="pf-redup">{{ galatMuat }}</span>
+      <button type="button" class="pf-btn utama" @click="muatProfil">↻ Coba lagi</button>
+      <button type="button" class="pf-btn" @click="router.push('/hris/karyawan')">← Kembali ke Buku Tim</button>
+    </div>
+    <div v-else-if="!hris.current && loaded" class="pf-hilang">
       <div>🍂</div><b>Karyawan tidak ditemukan</b>
       <button type="button" class="pf-btn" @click="router.push('/hris/karyawan')">← Kembali ke Buku Tim</button>
     </div>
@@ -396,7 +433,8 @@ const modulLabel = (key: string) => ALL_MODULS.find((m) => m.key === key) ?? { k
           <div v-else-if="tab === 'kerja'" class="pf-isi">
             <section class="pf-kartu">
               <div class="pf-kepala"><h3>Beban kerja saat ini</h3><small class="pf-redup">angka "30 hari" = dibuat dalam 30 hari terakhir</small></div>
-              <div v-if="!aktivitas" class="pf-redup">Memuat…</div>
+              <div v-if="!aktivitas && aktivitasGagal" class="pf-redup">Data aktivitas gagal dimuat. <button type="button" class="pf-btn" @click="muatAktivitas">↻ Coba lagi</button></div>
+              <div v-else-if="!aktivitas" class="pf-redup">Memuat…</div>
               <div v-else class="pf-kerja">
                 <div><span>🎫</span><b>{{ aktivitas.tiket.aktif }}</b><small>Tiket gangguan aktif</small><em>{{ aktivitas.tiket.bulan_ini }} dalam 30 hari</em></div>
                 <div><span>🧰</span><b>{{ aktivitas.wo.aktif }}</b><small>Work order berjalan</small><em>{{ aktivitas.wo.bulan_ini }} dalam 30 hari</em></div>
@@ -420,7 +458,7 @@ const modulLabel = (key: string) => ALL_MODULS.find((m) => m.key === key) ?? { k
               <div>🔐</div>
               <h3>Belum punya akun ERP</h3>
               <p>Buat akun supaya {{ k.nama_lengkap.split(' ')[0] }} bisa login, menerima tiket, undangan rapat, dan notifikasi.</p>
-              <button type="button" class="pf-btn utama" @click="showCreateUser = true">＋ Buat akun</button>
+              <button type="button" class="pf-btn utama" @click="actionError = ''; showCreateUser = true">＋ Buat akun</button>
             </section>
             <template v-else>
               <section class="pf-kartu">
@@ -434,7 +472,7 @@ const modulLabel = (key: string) => ALL_MODULS.find((m) => m.key === key) ?? { k
                 </dl>
                 <div class="pf-tombol-baris">
                   <button type="button" class="pf-btn" @click="openEditRoles">🎭 Ubah role</button>
-                  <button type="button" class="pf-btn" @click="showResetPw = true">🔑 Reset password</button>
+                  <button type="button" class="pf-btn" @click="actionError = ''; newPassword = ''; showResetPw = true">🔑 Reset password</button>
                   <button type="button" class="pf-btn" :class="k.user.is_aktif ? 'bahaya' : ''" :disabled="togglingUser" @click="handleToggleUserStatus">
                     {{ togglingUser ? 'Memproses…' : k.user.is_aktif ? '⏸️ Nonaktifkan akun' : '▶️ Aktifkan akun' }}
                   </button>

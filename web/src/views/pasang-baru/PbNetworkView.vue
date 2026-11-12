@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Tampilan Network: order setelah vendor ISP terpasang — perangkat Mikrotik, pemasangan, BA aktivasi
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 import { fmtDate } from '@/composables/useFormat'
 import { umur } from './pb'
 
@@ -25,7 +26,9 @@ const selesai = ref<Order[]>([])
 const memuat = ref(false)
 const error = ref('')
 
+let urutMuat = 0
 async function muat() {
+  const urut = ++urutMuat
   memuat.value = true
   error.value = ''
   const c = cari.value.trim() || undefined
@@ -34,17 +37,19 @@ async function muat() {
       api.get('/pasang-baru/order', { params: { tahap: 'Network', cari: c } }),
       api.get('/pasang-baru/order', { params: { tahap: 'Selesai', cari: c } }),
     ])
+    if (urut !== urutMuat) return // jawaban pencarian lama tidak boleh menimpa yang baru
     antrian.value = a.data.data
     selesai.value = (b.data.data as Order[]).sort((x, y) => y.tahap_at.localeCompare(x.tahap_at))
   } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Gagal memuat data'
+    if (urut === urutMuat) error.value = pesanGalat(e, 'Gagal memuat data')
   } finally {
-    memuat.value = false
+    if (urut === urutMuat) memuat.value = false
   }
 }
 onMounted(muat)
 let timer: ReturnType<typeof setTimeout> | null = null
 watch(cari, () => { if (timer) clearTimeout(timer); timer = setTimeout(muat, 350) })
+onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
 
 // Langkah berikut tiap order
 function langkah(o: Order): { t: string; w: string } {
@@ -78,7 +83,7 @@ const pelaksana = (o: Order) => (o.network_metode === 'Kirim_Vendor'
     <div class="pn-kpi">
       <div v-for="k in kpi" :key="k.t" class="pn-kpi-item" :class="k.n ? k.w : ''"><b>{{ k.n }}</b><span>{{ k.t }}</span></div>
     </div>
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error" class="alert alert-danger" role="alert">{{ error }} <button type="button" class="btn btn-sm btn-ghost" @click="muat">↻ Coba lagi</button></div>
 
     <div class="pn-tab">
       <button :class="{ aktif: tab === 'antrian' }" @click="tab = 'antrian'">🌐 Antrian Network <span v-if="antrian.length" class="isi">{{ antrian.length }}</span></button>
@@ -95,8 +100,8 @@ const pelaksana = (o: Order) => (o.network_metode === 'Kirim_Vendor'
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!memuat && !(tab === 'antrian' ? antrian : selesai).length">
-            <td colspan="6" class="muted pusat">{{ tab === 'antrian' ? 'Tidak ada order di tahap Network. 👍' : 'Belum ada.' }}</td>
+          <tr v-if="!memuat && !error && !(tab === 'antrian' ? antrian : selesai).length">
+            <td colspan="6" class="muted pusat">{{ cari.trim() ? 'Tidak ada order yang cocok dengan pencarian.' : tab === 'antrian' ? 'Tidak ada order di tahap Network. 👍' : 'Belum ada order selesai.' }}</td>
           </tr>
           <tr v-baris v-for="o in (tab === 'antrian' ? antrian : selesai)" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
             <td><b :class="jam(o.tahap_at) > 72 && tab === 'antrian' ? 'merah' : ''">{{ umur(o.tahap_at) }}</b></td>
@@ -114,7 +119,7 @@ const pelaksana = (o: Order) => (o.network_metode === 'Kirim_Vendor'
           </tr>
         </tbody>
       </table>
-      <p v-if="memuat" class="muted pusat">Memuat…</p>
+      <p v-if="memuat" class="loading-state">Memuat…</p>
     </div>
   </div>
 </template>

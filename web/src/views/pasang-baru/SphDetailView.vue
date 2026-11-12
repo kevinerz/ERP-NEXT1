@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { fmtDate, fmtDateTime, fmtRupiah } from '@/composables/useFormat'
-import { alertDialog, alertError, confirmDialog, promptDialog } from '@/composables/useDialog'
+import { alertDialog, alertError, confirmDialog, pesanGalat, promptDialog, toast } from '@/composables/useDialog'
 import { printSphPasangBaru } from '@/composables/usePrint'
 import { KELAS_SPH, KELAS_TAHAP } from './pb'
 
@@ -25,7 +25,7 @@ async function muat() {
     muatError.value = ''
   } catch (e) {
     // muat awal gagal → error di halaman; muat ulang setelah aksi → modal
-    if (!s.value) { const m = (e as any)?.response?.data?.message; muatError.value = Array.isArray(m) ? m.join(', ') : m || 'Gagal memuat SPH' }
+    if (!s.value) muatError.value = pesanGalat(e, 'Gagal memuat SPH')
     else alertError(e, 'Gagal memuat SPH')
   } finally {
     memuat.value = false
@@ -46,6 +46,7 @@ const totalDeposit = computed(() => (s.value?.order || []).reduce((a: number, o:
 const totalInstalasi = computed(() => (s.value?.order || []).reduce((a: number, o: any) => a + Number(o.biaya_instalasi), 0))
 
 async function jalankan(fn: () => Promise<any>) {
+  if (proses.value) return
   proses.value = true
   try { await fn(); await muat() } catch (e) { alertError(e) } finally { proses.value = false }
 }
@@ -67,10 +68,11 @@ async function tolak() {
   jalankan(() => api.post(`/pasang-baru/sph/${id.value}/putuskan`, { setuju: false, catatan }))
 }
 async function hapus() {
-  if (!(await confirmDialog({ title: 'Hapus SPH', message: `Hapus ${s.value.nomor_sph}?`, variant: 'danger', confirmLabel: 'Hapus' }))) return
+  if (proses.value || !(await confirmDialog({ title: 'Hapus SPH', message: `Hapus ${s.value.nomor_sph}?`, variant: 'danger', confirmLabel: 'Hapus' }))) return
   proses.value = true
   try {
     await api.delete(`/pasang-baru/sph/${id.value}`)
+    toast('SPH dihapus')
     router.push('/pasang-baru')
   } catch (e) { alertError(e) } finally { proses.value = false }
 }
@@ -82,7 +84,7 @@ async function hapusPermanen() {
     message: `Semua order, site hasil SPH ini (beserta PIC, link, dokumen/PDF), riwayat, dan notifikasinya ikut terhapus. Pelanggan yang dibuat bersama SPH ini juga ikut dihapus bila tidak punya data lain. Tidak bisa dibatalkan.`,
     validate: (v) => (v.trim() === nomor ? null : 'Nomor SPH tidak sesuai'),
   })
-  if (isi?.trim() !== nomor) return
+  if (isi?.trim() !== nomor || proses.value) return
   proses.value = true
   try {
     const { data } = await api.delete(`/pasang-baru/sph/${id.value}/permanen`)
@@ -96,10 +98,10 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
 
 <template>
   <div class="page">
-    <p v-if="memuat && !s" class="muted">Memuat…</p>
+    <p v-if="memuat && !s" class="loading-state">Memuat SPH…</p>
     <div v-else-if="!s && muatError" class="alert alert-danger" role="alert">
       <span>⚠ {{ muatError }}</span>
-      <button class="btn btn-sm btn-ghost" @click="muat">Coba lagi</button>
+      <button type="button" class="btn btn-sm btn-ghost" @click="muat">↻ Coba lagi</button>
       <button class="btn btn-sm btn-ghost" @click="router.push('/pasang-baru')">← Daftar</button>
     </div>
     <template v-else-if="s">
@@ -189,6 +191,7 @@ const AKSI: Record<string, string> = { buat: 'Dibuat', ubah: 'Diubah', ajukan: '
           <p v-for="r in s.riwayat" :key="r.id_riwayat" class="sd-riwayat">
             <small class="muted">{{ fmtDateTime(r.created_at) }}</small> · <b>{{ AKSI[r.aksi] || r.aksi }}</b> oleh {{ r.oleh || '-' }}<template v-if="r.catatan"> — {{ r.catatan }}</template>
           </p>
+          <p v-if="!s.riwayat?.length" class="muted">Belum ada riwayat.</p>
         </div>
       </div>
     </template>

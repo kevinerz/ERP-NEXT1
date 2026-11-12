@@ -2,7 +2,7 @@
 import MasterNav from './MasterNav.vue'
 import { useRoute } from 'vue-router'
 import { ref, onMounted } from 'vue'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, pesanGalat, toastGalat } from '@/composables/useDialog'
 import { useMasterStore, type Vendor } from '@/stores/master'
 import api from '@/services/api'
 import BasePagination from '@/components/BasePagination.vue'
@@ -84,7 +84,8 @@ function openEdit(v: Vendor) {
 }
 
 async function handleSubmit() {
-  if (!form.value.nama_vendor || !form.value.tipe_vendor) {
+  if (submitting.value) return
+  if (!form.value.nama_vendor.trim() || !form.value.tipe_vendor) {
     formError.value = 'Nama vendor dan tipe wajib diisi'
     return
   }
@@ -114,31 +115,43 @@ async function handleSubmit() {
     setTimeout(() => successMsg.value = '', 3000)
     fetchData()
   } catch (e: any) {
-    formError.value = e.response?.data?.message || 'Terjadi kesalahan'
+    formError.value = pesanGalat(e, 'Gagal menyimpan vendor')
   } finally {
     submitting.value = false
   }
 }
 
+const busyId = ref<number | null>(null)
 async function handleToggle(v: Vendor) {
+  if (busyId.value !== null) return
+  busyId.value = v.id_vendor
+  const sebelumnya = v.is_aktif
   try {
     await master.toggleVendor(v.id_vendor)
-    successMsg.value = `Vendor ${!v.is_aktif ? 'diaktifkan' : 'dinonaktifkan'}`
+    successMsg.value = `Vendor ${!sebelumnya ? 'diaktifkan' : 'dinonaktifkan'}`
     setTimeout(() => successMsg.value = '', 3000)
   } catch (e: any) {
-    master.error = e.response?.data?.message || 'Gagal ubah status'
+    toastGalat(e, 'Gagal mengubah status vendor')
+  } finally {
+    busyId.value = null
   }
 }
 
 async function hapusVendor(vendor: Vendor) {
+  if (busyId.value !== null) return
   if (!(await confirmDialog({ title: 'Hapus Vendor?', message: 'Hapus vendor ' + vendor.nama_vendor + '?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  busyId.value = vendor.id_vendor
   try {
     await api.delete('/master/vendor/' + vendor.id_vendor)
-    master.vendorList = master.vendorList.filter((v: Vendor) => v.id_vendor !== vendor.id_vendor)
+    // muat ulang supaya total & halaman ikut benar (mundur satu halaman bila baris terakhir dihapus)
+    if (master.vendorList.length === 1 && page.value > 1) page.value--
+    fetchData()
     successMsg.value = 'Vendor dihapus'
     setTimeout(() => successMsg.value = '', 3000)
   } catch (e: any) {
     await alertError(e, 'Gagal menghapus vendor')
+  } finally {
+    busyId.value = null
   }
 }
 </script>
@@ -176,7 +189,7 @@ async function hapusVendor(vendor: Vendor) {
     </div>
 
     <div v-if="successMsg" class="alert alert-success">{{ successMsg }}</div>
-    <div v-if="master.error" class="alert alert-danger">{{ master.error }}</div>
+    <div v-if="master.error" class="alert alert-danger">{{ master.error }} <button type="button" class="btn btn-sm btn-secondary" @click="fetchData">Coba lagi</button></div>
 
     <!-- Table -->
     <div class="table-card">
@@ -194,12 +207,12 @@ async function hapusVendor(vendor: Vendor) {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!master.vendorList.length">
+          <tr v-if="!master.vendorList.length && !master.error">
             <td colspan="7">
               <div class="empty-state">
                 <div class="empty-icon">🏢</div>
-                <div class="empty-title">Belum ada vendor</div>
-                <div class="empty-desc">Tambahkan vendor atau ISP pertama Anda</div>
+                <div class="empty-title">{{ search || filterTipe || filterAktif !== '' ? 'Tidak ada vendor yang cocok' : 'Belum ada vendor' }}</div>
+                <div class="empty-desc">{{ search || filterTipe || filterAktif !== '' ? 'Ubah kata kunci atau filter' : 'Tambahkan vendor atau ISP pertama Anda' }}</div>
               </div>
             </td>
           </tr>
@@ -234,12 +247,14 @@ async function hapusVendor(vendor: Vendor) {
                 <button
                   type="button"
                   :class="['btn btn-sm', v.is_aktif ? 'btn-soft-warning' : 'btn-soft-success']"
+                  :disabled="busyId === v.id_vendor"
                   @click="handleToggle(v)"
                 >{{ v.is_aktif ? 'Nonaktifkan' : 'Aktifkan' }}</button>
                 <button
                   v-if="!v.is_aktif"
                   type="button"
                   class="btn btn-sm btn-soft-danger"
+                  :disabled="busyId === v.id_vendor"
                   @click="hapusVendor(v)"
                 >Hapus</button>
               </div>

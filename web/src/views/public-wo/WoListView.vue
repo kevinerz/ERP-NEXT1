@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import BasePagination from '@/components/BasePagination.vue'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateTime as fmtDate } from '@/composables/useFormat'
-import { alertError } from '@/composables/useDialog'
+import { alertError, pesanGalat, toast } from '@/composables/useDialog'
 import { useFilterUrl } from '@/composables/useFilterUrl'
 
 const router = useRouter()
@@ -40,7 +40,11 @@ const form = ref({
 
 const JENIS_WO = ['Instalasi', 'Maintenance', 'Perbaikan', 'Relokasi', 'Upgrade', 'Lainnya']
 
+// In_Progress/Completed/Cancelled = status yang ditulis modul Jadwal Visit untuk tabel WO yang sama
 const STATUS_STYLE: Record<string, string> = {
+  In_Progress: 'badge-amber',
+  Completed:  'badge-green',
+  Cancelled:  'badge-gray',
   Open:       'badge-blue',
   Dispatch:   'badge-blue',
   'On-Site':  'badge-amber',
@@ -51,6 +55,7 @@ const STATUS_STYLE: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   Open: 'Open', Dispatch: 'Dispatch', 'On-Site': 'On-Site',
   Selesai: 'Selesai', Ditunda: 'Ditunda', Dibatalkan: 'Dibatalkan',
+  In_Progress: 'Dikerjakan', Completed: 'Selesai (visit)', Cancelled: 'Batal (visit)',
 }
 
 async function fetchSummary() {
@@ -62,22 +67,26 @@ async function fetchSummary() {
 
 function goPage(p: number) { page.value = p; fetchList() }
 
+// Nomor urut: hasil pencarian lama tidak boleh menimpa hasil pencarian terbaru
+let urutList = 0
 async function fetchList() {
+  const no = ++urutList
   loading.value = true
   loadError.value = ''
   try {
     const params: any = { page: page.value, limit: 20 }
-    if (search.value)        params.search     = search.value
+    if (search.value.trim()) params.search     = search.value.trim()
     if (filterStatus.value)  params.status_wo  = filterStatus.value
     if (filterJenis.value)   params.jenis_wo   = filterJenis.value
     if (filterTeknisi.value) params.id_teknisi = filterTeknisi.value
     const { data } = await api.get('/public-wo', { params })
-    wos.value  = data.data
-    meta.value = data.meta
+    if (no !== urutList) return
+    wos.value  = data.data ?? []
+    meta.value = data.meta ?? { total: 0, total_pages: 1 }
   } catch (e: any) {
-    loadError.value = e?.response?.data?.message || 'Gagal memuat Work Order'
+    if (no === urutList) loadError.value = pesanGalat(e, 'Gagal memuat Work Order')
   } finally {
-    loading.value = false
+    if (no === urutList) loading.value = false
   }
 }
 
@@ -131,7 +140,7 @@ function openModal() {
 }
 
 async function submitWo() {
-  if (kurang.value.length) return
+  if (kurang.value.length || saving.value) return
   saving.value = true
   try {
     const payload: any = {
@@ -145,8 +154,7 @@ async function submitWo() {
     if (form.value.tipe_eksekutor === 'Vendor_Ketiga') payload.id_vendor_ketiga = Number(form.value.id_vendor_ketiga)
     const { data } = await api.post('/public-wo', payload)
     showModal.value = false
-    fetchSummary()
-    fetchList()
+    toast(data.message || 'Work Order dibuat')
     router.push(`/public-wo/${data.data.id_wo}`)
   } catch (e: any) {
     alertError(e, 'Gagal membuat WO')
@@ -159,6 +167,7 @@ async function submitWo() {
 const summaryTotal = computed(() => summary.value.reduce((a, b) => a + b.count, 0))
 
 onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
+onBeforeUnmount(() => clearTimeout(debounce))
 </script>
 
 <template>
@@ -194,6 +203,9 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
         <option value="Selesai">Selesai</option>
         <option value="Ditunda">Ditunda</option>
         <option value="Dibatalkan">Dibatalkan</option>
+        <option value="In_Progress">Dikerjakan (visit)</option>
+        <option value="Completed">Selesai (visit)</option>
+        <option value="Cancelled">Batal (visit)</option>
       </select>
       <select v-model="filterJenis" class="select-filter">
         <option value="">Semua Jenis</option>
@@ -209,8 +221,11 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
     <!-- Table -->
     <div class="table-card">
       <div v-if="loading" class="state">Memuat data…</div>
-      <div v-else-if="loadError" class="state state-error">{{ loadError }}</div>
-      <div v-else-if="!wos.length" class="state">Tidak ada Work Order ditemukan</div>
+      <div v-else-if="loadError" class="state state-error" role="alert">
+        {{ loadError }}
+        <div style="margin-top:10px"><button type="button" class="btn-reset" @click="fetchList">Coba lagi</button></div>
+      </div>
+      <div v-else-if="!wos.length" class="state">{{ search.trim() || filterStatus || filterJenis || filterTeknisi ? 'Tidak ada Work Order yang cocok dengan filter' : 'Belum ada Work Order' }}</div>
       <table v-else class="table">
         <thead>
           <tr>
@@ -260,7 +275,7 @@ onMounted(() => { fetchSummary(); fetchList(); fetchDropdowns() })
       <div class="modal">
         <div class="modal-header">
           <h3 class="modal-title">Buat Work Order Baru</h3>
-          <button type="button" class="btn-modal-close" @click="showModal = false">✕</button>
+          <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showModal = false">✕</button>
         </div>
         <div class="modal-body">
           <div class="form-row">

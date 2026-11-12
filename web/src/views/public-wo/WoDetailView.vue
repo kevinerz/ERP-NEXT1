@@ -21,13 +21,16 @@ const STATUS_NEXT: Record<string, string> = {
   Dispatch: 'On-Site',
   'On-Site': 'Selesai',
 }
+// In_Progress/Completed/Cancelled = status yang ditulis modul Jadwal Visit untuk tabel WO yang sama
 const STATUS_LABEL: Record<string, string> = {
   Open: 'Open', Dispatch: 'Dispatch', 'On-Site': 'On-Site',
   Selesai: 'Selesai', Ditunda: 'Ditunda', Dibatalkan: 'Dibatalkan',
+  In_Progress: 'Dikerjakan', Completed: 'Selesai', Cancelled: 'Dibatalkan',
 }
 const STATUS_STYLE: Record<string, string> = {
   Open: 'badge-blue', Dispatch: 'badge-blue', 'On-Site': 'badge-amber',
   Selesai: 'badge-green', Ditunda: 'badge-amber', Dibatalkan: 'badge-gray',
+  In_Progress: 'badge-amber', Completed: 'badge-green', Cancelled: 'badge-gray',
 }
 
 // Berita Acara modal
@@ -101,6 +104,7 @@ function onRowAssetChange(row: MaterialRow) {
 }
 
 function openBaModal() {
+  baForm.value = { jenis_ba: 'Instalasi', nama_penandatangan_next1: '', nama_penandatangan_pelanggan: '', jabatan_penandatangan_pelanggan: '', catatan: '' }
   materialRows.value = []
   showBaModal.value = true
   fetchAssets()
@@ -130,11 +134,12 @@ async function fetchWo(silent = false) {
 
 async function advanceStatus() {
   const next = STATUS_NEXT[wo.value?.status_wo]
-  if (!next) return
+  if (!next || updatingStatus.value) return
   updatingStatus.value = true
   try {
     await api.patch(`/public-wo/${id}`, { status_wo: next })
     await fetchWo(true)
+    toast(`Status → ${STATUS_LABEL[next] ?? next}`)
   } catch (e: any) {
     alertError(e, 'Gagal update status Work Order')
   } finally {
@@ -143,11 +148,13 @@ async function advanceStatus() {
 }
 
 async function cancelWo() {
+  if (updatingStatus.value) return
   if (!(await confirmDialog({ title: 'Batalkan Work Order ini?', variant: 'danger', confirmLabel: 'Ya, Batalkan', cancelLabel: 'Tidak' }))) return
   updatingStatus.value = true
   try {
     await api.patch(`/public-wo/${id}`, { status_wo: 'Dibatalkan' })
     await fetchWo(true)
+    toast('Work Order dibatalkan')
   } catch (e: any) {
     alertError(e, 'Gagal membatalkan Work Order')
   } finally {
@@ -155,30 +162,41 @@ async function cancelWo() {
   }
 }
 
+const menghapus = ref(false)
 async function hapusWo() {
+  if (menghapus.value) return
   if (!(await confirmDialog({ title: 'Hapus Work Order ini?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
+  menghapus.value = true
   try {
     await api.delete(`/public-wo/${id}`)
+    toast('Work Order dihapus')
     router.push('/public-wo')
   } catch (e: any) {
     alertError(e, 'Gagal menghapus Work Order')
+  } finally {
+    menghapus.value = false
   }
 }
 
 async function submitBa() {
-  if (!baForm.value.jenis_ba) return
+  if (!baForm.value.jenis_ba || savingBa.value) return
+  const barisKosong = materialRows.value.findIndex((r) => r.id_aset === 0 && !r.nama_item.trim())
+  if (barisKosong >= 0) { alertError(null, `Material baris ${barisKosong + 1}: pilih aset gudang atau isi nama barang`); return }
+  const jumlahSalah = materialRows.value.findIndex((r) => !Number.isFinite(r.jumlah) || r.jumlah < 1)
+  if (jumlahSalah >= 0) { alertError(null, `Material baris ${jumlahSalah + 1}: jumlah minimal 1`); return }
   savingBa.value = true
   try {
     const payload: Record<string, any> = { ...baForm.value }
     if (materialRows.value.length) {
       payload.material = materialRows.value.map(r => ({
-        ...(r.id_aset > 0 ? { id_aset: r.id_aset } : { nama_item: r.nama_item }),
+        ...(r.id_aset > 0 ? { id_aset: r.id_aset } : { nama_item: r.nama_item.trim() }),
         jumlah: r.jumlah,
         keterangan: r.keterangan,
       }))
     }
     await api.post(`/public-wo/${id}/berita-acara`, payload)
     showBaModal.value = false
+    toast('Berita Acara dibuat')
     await fetchWo(true)
   } catch (e: any) {
     alertError(e, 'Gagal membuat BA')
@@ -193,6 +211,7 @@ function startEditCatatan() {
 }
 
 async function saveCatatan() {
+  if (savingCatatan.value) return
   savingCatatan.value = true
   try {
     await api.patch(`/public-wo/${id}`, { catatan_teknisi: catatanDraft.value })
@@ -220,7 +239,7 @@ onMounted(() => fetchWo())
     <div v-else-if="error" class="state error" role="alert">
       {{ error }}
       <div style="margin-top:10px">
-        <button v-if="error !== 'Work Order tidak ditemukan'" class="btn-secondary" @click="fetchWo()">Coba lagi</button>
+        <button v-if="error !== 'Work Order tidak ditemukan'" type="button" class="btn-secondary" @click="fetchWo()">Coba lagi</button>
         <button v-else class="btn-secondary" @click="router.push('/public-wo')">← Kembali ke daftar</button>
       </div>
     </div>
@@ -260,6 +279,7 @@ onMounted(() => fetchWo())
           <button
             v-if="wo.status_wo === 'Open' || wo.status_wo === 'Dibatalkan'"
             class="btn-hapus"
+            :disabled="menghapus"
             @click="hapusWo"
           >Hapus</button>
         </div>
@@ -373,11 +393,11 @@ onMounted(() => fetchWo())
             <div v-else class="ba-list">
               <div v-for="p in wo.pengiriman" :key="p.id_pengiriman" class="ba-item">
                 <div class="ba-item-header">
-                  <div class="ba-nomor">{{ p.jenis_pengiriman.replace('_', ' ') }}</div>
+                  <div class="ba-nomor">{{ p.jenis_pengiriman?.replace('_', ' ') || '-' }}</div>
                   <button class="btn-print-sm" @click="printSuratJalan(wo, p)" title="Cetak Surat Jalan">🖨</button>
                 </div>
                 <div class="ba-meta">
-                  <span class="badge badge-outline">{{ p.jenis_pengiriman.replace('_', ' ') }}</span>
+                  <span class="badge badge-outline">{{ p.jenis_pengiriman?.replace('_', ' ') || '-' }}</span>
                   <span :class="['badge', p.status_pengiriman === 'Diterima' ? 'badge-green' : 'badge-amber']">
                     {{ p.status_pengiriman }}
                   </span>
@@ -415,7 +435,7 @@ onMounted(() => fetchWo())
       <div class="modal">
         <div class="modal-header">
           <h3 class="modal-title">Buat Berita Acara</h3>
-          <button type="button" class="btn-modal-close" @click="showBaModal = false">✕</button>
+          <button type="button" class="btn-modal-close" aria-label="Tutup" @click="showBaModal = false">✕</button>
         </div>
         <div class="modal-body">
           <div class="form-group">

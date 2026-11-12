@@ -3,7 +3,7 @@
 // Backend: /api/prtg-rekon (aktif hanya bila PRTG_REKON_ENABLED=true).
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, pesanGalat } from '@/composables/useDialog'
 
 // Axios polos: halaman publik, tidak boleh ikut alur refresh/redirect login
 // Token rekon dibaca dari ?token=... lalu disimpan di sessionStorage (dibuang dari URL)
@@ -35,6 +35,7 @@ function masuk() {
   token.value = v
   try { sessionStorage.setItem('rekon_token', v) } catch { /* sessionStorage diblokir: cukup di memori */ }
   passInput.value = ''
+  passErr.value = ''
   butuhLogin.value = false
   load()
 }
@@ -77,7 +78,8 @@ function errMsg(e: any): string {
   const m = e?.response?.data?.message
   if (e?.response?.status === 404) return 'Halaman rekonsiliasi sedang dimatikan.'
   if (e?.response?.status === 401) return 'Password salah.'
-  return Array.isArray(m) ? m.join(', ') : m || e?.message || 'Gagal'
+  if (Array.isArray(m) ? m.length : m) return Array.isArray(m) ? m.join(', ') : m
+  return pesanGalat(e, 'Gagal')
 }
 
 function initForm(r: Row): Form {
@@ -131,6 +133,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', klikLuar)
   document.removeEventListener('keydown', tekanKey)
+  clearTimeout(siteTimer)
 })
 
 // Form per baris selalu diisi di load() — helper ini hanya mempersempit tipe
@@ -197,6 +200,7 @@ function flash(f: Form, msg: string, err = false) {
 
 async function simpan(r: Row) {
   const f = fm(r)
+  if (f.busy) return
   f.busy = true
   try {
     const { data } = await http.patch(`/${r.objid}`, payload(r))
@@ -215,7 +219,7 @@ async function apply(r: Row) {
     confirmLabel: 'Terapkan',
     variant: 'warning',
   })
-  if (!ok) return
+  if (!ok || f.busy) return
   f.busy = true
   try {
     const { data } = await http.post(`/${r.objid}/apply`, payload(r))
@@ -231,23 +235,36 @@ async function apply(r: Row) {
   } catch (e) { flash(f, errMsg(e), true) } finally { f.busy = false }
 }
 
-async function toggleDone(r: Row) {
+async function toggleDone(r: Row, ev?: Event) {
   const f = fm(r)
+  const kotak = ev?.target as HTMLInputElement | undefined
+  if (f.busy) { if (kotak) kotak.checked = isDone(r); return }
   f.busy = true
   try {
     const { data } = await http.patch(`/${r.objid}/done`, { done: !isDone(r), device_name: r.device_name })
     r.rekon = data.data
-  } catch (e) { flash(f, errMsg(e), true) } finally { f.busy = false }
+  } catch (e) {
+    // kembalikan centang ke keadaan tersimpan
+    if (kotak) kotak.checked = isDone(r)
+    flash(f, errMsg(e), true)
+  } finally { f.busy = false }
 }
 
 let siteTimer: ReturnType<typeof setTimeout> | undefined
+let urutanCari = 0
 function cariSite(f: Form) {
   clearTimeout(siteTimer)
   siteTimer = setTimeout(async () => {
+    const urutan = ++urutanCari
     try {
       const { data } = await http.get('/sites', { params: { q: f.siteQ } })
-      f.siteHasil = data.data
-    } catch { f.siteHasil = [] }
+      // jawaban pencarian lama tidak boleh menimpa hasil ketikan terbaru
+      if (urutan === urutanCari) f.siteHasil = data.data ?? []
+    } catch (e) {
+      if (urutan !== urutanCari) return
+      f.siteHasil = []
+      flash(f, `Gagal mencari site: ${errMsg(e)}`, true)
+    }
   }, 300)
 }
 function tutupSemuaPicker(kecuali?: Form) {
@@ -399,7 +416,7 @@ const statusKelas = (s: string) => {
               <button class="btn" :disabled="fm(r).busy" @click="simpan(r)">Simpan</button>
               <button class="btn btn-primary" :disabled="fm(r).busy" @click="apply(r)">Terapkan ERP + PRTG</button>
               <label class="rk-check" :class="{ on: isDone(r) }">
-                <input type="checkbox" :checked="isDone(r)" :disabled="fm(r).busy" @change="toggleDone(r)" />
+                <input type="checkbox" :checked="isDone(r)" :disabled="fm(r).busy" @change="toggleDone(r, $event)" />
                 <span>{{ isDone(r) ? 'Selesai' : 'Tandai selesai' }}</span>
               </label>
             </div>

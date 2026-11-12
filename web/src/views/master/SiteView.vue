@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import MasterNav from './MasterNav.vue'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { confirmDialog, alertDialog, promptDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, promptDialog, alertError, pesanGalat } from '@/composables/useDialog'
 import { useRouter } from 'vue-router'
 import { useMasterStore } from '@/stores/master'
 import { useAuthStore } from '@/stores/auth'
@@ -250,6 +250,9 @@ async function setelahSimpan() {
   showModal.value = false
   flash(editSite.value ? 'Site diperbarui' : 'Site ditambahkan')
   fetchData(); master.fetchSiteAll()
+  // Daftar site di modul Proyek di-cache; kosongkan supaya site baru/ubahan langsung muncul di sana
+  const { useProyekStore } = await import('@/stores/proyek')
+  useProyekStore().siteList = []
 }
 function openAdd() {
   editSite.value = null
@@ -270,7 +273,13 @@ function openEdit(s: any) {
   formError.value = ''; showModal.value = true
 }
 
+const menghapusId = ref<number | null>(null)
 async function hapusSite(site: any) {
+  if (menghapusId.value !== null) return
+  menghapusId.value = site.id_site
+  try { await hapusSiteInti(site) } finally { menghapusId.value = null }
+}
+async function hapusSiteInti(site: any) {
   if (!(await confirmDialog({ title: 'Hapus Site?', message: 'Hapus site ' + site.nama_site + '?', variant: 'danger', confirmLabel: 'Ya, Hapus' }))) return
   try {
     await api.delete('/master/site/' + site.id_site)
@@ -278,7 +287,7 @@ async function hapusSite(site: any) {
     master.siteAllList = master.siteAllList.filter((s: any) => s.id_site !== site.id_site)
     flash('Site dihapus')
   } catch (e: any) {
-    const msg = e.response?.data?.message || 'Gagal menghapus site'
+    const msg = pesanGalat(e, 'Gagal menghapus site')
     if (e.response?.status === 400 && String(msg).includes('force delete')) {
       const canForce = auth.hasRole('Admin') || auth.hasRole('Director')
       if (!canForce) { await alertDialog({ title: 'Tidak Dapat Menghapus', message: msg + '\n\nHubungi Admin untuk force delete.', variant: 'warning' }); return }
@@ -304,7 +313,7 @@ async function hapusSite(site: any) {
       } catch (e2: any) { await alertError(e2, 'Force delete gagal') }
       return
     }
-    await alertDialog({ message: msg, variant: 'danger' })
+    await alertError(e, 'Gagal menghapus site')
   }
 }
 
@@ -392,6 +401,7 @@ function onMapInput() {
 
 onUnmounted(() => {
   if (mapDebounceTimer) clearTimeout(mapDebounceTimer)
+  clearTimeout(tundaCari)
 })
 
 function selectMapResult(r: any) {
@@ -494,10 +504,11 @@ function highlight(text: string, q: string) {
     <!-- ─── Daftar ─── -->
     <div class="st-daftar">
       <div v-if="master.siteLoading && !master.siteList.length" class="st-kosong">Memuat site…</div>
+      <div v-else-if="!master.siteList.length && master.error" class="st-kosong">Daftar site belum dapat dimuat.</div>
       <div v-else-if="!master.siteList.length" class="st-kosong">
         <span class="st-maskot">📍</span>
-        <b>Tidak ada site yang cocok</b>
-        <small>Coba kata lain atau hapus filter.</small>
+        <b>{{ hasActiveFilters ? 'Tidak ada site yang cocok' : 'Belum ada site' }}</b>
+        <small>{{ hasActiveFilters ? 'Coba kata lain atau hapus filter.' : 'Klik “+ Tambah Site” untuk menambahkan lokasi pelanggan.' }}</small>
         <button v-if="hasActiveFilters" type="button" class="btn btn-ghost" @click="resetFilters">Hapus semua filter</button>
       </div>
       <div v-for="s in master.siteList" :key="s.id_site" v-baris class="st-baris" :class="{ redup: master.siteLoading }"
@@ -520,7 +531,7 @@ function highlight(text: string, q: string) {
         <div class="st-aksi" @click.stop>
           <button type="button" title="Edit site" aria-label="Edit site" @click="openEdit(s)">✏️</button>
           <button type="button" title="Cari lokasi di peta" aria-label="Cari lokasi di peta" @click="openSync(s)">🗺️</button>
-          <button type="button" class="hapus" title="Hapus site" aria-label="Hapus site" @click="hapusSite(s)">🗑️</button>
+          <button type="button" class="hapus" title="Hapus site" aria-label="Hapus site" :disabled="menghapusId === s.id_site" @click="hapusSite(s)">🗑️</button>
         </div>
         <span class="st-panah" aria-hidden="true">›</span>
       </div>

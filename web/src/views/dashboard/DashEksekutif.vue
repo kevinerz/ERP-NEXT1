@@ -3,6 +3,7 @@
 // Gaya sama dengan dashboard divisi: kartu warna-warni, grafik beranimasi, aktivitas terbaru.
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 import KartuAngka from '@/components/grafik/KartuAngka.vue'
 import GrafikBatang from '@/components/grafik/GrafikBatang.vue'
 import GrafikDonat from '@/components/grafik/GrafikDonat.vue'
@@ -27,11 +28,11 @@ async function muat() {
       api.get('/reports/projects'),
     ])
     summary.value   = s.data.data
-    revenue.value   = r.data.data
+    revenue.value   = Array.isArray(r.data.data) ? r.data.data : []
     ticketRpt.value = tr.data.data
     projRpt.value   = pr.data.data
   } catch (e: any) {
-    error.value = e.response?.data?.message || 'Gagal memuat ringkasan perusahaan'
+    error.value = pesanGalat(e, 'Gagal memuat ringkasan perusahaan')
   } finally { loading.value = false }
 }
 onMounted(muat)

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtRupiah } from '@/composables/useFormat'
-import { alertError, confirmDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, pesanGalat } from '@/composables/useDialog'
+import KeadaanData from '@/components/KeadaanData.vue'
 import { angka, tanggal, type Layanan } from './pb'
 
 interface Ops { vendor: string; modal: number; ikg: number; deposit: number }
@@ -28,6 +29,7 @@ const f = reactive({
 })
 const site = ref<Baris[]>([])
 const memuat = ref(true)
+const muatGalat = ref('')
 const menyimpan = ref(false)
 
 // Ringkas data OPS dari baris vendor survey
@@ -41,7 +43,9 @@ function ringkasOps(vendor: any[], ikg: any): Ops {
 }
 const kosong = (): Baris => ({ nama_site: '', alamat: '', lantai_unit: '', kota: '', id_layanan: '', biaya_bulanan: 0, biaya_instalasi: 0, tgl_rfs: '', pic_store_nama: '', pic_store_hp: '' })
 
-onMounted(async () => {
+async function muatAwal() {
+  memuat.value = true
+  muatGalat.value = ''
   try {
     const { data } = await api.get('/pasang-baru/referensi')
     layanan.value = data.data.layanan
@@ -80,32 +84,38 @@ onMounted(async () => {
       site.value = [kosong()]
     }
   } catch (e) {
-    alertError(e, 'Gagal memuat')
+    // Jangan tampilkan form kosong yang bisa tersimpan setengah — tampilkan galat + Coba lagi
+    muatGalat.value = pesanGalat(e, 'Gagal memuat data SPH')
   } finally {
     memuat.value = false
   }
-})
+}
+onMounted(muatAwal)
 
 // ── Pilih pelanggan ──────────────────────────────────────────────────────────
 const cariP = ref('')
 const hasilP = ref<Pelanggan[]>([])
 const cariPError = ref(false)
 let timerP: ReturnType<typeof setTimeout> | null = null
+let urutP = 0
 watch(cariP, (q) => {
   if (timerP) clearTimeout(timerP)
+  const urut = ++urutP
   cariPError.value = false
   if (q.trim().length < 2) { hasilP.value = []; return }
   timerP = setTimeout(async () => {
     try {
       const { data } = await api.get('/pasang-baru/pelanggan', { params: { q } })
-      hasilP.value = data.data
+      if (urut === urutP) hasilP.value = data.data // jawaban lama tidak menimpa ketikan terbaru
     } catch {
+      if (urut !== urutP) return
       // jangan sampai terlihat seperti "tidak ada hasil"
       hasilP.value = []
       cariPError.value = true
     }
   }, 300)
 })
+onBeforeUnmount(() => { if (timerP) clearTimeout(timerP) })
 function pilihP(p: Pelanggan) {
   f.id_pelanggan = p.id_pelanggan
   f.nama_pelanggan = p.nama_pelanggan
@@ -163,10 +173,11 @@ const siap = computed(() => (f.id_pelanggan || (f.baru && f.pelanggan_baru.trim(
   && site.value.length > 0 && !site.value.some(barisKurang))
 
 async function simpan(ajukan: boolean) {
-  if (!siap.value) return
-  if (ajukan && !(await confirmDialog({ title: 'Ajukan ke Director', message: `Ajukan SPH berisi ${site.value.length} site ke Director untuk disetujui?` }))) return
+  if (!siap.value || menyimpan.value) return
+  // Dikunci sejak dialog konfirmasi supaya klik ganda tidak membuat dua SPH
   menyimpan.value = true
   try {
+    if (ajukan && !(await confirmDialog({ title: 'Ajukan ke Director', message: `Ajukan SPH berisi ${site.value.length} site ke Director untuk disetujui?` }))) return
     const body = {
       ...(idSurvey.value ? { id_survey: idSurvey.value } : {}),
       ...(f.baru ? { pelanggan_baru: f.pelanggan_baru.trim() } : { id_pelanggan: f.id_pelanggan }),
@@ -209,8 +220,7 @@ async function simpan(ajukan: boolean) {
       <button class="btn btn-ghost" @click="router.back()">← Kembali</button>
     </div>
 
-    <p v-if="memuat" class="muted">Memuat…</p>
-    <template v-else>
+    <KeadaanData :memuat="memuat" :galat="muatGalat" teks-memuat="Memuat data SPH…" @ulang="muatAwal">
       <div class="detail-section">
         <div class="detail-section-header"><b>Pelanggan</b></div>
         <div class="detail-section-body">
@@ -293,8 +303,8 @@ async function simpan(ajukan: boolean) {
                 <td><input v-model="s.pic_store_nama" class="form-input sf-kecil" maxlength="150" /></td>
                 <td><input v-model="s.pic_store_hp" class="form-input sf-kecil" maxlength="30" /></td>
                 <td class="sf-aksi">
-                  <button class="btn btn-sm btn-ghost" title="Duplikat (layanan & harga sama)" @click="salinBaris(i)">⧉</button>
-                  <button class="btn btn-sm btn-ghost" title="Hapus" @click="hapusBaris(i)">✕</button>
+                  <button type="button" class="btn btn-sm btn-ghost" title="Duplikat (layanan & harga sama)" aria-label="Duplikat baris" @click="salinBaris(i)">⧉</button>
+                  <button type="button" class="btn btn-sm btn-ghost" title="Hapus" aria-label="Hapus baris" @click="hapusBaris(i)">✕</button>
                 </td>
               </tr>
             </tbody>
@@ -310,13 +320,13 @@ async function simpan(ajukan: boolean) {
         <button class="btn btn-ghost" :disabled="!siap || menyimpan" @click="simpan(false)">Simpan draft</button>
         <button class="btn btn-primary" :disabled="!siap || menyimpan" @click="simpan(true)">{{ menyimpan ? 'Menyimpan…' : 'Simpan & ajukan ke Director' }}</button>
       </div>
-    </template>
+    </KeadaanData>
 
     <div v-if="tempel.buka" class="modal-overlay" @click.self="tempel.buka = false">
       <div class="modal modal-xl">
         <div class="modal-header">
           <h3 class="modal-title">📋 Tempel dari Excel</h3>
-          <button class="btn-modal-close" @click="tempel.buka = false">×</button>
+          <button type="button" class="btn-modal-close" aria-label="Tutup" @click="tempel.buka = false">×</button>
         </div>
         <div class="modal-body">
           <p class="form-hint">Di Excel, susun kolom berurutan lalu blok dan salin (Ctrl+C), tempel di bawah (Ctrl+V):</p>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 
 type Tab = 'ping' | 'traceroute' | 'mtr' | 'dns' | 'port'
 
@@ -51,6 +52,7 @@ async function run() {
   if (timer) clearInterval(timer)
   timer = setInterval(() => { elapsed.value++ }, 1000)
 
+  const tab = activeTab.value
   try {
     let res: any
     const h = host.value.trim()
@@ -67,9 +69,10 @@ async function run() {
     } else if (activeTab.value === 'port') {
       res = await api.get('/tools/port', { params: { host: h, port: portNum.value } })
     }
-    result.value = res.data.data
+    // Tab sudah diganti saat menunggu → hasil tab lama jangan ditampilkan di tab baru
+    if (activeTab.value === tab) result.value = res.data.data
   } catch (e: any) {
-    error.value = e.response?.data?.message || 'Request gagal'
+    if (activeTab.value === tab) error.value = pesanGalat(e, `${tab} gagal dijalankan`)
   } finally {
     loading.value = false
     if (timer) { clearInterval(timer); timer = null }
@@ -213,7 +216,7 @@ function quickSet(h: string, p?: string) {
       <!-- Ping Result - Summary Cards -->
       <div v-if="activeTab === 'ping' && result?.stats" class="ping-summary">
         <div :class="['stat-box', pingStatusColor]">
-          <div class="stat-val">{{ result.stats.loss_pct }}%</div>
+          <div class="stat-val">{{ result.stats.loss_pct ?? '—' }}%</div>
           <div class="stat-lbl">Packet Loss</div>
         </div>
         <div class="stat-box">
@@ -224,15 +227,15 @@ function quickSet(h: string, p?: string) {
           <div class="stat-val">{{ result.stats.received }}</div>
           <div class="stat-lbl">Diterima</div>
         </div>
-        <div v-if="result.stats.rtt_avg !== null" class="stat-box">
+        <div v-if="result.stats.rtt_avg != null" class="stat-box">
           <div class="stat-val">{{ result.stats.rtt_avg }}ms</div>
           <div class="stat-lbl">RTT Avg</div>
         </div>
-        <div v-if="result.stats.rtt_min !== null" class="stat-box">
+        <div v-if="result.stats.rtt_min != null" class="stat-box">
           <div class="stat-val">{{ result.stats.rtt_min }}ms</div>
           <div class="stat-lbl">RTT Min</div>
         </div>
-        <div v-if="result.stats.rtt_max !== null" class="stat-box">
+        <div v-if="result.stats.rtt_max != null" class="stat-box">
           <div class="stat-val">{{ result.stats.rtt_max }}ms</div>
           <div class="stat-lbl">RTT Max</div>
         </div>

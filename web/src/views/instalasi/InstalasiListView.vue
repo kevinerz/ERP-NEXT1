@@ -5,6 +5,7 @@ import { useInstalasiStore } from '@/stores/instalasi'
 import { useProyekStore } from '@/stores/proyek'
 import { fmtDateTime as fmtDt, fmtDateShort } from '@/composables/useFormat'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 import BasePagination from '@/components/BasePagination.vue'
 
 const router = useRouter()
@@ -62,9 +63,10 @@ async function muatDropdown() {
   dropdownMemuat.value = false
 }
 
-onMounted(async () => {
-  await muatDropdown()
+onMounted(() => {
+  // Daftar tidak perlu menunggu 4 dropdown modal selesai dimuat
   fetchData()
+  muatDropdown()
 })
 
 function fetchData() {
@@ -84,6 +86,7 @@ function openModal() {
 }
 
 async function handleSubmit() {
+  if (submitting.value) return
   if (!form.value.id_site) { formError.value = 'Site wajib dipilih'; return }
   submitting.value = true; formError.value = ''
   try {
@@ -98,7 +101,7 @@ async function handleSubmit() {
     const result = await ins.create(payload)
     showModal.value = false
     router.push(`/instalasi/${result.id_instalasi}`)
-  } catch (e: any) { formError.value = e.response?.data?.message || 'Gagal membuat order' }
+  } catch (e: any) { formError.value = pesanGalat(e, 'Gagal membuat order') }
   finally { submitting.value = false }
 }
 </script>
@@ -125,10 +128,13 @@ async function handleSubmit() {
         <option value="Internal">Internal</option>
         <option value="Vendor">Vendor</option>
       </select>
-      <button class="btn-search" @click="doFilter">Cari</button>
+      <button type="button" class="btn-search" @click="doFilter">Cari</button>
     </div>
 
-    <div v-if="ins.error" class="alert-error">{{ ins.error }}</div>
+    <div v-if="ins.error" class="alert-error" role="alert">
+      {{ ins.error }}
+      <button type="button" class="btn-cancel" @click="fetchData">↻ Coba lagi</button>
+    </div>
 
     <div class="table-card">
       <div v-if="ins.loading" class="loading">Memuat...</div>
@@ -146,8 +152,8 @@ async function handleSubmit() {
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!ins.list.length">
-            <td colspan="8" class="empty">Belum ada order instalasi</td>
+          <tr v-if="!ins.list.length && !ins.error">
+            <td colspan="8" class="empty">{{ search.trim() || filterStatus || filterJenis ? 'Tidak ada order yang cocok dengan filter ini' : 'Belum ada order instalasi' }}</td>
           </tr>
           <tr v-baris v-for="item in ins.list" :key="item.id_instalasi" class="row-link"
               @click="router.push(`/instalasi/${item.id_instalasi}`)">
@@ -242,8 +248,8 @@ async function handleSubmit() {
         </p>
         <p v-if="formError" class="form-error">{{ formError }}</p>
         <div class="modal-actions">
-          <button class="btn-cancel" @click="showModal = false">Batal</button>
-          <button class="btn-submit" @click="handleSubmit" :disabled="submitting">
+          <button type="button" class="btn-cancel" @click="showModal = false">Batal</button>
+          <button type="button" class="btn-submit" @click="handleSubmit" :disabled="submitting">
             {{ submitting ? 'Membuat...' : 'Buat Order' }}
           </button>
         </div>

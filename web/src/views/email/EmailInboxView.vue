@@ -9,7 +9,7 @@ import BasePagination from '@/components/BasePagination.vue'
 import RecipientInput from '@/components/RecipientInput.vue'
 import { fmtDateTime, escapeHtml } from '@/composables/useFormat'
 import api from '@/services/api'
-import { promptDialog, confirmDialog, toast } from '@/composables/useDialog'
+import { promptDialog, confirmDialog, toast, toastGalat, pesanGalat } from '@/composables/useDialog'
 
 const email = useEmailStore()
 const fitur = computed(() => email.account?.fitur ?? { bintang: true, massal: true, kuota: false, draf: true, hitung_folder: false })
@@ -29,7 +29,7 @@ async function setelahTerhubung() {
 async function hubungkanApi(address: string) {
   connecting.value = true; connectError.value = ''
   try { await api.post('/email/account/api', { email_address: address }); await setelahTerhubung() }
-  catch (e: any) { connectError.value = e.response?.data?.message || 'Gagal terhubung lewat API' }
+  catch (e: any) { connectError.value = pesanGalat(e, 'Gagal terhubung lewat API') }
   finally { connecting.value = false }
 }
 watch(() => email.accountChecked && !email.account, (perlu) => { if (perlu) muatApiMailboxes() }, { immediate: true })
@@ -43,12 +43,12 @@ async function handleConnect() {
   }
   connecting.value = true; connectError.value = ''
   try { await email.connect(form.value); await setelahTerhubung() }
-  catch (e: any) { connectError.value = e.response?.data?.message || 'Gagal terhubung' }
+  catch (e: any) { connectError.value = pesanGalat(e, 'Gagal terhubung') }
   finally { connecting.value = false }
 }
 async function putuskan() {
   if (!(await confirmDialog({ title: 'Putuskan koneksi email?', message: `Koneksi ${email.account?.email_address} akan diputus. Bisa dihubungkan lagi kapan saja.`, confirmLabel: 'Putuskan', variant: 'warning' }))) return
-  try { await email.disconnect() } catch (e: any) { toast(e.response?.data?.message || 'Gagal memutuskan koneksi', 'danger') }
+  try { await email.disconnect() } catch (e: any) { toastGalat(e, 'Gagal memutuskan koneksi') }
 }
 
 // ─── FOLDER, DAFTAR, FILTER ───────────────────────────────────
@@ -142,7 +142,7 @@ async function aksiMassal(aksi: string) {
     dipilih.value = new Set()
     if (selectedUid.value && uids.includes(selectedUid.value) && ['sampah', 'hapus', 'spam', 'inbox'].includes(aksi)) selectedUid.value = null
     email.fetchFolders()
-  } catch (e: any) { toast(e.response?.data?.message || 'Aksi gagal', 'danger') }
+  } catch (e: any) { toastGalat(e, 'Aksi gagal') }
   finally { prosesMassal.value = false }
 }
 
@@ -151,10 +151,19 @@ function parseEmails(str: string): string[] {
   if (!str) return []
   return str.split(',').map((s) => { const m = s.match(/<([^>]+)>/); return (m ? m[1]! : s).trim().toLowerCase() }).filter((s) => s.includes('@'))
 }
+let urutBuka = 0
 async function openMessage(uid: number) {
   if (email.currentFolder === 'drafts' && fitur.value.draf) { await bukaEditDraft(uid); return }
   selectedUid.value = uid
+  const n = ++urutBuka
   await email.fetchMessage(uid)
+  if (n !== urutBuka) {
+    // Pindah email cepat (j/k): jawaban email lama yang datang belakangan bisa menimpa email yang dipilih → muat ulang
+    if (selectedUid.value !== null && email.current?.uid !== selectedUid.value && !email.loadingMessage) openMessage(selectedUid.value)
+    return
+  }
+  // Gagal dibuka: store menyimpan email sebelumnya → jangan tampilkan (dan beri aksi ke) email yang salah
+  if (email.current?.uid !== uid) { toast(email.error || 'Gagal membuka email', 'danger'); selectedUid.value = null; return }
   if (fitur.value.hitung_folder) email.fetchFolders()
 }
 async function bintang(m: { uid: number; flagged?: boolean }) {
@@ -163,7 +172,7 @@ async function bintang(m: { uid: number; flagged?: boolean }) {
 async function tandaiBelum() {
   if (!email.current) return
   try { await email.setSeen(email.current.uid, false); toast('Ditandai belum dibaca'); selectedUid.value = null; email.fetchFolders() }
-  catch { toast(email.error || 'Gagal', 'danger') }
+  catch (e) { toastGalat(e, 'Gagal menandai belum dibaca') }
 }
 async function pindahSatu(aksi: 'sampah' | 'spam' | 'inbox' | 'hapus') {
   if (!email.current) return
@@ -171,19 +180,15 @@ async function pindahSatu(aksi: 'sampah' | 'spam' | 'inbox' | 'hapus') {
   if (aksi === 'hapus' && !(await confirmDialog({ title: 'Hapus permanen?', message: 'Email ini akan dihapus permanen dan tidak bisa dikembalikan.', confirmLabel: 'Hapus permanen', variant: 'danger' }))) return
   if (email.currentFolder === 'drafts') {
     if (!(await confirmDialog({ title: 'Hapus draf?', message: 'Draf ini akan dihapus.', confirmLabel: 'Hapus', variant: 'danger' }))) return
-    try { await email.deleteDraft(uid); selectedUid.value = null; toast('Draf dihapus') } catch { toast('Gagal menghapus draf', 'danger') }
+    try { await email.deleteDraft(uid); selectedUid.value = null; toast('Draf dihapus') } catch (e) { toastGalat(e, 'Gagal menghapus draf') }
     return
   }
   try { toast(await email.massal([uid], aksi)); selectedUid.value = null; email.fetchFolders() }
-  catch (e: any) { toast(e.response?.data?.message || 'Aksi gagal', 'danger') }
+  catch (e: any) { toastGalat(e, 'Aksi gagal') }
 }
 async function unduhLampiran(uid: number, partId: number, filename: string) {
-  try { await email.downloadAttachment(uid, partId, filename) } catch (e: any) {
-    let msg = ''
-    const data = e.response?.data
-    if (data instanceof Blob) { try { msg = JSON.parse(await data.text())?.message || '' } catch { /* bukan JSON */ } } else msg = data?.message || ''
-    toast(msg || 'Gagal mengunduh lampiran', 'danger')
-  }
+  // Pesan galat dalam Blob sudah dibuka oleh interceptor api
+  try { await email.downloadAttachment(uid, partId, filename) } catch (e: any) { toastGalat(e, 'Gagal mengunduh lampiran') }
 }
 function fmtSize(n: number) {
   if (n < 1024) return `${n} B`
@@ -284,7 +289,7 @@ function bukaCompose() {
 }
 async function bukaEditDraft(uid: number) {
   await email.fetchMessage(uid)
-  if (!email.current) return
+  if (email.current?.uid !== uid) { toast(email.error || 'Gagal membuka draf', 'danger'); return }
   editingDraftUid.value = uid; composeRef.value = null
   toTags.value = parseEmails(email.current.to || ''); ccTags.value = parseEmails(email.current.cc || ''); bccTags.value = parseEmails(email.current.bcc || '')
   composeForm.value = { subject: email.current.subject === '(tanpa subjek)' ? '' : email.current.subject, html: bodyAsHtml(email.current), in_reply_to: '' }
@@ -369,7 +374,7 @@ async function kirimEmail() {
     toast(`Email "${composeForm.value.subject || '(tanpa subjek)'}" terkirim 🚀`)
     if (email.currentFolder === 'sent' || email.currentFolder === 'drafts') await loadInbox(true)
     email.fetchFolders()
-  } catch (e: any) { sendError.value = e.response?.data?.message || 'Gagal mengirim email' }
+  } catch (e: any) { sendError.value = pesanGalat(e, 'Gagal mengirim email') }
   finally { sending.value = false }
 }
 async function simpanDraf() {
@@ -381,7 +386,7 @@ async function simpanDraf() {
     showCompose.value = false
     toast('Draf disimpan')
     if (email.currentFolder === 'drafts') await loadInbox(true)
-  } catch (e: any) { sendError.value = e.response?.data?.message || 'Gagal menyimpan draf' }
+  } catch (e: any) { sendError.value = pesanGalat(e, 'Gagal menyimpan draf') }
   finally { savingDraft.value = false }
 }
 
@@ -580,7 +585,7 @@ const fmtGB = (kb: number) => {
       <!-- Kolom 3: baca -->
       <section class="em-baca" aria-label="Isi email">
         <div v-if="email.loadingMessage" class="bc-muat"><span class="bola" /><span class="bola" /><span class="bola" /> Membuka email…</div>
-        <div v-else-if="!email.current || selectedUid === null" class="bc-kosong">
+        <div v-else-if="!email.current || selectedUid === null || email.current.uid !== selectedUid" class="bc-kosong">
           <span class="maskot besar">✉️</span>
           <b>Pilih email untuk dibaca</b>
           <small>Tip: tekan <kbd>j</kbd> / <kbd>k</kbd> untuk berpindah, <kbd>c</kbd> untuk menulis, <kbd>?</kbd> untuk semua pintasan.</small>

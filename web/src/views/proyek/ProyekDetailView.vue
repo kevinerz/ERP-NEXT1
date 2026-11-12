@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useProyekStore } from '@/stores/proyek'
 import { printBAST } from '@/composables/usePrint'
 import { fmtDateShort as fmtDate, fmtDateTime as fmtDt } from '@/composables/useFormat'
 import api from '@/services/api'
 import CariPilih, { type OpsiCari } from '@/components/CariPilih.vue'
-import { confirmDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertError, pesanGalat, toast } from '@/composables/useDialog'
 
 const router = useRouter()
 const route = useRoute()
@@ -56,6 +56,10 @@ const WO_STATUS_COLOR: Record<string, string> = {
   Selesai: '#22c55e', Ditunda: '#f97316', Dibatalkan: '#ef4444',
 }
 
+// Store dipakai bersama: project lain yang masih tersimpan tidak boleh tampil sebagai project ini
+if (proyek.current?.id_project !== id) proyek.current = null
+const muatDetail = () => proyek.fetchOne(id)
+
 onMounted(async () => {
   try {
     await Promise.all([
@@ -81,6 +85,7 @@ function openEdit() {
 }
 
 async function handleEdit() {
+  if (editSubmitting.value) return
   editSubmitting.value = true; editError.value = ''
   try {
     await proyek.update(id, {
@@ -92,7 +97,7 @@ async function handleEdit() {
     })
     await proyek.fetchOne(id)
     showEdit.value = false; flash('Project diperbarui')
-  } catch (e: any) { editError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { editError.value = pesanGalat(e, 'Gagal menyimpan project') }
   finally { editSubmitting.value = false }
 }
 
@@ -105,6 +110,7 @@ async function handleDelete() {
   }))) return
   try {
     await api.delete(`/projects/${id}`)
+    toast('Project dihapus')
     router.push('/projects')
   } catch (e: any) { await alertError(e, 'Gagal menghapus project') }
 }
@@ -144,11 +150,13 @@ async function muatVendor() {
   if (vendorList.value.length) return
   vendorErr.value = ''
   try { vendorList.value = (await api.get('/projects/vendor-list')).data.data ?? [] }
-  catch (e: any) { vendorErr.value = e?.response?.data?.message || 'Gagal memuat daftar vendor' }
+  catch (e: any) { vendorErr.value = pesanGalat(e, 'Gagal memuat daftar vendor') }
 }
 watch(() => woForm.value.tipe_eksekutor, (t) => { if (t === 'Vendor_Ketiga') muatVendor() })
 
 async function handleAddWo() {
+  if (woSubmitting.value) return
+  if (!proyek.current?.site?.id_site) { woError.value = 'Project ini belum punya site — atur site project dulu'; return }
   if (!woForm.value.tgl_jadwal || !woForm.value.deskripsi_tugas) {
     woError.value = 'Jadwal dan deskripsi wajib diisi'; return
   }
@@ -172,7 +180,7 @@ async function handleAddWo() {
     showAddWo.value = false
     woForm.value = { jenis_wo: 'Instalasi', tipe_eksekutor: 'Internal_NEXT1', id_teknisi_internal: 0, id_vendor_ketiga: 0, fee_vendor: 0, tgl_jadwal: '', deskripsi_tugas: '' }
     flash('Work Order dibuat')
-  } catch (e: any) { woError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { woError.value = pesanGalat(e, 'Gagal membuat Work Order') }
   finally { woSubmitting.value = false }
 }
 
@@ -189,16 +197,18 @@ function openEditWo(wo: any) {
 }
 
 async function handleEditWo() {
+  if (editWoSubmitting.value) return
   editWoSubmitting.value = true; editWoError.value = ''
   try {
     await proyek.updateWo(editWoId.value, editWoForm.value)
     await proyek.fetchOne(id)
     showEditWo.value = false; flash('WO diperbarui')
-  } catch (e: any) { editWoError.value = e.response?.data?.message || 'Gagal update WO' }
+  } catch (e: any) { editWoError.value = pesanGalat(e, 'Gagal update WO') }
   finally { editWoSubmitting.value = false }
 }
 
 async function handleAddBast() {
+  if (bastSubmitting.value) return
   bastSubmitting.value = true; bastError.value = ''
   try {
     await proyek.createBast({
@@ -212,11 +222,17 @@ async function handleAddBast() {
     showAddBast.value = false
     bastForm.value = { nama_penandatangan_pelanggan: '', jabatan_penandatangan_pelanggan: '', tgl_ditandatangani: '', catatan: '' }
     flash('BAST dibuat')
-  } catch (e: any) { bastError.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { bastError.value = pesanGalat(e, 'Gagal membuat BAST') }
   finally { bastSubmitting.value = false }
 }
 
-function flash(msg: string) { successMsg.value = msg; setTimeout(() => successMsg.value = '', 3000) }
+let timerFlash: ReturnType<typeof setTimeout> | null = null
+function flash(msg: string) {
+  successMsg.value = msg
+  if (timerFlash) clearTimeout(timerFlash)
+  timerFlash = setTimeout(() => (successMsg.value = ''), 3000)
+}
+onBeforeUnmount(() => { if (timerFlash) clearTimeout(timerFlash) })
 
 async function cariKontrak(q: string): Promise<OpsiCari[]> {
   const r = await api.get('/projects/kontrak-cari', { params: { search: q || undefined } })
@@ -227,9 +243,12 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
 <template>
   <div class="page">
     <div v-if="proyek.loading && !proyek.current" class="loading-page">Memuat...</div>
-    <div v-else-if="proyek.error">
+    <div v-else-if="proyek.error && !proyek.current">
       <button type="button" class="btn-back" @click="router.push('/projects')">← Proyek</button>
-      <div class="alert-error">{{ proyek.error }}</div>
+      <div class="alert-error" role="alert">
+        {{ proyek.error }}
+        <button type="button" class="btn-cancel" @click="muatDetail">↻ Coba lagi</button>
+      </div>
     </div>
     <template v-else-if="proyek.current">
       <!-- Header -->
@@ -290,7 +309,7 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
       <div class="section-card mt16">
         <div class="section-header">
           <span class="card-title">Work Order ({{ proyek.current.work_orders?.length ?? 0 }})</span>
-          <button class="btn-add-small" @click="showAddWo = true">+ Buat WO</button>
+          <button type="button" class="btn-add-small" @click="showAddWo = true; woError = ''">+ Buat WO</button>
         </div>
         <div v-if="!proyek.current.work_orders?.length" class="empty-section">Belum ada Work Order</div>
         <div v-for="wo in proyek.current.work_orders" :key="wo.id_wo" class="wo-item">
@@ -317,7 +336,7 @@ async function cariKontrak(q: string): Promise<OpsiCari[]> {
       <div class="section-card mt16">
         <div class="section-header">
           <span class="card-title">BAST ({{ proyek.current.bast?.length ?? 0 }})</span>
-          <button class="btn-add-small" @click="showAddBast = true">+ Buat BAST</button>
+          <button type="button" class="btn-add-small" @click="showAddBast = true; bastError = ''">+ Buat BAST</button>
         </div>
         <div v-if="!proyek.current.bast?.length" class="empty-section">Belum ada BAST</div>
         <div v-for="b in proyek.current.bast" :key="b.id_dokumen" class="bast-item">

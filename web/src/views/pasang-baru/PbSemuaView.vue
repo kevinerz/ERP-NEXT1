@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 import { fmtRupiah, fmtDate } from '@/composables/useFormat'
 import { KELAS_SPH, KELAS_SURVEY, KELAS_TAHAP, TAHAP_ORDER, umur } from './pb'
 import { useFilterUrl } from '@/composables/useFilterUrl'
@@ -37,7 +38,9 @@ const memuat = ref(false)
 const error = ref('')
 
 
+let urutMuat = 0
 async function muat() {
+  const urut = ++urutMuat
   memuat.value = true
   error.value = ''
   try {
@@ -49,14 +52,15 @@ async function muat() {
         ? api.get('/pasang-baru/sph', { params: { status: statusSph.value || undefined, cari: cari.value || undefined } })
         : api.get('/pasang-baru/order', { params: { tahap: tab.value, cari: cari.value || undefined } }),
     ])
+    if (urut !== urutMuat) return // jawaban tab/pencarian lama tidak boleh menimpa yang baru
     ringkas.value = r.data.data
     if (tab.value === 'Survey') survey.value = d.data.data
     else if (tab.value === 'SPH') sph.value = d.data.data
     else order.value = d.data.data
   } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Gagal memuat data'
+    if (urut === urutMuat) error.value = pesanGalat(e, 'Gagal memuat data')
   } finally {
-    memuat.value = false
+    if (urut === urutMuat) memuat.value = false
   }
 }
 onMounted(muat)
@@ -69,6 +73,7 @@ watch(cari, () => {
   if (timer) clearTimeout(timer)
   timer = setTimeout(muat, 350)
 })
+onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
 
 const jumlah = (t: string) => (t === 'Survey' ? ['OPS', 'Teknis', 'Siap SPH'].reduce((a, k) => a + (ringkas.value.survey[k] ?? 0), 0) : t === 'SPH' ? (ringkas.value.sph['Menunggu Director'] ?? 0) : (ringkas.value.tahap[t] ?? 0))
 </script>
@@ -95,13 +100,13 @@ const jumlah = (t: string) => (t === 'Survey' ? ['OPS', 'Teknis', 'Siap SPH'].re
       </select>
     </div>
 
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error" class="alert alert-danger" role="alert">{{ error }} <button type="button" class="btn btn-sm btn-ghost" @click="muat">↻ Coba lagi</button></div>
 
     <div class="table-card">
       <table v-if="tab === 'Survey'" class="data-table">
         <thead><tr><th>No. Survey</th><th>Perusahaan</th><th>PIC</th><th>Site</th><th>Sales</th><th>Status</th><th>Diperbarui</th></tr></thead>
         <tbody>
-          <tr v-if="!memuat && !survey.length"><td colspan="7" class="muted pusat">Belum ada survey<template v-if="statusSurvey && statusSurvey !== 'aktif'"> berstatus {{ statusSurvey }}</template>.</td></tr>
+          <tr v-if="!memuat && !error && !survey.length"><td colspan="7" class="muted pusat"><template v-if="cari.trim()">Tidak ada survey yang cocok dengan pencarian.</template><template v-else>Belum ada survey<template v-if="statusSurvey && statusSurvey !== 'aktif'"> berstatus {{ statusSurvey }}</template>.</template></td></tr>
           <tr v-baris v-for="s in survey" :key="s.id_survey" class="klik" @click="router.push(`/pasang-baru/survey/${s.id_survey}`)">
             <td><b>{{ s.nomor_survey }}</b></td>
             <td>{{ s.nama_perusahaan }}<br /><small class="muted">{{ s.id_pelanggan ? 'Pelanggan' : 'Calon pelanggan' }}</small></td>
@@ -121,7 +126,7 @@ const jumlah = (t: string) => (t === 'Survey' ? ['OPS', 'Teknis', 'Siap SPH'].re
       <table v-else-if="tab === 'SPH'" class="data-table">
         <thead><tr><th>No. SPH</th><th>Pelanggan</th><th>Site</th><th class="kanan">Total bulanan</th><th>Sales</th><th>Status</th><th>Diperbarui</th></tr></thead>
         <tbody>
-          <tr v-if="!memuat && !sph.length"><td colspan="7" class="muted pusat">Belum ada SPH.</td></tr>
+          <tr v-if="!memuat && !error && !sph.length"><td colspan="7" class="muted pusat">{{ cari.trim() ? 'Tidak ada SPH yang cocok dengan pencarian.' : statusSph ? `Belum ada SPH berstatus ${statusSph}.` : 'Belum ada SPH.' }}</td></tr>
           <tr v-baris v-for="s in sph" :key="s.id_sph" class="klik" @click="router.push(`/pasang-baru/sph/${s.id_sph}`)">
             <td><b>{{ s.nomor_sph }}</b></td>
             <td>{{ s.pelanggan.nama_pelanggan }}</td>
@@ -137,7 +142,7 @@ const jumlah = (t: string) => (t === 'Survey' ? ['OPS', 'Teknis', 'Siap SPH'].re
       <table v-else class="data-table">
         <thead><tr><th>No. PB</th><th>Site</th><th>Pelanggan</th><th>Layanan</th><th>RFS</th><th>Tahap</th><th>Umur</th></tr></thead>
         <tbody>
-          <tr v-if="!memuat && !order.length"><td colspan="7" class="muted pusat">Tidak ada order di tahap ini.</td></tr>
+          <tr v-if="!memuat && !error && !order.length"><td colspan="7" class="muted pusat">{{ cari.trim() ? 'Tidak ada order yang cocok dengan pencarian.' : 'Tidak ada order di tahap ini.' }}</td></tr>
           <tr v-baris v-for="o in order" :key="o.id_pb" class="klik" @click="router.push(`/pasang-baru/order/${o.id_pb}`)">
             <td><b>{{ o.nomor_pb }}</b><br /><small class="muted">{{ o.sph.nomor_sph }}</small></td>
             <td>{{ o.nama_site }}<br /><small class="muted">{{ o.site?.kode_site }}<template v-if="o.kota"> · {{ o.kota }}</template></small></td>
@@ -149,7 +154,7 @@ const jumlah = (t: string) => (t === 'Survey' ? ['OPS', 'Teknis', 'Siap SPH'].re
           </tr>
         </tbody>
       </table>
-      <p v-if="memuat" class="muted pusat">Memuat…</p>
+      <p v-if="memuat" class="loading-state">Memuat…</p>
     </div>
   </div>
 </template>

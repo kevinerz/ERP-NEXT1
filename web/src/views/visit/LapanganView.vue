@@ -4,7 +4,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import axios from 'axios'
-import { confirmDialog } from '@/composables/useDialog'
+import { confirmDialog, pesanGalat } from '@/composables/useDialog'
 
 interface Foto { id_foto: number; jenis_foto: string; file_path: string; created_at: string }
 interface Info {
@@ -22,13 +22,19 @@ const info = ref<Info | null>(null)
 const galat = ref('')
 const pesan = ref('')
 const proses = ref('')
+// Gagal karena jaringan / server (bukan link tidak valid) → tawarkan "Coba lagi"
+const galatSementara = ref(false)
+const memuat = ref(false)
 
-function errMsg(e: any) {
-  const m = e?.response?.data?.message
-  return Array.isArray(m) ? m.join(', ') : m || e?.message || 'Terjadi kesalahan'
-}
+function errMsg(e: any) { return pesanGalat(e, 'Terjadi kesalahan') }
 async function muat() {
-  try { info.value = (await http.get(`/lapangan/${token}`)).data.data; galat.value = '' } catch (e) { galat.value = errMsg(e) }
+  memuat.value = true
+  try { info.value = (await http.get(`/lapangan/${token}`)).data.data; galat.value = ''; galatSementara.value = false }
+  catch (e: any) {
+    const st = e?.response?.status as number | undefined
+    galatSementara.value = !st || st >= 500 || st === 429
+    galat.value = errMsg(e)
+  } finally { memuat.value = false }
 }
 async function jalankan(label: string, fn: () => Promise<any>) {
   proses.value = label; pesan.value = ''
@@ -132,6 +138,7 @@ function bukaSelesai() {
 }
 const bisaKirim = computed(() => catatan.value.trim().length >= 3 && (tanpaTtd.value ? alasanTanpaTtd.value.trim().length >= 3 : adaCoretan.value && ttdNama.value.trim().length >= 2))
 function kirimSelesai() {
+  if (proses.value || !bisaKirim.value) return
   const body: any = { catatan: catatan.value }
   if (tanpaTtd.value) body.tanpa_ttd_alasan = alasanTanpaTtd.value
   else { body.ttd = kanvas.value!.toDataURL('image/png'); body.ttd_nama = ttdNama.value }
@@ -144,6 +151,7 @@ const tahapGagal = ref(false)
 const alasan = ref('')
 const catatanGagal = ref('')
 function kirimGagal() {
+  if (proses.value) return
   if (!alasan.value) { pesan.value = 'Pilih alasannya'; return }
   jalankan('gagal', () => http.post(`/lapangan/${token}/gagal`, { alasan: alasan.value, catatan: catatanGagal.value || undefined })).then(() => { if (!pesan.value) tahapGagal.value = false })
 }
@@ -157,9 +165,10 @@ const gagalTerakhir = computed(() => (info.value?.catatan_teknisi || '').split('
     </header>
 
     <div v-if="galat" class="vl-kartu vl-galat">
-      <h3>Link tidak bisa dibuka</h3>
+      <h3>{{ galatSementara ? 'Halaman belum bisa dimuat' : 'Link tidak bisa dibuka' }}</h3>
       <p>{{ galat }}</p>
-      <p class="muted">Minta link terbaru ke helpdesk.</p>
+      <button v-if="galatSementara" type="button" class="vl-btn vl-btn-utama" :disabled="memuat" @click="muat">{{ memuat ? 'Memuat…' : 'Coba lagi' }}</button>
+      <p v-else class="muted">Minta link terbaru ke helpdesk.</p>
     </div>
     <p v-else-if="!info" class="vl-muat">Memuat…</p>
 
@@ -208,7 +217,7 @@ const gagalTerakhir = computed(() => (info.value?.catatan_teknisi || '').split('
         <section class="vl-kartu">
           <h3><span class="vl-no" :class="{ ok: info.checkin_at }">1</span> Check-in di lokasi</h3>
           <p v-if="info.checkin_at" class="vl-sukses">✓ Check-in {{ jam(info.checkin_at) }}
-            <a :href="`https://www.google.com/maps?q=${info.koordinat_checkin}`" target="_blank" rel="noopener">lihat titik</a>
+            <a v-if="info.koordinat_checkin" :href="`https://www.google.com/maps?q=${info.koordinat_checkin}`" target="_blank" rel="noopener">lihat titik</a>
           </p>
           <p v-else class="muted">Tekan saat sudah tiba di store. Lokasi GPS HP akan dicatat.</p>
           <button class="vl-btn" :class="info.checkin_at ? 'vl-btn-ghost' : 'vl-btn-utama'" :disabled="!!proses" @click="checkin">

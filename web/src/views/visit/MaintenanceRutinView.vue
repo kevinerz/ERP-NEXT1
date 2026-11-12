@@ -4,7 +4,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDateTime } from '@/composables/useFormat'
-import { alertDialog, alertError, confirmDialog } from '@/composables/useDialog'
+import { alertDialog, alertError, confirmDialog, toast } from '@/composables/useDialog'
 
 interface Aturan {
   id_aturan: number; nama: string; id_pelanggan: number | null; pelanggan: string | null; kota: string | null
@@ -47,25 +47,32 @@ function bukaForm(a?: Aturan) {
 }
 async function simpan() {
   const f = form.value
+  if (!f || proses.value) return
   if (f.nama.trim().length < 3) { alertDialog({ title: 'Isi nama aturan', message: 'mis. "PM Kopi Kenangan 3 bulanan"' }); return }
+  const maks = Number(f.maks_per_hari)
+  if (!Number.isInteger(maks) || maks < 1 || maks > 100) { alertDialog({ title: 'Maks visit per hari belum sesuai', message: 'Isi angka bulat 1–100.' }); return }
   if (!pelangganOk.value) { alertDialog({ title: 'Daftar pelanggan belum termuat', message: 'Muat ulang daftar pelanggan dulu agar pilihan pelanggan tidak tersimpan keliru.', variant: 'warning' }); return }
   proses.value = true
   try {
-    const body = { nama: f.nama, id_pelanggan: f.id_pelanggan || null, kota: f.kota || undefined, interval_hari: Number(f.interval_hari), maks_per_hari: Number(f.maks_per_hari), tgl_mulai: f.tgl_mulai || undefined, prioritas: f.prioritas, deskripsi: f.deskripsi, is_aktif: f.is_aktif }
+    const body = { nama: f.nama.trim(), id_pelanggan: f.id_pelanggan || null, kota: f.kota || undefined, interval_hari: Number(f.interval_hari), maks_per_hari: Number(f.maks_per_hari), tgl_mulai: f.tgl_mulai || undefined, prioritas: f.prioritas, deskripsi: f.deskripsi, is_aktif: f.is_aktif }
     if (f.id) await api.put(`/visit/pm/aturan/${f.id}`, body)
     else await api.post('/visit/pm/aturan', body)
     form.value = null
+    toast(f.id ? 'Aturan diperbarui' : 'Aturan dibuat')
     muat()
-  } catch (e) { alertError(e) } finally { proses.value = false }
+  } catch (e) { alertError(e, 'Gagal menyimpan aturan') } finally { proses.value = false }
 }
 async function hapus(a: Aturan) {
+  if (proses.value) return
   if (!(await confirmDialog({ title: 'Hapus aturan?', message: `${a.nama} — visit yang sudah dibuat tetap ada di antrean.`, variant: 'danger', confirmLabel: 'Hapus' }))) return
-  try { await api.delete(`/visit/pm/aturan/${a.id_aturan}`); muat() } catch (e) { alertError(e) }
+  proses.value = true
+  try { await api.delete(`/visit/pm/aturan/${a.id_aturan}`); toast('Aturan dihapus'); muat() } catch (e) { alertError(e, 'Gagal menghapus aturan') } finally { proses.value = false }
 }
 async function jalankan(a: Aturan) {
+  if (proses.value) return
   if (!(await confirmDialog({ title: 'Buat visit sekarang?', message: `Maksimal ${a.maks_per_hari} visit maintenance untuk store yang jatuh tempo akan masuk antrean (dihitung bersama yang sudah dibuat hari ini).`, confirmLabel: 'Jalankan' }))) return
   proses.value = true
-  try { const { data } = await api.post(`/visit/pm/aturan/${a.id_aturan}/jalankan`); await alertDialog({ title: 'Maintenance rutin', message: data.message }); muat() } catch (e) { alertError(e) } finally { proses.value = false }
+  try { const { data } = await api.post(`/visit/pm/aturan/${a.id_aturan}/jalankan`); await alertDialog({ title: 'Maintenance rutin', message: data.message }); muat() } catch (e) { alertError(e, 'Gagal menjalankan aturan') } finally { proses.value = false }
 }
 const labelInterval = (n: number) => INTERVAL.find((x) => x[0] === n)?.[1] ?? `Tiap ${n} hari`
 const angka = (n: number) => n.toLocaleString('id-ID')
@@ -92,7 +99,7 @@ const angka = (n: number) => n.toLocaleString('id-ID')
 
     <div v-if="galat" class="alert alert-danger mr-galat" role="alert">
       <span>⚠ {{ galat }}</span>
-      <button class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">Coba lagi</button>
+      <button type="button" class="btn btn-ghost btn-sm" :disabled="memuat" @click="muat">Coba lagi</button>
     </div>
     <p v-else-if="memuat && !aturan.length" class="muted">Memuat…</p>
     <div v-else-if="!aturan.length" class="card mr-kosong">
@@ -109,7 +116,7 @@ const angka = (n: number) => n.toLocaleString('id-ID')
           <div class="mr-tombol">
             <button class="btn btn-ghost btn-sm" :disabled="proses || !a.is_aktif" @click="jalankan(a)">▶ Jalankan sekarang</button>
             <button class="btn btn-ghost btn-sm" @click="bukaForm(a)">✏️ Ubah</button>
-            <button class="btn btn-ghost btn-sm" aria-label="Hapus aturan" title="Hapus aturan" @click="hapus(a)">🗑</button>
+            <button class="btn btn-ghost btn-sm" aria-label="Hapus aturan" title="Hapus aturan" :disabled="proses" @click="hapus(a)">🗑</button>
           </div>
         </div>
         <div class="mr-angka">
@@ -173,7 +180,7 @@ const angka = (n: number) => n.toLocaleString('id-ID')
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" @click="form = null">Batal</button>
-          <button class="btn btn-primary" :disabled="proses || !pelangganOk" @click="simpan">Simpan</button>
+          <button class="btn btn-primary" :disabled="proses || !pelangganOk" @click="simpan">{{ proses ? 'Menyimpan…' : 'Simpan' }}</button>
         </div>
       </div>
     </div>

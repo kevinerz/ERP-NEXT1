@@ -6,7 +6,7 @@ import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import { printQuotation } from '@/composables/usePrint'
 import { fmtRupiahPenuh, fmtDate, fmtDateTime, todayLocal } from '@/composables/useFormat'
-import { confirmDialog, alertDialog, promptDialog, alertError } from '@/composables/useDialog'
+import { confirmDialog, alertDialog, promptDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 
 const route  = useRoute()
 const router = useRouter()
@@ -24,18 +24,19 @@ const showApprove    = ref(false)
 const approveForm    = ref({ status_approval: 'Approved', id_approver: 0, catatan_approval: '' })
 const approveSubmit  = ref(false)
 const approveError   = ref('')
-const successMsg     = ref('')
 
 // Edit modal
 const showEdit   = ref(false)
 const editSubmit = ref(false)
 const editForm   = ref({ tgl_quotation: '', tgl_berlaku_sampai: '', harga_mrc: 0, harga_otc: 0, catatan: '' })
+const editError  = ref('')
 
 // Buat Kontrak modal
 const showKontrakModal = ref(false)
 const savingKontrak    = ref(false)
 const kontrakError     = ref('')
 const sites            = ref<any[]>([])
+const sitesGalat       = ref('')
 const kontrakForm      = ref({ id_site: 0, tgl_mulai: '', durasi_bulan: 12 })
 
 onMounted(async () => {
@@ -45,10 +46,11 @@ onMounted(async () => {
 })
 
 async function fetchSites() {
+  sitesGalat.value = ''
   try {
     const r = await api.get('/master/site', { params: { limit: 500 } })
     sites.value = r.data.data || []
-  } catch { sites.value = [] }
+  } catch (e: any) { sites.value = []; sitesGalat.value = pesanGalat(e, 'Gagal memuat daftar site') }
 }
 
 async function fetchQuotation() {
@@ -58,7 +60,7 @@ async function fetchQuotation() {
     const r = await api.get(`/sales/quotation/${id}`)
     qt.value = r.data.data
   } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Quotation tidak ditemukan'
+    error.value = pesanGalat(e, 'Gagal memuat quotation')
   } finally { loading.value = false }
 }
 
@@ -84,38 +86,51 @@ function openEdit() {
     harga_otc: Number(qt.value?.harga_otc) || 0,
     catatan: qt.value?.catatan || '',
   }
+  editError.value = ''
   showEdit.value = true
 }
 
 async function submitEdit() {
-  editSubmit.value = true
+  if (editSubmit.value) return
+  const f = editForm.value
+  const mrc = Number(f.harga_mrc) || 0, otc = Number(f.harga_otc) || 0
+  if (!f.tgl_quotation) { editError.value = 'Tanggal quotation wajib diisi'; return }
+  if (mrc < 0 || otc < 0) { editError.value = 'Harga tidak boleh negatif'; return }
+  if (f.tgl_berlaku_sampai && f.tgl_berlaku_sampai < f.tgl_quotation) { editError.value = 'Tanggal berlaku sampai tidak boleh sebelum tanggal quotation'; return }
+  editSubmit.value = true; editError.value = ''
   try {
     const payload = {
       tgl_quotation: editForm.value.tgl_quotation || undefined,
       tgl_berlaku_sampai: editForm.value.tgl_berlaku_sampai || undefined,
-      harga_mrc: editForm.value.harga_mrc,
-      harga_otc: editForm.value.harga_otc,
+      harga_mrc: mrc,
+      harga_otc: otc,
       catatan: editForm.value.catatan || undefined,
     }
     await api.patch('/sales/quotation/' + id, payload)
     await fetchQuotation()
     showEdit.value = false
-    successMsg.value = 'Quotation diperbarui'
-    setTimeout(() => successMsg.value = '', 3000)
+    toast('Quotation diperbarui')
   } catch (e: any) {
-    await alertError(e, 'Gagal memperbarui quotation')
+    editError.value = pesanGalat(e, 'Gagal memperbarui quotation')
   } finally { editSubmit.value = false }
 }
 
 function openKontrak() {
   const today = todayLocal()
   kontrakForm.value = { id_site: 0, tgl_mulai: today, durasi_bulan: 12 }
-  kontrakError.value = ''
+  kontrakError.value = qt.value?.opportunity?.id_layanan ? '' : 'Opportunity quotation ini belum punya layanan. Lengkapi layanan di opportunity sebelum membuat kontrak.'
+  if (!sites.value.length) fetchSites()
   showKontrakModal.value = true
 }
 
 async function submitKontrak() {
-  if (!kontrakForm.value.id_site) return
+  if (savingKontrak.value || !kontrakForm.value.id_site) return
+  if (!qt.value.opportunity?.id_layanan) {
+    kontrakError.value = 'Opportunity quotation ini belum punya layanan. Lengkapi layanan di opportunity sebelum membuat kontrak.'; return
+  }
+  const durasi = Number(kontrakForm.value.durasi_bulan)
+  if (!kontrakForm.value.tgl_mulai) { kontrakError.value = 'Tanggal mulai wajib diisi'; return }
+  if (!Number.isInteger(durasi) || durasi < 1) { kontrakError.value = 'Durasi harus bilangan bulat minimal 1 bulan'; return }
   savingKontrak.value = true; kontrakError.value = ''
   try {
     const payload = {
@@ -123,28 +138,29 @@ async function submitKontrak() {
       id_layanan: qt.value.opportunity?.id_layanan,
       id_quotation: qt.value.id_quotation,
       tgl_mulai: kontrakForm.value.tgl_mulai,
-      durasi_bulan: kontrakForm.value.durasi_bulan,
-      harga_mrc: qt.value.harga_mrc,
-      harga_otc: qt.value.harga_otc,
+      durasi_bulan: durasi,
+      // Kolom Decimal datang dari API sebagai string, sedangkan server mewajibkan angka
+      harga_mrc: Number(qt.value.harga_mrc) || 0,
+      harga_otc: Number(qt.value.harga_otc) || 0,
     }
     const r = await api.post('/contracts', payload)
     showKontrakModal.value = false
     router.push(`/contracts/${r.data.data.id_kontrak}`)
   } catch (e: any) {
-    kontrakError.value = e?.response?.data?.message || 'Gagal membuat kontrak'
+    kontrakError.value = pesanGalat(e, 'Gagal membuat kontrak')
   } finally { savingKontrak.value = false }
 }
 
 async function handleApprove() {
+  if (approveSubmit.value) return
   approveSubmit.value = true; approveError.value = ''
   try {
     await sales.approveQuotation(id, approveForm.value)
     showApprove.value = false
-    successMsg.value  = `Quotation ${approveForm.value.status_approval}`
-    setTimeout(() => successMsg.value = '', 3000)
+    toast(approveForm.value.status_approval === 'Approved' ? 'Quotation disetujui' : 'Quotation ditolak')
     await fetchQuotation()
   } catch (e: any) {
-    approveError.value = e?.response?.data?.message || 'Gagal proses approval'
+    approveError.value = pesanGalat(e, 'Gagal memproses approval')
   } finally { approveSubmit.value = false }
 }
 
@@ -158,9 +174,10 @@ async function hapusQuotation() {
   }))) return
   try {
     await api.delete(`/sales/quotation/${id}`)
+    toast('Quotation dihapus')
     router.push('/sales/quotation')
   } catch (e: any) {
-    const msg = e?.response?.data?.message ?? 'Gagal menghapus quotation'
+    const msg = pesanGalat(e, 'Gagal menghapus quotation')
     // Quotation non-Draft → tawarkan force delete (Admin/Director)
     if (e?.response?.status === 400 && String(msg).includes('force delete')) {
       if (!canForce.value) {
@@ -206,6 +223,12 @@ const statusStyle = computed(() => STATUS_STYLE[qt.value?.status_approval] || ST
 
 const fmt = fmtRupiahPenuh
 
+// Masa berlaku dibandingkan per tanggal: quotation masih berlaku sepanjang hari terakhirnya
+const sudahLewat = computed(() => {
+  const t = qt.value?.tgl_berlaku_sampai
+  return !!t && String(t).slice(0, 10) < todayLocal()
+})
+
 const prospekName = computed(() => {
   const lead = qt.value?.opportunity?.lead
   if (!lead) return '—'
@@ -223,7 +246,10 @@ const prospekName = computed(() => {
 
     <!-- Loading / Error -->
     <div v-if="loading" class="state-box">Memuat quotation...</div>
-    <div v-else-if="error" class="state-box error">{{ error }}</div>
+    <div v-else-if="error" class="state-box error" role="alert">
+      <div>{{ error }}</div>
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-top:12px" @click="fetchQuotation">↻ Coba lagi</button>
+    </div>
 
     <template v-else-if="qt">
       <!-- Header -->
@@ -253,7 +279,6 @@ const prospekName = computed(() => {
         </div>
       </div>
 
-      <div v-if="successMsg" class="alert-success">{{ successMsg }}</div>
 
       <!-- Info bar -->
       <div class="info-grid">
@@ -282,7 +307,7 @@ const prospekName = computed(() => {
         </div>
         <div class="info-card">
           <div class="info-label">Berlaku Sampai</div>
-          <div class="info-value" :class="{ 'text-warn': qt.tgl_berlaku_sampai && new Date(qt.tgl_berlaku_sampai) < new Date() }">
+          <div class="info-value" :class="{ 'text-warn': sudahLewat }">
             {{ fmtDate(qt.tgl_berlaku_sampai) }}
           </div>
         </div>
@@ -352,16 +377,17 @@ const prospekName = computed(() => {
         </div>
         <div class="field">
           <label>Harga MRC (Rp/bln)</label>
-          <input type="number" v-model.number="editForm.harga_mrc" placeholder="0" />
+          <input type="number" min="0" v-model.number="editForm.harga_mrc" placeholder="0" />
         </div>
         <div class="field">
           <label>Harga OTC (Rp)</label>
-          <input type="number" v-model.number="editForm.harga_otc" placeholder="0" />
+          <input type="number" min="0" v-model.number="editForm.harga_otc" placeholder="0" />
         </div>
         <div class="field">
           <label>Catatan</label>
           <textarea v-model="editForm.catatan" rows="3" placeholder="Opsional..."></textarea>
         </div>
+        <p v-if="editError" class="form-error" role="alert">{{ editError }}</p>
         <div class="modal-actions">
           <button class="btn-cancel" @click="showEdit = false">Batal</button>
           <button class="btn-submit" @click="submitEdit" :disabled="editSubmit">
@@ -401,6 +427,8 @@ const prospekName = computed(() => {
               <template v-if="s.pelanggan"> ({{ s.pelanggan.nama_pelanggan }})</template>
             </option>
           </select>
+          <small v-if="sitesGalat" style="color:#dc2626">{{ sitesGalat }} <a href="#" @click.prevent="fetchSites">Coba lagi</a></small>
+          <small v-else-if="!sites.length" style="color:#64748b">Belum ada site. Buat site lebih dulu (dari opportunity atau menu Master → Site).</small>
         </div>
         <div class="field">
           <label>Tanggal Mulai <span class="req">*</span></label>

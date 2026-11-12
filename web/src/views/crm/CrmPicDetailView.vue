@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { fmtDate, fmtDateTime } from '@/composables/useFormat'
-import { confirmDialog, alertError, toast } from '@/composables/useDialog'
+import { confirmDialog, alertError, toast, pesanGalat } from '@/composables/useDialog'
 
 const route  = useRoute()
 const router = useRouter()
@@ -32,8 +32,7 @@ async function fetchDetail(diam = false) {
     pic.value = res.data.data
   } catch (e: any) {
     // 404 = memang tidak ada; selain itu tampilkan pesan server
-    const m = e?.response?.data?.message
-    const pesan = e?.response?.status === 404 ? 'Data PIC tidak ditemukan' : (Array.isArray(m) ? m.join(', ') : m) || 'Gagal memuat data PIC'
+    const pesan = e?.response?.status === 404 ? 'Data PIC tidak ditemukan' : pesanGalat(e, 'Gagal memuat data PIC')
     if (diam && pic.value) toast(`Gagal memperbarui data: ${pesan}`, 'danger')
     else err.value = pesan
   }
@@ -60,13 +59,16 @@ function openEdit() {
 }
 
 async function handleEdit() {
+  if (editSave.value) return
+  if (!String(editForm.value.nama_pic || '').trim()) { editErr.value = 'Nama PIC wajib diisi'; return }
   editSave.value = true; editErr.value = ''
   try {
-    await api.put(`/crm/pic/${id}`, editForm.value)
+    // Tanggal lahir kosong tidak dikirim: string kosong ditolak validasi tanggal di server
+    await api.put(`/crm/pic/${id}`, { ...editForm.value, nama_pic: editForm.value.nama_pic.trim(), tgl_lahir: editForm.value.tgl_lahir || undefined })
     showEdit.value = false
     toast('Data PIC tersimpan')
     await fetchDetail(true)
-  } catch (e: any) { editErr.value = e.response?.data?.message || 'Gagal' }
+  } catch (e: any) { editErr.value = pesanGalat(e, 'Gagal menyimpan data PIC') }
   finally { editSave.value = false }
 }
 
@@ -79,8 +81,9 @@ async function handleDelete() {
   }))) return
   try {
     await api.delete(`/crm/pic/${id}`)
+    toast('PIC dihapus')
     router.push('/crm/pic')
-  } catch (e: any) { await alertError(e, 'Gagal hapus') }
+  } catch (e: any) { await alertError(e, 'Gagal menghapus PIC') }
 }
 
 const fmtDatetime = fmtDateTime
@@ -101,15 +104,15 @@ function parseSnapshot(s: string) {
     <div v-if="loading" class="loading">Memuat...</div>
     <div v-else-if="err" class="err-msg">
       {{ err }}
-      <button class="btn-retry" @click="fetchDetail()">Coba lagi</button>
-      <button class="btn-retry" @click="router.push('/crm/pic')">← Daftar PIC</button>
+      <button type="button" class="btn-retry" @click="fetchDetail()">Coba lagi</button>
+      <button type="button" class="btn-retry" @click="router.push('/crm/pic')">← Daftar PIC</button>
     </div>
 
     <div v-else-if="pic">
       <div class="page-header">
         <div>
           <h2>{{ pic.nama_pic }}</h2>
-          <p class="sub">{{ pic.jabatan || '—' }} · {{ pic.site?.pelanggan?.nama_pelanggan }} / {{ pic.site?.nama_site }}</p>
+          <p class="sub">{{ pic.jabatan || '—' }} · {{ pic.site?.pelanggan?.nama_pelanggan || '—' }} / {{ pic.site?.nama_site || '—' }}</p>
         </div>
         <div class="header-actions">
           <button type="button" class="btn-edit" @click="openEdit">Edit</button>

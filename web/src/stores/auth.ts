@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import api from '@/services/api'
+import { pesanGalat } from '@/composables/useDialog'
 
 export const ALL_MODULS = ['hris', 'master', 'sales', 'crm', 'projects', 'operations', 'assets', 'contracts', 'finance', 'reports', 'notifications', 'public-wo', 'prtg', 'mekari']
 
@@ -49,7 +50,10 @@ export const useAuthStore = defineStore('auth', {
         api.get('/auth/me').then(({ data }) => {
           this.user = data.data
           localStorage.setItem('user', JSON.stringify(data.data))
-        }).catch(() => {
+        }).catch((e: any) => {
+          // Koneksi putus / server sedang dimulai ulang bukan berarti sesi tidak sah — pertahankan sesi.
+          const status = e?.response?.status
+          if (!status || status >= 500) return
           this.user = null
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
@@ -59,6 +63,7 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async login(username: string, password: string) {
+      if (this.loading) return false
       this.loading = true
       this.error = ''
       try {
@@ -70,7 +75,9 @@ export const useAuthStore = defineStore('auth', {
         localStorage.setItem('user', JSON.stringify(result.user))
         return true
       } catch (e: any) {
-        this.error = e.response?.data?.message || 'Login gagal, cek username/password'
+        this.error = e.response?.status === 429
+          ? 'Terlalu banyak percobaan masuk. Tunggu sekitar 1 menit lalu coba lagi.'
+          : pesanGalat(e, 'Gagal masuk. Periksa username dan password Anda.')
         return false
       } finally {
         this.loading = false

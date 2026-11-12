@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import { confirmDialog, alertError, toast } from '@/composables/useDialog'
+import { confirmDialog, alertError, toast, toastGalat, pesanGalat } from '@/composables/useDialog'
 import KaryawanPicker from './KaryawanPicker.vue'
 import RuangRapat from './RuangRapat.vue'
 import PratinjauPerangkat from './PratinjauPerangkat.vue'
@@ -41,9 +41,11 @@ const pesan = ref('')
 const tab = ref<string>(typeof route.query.tab === 'string' ? route.query.tab : 'ringkasan')
 watch(tab, (t) => router.replace({ query: { ...route.query, tab: t === 'ringkasan' ? undefined : t } }).catch(() => {}))
 
-async function muatDetail() {
+const memuatUlang = ref(false)
+async function muatDetail(latar = false) {
+  if (!latar) memuatUlang.value = true
   try {
-    const { data } = await api.get(`/meeting/${id}`)
+    const { data } = await api.get(`/meeting/${id}`, latar ? { senyap: true } : undefined)
     const d: Detail = data.data
     // Jangan timpa notulen yang sedang diketik
     if (detail.value && notulen.kotor) d.notulen = detail.value.notulen
@@ -51,7 +53,10 @@ async function muatDetail() {
     if (!notulen.kotor) notulen.teks = d.notulen ?? ''
     error.value = ''
   } catch (e: any) {
-    error.value = e?.response?.data?.message || 'Gagal memuat rapat'
+    // polling latar gagal sementara: data lama tetap tampil, jangan munculkan banner galat
+    if (!latar || !detail.value) error.value = pesanGalat(e, 'Gagal memuat rapat')
+  } finally {
+    if (!latar) memuatUlang.value = false
   }
 }
 
@@ -61,7 +66,7 @@ let timerDetail: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
   await muatDetail()
   detik = setInterval(() => { kini.value = Date.now() }, 1000)
-  timerDetail = setInterval(() => { if (!sesi.value && document.visibilityState === 'visible') muatDetail() }, 15_000)
+  timerDetail = setInterval(() => { if (!sesi.value && document.visibilityState === 'visible') muatDetail(true) }, 15_000)
   if (route.query.ubah === '1' && detail.value?.moderator) formUbah.value = true
   if (route.query.masuk === '1' && detail.value && detail.value.status !== 'Dibatalkan') masuk()
   window.addEventListener('beforeunload', cegahKeluar)
@@ -165,7 +170,10 @@ const teksUndanganInternal = computed(() => {
   if (!r) return ''
   return `📹 *${r.judul}*\n🗓️ ${rentang.value}${r.lokasi ? `\n📍 ${r.lokasi}` : ''}${r.deskripsi ? `\n\nAgenda:\n${r.deskripsi}` : ''}\n\nMasuk rapat (login ERP): ${asal}/meeting/${r.id_rapat}`
 })
-async function salinUndangan() { if (await salin(teksUndanganInternal.value)) toast('Teks undangan disalin') }
+async function salinUndangan() {
+  if (await salin(teksUndanganInternal.value)) toast('Teks undangan disalin')
+  else toast('Gagal menyalin — izinkan akses clipboard di browser', 'warning')
+}
 const menuKalender = ref(false)
 
 // ── Link tamu ────────────────────────────────────────────────────────────────
@@ -184,7 +192,11 @@ async function aturLink(aktif: boolean, baru = false) {
     prosesLink.value = false
   }
 }
-async function salinLink() { if (linkTamu.value && (await salin(linkTamu.value))) toast('Link tamu disalin') }
+async function salinLink() {
+  if (!linkTamu.value) return
+  if (await salin(linkTamu.value)) toast('Link tamu disalin')
+  else toast('Link tamu gagal disalin otomatis — salin manual dari kolom link', 'warning')
+}
 const teksUndanganTamu = computed(() => {
   const r = d.value
   if (!r || !linkTamu.value) return ''
@@ -213,14 +225,14 @@ async function hapusPeserta(p: Peserta) {
   try {
     const { data } = await api.delete(`/meeting/${id}/peserta/${p.id_karyawan}`)
     detail.value = data.data
-  } catch (e) { alertError(e, 'Gagal') }
+  } catch (e) { alertError(e, 'Gagal menghapus peserta') }
 }
 async function jadikanModerator(p: Peserta) {
   try {
     const { data } = await api.post(`/meeting/${id}/peserta/${p.id_karyawan}/moderator`)
     detail.value = data.data
     toast(`${p.nama} sekarang moderator`)
-  } catch (e) { alertError(e, 'Gagal') }
+  } catch (e) { alertError(e, 'Gagal menjadikan moderator') }
 }
 
 // Linimasa kehadiran: posisi tiap sesi masuk–keluar terhadap rentang rapat
@@ -262,7 +274,8 @@ async function simpanNotulen() {
     if (detail.value) Object.assign(detail.value, { notulen: teks, notulen_at: data.data.notulen_at, notulen_oleh: data.data.notulen_oleh })
     notulen.kotor = notulen.teks !== teks
   } catch (e) {
-    alertError(e, 'Notulen gagal disimpan')
+    // simpan otomatis bisa berulang tiap jeda ketik → toast (tidak menumpuk), bukan dialog
+    toastGalat(e, 'Notulen gagal disimpan — perubahan masih di layar, akan dicoba lagi saat Anda mengetik')
   } finally {
     notulen.menyimpan = false
   }
@@ -298,7 +311,7 @@ function unduhNotulen() {
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 1000)
 }
-async function salinNotulen() { if (await salin(notulen.teks)) toast('Notulen disalin') }
+async function salinNotulen() { if (await salin(notulen.teks)) toast('Notulen disalin'); else toast('Notulen gagal disalin — gunakan Unduh', 'warning') }
 // Tampilan markdown sederhana (judul, daftar, centang) — aman: teks di-escape dulu
 const notulenHtml = computed(() => {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -327,18 +340,25 @@ async function tambahTindak() {
     Object.assign(tindakBaru, { judul: '', tenggat: '' })
   } catch (e) { alertError(e, 'Gagal menambah tindak lanjut') } finally { tindakSimpan.value = false }
 }
-async function ubahTindak(t: Tindak, isi: Record<string, unknown>) {
+const tindakProses = ref(0)
+async function ubahTindak(t: Tindak, isi: Record<string, unknown>, ev?: Event) {
+  if (tindakProses.value) return
+  tindakProses.value = t.id_tindak
   try {
     const { data } = await api.patch(`/meeting/${id}/tindak/${t.id_tindak}`, isi)
     detail.value = data.data
-  } catch (e) { alertError(e, 'Gagal mengubah tindak lanjut') }
+  } catch (e) {
+    // <select> sudah berganti di layar → kembalikan ke PIC yang tersimpan
+    if (ev?.target instanceof HTMLSelectElement) ev.target.value = String(t.id_pic ?? '')
+    alertError(e, 'Gagal mengubah tindak lanjut')
+  } finally { tindakProses.value = 0 }
 }
 async function hapusTindak(t: Tindak) {
   if (!(await confirmDialog({ title: 'Hapus tindak lanjut?', message: t.judul, confirmLabel: 'Hapus', variant: 'danger' }))) return
   try {
     const { data } = await api.delete(`/meeting/${id}/tindak/${t.id_tindak}`)
     detail.value = data.data
-  } catch (e) { alertError(e, 'Gagal') }
+  } catch (e) { alertError(e, 'Gagal menghapus tindak lanjut') }
 }
 const tenggatLewat = (t: Tindak) => !t.selesai && !!t.tenggat && t.tenggat.slice(0, 10) < new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })
 const namaSaya = computed(() => auth.user?.nama_lengkap || 'Anda')
@@ -353,7 +373,7 @@ const namaSaya = computed(() => auth.user?.nama_lengkap || 'Anda')
 
   <div v-else class="rd">
     <button type="button" class="rd-kembali" @click="router.push('/meeting')">← Pusat Rapat</button>
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error" class="alert alert-danger" role="alert">{{ error }} <button type="button" class="btn btn-secondary btn-sm" :disabled="memuatUlang" @click="muatDetail()">{{ memuatUlang ? 'Memuat…' : '↻ Coba lagi' }}</button></div>
     <div v-if="!d && !error" class="rd-skeleton"></div>
 
     <template v-if="d">
@@ -520,7 +540,7 @@ const namaSaya = computed(() => auth.user?.nama_lengkap || 'Anda')
                 </div>
                 <div v-if="d.moderator && p.id_karyawan !== d.pembuat.id_karyawan && !selesaiAtauBatal" class="rd-orang-aksi">
                   <button v-if="p.peran !== 'moderator'" type="button" title="Jadikan moderator" @click="jadikanModerator(p)">🛡️</button>
-                  <button type="button" title="Hapus dari undangan" @click="hapusPeserta(p)">🗑️</button>
+                  <button type="button" title="Hapus dari undangan" aria-label="Hapus dari undangan" @click="hapusPeserta(p)">🗑️</button>
                 </div>
               </li>
               <li v-for="(t, i) in d.tamu" :key="'t' + i">
@@ -595,7 +615,7 @@ const namaSaya = computed(() => auth.user?.nama_lengkap || 'Anda')
             <p v-if="!d.tindak.length" class="rd-kosong">Belum ada tindak lanjut. PIC yang dipilih langsung mendapat notifikasi.</p>
             <ul class="rd-tindak">
               <li v-for="t in d.tindak" :key="t.id_tindak" :class="{ beres: t.selesai, lewat: tenggatLewat(t) }">
-                <button type="button" class="rd-centang" :class="{ on: t.selesai }" :disabled="!d.diundang" :title="t.selesai ? 'Tandai belum selesai' : 'Tandai selesai'" @click="ubahTindak(t, { selesai: !t.selesai })">{{ t.selesai ? '✓' : '' }}</button>
+                <button type="button" class="rd-centang" :class="{ on: t.selesai }" :disabled="!d.diundang || tindakProses === t.id_tindak" :title="t.selesai ? 'Tandai belum selesai' : 'Tandai selesai'" @click="ubahTindak(t, { selesai: !t.selesai })">{{ t.selesai ? '✓' : '' }}</button>
                 <div class="rd-tindak-isi">
                   <span>{{ t.judul }}</span>
                   <small>
@@ -605,11 +625,11 @@ const namaSaya = computed(() => auth.user?.nama_lengkap || 'Anda')
                     · oleh {{ t.dibuat_oleh }}
                   </small>
                 </div>
-                <select v-if="d.diundang && !t.selesai" class="rd-tindak-pic" :value="t.id_pic ?? ''" title="Ganti PIC" @change="ubahTindak(t, { id_pic: Number(($event.target as HTMLSelectElement).value) || null })">
+                <select v-if="d.diundang && !t.selesai" class="rd-tindak-pic" :value="t.id_pic ?? ''" title="Ganti PIC" @change="ubahTindak(t, { id_pic: Number(($event.target as HTMLSelectElement).value) || null }, $event)">
                   <option value="">Tanpa PIC</option>
                   <option v-for="p in d.peserta" :key="p.id_karyawan" :value="p.id_karyawan">{{ p.nama }}</option>
                 </select>
-                <button v-if="d.diundang" type="button" class="rd-hapus" title="Hapus" @click="hapusTindak(t)">🗑️</button>
+                <button v-if="d.diundang" type="button" class="rd-hapus" title="Hapus" aria-label="Hapus tindak lanjut" @click="hapusTindak(t)">🗑️</button>
               </li>
             </ul>
           </section>

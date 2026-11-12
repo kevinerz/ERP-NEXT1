@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
-import { alertError, confirmDialog } from '@/composables/useDialog'
+import { alertError, confirmDialog, pesanGalat } from '@/composables/useDialog'
+import KeadaanData from '@/components/KeadaanData.vue'
 import type { Layanan } from './pb'
 
 interface Baris { id_survey_site?: number; nama_site: string; alamat: string; lantai_unit: string; kota: string; id_layanan: number | '' }
@@ -16,10 +17,13 @@ const layanan = ref<Layanan[]>([])
 const f = reactive({ id_pelanggan: null as number | null, kode_pelanggan: '', nama_perusahaan: '', nama_pic: '', telp_pic: '', email_pic: '', catatan: '' })
 const site = ref<Baris[]>([])
 const memuat = ref(true)
+const muatGalat = ref('')
 const menyimpan = ref(false)
 const kosong = (): Baris => ({ nama_site: '', alamat: '', lantai_unit: '', kota: '', id_layanan: '' })
 
-onMounted(async () => {
+async function muatAwal() {
+  memuat.value = true
+  muatGalat.value = ''
   try {
     const { data } = await api.get('/pasang-baru/referensi')
     layanan.value = data.data.layanan
@@ -36,26 +40,30 @@ onMounted(async () => {
       site.value = [kosong()]
     }
   } catch (e) {
-    alertError(e, 'Gagal memuat')
+    muatGalat.value = pesanGalat(e, 'Gagal memuat data survey')
   } finally {
     memuat.value = false
   }
-})
+}
+onMounted(muatAwal)
 
 // ── Perusahaan: ketik bebas (calon pelanggan) atau pilih pelanggan yang sudah ada ──
 const hasilP = ref<Pelanggan[]>([])
 const saranBuka = ref(false)
 let timerP: ReturnType<typeof setTimeout> | null = null
+let urutP = 0
 watch(() => f.nama_perusahaan, (q) => {
   if (timerP) clearTimeout(timerP)
+  const urut = ++urutP
   if (f.id_pelanggan || q.trim().length < 2) { hasilP.value = []; return }
   timerP = setTimeout(async () => {
     try {
       const { data } = await api.get('/pasang-baru/pelanggan', { params: { q } })
-      hasilP.value = data.data
-    } catch { hasilP.value = [] }
+      if (urut === urutP) hasilP.value = data.data // jawaban lama tidak menimpa ketikan terbaru
+    } catch { if (urut === urutP) hasilP.value = [] /* saran opsional — boleh senyap */ }
   }, 300)
 })
+onBeforeUnmount(() => { if (timerP) clearTimeout(timerP) })
 function pilihP(p: Pelanggan) {
   Object.assign(f, { id_pelanggan: p.id_pelanggan, kode_pelanggan: p.kode_pelanggan, nama_perusahaan: p.nama_pelanggan })
   if (!f.nama_pic && p.nama_pic_utama) f.nama_pic = p.nama_pic_utama
@@ -98,10 +106,11 @@ const siap = computed(() => f.nama_perusahaan.trim().length >= 2 && f.nama_pic.t
   && site.value.length > 0 && !site.value.some(barisKurang))
 
 async function simpan(ajukan: boolean) {
-  if (!siap.value) return
-  if (ajukan && !(await confirmDialog({ title: 'Ajukan ke OPS', message: `Ajukan survey berisi ${site.value.length} site ke OPS untuk dicek vendor ISP, IKG, deposit, dan cover?`, confirmLabel: 'Ajukan' }))) return
+  if (!siap.value || menyimpan.value) return
+  // Dikunci sejak dialog konfirmasi supaya klik ganda tidak membuat dua survey
   menyimpan.value = true
   try {
+    if (ajukan && !(await confirmDialog({ title: 'Ajukan ke OPS', message: `Ajukan survey berisi ${site.value.length} site ke OPS untuk dicek vendor ISP, IKG, deposit, dan cover?`, confirmLabel: 'Ajukan' }))) return
     const body = {
       id_pelanggan: f.id_pelanggan || undefined, nama_perusahaan: f.nama_perusahaan.trim(),
       nama_pic: f.nama_pic.trim(), telp_pic: f.telp_pic.trim() || undefined, email_pic: f.email_pic.trim() || undefined,
@@ -142,8 +151,7 @@ async function simpan(ajukan: boolean) {
       <button class="btn btn-ghost" @click="router.back()">← Kembali</button>
     </div>
 
-    <p v-if="memuat" class="muted">Memuat…</p>
-    <template v-else>
+    <KeadaanData :memuat="memuat" :galat="muatGalat" teks-memuat="Memuat data survey…" @ulang="muatAwal">
       <div class="detail-section">
         <div class="detail-section-header"><b>Perusahaan &amp; PIC</b></div>
         <div class="detail-section-body">
@@ -157,7 +165,7 @@ async function simpan(ajukan: boolean) {
                 />
                 <span v-if="f.id_pelanggan" class="sv-tag">
                   <span class="badge badge-green">Pelanggan {{ f.kode_pelanggan }}</span>
-                  <button class="btn btn-sm btn-ghost" @click="lepasP">Ganti</button>
+                  <button type="button" class="btn btn-sm btn-ghost" @click="lepasP">Ganti</button>
                 </span>
               </div>
               <div v-if="saranBuka && hasilP.length && !f.id_pelanggan" class="sv-hasil">
@@ -205,8 +213,8 @@ async function simpan(ajukan: boolean) {
                   </select>
                 </td>
                 <td class="sv-aksi">
-                  <button class="btn btn-sm btn-ghost" title="Duplikat (kota & layanan sama)" @click="salinBaris(i)">⧉</button>
-                  <button class="btn btn-sm btn-ghost" title="Hapus" :disabled="site.length === 1" @click="site.splice(i, 1)">✕</button>
+                  <button type="button" class="btn btn-sm btn-ghost" title="Duplikat (kota & layanan sama)" aria-label="Duplikat baris" @click="salinBaris(i)">⧉</button>
+                  <button type="button" class="btn btn-sm btn-ghost" title="Hapus" aria-label="Hapus baris" :disabled="site.length === 1" @click="site.splice(i, 1)">✕</button>
                 </td>
               </tr>
             </tbody>
@@ -219,13 +227,13 @@ async function simpan(ajukan: boolean) {
         <button class="btn btn-ghost" :disabled="!siap || menyimpan" @click="simpan(false)">Simpan draft</button>
         <button class="btn btn-primary" :disabled="!siap || menyimpan" @click="simpan(true)">{{ menyimpan ? 'Menyimpan…' : 'Simpan & ajukan ke OPS →' }}</button>
       </div>
-    </template>
+    </KeadaanData>
 
     <div v-if="tempel.buka" class="modal-overlay" @click.self="tempel.buka = false">
       <div class="modal modal-xl">
         <div class="modal-header">
           <h3 class="modal-title">📋 Tempel dari Excel</h3>
-          <button class="btn-modal-close" @click="tempel.buka = false">×</button>
+          <button type="button" class="btn-modal-close" aria-label="Tutup" @click="tempel.buka = false">×</button>
         </div>
         <div class="modal-body">
           <p class="form-hint">Di Excel, susun kolom berurutan lalu blok dan salin (Ctrl+C), tempel di bawah (Ctrl+V):</p>

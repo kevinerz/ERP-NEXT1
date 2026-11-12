@@ -104,9 +104,15 @@ function goNotif(n: any) {
   if (n.url) router.push(n.url)
 }
 
+let sedangKeluar = false
 async function logout() {
+  if (sedangKeluar) return
+  sedangKeluar = true
+  showUserMenu.value = false
   const refresh_token = localStorage.getItem('refresh_token') || undefined
-  try { await api.post('/auth/logout', { refresh_token }) } catch {}
+  // Keluar harus tetap jalan walau server tidak terjangkau — jangan menunggu batas waktu bawaan.
+  try { await api.post('/auth/logout', { refresh_token }, { senyap: true, timeout: 8000 }) } catch { /* sesi lokal tetap dihapus */ }
+  sedangKeluar = false
   notif.stopPolling()
   auth.logout()
   router.push('/login')

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import portalApi from '@/services/portalApi'
+import { pesanGalat } from '@/composables/useDialog'
 
 interface CustomerUser {
   id_user: number
@@ -30,7 +31,10 @@ export const usePortalAuthStore = defineStore('portalAuth', {
         portalApi.get('/portal/me').then(({ data }) => {
           this.user = data.data
           localStorage.setItem('portal_user', JSON.stringify(data.data))
-        }).catch(() => {
+        }).catch((e: any) => {
+          // Koneksi putus / server sedang dimulai ulang bukan berarti sesi tidak sah — pertahankan sesi.
+          const status = e?.response?.status
+          if (!status || status >= 500) return
           this.user = null
           localStorage.removeItem('portal_token')
           localStorage.removeItem('portal_user')
@@ -39,6 +43,7 @@ export const usePortalAuthStore = defineStore('portalAuth', {
     },
 
     async login(email: string, password: string) {
+      if (this.loading) return false
       this.loading = true; this.error = ''
       try {
         const { data } = await portalApi.post('/portal/auth/login', { email, password })
@@ -47,7 +52,9 @@ export const usePortalAuthStore = defineStore('portalAuth', {
         localStorage.setItem('portal_user', JSON.stringify(data.data.user))
         return true
       } catch (e: any) {
-        this.error = e.response?.data?.message || 'Login gagal'
+        this.error = e.response?.status === 429
+          ? 'Terlalu banyak percobaan masuk. Tunggu sekitar 1 menit lalu coba lagi.'
+          : pesanGalat(e, 'Gagal masuk. Periksa email dan password Anda.')
         return false
       } finally { this.loading = false }
     },

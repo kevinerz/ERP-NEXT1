@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useSalesStore } from '@/stores/sales'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import { toast, toastGalat, pesanGalat } from '@/composables/useDialog'
 import { fmtRupiahPenuh, fmtDateShort } from '@/composables/useFormat'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import BasePagination from '@/components/BasePagination.vue'
@@ -58,9 +59,10 @@ async function doHapus() {
   confirmHapus.value = false
   try {
     await api.delete(`/sales/opportunity/${hapusTarget.value.id}`)
+    toast('Opportunity dihapus')
     fetchData()
   } catch (e: any) {
-    const msg = e.response?.data?.message || 'Gagal menghapus opportunity'
+    const msg = pesanGalat(e, 'Gagal menghapus opportunity')
     if (e.response?.status === 400 && String(msg).includes('force delete')) {
       if (!canForce.value) {
         forceMsg.value = msg + ' — Hubungi Admin untuk force delete.'
@@ -73,8 +75,8 @@ async function doHapus() {
       showForce.value = true
       return
     }
-    forceMsg.value = msg
-    showForce.value = true
+    // Galat biasa (jaringan, izin, dsb.) bukan alasan menawarkan force delete
+    toastGalat(e, 'Gagal menghapus opportunity')
   }
 }
 
@@ -90,10 +92,10 @@ async function doForceHapus() {
   try {
     const r = await api.delete(`/sales/opportunity/${hapusTarget.value.id}?force=true`)
     showForce.value = false
+    toast(r.data?.message || 'Opportunity + data terkait dihapus')
     fetchData()
-    forceMsg.value = r.data?.message || 'Opportunity + data terkait dihapus'
   } catch (e2: any) {
-    forceError.value = e2.response?.data?.message || 'Force delete gagal'
+    forceError.value = pesanGalat(e2, 'Force delete gagal')
   } finally { forcing.value = false }
 }
 
@@ -126,7 +128,9 @@ const fmtDate = fmtDateShort
       <button class="btn-search" @click="doSearch">Cari</button>
     </div>
 
-    <div v-if="sales.error" class="alert-error">{{ sales.error }}</div>
+    <div v-if="sales.error" class="alert-error" role="alert">{{ sales.error }}
+      <button type="button" class="btn btn-secondary btn-sm" style="margin-left:10px" @click="fetchData">↻ Coba lagi</button>
+    </div>
 
     <div class="table-card">
       <div v-if="sales.loading" class="loading">Memuat...</div>
@@ -145,8 +149,8 @@ const fmtDate = fmtDateShort
           </tr>
         </thead>
         <tbody>
-          <tr v-if="!sales.oppList.length">
-            <td colspan="9" class="empty">Tidak ada opportunity</td>
+          <tr v-if="!sales.oppList.length && !sales.error">
+            <td colspan="9" class="empty">{{ search || filterTahapan ? 'Tidak ada opportunity yang cocok dengan pencarian/filter ini' : 'Belum ada opportunity' }}</td>
           </tr>
           <tr v-baris
             v-for="o in sales.oppList" :key="o.id_opportunity"
@@ -155,7 +159,7 @@ const fmtDate = fmtDateShort
           >
             <td class="fw600">{{ o.nama_opportunity }}</td>
             <td>
-              <div>{{ o.lead?.nama_prospek }}</div>
+              <div>{{ o.lead?.nama_prospek || '—' }}</div>
               <div class="text-gray text-sm">{{ o.lead?.nama_perusahaan || '' }}</div>
             </td>
             <td>
@@ -195,7 +199,7 @@ const fmtDate = fmtDateShort
     <!-- Force delete modal (ketik nama) -->
     <div v-if="showForce" class="modal-overlay" @click.self="showForce = false">
       <div class="modal-force">
-        <h3>⚠️ Force Delete Opportunity</h3>
+        <h3>{{ canForce ? '⚠️ Force Delete Opportunity' : 'Tidak Dapat Dihapus' }}</h3>
         <p class="force-msg">{{ forceMsg }}</p>
         <template v-if="canForce">
           <p class="force-hint">Ketik nama opportunity <strong>{{ hapusTarget?.nama }}</strong> untuk konfirmasi:</p>
