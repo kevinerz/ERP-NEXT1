@@ -17,6 +17,7 @@ interface Pesan {
   isi: string; dihapus: boolean; diedit: boolean; waktu: string; mention: number[]
   lampiran: { nama: string | null; tipe: string | null; ukuran: number | null; gambar: boolean } | null
   balas: { id_pesan: number; pengirim: string; isi: string } | null
+  reaksi?: { emoji: string; jumlah: number; saya: boolean; oleh: string[] }[]
   kartu?: { jenis: 'tiket' | 'wo'; kode: string; judul: string; status: string; prioritas: string | null; site: string; url: string }[]
   status?: 'mengirim' | 'gagal'
 }
@@ -28,6 +29,7 @@ const route = useRoute()
 const router = useRouter()
 function ikonRuang(r: { tipe: string; nama: string; id_lawan: number | null }) {
   if (r.tipe === 'umum') return '🏢'
+  if (r.tipe === 'kanal') return '#'
   if (r.tipe === 'diskusi') return r.nama.startsWith('TKT-') ? '🎫' : '📍'
   return r.id_lawan ? inisial(r.nama) : '👥'
 }
@@ -430,13 +432,63 @@ async function hapus(p: Pesan) {
     muatDaftar(true)
   } catch (e) { alertError(e, 'Gagal menghapus pesan') }
 }
+const EMOJI_REAKSI = ['👍', '❤️', '😂', '🎉', '🙏', '👀', '✅', '🔥']
+async function beriReaksi(p: Pesan, emoji: string) {
+  menuPesan.value = null
+  if (p.id_pesan < 0) return
+  try {
+    const { data } = await api.post(`/chat/pesan/${p.id_pesan}/reaksi`, { emoji }, { senyap: true })
+    const x = pesan.value.find((m) => m.id_pesan === p.id_pesan)
+    if (x) x.reaksi = data.data
+  } catch (e) { alertError(e, 'Gagal memberi reaksi') }
+}
+
+// ── Kanal santai ─────────────────────────────────────────────────────────────
+interface Kanal { id_ruang: number; nama: string; jumlah: number; gabung: boolean; deskripsi: string }
+const kanalBuka = ref(false)
+const kanal = ref<Kanal[]>([])
+const kanalMuat = ref(false)
+const kanalBaru = ref('')
+async function bukaKanal() {
+  kanalBuka.value = true; kanalMuat.value = true
+  try { kanal.value = (await api.get('/chat/kanal', { senyap: true })).data.data } catch (e) { alertError(e, 'Gagal memuat kanal') } finally { kanalMuat.value = false }
+}
+async function masukKanal(k: Kanal) {
+  try {
+    if (!k.gabung) await api.post(`/chat/kanal/${k.id_ruang}/gabung`, {}, { senyap: true })
+    kanalBuka.value = false
+    await muatDaftar(true)
+    pilihRuang(k.id_ruang)
+  } catch (e) { alertError(e, 'Gagal bergabung ke kanal') }
+}
+async function buatKanal() {
+  const nama = kanalBaru.value.trim()
+  if (nama.length < 2) return
+  try {
+    const { data } = await api.post('/chat/kanal', { nama }, { senyap: true })
+    kanalBaru.value = ''; kanalBuka.value = false
+    await muatDaftar(true)
+    pilihRuang(data.data.id_ruang)
+  } catch (e) { alertError(e, 'Gagal membuat kanal') }
+}
+async function keluarKanal() {
+  if (!aktif.value || aktif.value.tipe !== 'kanal') return
+  if (!(await confirmDialog({ title: 'Keluar dari kanal?', message: 'Anda bisa bergabung lagi kapan saja dari daftar kanal.', confirmLabel: 'Keluar' }))) return
+  try {
+    await api.post(`/chat/kanal/${aktif.value.id_ruang}/keluar`, {}, { senyap: true })
+    infoBuka.value = false
+    await muatDaftar(true)
+    router.push('/chat')
+  } catch (e) { alertError(e, 'Gagal keluar dari kanal') }
+}
+
 async function salinPesan(p: Pesan) {
   menuPesan.value = null
   try { await navigator.clipboard.writeText(p.isi); toast('Pesan disalin') } catch { toast('Browser menolak menyalin', 'warning') }
 }
 function lompatKe(id: number) {
   const el = gulung.value?.querySelector(`[data-pesan="${id}"]`) as HTMLElement | null
-  if (!el) { toast('Pesan asli ada di riwayat yang lebih lama — gulir ke atas', 'info'); return }
+  if (!el) { toast('Pesan asli ada di riwayat yang lebih lama — gulir ke atas', 'warning'); return }
   el.scrollIntoView({ block: 'center', behavior: 'smooth' })
   el.classList.add('sorot')
   setTimeout(() => el.classList.remove('sorot'), 1400)
@@ -603,6 +655,7 @@ onBeforeUnmount(() => {
         <div class="cv-aksi">
           <button type="button" class="cv-ikon" title="Obrolan baru" @click="bukaBaru('pribadi')">✏️</button>
           <button type="button" class="cv-ikon" title="Grup baru" @click="bukaBaru('grup')">👥</button>
+          <button type="button" class="cv-ikon" title="Jelajahi kanal santai" @click="bukaKanal">#</button>
         </div>
       </div>
       <div class="cv-cari"><input v-model="cariRuang" type="search" placeholder="Cari obrolan atau pesan…" aria-label="Cari obrolan" /></div>
@@ -715,6 +768,9 @@ onBeforeUnmount(() => {
                       </RouterLink>
                     </div>
                   </template>
+                  <div v-if="t.p.reaksi?.length" class="cv-reaksi">
+                    <button v-for="x in t.p.reaksi" :key="x.emoji" type="button" class="cv-reaksi-chip" :class="{ saya: x.saya }" :title="x.oleh.join(', ')" @click="beriReaksi(t.p, x.emoji)">{{ x.emoji }} {{ x.jumlah }}</button>
+                  </div>
                   <div class="cv-meta">
                     <span v-if="t.p.diedit && !t.p.dihapus">diedit · </span>{{ jam(t.p.waktu) }}
                     <template v-if="t.p.status === 'mengirim'"> · mengirim…</template>
@@ -723,6 +779,7 @@ onBeforeUnmount(() => {
                   <div v-if="t.p.status === 'gagal'" class="cv-gagal">Belum terkirim <button type="button" @click="ulangKirim(t.p)">Coba lagi</button> · <button type="button" @click="buangGagal(t.p)">Buang</button></div>
                   <button v-if="t.p.id_pesan > 0 && !t.p.dihapus" type="button" class="cv-menu-tombol" aria-label="Menu pesan" @click.stop="menuPesan = menuPesan === t.p.id_pesan ? null : t.p.id_pesan">⌄</button>
                   <div v-if="menuPesan === t.p.id_pesan" class="cv-menu" role="menu">
+                    <div class="cv-emoji-baris"><button v-for="e in EMOJI_REAKSI" :key="e" type="button" :aria-label="`Reaksi ${e}`" @click="beriReaksi(t.p, e)">{{ e }}</button></div>
                     <button type="button" @click="mulaiBalas(t.p)">↩️ Balas</button>
                     <button v-if="t.p.isi" type="button" @click="salinPesan(t.p)">📋 Salin</button>
                     <button v-if="t.p.saya && t.p.isi" type="button" @click="mulaiEdit(t.p)">✏️ Ubah</button>
@@ -768,6 +825,25 @@ onBeforeUnmount(() => {
       </template>
     </section>
 
+    <!-- ═══ KANAL ═══ -->
+    <div v-if="kanalBuka" class="modal-overlay" @click.self="kanalBuka = false">
+      <div class="modal-content" style="max-width: 460px">
+        <div class="modal-header"><h3 class="modal-title"># Kanal santai</h3><button type="button" class="btn-modal-close" aria-label="Tutup" @click="kanalBuka = false">×</button></div>
+        <div class="modal-body">
+          <p v-if="kanalMuat" class="cv-redup">Memuat…</p>
+          <button v-for="k in kanal" :key="k.id_ruang" type="button" class="cv-kanal-baris" @click="masukKanal(k)">
+            <span class="cv-kanal-nama"># {{ k.nama }}</span>
+            <small>{{ k.deskripsi || 'Kanal buatan karyawan' }} · {{ k.jumlah }} anggota</small>
+            <span class="badge" :class="k.gabung ? 'badge-green' : 'badge-blue'">{{ k.gabung ? 'Buka' : 'Gabung' }}</span>
+          </button>
+          <div class="cv-kanal-buat">
+            <input v-model="kanalBaru" class="form-control" maxlength="40" placeholder="Buat kanal baru, mis. futsal-jumat" @keydown.enter.prevent="buatKanal" />
+            <button type="button" class="btn btn-primary btn-sm" :disabled="kanalBaru.trim().length < 2" @click="buatKanal">Buat</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ INFO RUANG ═══ -->
     <div v-if="infoBuka" class="modal-overlay" @click.self="infoBuka = false">
       <div v-focus-trap class="modal">
@@ -789,6 +865,7 @@ onBeforeUnmount(() => {
                 <button v-if="detail.tipe === 'grup' && (detail.admin || a.id_karyawan === saya)" type="button" class="btn btn-ghost btn-sm" @click="keluarkan(a)">{{ a.id_karyawan === saya ? 'Keluar' : 'Keluarkan' }}</button>
               </li>
             </ul>
+            <p v-if="detail.tipe === 'kanal'" class="cv-redup">Kanal terbuka: semua staf boleh bergabung dan keluar sendiri. <button type="button" class="btn btn-ghost btn-sm" @click="keluarKanal">Keluar dari kanal</button></p>
             <p v-if="detail.tipe === 'diskusi'" class="cv-redup">Ruang diskusi ini terbuka untuk semua staf; siapa pun yang membukanya dari tiket/site otomatis bergabung. <RouterLink v-if="detail.url" :to="detail.url" @click="infoBuka = false">Buka halaman terkait →</RouterLink></p>
             <p v-if="detail.tipe === 'umum' || detail.tipe === 'divisi'" class="cv-redup">Ruang ini dibuat otomatis dan semua karyawan terkait masuk sendiri.</p>
           </template>
@@ -870,6 +947,17 @@ onBeforeUnmount(() => {
 .cv-ruang.belum .cv-cuplikan { color: #0f172a; font-weight: 600; }
 .cv-lencana { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--biru); color: #fff; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .cv-lencana.bisu { background: #94a3b8; }
+.cv-reaksi { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.cv-reaksi-chip { border: 1px solid rgba(0, 0, 0, 0.15); background: rgba(255, 255, 255, 0.6); border-radius: 999px; padding: 1px 8px; font-size: 12px; cursor: pointer; }
+.cv-reaksi-chip.saya { border-color: #2563eb; background: rgba(37, 99, 235, 0.12); }
+.cv-emoji-baris { display: flex; gap: 2px; padding: 4px 6px; border-bottom: 1px solid var(--garis); }
+.cv-emoji-baris button { border: 0; background: transparent; font-size: 18px; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+.cv-emoji-baris button:hover { background: rgba(0, 0, 0, 0.08); }
+.cv-kanal-baris { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; width: 100%; text-align: left; padding: 10px; border: 1px solid var(--garis); border-radius: 8px; background: #fff; margin-bottom: 8px; cursor: pointer; }
+.cv-kanal-baris small { grid-column: 1; opacity: 0.7; }
+.cv-kanal-baris .badge { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+.cv-kanal-nama { font-weight: 600; }
+.cv-kanal-buat { display: flex; gap: 8px; margin-top: 12px; }
 .cv-kartu-daftar { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .cv-kartu { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; border-left: 3px solid #2563eb; background: rgba(0, 0, 0, 0.05); color: inherit; text-decoration: none; }
 .cv-kartu.j-wo { border-left-color: #d97706; }
@@ -935,7 +1023,7 @@ onBeforeUnmount(() => {
 .cv-berkas-teks small { font-size: 11px; opacity: .75; }
 .cv-menu-tombol { position: absolute; top: 2px; right: 6px; opacity: 0; background: rgba(15, 23, 42, .06); border: 0; border-radius: 8px; width: 22px; height: 22px; line-height: 1; cursor: pointer; color: inherit; transition: opacity .12s; }
 .cv-gelembung:hover .cv-menu-tombol, .cv-gelembung:focus-within .cv-menu-tombol { opacity: 1; }
-.cv-menu { position: absolute; z-index: 12; top: 26px; right: 0; background: #fff; color: #0f172a; border: 1px solid var(--garis); border-radius: 12px; box-shadow: 0 12px 28px rgba(15, 23, 42, .18); padding: 4px; display: flex; flex-direction: column; min-width: 140px; }
+.cv-menu { position: absolute; z-index: 12; top: 26px; right: 0; background: #fff; color: #0f172a; border: 1px solid var(--garis); border-radius: 12px; box-shadow: 0 12px 28px rgba(15, 23, 42, .18); padding: 4px; display: flex; flex-direction: column; min-width: 230px; }
 .cv-menu button { background: none; border: 0; text-align: left; padding: 7px 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; }
 .cv-menu button:hover { background: #f1f5f9; }
 .cv-menu button.bahaya { color: #dc2626; }

@@ -45,3 +45,11 @@ export class DiskusiDto {
 export class RujukanDto {
   @IsString() @MaxLength(200) q: string;
 }
+
+export class ReaksiDto {
+  @IsString() @MaxLength(16) emoji: string;
+}
+
+export class KanalDto {
+  @IsString() @MinLength(2) @MaxLength(40) nama: string;
+}

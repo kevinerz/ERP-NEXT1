@@ -22,7 +22,7 @@ app.directive('baris', vBaris)
 
 // Jaring pengaman: error yang tidak ditangani halaman mana pun tetap terlihat oleh pengguna
 // (sebelumnya hilang diam-diam — tombol terasa "tidak berfungsi").
-app.config.errorHandler = (err) => laporGalat(err, true)
+app.config.errorHandler = (err, inst, info) => laporGalat(err, true, `${(inst as any)?.$options?.name || (inst as any)?.$options?.__name || 'komponen'} · ${info}`)
 window.addEventListener('unhandledrejection', (e) => laporGalat(e.reason))
 
 app.mount('#app')

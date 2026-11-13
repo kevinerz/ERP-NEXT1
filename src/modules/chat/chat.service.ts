@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import { extname, join } from 'path';
@@ -11,6 +12,13 @@ const MENGETIK_MS = 5_000;
 const GAMBAR = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif']);
 const BOLEH_EXT = new Set([...GAMBAR, 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'zip', 'rar', '7z', 'mp3', 'm4a', 'ogg', 'wav', 'mp4', 'log', 'rsc', 'conf']);
 const MIME_GAMBAR: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
+
+export const EMOJI_BOLEH = ['👍', '❤️', '😂', '🎉', '🙏', '👀', '✅', '🔥'];
+const KANAL_BAWAAN = [
+  { slug: 'santai', nama: 'santai', deskripsi: 'Ngobrol santai, meme, cerita lucu' },
+  { slug: 'info-kantor', nama: 'info-kantor', deskripsi: 'Pengumuman & info kantor' },
+  { slug: 'makan-siang', nama: 'makan-siang', deskripsi: 'Mau makan apa hari ini?' },
+];
 
 type Berkas = { buffer: Buffer; originalname: string; mimetype: string; size: number };
 type Karyawan = { nama: string; jabatan: string; departemen: string };
@@ -148,6 +156,8 @@ export class ChatService {
     const balas = idBalas.length ? await this.prisma.chatPesan.findMany({ where: { id_pesan: { in: idBalas } } }) : [];
     const nama = await this.daftarNama([...rows.map((r) => r.id_pengirim), ...balas.map((b) => b.id_pengirim ?? 0)]);
     const bm = new Map(balas.map((b) => [b.id_pesan, b]));
+    const reaksiRows = rows.length ? await this.prisma.chatReaksi.findMany({ where: { id_pesan: { in: rows.map((r) => r.id_pesan) } }, orderBy: { id_reaksi: 'asc' } }) : [];
+    const namaReaksi = await this.daftarNama(reaksiRows.map((x) => x.id_karyawan));
     const kartu = await this.petaKartu(rows.map((r) => (r.dihapus_at ? '' : r.isi)));
     return rows.map((r) => {
       const b = r.id_balas ? bm.get(r.id_balas) : null;
@@ -158,6 +168,7 @@ export class ChatService {
         isi: r.dihapus_at ? '' : r.isi, dihapus: !!r.dihapus_at, diedit: !!r.diedit_at, waktu: r.created_at,
         mention: this.bacaMention(r.mention),
         kartu: r.dihapus_at ? [] : this.kartuDalam(r.isi, kartu),
+        reaksi: r.dihapus_at ? [] : this.ringkasReaksi(reaksiRows.filter((x) => x.id_pesan === r.id_pesan), id_karyawan, namaReaksi),
         lampiran: !r.dihapus_at && r.lampiran_file ? { nama: r.lampiran_nama, tipe: r.lampiran_tipe, ukuran: r.lampiran_ukuran, gambar } : null,
         balas: b ? { id_pesan: b.id_pesan, pengirim: b.id_pengirim ? (nama.get(b.id_pengirim)?.nama.split(' ')[0] ?? '') : '', isi: b.dihapus_at ? 'Pesan dihapus' : (b.isi || (b.lampiran_nama ? `📎 ${b.lampiran_nama}` : '')).slice(0, 140) } : null,
       };
@@ -356,6 +367,92 @@ export class ChatService {
     const nama = await this.daftarNama([id_karyawan, target]);
     await this.pesanSistem(id_ruang, target === id_karyawan ? `${nama.get(target)?.nama ?? 'Anggota'} keluar dari grup` : `${nama.get(id_karyawan)?.nama ?? 'Admin'} mengeluarkan ${nama.get(target)?.nama ?? 'anggota'}`);
     return true;
+  }
+
+  // ── Reaksi emoji ─────────────────────────────────────────────────────────────
+  private ringkasReaksi(rows: { emoji: string; id_karyawan: number }[], saya: number, nama: Map<number, Karyawan>) {
+    const per = new Map<string, number[]>();
+    for (const x of rows) per.set(x.emoji, [...(per.get(x.emoji) ?? []), x.id_karyawan]);
+    return [...per.entries()].map(([emoji, ids]) => ({ emoji, jumlah: ids.length, saya: ids.includes(saya), oleh: ids.slice(0, 8).map((i) => nama.get(i)?.nama.split(' ')[0] ?? '') }));
+  }
+
+  /** Beri / cabut reaksi (toggle). Hanya anggota ruang. */
+  async reaksi(id_pesan: number, id_karyawan: number, emoji: string) {
+    if (!EMOJI_BOLEH.includes(emoji)) throw new BadRequestException('Emoji tidak tersedia');
+    const p = await this.prisma.chatPesan.findUnique({ where: { id_pesan }, select: { id_ruang: true, dihapus_at: true } });
+    if (!p || p.dihapus_at) throw new NotFoundException('Pesan tidak ditemukan');
+    await this.anggotaAtau403(p.id_ruang, id_karyawan);
+    const ada = await this.prisma.chatReaksi.findUnique({ where: { id_pesan_id_karyawan_emoji: { id_pesan, id_karyawan, emoji } } });
+    if (ada) await this.prisma.chatReaksi.delete({ where: { id_reaksi: ada.id_reaksi } });
+    else await this.prisma.chatReaksi.create({ data: { id_pesan, id_karyawan, emoji } }).catch(() => null);
+    const rows = await this.prisma.chatReaksi.findMany({ where: { id_pesan }, orderBy: { id_reaksi: 'asc' } });
+    return this.ringkasReaksi(rows, id_karyawan, await this.daftarNama(rows.map((x) => x.id_karyawan)));
+  }
+
+  // ── Kanal santai (opt-in) ────────────────────────────────────────────────────
+  private async pastikanKanalBawaan() {
+    for (const k of KANAL_BAWAAN) {
+      const kunci = `kanal:${k.slug}`;
+      if (!(await this.prisma.chatRuang.findUnique({ where: { kunci }, select: { id_ruang: true } }))) {
+        await this.prisma.chatRuang.create({ data: { tipe: 'kanal', nama: k.nama, kunci } }).catch(() => null);
+      }
+    }
+  }
+
+  async daftarKanal(id_karyawan: number) {
+    this.wajibKaryawan(id_karyawan);
+    await this.pastikanKanalBawaan();
+    const kanal = await this.prisma.chatRuang.findMany({ where: { tipe: 'kanal' }, include: { anggota: { select: { id_karyawan: true } } }, orderBy: { nama: 'asc' } });
+    return kanal.map((k) => ({
+      id_ruang: k.id_ruang, nama: k.nama, jumlah: k.anggota.length, gabung: k.anggota.some((a) => a.id_karyawan === id_karyawan),
+      deskripsi: KANAL_BAWAAN.find((b) => `kanal:${b.slug}` === k.kunci)?.deskripsi ?? '',
+    }));
+  }
+
+  async buatKanal(id_karyawan: number, nama: string) {
+    this.wajibKaryawan(id_karyawan);
+    const slug = nama.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    if (slug.length < 2) throw new BadRequestException('Nama kanal tidak valid (gunakan huruf/angka)');
+    const kunci = `kanal:${slug}`;
+    let r = await this.prisma.chatRuang.findUnique({ where: { kunci } });
+    if (!r) r = await this.prisma.chatRuang.create({ data: { tipe: 'kanal', nama: slug, kunci, id_pembuat: id_karyawan } }).catch(() => this.prisma.chatRuang.findUnique({ where: { kunci } }) as any);
+    await this.prisma.chatAnggota.createMany({ data: [{ id_ruang: r!.id_ruang, id_karyawan }], skipDuplicates: true });
+    return { id_ruang: r!.id_ruang };
+  }
+
+  async gabungKanal(id_ruang: number, id_karyawan: number) {
+    this.wajibKaryawan(id_karyawan);
+    const r = await this.prisma.chatRuang.findUnique({ where: { id_ruang }, select: { tipe: true } });
+    if (!r || r.tipe !== 'kanal') throw new NotFoundException('Kanal tidak ditemukan');
+    await this.prisma.chatAnggota.createMany({ data: [{ id_ruang, id_karyawan }], skipDuplicates: true });
+    return { id_ruang };
+  }
+
+  async keluarKanal(id_ruang: number, id_karyawan: number) {
+    const a = await this.anggotaAtau403(id_ruang, id_karyawan);
+    if (a.ruang.tipe !== 'kanal') throw new BadRequestException('Hanya berlaku untuk kanal');
+    await this.prisma.chatAnggota.delete({ where: { id_anggota: a.id_anggota } });
+    return true;
+  }
+
+  // ── Ulang tahun otomatis (07:00 WIB = 00:00 UTC) ─────────────────────────────
+  @Cron('0 0 * * *')
+  async ucapkanUlangTahun() {
+    try {
+      const wib = new Date(Date.now() + 7 * 3600_000);
+      const bln = wib.getUTCMonth() + 1; const tgl = wib.getUTCDate();
+      const rows = await this.prisma.$queryRaw<{ id_karyawan: number; nama_lengkap: string }[]>`
+        SELECT id_karyawan, nama_lengkap FROM hris_karyawan WHERE status_aktif = 1 AND tgl_lahir IS NOT NULL AND MONTH(tgl_lahir) = ${bln} AND DAY(tgl_lahir) = ${tgl}`;
+      if (!rows.length) return;
+      const umum = await this.prisma.chatRuang.findUnique({ where: { kunci: 'umum' } });
+      if (!umum) return;
+      const awal = new Date(Date.now() - 20 * 3600_000);
+      for (const k of rows) {
+        const isi = `🎂 Selamat ulang tahun, ${k.nama_lengkap.trim()}! Semoga sehat, bahagia, dan makin sukses 🎉`;
+        const sudah = await this.prisma.chatPesan.findFirst({ where: { id_ruang: umum.id_ruang, id_pengirim: null, isi, created_at: { gt: awal } }, select: { id_pesan: true } });
+        if (!sudah) await this.pesanSistem(umum.id_ruang, isi);
+      }
+    } catch (e: any) { this.logger.warn(`ucapan ulang tahun gagal: ${e?.message}`); }
   }
 
   // ── Kartu rujukan (#TKT-202611-0204 / #WO-202611-0001) ──────────────────────

@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { BacaDto, BisuDto, DiskusiDto, GrupDto, KirimDto, PribadiDto, TambahAnggotaDto, UbahGrupDto, UbahPesanDto } from './dto';
+import { BacaDto, BisuDto, DiskusiDto, KanalDto, ReaksiDto, GrupDto, KirimDto, PribadiDto, TambahAnggotaDto, UbahGrupDto, UbahPesanDto } from './dto';
 import { ChatService } from './chat.service';
 
 // Chat internal karyawan — semua staf (segment /api/chat, lihat ModulAksesGuard).
@@ -33,6 +33,21 @@ export class ChatController {
 
   @Post('diskusi')
   diskusi(@CurrentUser('id_karyawan') me: number, @Body() d: DiskusiDto) { return this.chat.bukaDiskusi(me, d.jenis, d.id); }
+
+  @Get('kanal')
+  kanal(@CurrentUser('id_karyawan') me: number) { return this.chat.daftarKanal(me); }
+
+  @Post('kanal')
+  buatKanal(@CurrentUser('id_karyawan') me: number, @Body() d: KanalDto) { return this.chat.buatKanal(me, d.nama); }
+
+  @Post('kanal/:id/gabung')
+  gabungKanal(@CurrentUser('id_karyawan') me: number, @Param('id', ParseIntPipe) id: number) { return this.chat.gabungKanal(id, me); }
+
+  @Post('kanal/:id/keluar')
+  keluarKanal(@CurrentUser('id_karyawan') me: number, @Param('id', ParseIntPipe) id: number) { return this.chat.keluarKanal(id, me); }
+
+  @Post('pesan/:id/reaksi')
+  reaksi(@CurrentUser('id_karyawan') me: number, @Param('id', ParseIntPipe) id: number, @Body() d: ReaksiDto) { return this.chat.reaksi(id, me, d.emoji); }
 
   @Get('ruang/:id')
   detail(@CurrentUser('id_karyawan') me: number, @Param('id', ParseIntPipe) id: number) { return this.chat.detailRuang(id, me); }

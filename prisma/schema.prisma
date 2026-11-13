@@ -2193,6 +2193,18 @@ model ChatPesan {
   @@map("chat_pesan")
 }
 
+model ChatReaksi {
+  id_reaksi   Int      @id @default(autoincrement())
+  id_pesan    Int
+  id_karyawan Int
+  emoji       String   @db.VarChar(16)
+  created_at  DateTime @default(now())
+
+  @@unique([id_pesan, id_karyawan, emoji])
+  @@index([id_pesan])
+  @@map("chat_reaksi")
+}
+
 // Kehadiran (online) & indikator "sedang mengetik"
 model ChatStatus {
   id_karyawan    Int       @id

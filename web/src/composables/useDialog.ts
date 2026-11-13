@@ -141,14 +141,19 @@ export function toastGalat(err: any, fallback = 'Terjadi kesalahan') {
 }
 
 /** Jaring pengaman global: dipanggil untuk error yang tidak ditangani halaman mana pun. */
-export function laporGalat(err: any, dariVue = false) {
+export function laporGalat(err: any, dariVue = false, lokasi = '') {
   if (!err || err.__diberitahu || err.__CANCEL__ || err.code === 'ERR_CANCELED' || err.name === 'CanceledError') return
   if (err.isAxiosError) {
     if (err.response?.status === 401) return
     return toastGalat(err)
   }
   console.error(err)
-  if (dariVue) toastGalat('Terjadi kesalahan pada halaman ini. Muat ulang bila tampilan tidak normal.')
+  // Simpan jejak singkat agar mudah dilacak (window.__galat) dan tampilkan petunjuk lokasi di toast
+  try { ((window as any).__galat ||= []).push({ waktu: new Date().toISOString(), lokasi, pesan: String(err?.message ?? err), tumpuk: String(err?.stack ?? '').split('\n').slice(0, 4).join(' | ') }) } catch { /* abaikan */ }
+  if (dariVue) {
+    const rinci = `${lokasi ? lokasi + ': ' : ''}${String(err?.message ?? err)}`.slice(0, 160)
+    toastGalat(`Terjadi kesalahan pada halaman ini. Muat ulang bila tampilan tidak normal. [${rinci}]`)
+  }
 }
 
 export function useDialog() {
