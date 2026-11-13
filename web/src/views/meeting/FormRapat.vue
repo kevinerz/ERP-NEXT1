@@ -151,8 +151,10 @@ async function kirim() {
 
         <label class="fr-label">Durasi</label>
         <div class="fr-pil kecil">
-          <button v-for="m in [15, 30, 45, 60, 90, 120]" :key="m" type="button" :class="{ on: f.durasi === m }" @click="f.durasi = m">{{ m < 60 ? `${m} mnt` : `${m / 60} jam` }}</button>
+          <button v-for="m in [15, 30, 45, 60, 90, 120, 180, 240, 480]" :key="m" type="button" :class="{ on: f.durasi === m }" @click="f.durasi = m">{{ m < 60 ? `${m} mnt` : `${m / 60} jam` }}</button>
+          <input v-model.number="f.durasi" type="number" min="5" max="1440" step="5" class="fr-input" style="width: 96px" aria-label="Durasi kustom (menit)" placeholder="menit">
         </div>
+        <small v-if="f.durasi" class="fr-bantu">Durasi: {{ f.durasi >= 60 ? `${Math.floor(f.durasi / 60)} jam${f.durasi % 60 ? ` ${f.durasi % 60} mnt` : ''}` : `${f.durasi} mnt` }}</small>
 
         <template v-if="!ubah && f.mode === 'jadwal'">
           <label class="fr-label">Ulangi tiap minggu</label>
