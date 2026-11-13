@@ -219,11 +219,14 @@ function tandaiBaca() {
   api.post(`/chat/ruang/${id}/baca`, { id_pesan: terakhir }, { senyap: true }).then(() => chat.segarkan()).catch(() => { tandaTerakhir = 0 })
 }
 
-watch(idAktif, (id) => {
-  chat.ruangDilihat = id
+// Tidak memakai { immediate: true }: resetRuang() menyentuh state (draft, komposer, menuPesan, …) yang dideklarasikan
+// di bawah, sehingga memicu "Cannot access before initialization". Pemanggilan awal dilakukan di onMounted.
+function saatRuangBerubah(id: number | null | undefined) {
+  chat.ruangDilihat = id ?? null
   if (id) bukaRuang(id)
   else resetRuang()
-}, { immediate: true })
+}
+watch(idAktif, saatRuangBerubah)
 
 // Polling: ringkasan global berubah → muat ulang daftar / pesan ruang yang terbuka
 const snapshot = new Map<number, string>()
@@ -673,6 +676,7 @@ function tutupMenu(e: MouseEvent) {
 onMounted(() => {
   chat.setCepat(true)
   document.addEventListener('click', tutupMenu)
+  saatRuangBerubah(idAktif.value)
   muatDaftar()
 })
 onBeforeUnmount(() => {
