@@ -16,6 +16,12 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const router = useRouter()
+async function bukaDiskusi() {
+  try {
+    const r: any = await api.post('/chat/diskusi', { jenis: 'tiket', id: t.value.id_ticket })
+    router.push(`/chat/${r.data?.data?.id_ruang ?? r.data?.id_ruang}`)
+  } catch (e) { toastGalat(e) }
+}
 const route = useRoute()
 const ops = useOperationsStore()
 const proyek = useProyekStore()
@@ -512,6 +518,7 @@ function tombol(e: KeyboardEvent) {
           <div class="td-hero-aksi-kecil">
             <button type="button" title="Salin ringkasan untuk dibagikan" aria-label="Salin ringkasan" @click="salin(ringkasanTeks, 'Ringkasan tiket disalin 📋')">📋</button>
             <button type="button" title="Timeline lengkap (T)" aria-label="Timeline lengkap" @click="showTimeline = true">🕒</button>
+            <button type="button" title="Diskusi tim untuk tiket ini" aria-label="Diskusi tim" @click="bukaDiskusi">🗨️</button>
             <button type="button" title="Cetak laporan" aria-label="Cetak laporan" @click="printLaporanTiket(t)">🖨️</button>
             <button type="button" title="Muat ulang" aria-label="Muat ulang" @click="muatUlang(); fetchNoc(); fetchFotos()">🔄</button>
           </div>

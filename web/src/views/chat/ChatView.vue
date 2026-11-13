@@ -17,14 +17,20 @@ interface Pesan {
   isi: string; dihapus: boolean; diedit: boolean; waktu: string; mention: number[]
   lampiran: { nama: string | null; tipe: string | null; ukuran: number | null; gambar: boolean } | null
   balas: { id_pesan: number; pengirim: string; isi: string } | null
+  kartu?: { jenis: 'tiket' | 'wo'; kode: string; judul: string; status: string; prioritas: string | null; site: string; url: string }[]
   status?: 'mengirim' | 'gagal'
 }
 interface Anggota { id_karyawan: number; nama: string; jabatan: string; peran: string; online: boolean }
-interface Detail { id_ruang: number; tipe: string; nama: string | null; bisu: boolean; admin: boolean; anggota: Anggota[] }
+interface Detail { id_ruang: number; url?: string | null; tipe: string; nama: string | null; bisu: boolean; admin: boolean; anggota: Anggota[] }
 interface Orang { id_karyawan: number; nama: string; jabatan: string; departemen: string; online: boolean }
 
 const route = useRoute()
 const router = useRouter()
+function ikonRuang(r: { tipe: string; nama: string; id_lawan: number | null }) {
+  if (r.tipe === 'umum') return '🏢'
+  if (r.tipe === 'diskusi') return r.nama.startsWith('TKT-') ? '🎫' : '📍'
+  return r.id_lawan ? inisial(r.nama) : '👥'
+}
 const chat = useChatStore()
 const auth = useAuthStore()
 const saya = computed(() => auth.user?.id_karyawan ?? 0)
@@ -614,7 +620,7 @@ onBeforeUnmount(() => {
             :class="{ aktif: r.id_ruang === idAktif, belum: r.belum > 0 }" @click="pilihRuang(r.id_ruang)"
           >
             <span class="cv-avatar" :class="{ grup: !r.id_lawan }" :style="{ background: r.id_lawan ? warna(r.id_lawan) : r.tipe === 'umum' ? '#0f766e' : '#475569' }">
-              {{ r.tipe === 'umum' ? '🏢' : r.id_lawan ? inisial(r.nama) : '👥' }}
+              {{ ikonRuang(r) }}
               <i v-if="r.id_lawan && r.online" class="cv-online" aria-label="online"></i>
             </span>
             <span class="cv-ruang-teks">
@@ -660,7 +666,7 @@ onBeforeUnmount(() => {
         <header class="cv-kepala">
           <button type="button" class="cv-kembali" aria-label="Kembali ke daftar" @click="kembali">‹</button>
           <span v-if="aktif" class="cv-avatar kecil" :style="{ background: aktif.id_lawan ? warna(aktif.id_lawan) : aktif.tipe === 'umum' ? '#0f766e' : '#475569' }">
-            {{ aktif.tipe === 'umum' ? '🏢' : aktif.id_lawan ? inisial(aktif.nama) : '👥' }}
+            {{ ikonRuang(aktif) }}
             <i v-if="aktif.id_lawan && chat.online.has(aktif.id_lawan)" class="cv-online"></i>
           </span>
           <div class="cv-kepala-teks">
@@ -702,6 +708,12 @@ onBeforeUnmount(() => {
                       <span>📄</span><span class="cv-berkas-teks"><b>{{ t.p.lampiran.nama }}</b><small>{{ ukuranTeks(t.p.lampiran.ukuran) }} · klik untuk unduh</small></span>
                     </button>
                     <div v-if="t.segmen.length" class="cv-teks"><template v-for="(s, i) in t.segmen" :key="i"><a v-if="s.t === 'tautan'" :href="s.v" target="_blank" rel="noopener noreferrer">{{ s.v }}</a><span v-else-if="s.t === 'mention'" class="cv-sebut">{{ s.v }}</span><template v-else>{{ s.v }}</template></template></div>
+                    <div v-if="t.p.kartu?.length" class="cv-kartu-daftar">
+                      <RouterLink v-for="k in t.p.kartu" :key="k.kode" :to="k.url" class="cv-kartu" :class="`j-${k.jenis}`">
+                        <span class="cv-kartu-ikon">{{ k.jenis === 'tiket' ? '🎫' : '🛠️' }}</span>
+                        <span class="cv-kartu-isi"><b>{{ k.kode }}</b><span>{{ k.judul }}</span><small>{{ k.site }}<template v-if="k.site"> · </template>{{ k.status.replace(/_/g, ' ') }}<template v-if="k.prioritas"> · {{ k.prioritas }}</template></small></span>
+                      </RouterLink>
+                    </div>
                   </template>
                   <div class="cv-meta">
                     <span v-if="t.p.diedit && !t.p.dihapus">diedit · </span>{{ jam(t.p.waktu) }}
@@ -777,6 +789,7 @@ onBeforeUnmount(() => {
                 <button v-if="detail.tipe === 'grup' && (detail.admin || a.id_karyawan === saya)" type="button" class="btn btn-ghost btn-sm" @click="keluarkan(a)">{{ a.id_karyawan === saya ? 'Keluar' : 'Keluarkan' }}</button>
               </li>
             </ul>
+            <p v-if="detail.tipe === 'diskusi'" class="cv-redup">Ruang diskusi ini terbuka untuk semua staf; siapa pun yang membukanya dari tiket/site otomatis bergabung. <RouterLink v-if="detail.url" :to="detail.url" @click="infoBuka = false">Buka halaman terkait →</RouterLink></p>
             <p v-if="detail.tipe === 'umum' || detail.tipe === 'divisi'" class="cv-redup">Ruang ini dibuat otomatis dan semua karyawan terkait masuk sendiri.</p>
           </template>
           <div v-else class="loading-state">Memuat…</div>
@@ -857,6 +870,12 @@ onBeforeUnmount(() => {
 .cv-ruang.belum .cv-cuplikan { color: #0f172a; font-weight: 600; }
 .cv-lencana { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--biru); color: #fff; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .cv-lencana.bisu { background: #94a3b8; }
+.cv-kartu-daftar { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.cv-kartu { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; border-left: 3px solid #2563eb; background: rgba(0, 0, 0, 0.05); color: inherit; text-decoration: none; }
+.cv-kartu.j-wo { border-left-color: #d97706; }
+.cv-kartu:hover { background: rgba(0, 0, 0, 0.09); }
+.cv-kartu-isi { display: flex; flex-direction: column; min-width: 0; font-size: 13px; }
+.cv-kartu-isi small { opacity: 0.75; }
 .cv-lencana.mention { background: #dc2626; }
 .cv-bisu { font-size: 12px; opacity: .6; }
 .cv-kosong-kecil { color: var(--abu); font-size: 13px; text-align: center; padding: 14px; margin: 0; }

@@ -148,6 +148,7 @@ export class ChatService {
     const balas = idBalas.length ? await this.prisma.chatPesan.findMany({ where: { id_pesan: { in: idBalas } } }) : [];
     const nama = await this.daftarNama([...rows.map((r) => r.id_pengirim), ...balas.map((b) => b.id_pengirim ?? 0)]);
     const bm = new Map(balas.map((b) => [b.id_pesan, b]));
+    const kartu = await this.petaKartu(rows.map((r) => (r.dihapus_at ? '' : r.isi)));
     return rows.map((r) => {
       const b = r.id_balas ? bm.get(r.id_balas) : null;
       const gambar = !!r.lampiran_nama && GAMBAR.has(extname(r.lampiran_nama).slice(1).toLowerCase());
@@ -156,6 +157,7 @@ export class ChatService {
         saya: r.id_pengirim === id_karyawan, sistem: r.id_pengirim === null,
         isi: r.dihapus_at ? '' : r.isi, dihapus: !!r.dihapus_at, diedit: !!r.diedit_at, waktu: r.created_at,
         mention: this.bacaMention(r.mention),
+        kartu: r.dihapus_at ? [] : this.kartuDalam(r.isi, kartu),
         lampiran: !r.dihapus_at && r.lampiran_file ? { nama: r.lampiran_nama, tipe: r.lampiran_tipe, ukuran: r.lampiran_ukuran, gambar } : null,
         balas: b ? { id_pesan: b.id_pesan, pengirim: b.id_pengirim ? (nama.get(b.id_pengirim)?.nama.split(' ')[0] ?? '') : '', isi: b.dihapus_at ? 'Pesan dihapus' : (b.isi || (b.lampiran_nama ? `📎 ${b.lampiran_nama}` : '')).slice(0, 140) } : null,
       };
@@ -308,7 +310,7 @@ export class ChatService {
     const nama = await this.daftarNama(anggota.map((x) => x.id_karyawan));
     const online = new Set(await this.idOnline());
     return {
-      id_ruang, tipe: a.ruang.tipe, nama: a.ruang.nama, bisu: a.bisu, admin: a.peran === 'admin' && (a.ruang.tipe === 'grup'),
+      id_ruang, tipe: a.ruang.tipe, nama: a.ruang.nama, bisu: a.bisu, url: this.urlDiskusi(a.ruang.kunci), admin: a.peran === 'admin' && (a.ruang.tipe === 'grup'),
       anggota: anggota.map((x) => ({ id_karyawan: x.id_karyawan, nama: nama.get(x.id_karyawan)?.nama ?? 'Karyawan', jabatan: nama.get(x.id_karyawan)?.jabatan ?? '', peran: x.peran, online: online.has(x.id_karyawan) }))
         .sort((p, q) => (p.peran === 'admin' ? -1 : 0) - (q.peran === 'admin' ? -1 : 0) || p.nama.localeCompare(q.nama)),
     };
@@ -354,6 +356,65 @@ export class ChatService {
     const nama = await this.daftarNama([id_karyawan, target]);
     await this.pesanSistem(id_ruang, target === id_karyawan ? `${nama.get(target)?.nama ?? 'Anggota'} keluar dari grup` : `${nama.get(id_karyawan)?.nama ?? 'Admin'} mengeluarkan ${nama.get(target)?.nama ?? 'anggota'}`);
     return true;
+  }
+
+  // ── Kartu rujukan (#TKT-202611-0204 / #WO-202611-0001) ──────────────────────
+  private static readonly RX_RUJUKAN = /#((?:TKT|WO)-\d{6}-\d{4})\b/gi;
+
+  private kodeDalam(isi: string): string[] {
+    return [...new Set([...(isi ?? '').matchAll(ChatService.RX_RUJUKAN)].map((m) => m[1]!.toUpperCase()))].slice(0, 3);
+  }
+
+  private async petaKartu(isis: string[]) {
+    const kode = [...new Set(isis.flatMap((i) => this.kodeDalam(i)))];
+    const peta = new Map<string, any>();
+    if (!kode.length) return peta;
+    const tkt = kode.filter((k) => k.startsWith('TKT-'));
+    const wo = kode.filter((k) => k.startsWith('WO-'));
+    const [t, w] = await Promise.all([
+      tkt.length ? this.prisma.operationTicket.findMany({ where: { nomor_tiket: { in: tkt } }, select: { id_ticket: true, nomor_tiket: true, judul_tiket: true, status_tiket: true, prioritas: true, site: { select: { nama_site: true } } } }) : Promise.resolve([] as any[]),
+      wo.length ? this.prisma.workOrder.findMany({ where: { nomor_wo: { in: wo } }, select: { id_wo: true, nomor_wo: true, jenis_wo: true, status_wo: true, tgl_jadwal: true, site: { select: { nama_site: true } } } }) : Promise.resolve([] as any[]),
+    ]);
+    for (const x of t) peta.set(x.nomor_tiket.toUpperCase(), { jenis: 'tiket', kode: x.nomor_tiket, judul: x.judul_tiket, status: x.status_tiket, prioritas: x.prioritas, site: x.site?.nama_site ?? '', url: `/operations/${x.id_ticket}` });
+    for (const x of w) peta.set(x.nomor_wo.toUpperCase(), { jenis: 'wo', kode: x.nomor_wo, judul: x.jenis_wo.replace(/_/g, ' '), status: x.status_wo, prioritas: null, site: x.site?.nama_site ?? '', url: '/jadwal-visit' });
+    return peta;
+  }
+
+  private kartuDalam(isi: string, peta: Map<string, any>) {
+    return this.kodeDalam(isi).map((k) => peta.get(k)).filter(Boolean);
+  }
+
+  private urlDiskusi(kunci: string | null) {
+    const m = /^(tkt|site):(\d+)$/.exec(kunci ?? '');
+    return m ? (m[1] === 'tkt' ? `/operations/${m[2]}` : `/master/site/${m[2]}`) : null;
+  }
+
+  // ── Ruang diskusi per tiket / site ───────────────────────────────────────────
+  /** Ambil (atau buat) ruang diskusi untuk satu tiket/site; pembuka otomatis menjadi anggota. Terbuka untuk semua staf. */
+  async bukaDiskusi(id_karyawan: number, jenis: 'tiket' | 'site', id: number) {
+    this.wajibKaryawan(id_karyawan);
+    let kunci: string; let nama: string; const ikut: number[] = [id_karyawan];
+    if (jenis === 'tiket') {
+      const t = await this.prisma.operationTicket.findUnique({ where: { id_ticket: id }, select: { nomor_tiket: true, judul_tiket: true, id_teknisi_pic: true } });
+      if (!t) throw new NotFoundException('Tiket tidak ditemukan');
+      kunci = `tkt:${id}`; nama = `${t.nomor_tiket} · ${t.judul_tiket}`.slice(0, 100);
+      if (t.id_teknisi_pic) ikut.push(t.id_teknisi_pic);
+    } else {
+      const s = await this.prisma.sitePelanggan.findUnique({ where: { id_site: id }, select: { nama_site: true, kode_site: true } });
+      if (!s) throw new NotFoundException('Site tidak ditemukan');
+      kunci = `site:${id}`; nama = `Site ${s.nama_site}`.slice(0, 100);
+    }
+    let r = await this.prisma.chatRuang.findUnique({ where: { kunci } });
+    const baru = !r;
+    if (!r) r = await this.prisma.chatRuang.create({ data: { tipe: 'diskusi', nama, kunci, id_pembuat: id_karyawan } }).catch(() => this.prisma.chatRuang.findUnique({ where: { kunci } }) as any);
+    if (!r) throw new BadRequestException('Gagal membuka diskusi');
+    const aktif = await this.prisma.hrisKaryawan.findMany({ where: { id_karyawan: { in: [...new Set(ikut)] }, status_aktif: true }, select: { id_karyawan: true } });
+    await this.prisma.chatAnggota.createMany({ data: aktif.map((x) => ({ id_ruang: r!.id_ruang, id_karyawan: x.id_karyawan })), skipDuplicates: true });
+    if (baru) {
+      const n = (await this.daftarNama([id_karyawan])).get(id_karyawan)?.nama ?? 'Seseorang';
+      await this.pesanSistem(r.id_ruang, `${n} membuka diskusi ${jenis === 'tiket' ? 'tiket' : 'site'} ini`);
+    }
+    return { id_ruang: r.id_ruang };
   }
 
   // ── Pencarian ────────────────────────────────────────────────────────────────

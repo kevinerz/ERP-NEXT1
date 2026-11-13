@@ -13,6 +13,12 @@ import { fmtDateShort, fmtRupiah } from '@/composables/useFormat'
 
 const route = useRoute()
 const router = useRouter()
+async function bukaDiskusi() {
+  try {
+    const r: any = await api.post('/chat/diskusi', { jenis: 'site', id: site.value.id_site })
+    router.push(`/chat/${r.data?.data?.id_ruang ?? r.data?.id_ruang}`)
+  } catch (e) { toastGalat(e) }
+}
 const id = Number(route.params.id)
 
 const site = ref<any>(null)
@@ -462,6 +468,7 @@ async function bukaDokumenFs(doc: any) {
         <div class="sd-aksi">
           <button type="button" class="btn btn-primary" @click="ubahSite = true">✏️ Ubah data site</button>
           <a v-if="site.koordinat_gps" :href="`https://www.google.com/maps?q=${encodeURIComponent(site.koordinat_gps)}`" target="_blank" rel="noopener" class="btn btn-ghost">🗺️ Buka peta</a>
+          <button type="button" class="btn btn-ghost" @click="bukaDiskusi">🗨️ Diskusi</button>
           <RouterLink v-if="bisaNocaas" to="/operations" class="btn btn-ghost">🎫 Tiket</RouterLink>
         </div>
       </div>

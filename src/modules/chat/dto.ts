@@ -1,3 +1,4 @@
+import { IsIn } from 'class-validator';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -34,4 +35,13 @@ export class BacaDto {
 
 export class BisuDto {
   @IsBoolean() bisu: boolean;
+}
+
+export class DiskusiDto {
+  @IsIn(['tiket', 'site']) jenis: 'tiket' | 'site';
+  @Type(() => Number) @IsInt() id: number;
+}
+
+export class RujukanDto {
+  @IsString() @MaxLength(200) q: string;
 }

@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { BacaDto, BisuDto, GrupDto, KirimDto, PribadiDto, TambahAnggotaDto, UbahGrupDto, UbahPesanDto } from './dto';
+import { BacaDto, BisuDto, DiskusiDto, GrupDto, KirimDto, PribadiDto, TambahAnggotaDto, UbahGrupDto, UbahPesanDto } from './dto';
 import { ChatService } from './chat.service';
 
 // Chat internal karyawan — semua staf (segment /api/chat, lihat ModulAksesGuard).
@@ -30,6 +30,9 @@ export class ChatController {
 
   @Post('ruang/grup')
   grup(@CurrentUser('id_karyawan') me: number, @Body() d: GrupDto) { return this.chat.buatGrup(me, d); }
+
+  @Post('diskusi')
+  diskusi(@CurrentUser('id_karyawan') me: number, @Body() d: DiskusiDto) { return this.chat.bukaDiskusi(me, d.jenis, d.id); }
 
   @Get('ruang/:id')
   detail(@CurrentUser('id_karyawan') me: number, @Param('id', ParseIntPipe) id: number) { return this.chat.detailRuang(id, me); }
