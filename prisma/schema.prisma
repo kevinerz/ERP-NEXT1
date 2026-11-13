@@ -2218,6 +2218,20 @@ model ChatKudos {
   @@map("chat_kudos")
 }
 
+model PushLangganan {
+  id_langganan  Int      @id @default(autoincrement())
+  id_karyawan   Int
+  endpoint_hash String   @unique @db.Char(64)
+  endpoint      String   @db.Text
+  p256dh        String   @db.VarChar(255)
+  auth          String   @db.VarChar(255)
+  user_agent    String?  @db.VarChar(255)
+  created_at    DateTime @default(now())
+
+  @@index([id_karyawan])
+  @@map("push_langganan")
+}
+
 // Kehadiran (online) & indikator "sedang mengetik"
 model ChatStatus {
   id_karyawan    Int       @id

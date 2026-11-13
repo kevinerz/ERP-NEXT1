@@ -5,6 +5,7 @@ import { promises as fs } from 'fs';
 import { extname, join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FcmService } from '../mobile/fcm.service';
+import { WebPushService } from './web-push.service';
 
 /** Berkas chat disimpan di luar folder /uploads (yang publik) — hanya bisa diambil lewat endpoint ber-auth. */
 export const CHAT_DIR = process.env.CHAT_DIR || join(process.cwd(), 'storage', 'chat');
@@ -32,9 +33,11 @@ export class ChatService {
   private ruangUmum: number | null = null;
   private readonly sudahDisiapkan = new Set<number>();
 
-  constructor(private prisma: PrismaService, private fcm: FcmService) {}
+  constructor(private prisma: PrismaService, private fcm: FcmService, private webPush: WebPushService) {}
 
   // ── Util ─────────────────────────────────────────────────────────────────────
+  wajibKaryawanPublik(id: number | undefined | null) { return this.wajibKaryawan(id); }
+
   private wajibKaryawan(id: number | undefined | null): number {
     if (!id) throw new ForbiddenException('Akun Anda belum terhubung ke data karyawan');
     return id;
@@ -384,11 +387,13 @@ export class ChatService {
       const sebut = new Set(mention);
       const sasaran = anggota.filter((a) => (besar ? sebut.has(a.id_karyawan) : !a.bisu || sebut.has(a.id_karyawan))).map((a) => a.id_karyawan);
       if (!sasaran.length) return;
+      const nama = (await this.daftarNama([dari])).get(dari)?.nama ?? 'Seseorang';
+      const judul = ruang.tipe === 'pribadi' ? nama : `${nama} · ${ruang.nama ?? 'Grup'}`;
+      // Browser: selalu dikirim (service worker menahan bila jendela ERP sedang tampil di depan)
+      void this.webPush.kirim(sasaran, { judul, isi: isi.slice(0, 140), url: `/chat/${ruang.id_ruang}`, tag: `chat-${ruang.id_ruang}` });
       const online = new Set(await this.idOnline());
       const users = await this.prisma.coreUser.findMany({ where: { id_karyawan: { in: sasaran.filter((x) => !online.has(x)) }, is_aktif: true, fcm_token: { not: null } }, select: { id_karyawan: true, fcm_token: true } });
       if (!users.length) return;
-      const nama = (await this.daftarNama([dari])).get(dari)?.nama ?? 'Seseorang';
-      const judul = ruang.tipe === 'pribadi' ? nama : `${nama} · ${ruang.nama ?? 'Grup'}`;
       await Promise.all(users.map((u) => this.fcm.sendToToken(u.fcm_token!, judul, isi.slice(0, 140), { type: 'chat', id_ruang: String(ruang.id_ruang) })));
     } catch (e: any) { this.logger.warn(`push chat gagal: ${e?.message}`); }
   }

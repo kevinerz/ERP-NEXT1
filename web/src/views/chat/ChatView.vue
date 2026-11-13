@@ -655,7 +655,10 @@ const izin = ref(typeof Notification !== 'undefined' ? Notification.permission :
 async function aktifkanNotif() {
   if (typeof Notification === 'undefined') return
   izin.value = await Notification.requestPermission()
-  if (izin.value === 'granted') toast('Notifikasi desktop aktif')
+  if (izin.value === 'granted') {
+    const ok = await chat.pastikanPush()
+    toast(ok ? 'Notifikasi aktif — pesan tetap sampai walau tab ditutup' : 'Notifikasi desktop aktif (selama tab terbuka)')
+  }
 }
 
 function kembali() { router.push('/chat') }

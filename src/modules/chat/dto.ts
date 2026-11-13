@@ -1,4 +1,4 @@
-import { IsIn } from 'class-validator';
+import { IsIn, ValidateNested } from 'class-validator';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -58,4 +58,18 @@ export class KudosDto {
   @Type(() => Number) @IsInt() id_untuk: number;
   @IsString() @MaxLength(30) kategori: string;
   @IsString() @MinLength(3) @MaxLength(300) pesan: string;
+}
+
+export class PushKeysDto {
+  @IsString() @MaxLength(255) p256dh: string;
+  @IsString() @MaxLength(255) auth: string;
+}
+
+export class PushLanggananDto {
+  @IsString() @MaxLength(2000) endpoint: string;
+  @ValidateNested() @Type(() => PushKeysDto) keys: PushKeysDto;
+}
+
+export class PushBatalDto {
+  @IsString() @MaxLength(2000) endpoint: string;
 }

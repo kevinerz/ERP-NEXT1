@@ -1,17 +1,18 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { BacaDto, BisuDto, DiskusiDto, KanalDto, KudosDto, ReaksiDto, GrupDto, KirimDto, PribadiDto, TambahAnggotaDto, UbahGrupDto, UbahPesanDto } from './dto';
+import { BacaDto, BisuDto, DiskusiDto, KanalDto, KudosDto, PushBatalDto, PushLanggananDto, ReaksiDto, GrupDto, KirimDto, PribadiDto, TambahAnggotaDto, UbahGrupDto, UbahPesanDto } from './dto';
 import { ChatService } from './chat.service';
+import { WebPushService } from './web-push.service';
 
 // Chat internal karyawan — semua staf (segment /api/chat, lihat ModulAksesGuard).
 // Polling ringan tiap beberapa detik dari seluruh kantor (satu IP publik) → tidak ikut batas 100 req/menit.
 @SkipThrottle()
 @Controller('chat')
 export class ChatController {
-  constructor(private chat: ChatService) {}
+  constructor(private chat: ChatService, private webPush: WebPushService) {}
 
   @Get('ringkasan')
   ringkasan(@CurrentUser('id_karyawan') me: number) { return this.chat.ringkasan(me); }
@@ -33,6 +34,18 @@ export class ChatController {
 
   @Post('diskusi')
   diskusi(@CurrentUser('id_karyawan') me: number, @Body() d: DiskusiDto) { return this.chat.bukaDiskusi(me, d.jenis, d.id); }
+
+  @Get('push/kunci')
+  pushKunci() { return { aktif: this.webPush.siap, kunci: this.webPush.kunciPublik }; }
+
+  @Post('push/langganan')
+  pushLangganan(@CurrentUser('id_karyawan') me: number, @Body() d: PushLanggananDto, @Req() req: any) {
+    this.chat.wajibKaryawanPublik(me);
+    return this.webPush.simpan(me, d, req.headers?.['user-agent']);
+  }
+
+  @Post('push/batal')
+  pushBatal(@CurrentUser('id_karyawan') me: number, @Body() d: PushBatalDto) { return this.webPush.batal(me, d.endpoint); }
 
   @Get('kudos')
   papanKudos(@CurrentUser('id_karyawan') me: number) { return this.chat.papanKudos(me); }

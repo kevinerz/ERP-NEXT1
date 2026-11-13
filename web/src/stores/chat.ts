@@ -64,6 +64,7 @@ export const useChatStore = defineStore('chat', () => {
     jalan = true
     document.addEventListener('visibilitychange', ubahLayar)
     ambil().then(jadwal)
+    void pastikanPush()
   }
   function berhenti() {
     jalan = false
@@ -74,5 +75,28 @@ export const useChatStore = defineStore('chat', () => {
   function setCepat(v: boolean) { cepat = v; jadwal() }
   async function segarkan() { await ambil() }
 
-  return { ringkasan, terputus, ruangDilihat, totalBelum, online, mulai, berhenti, setCepat, segarkan }
+  // ── Web Push (notifikasi sampai walau tab tertutup) ──
+  function kunciKeBytes(b64: string) {
+    const pad = '='.repeat((4 - (b64.length % 4)) % 4)
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'))
+    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)))
+  }
+  const pushDidukung = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined'
+  /** Pastikan perangkat ini terdaftar (izin harus sudah 'granted'). Aman dipanggil berulang. */
+  async function pastikanPush(): Promise<boolean> {
+    if (!pushDidukung || Notification.permission !== 'granted') return false
+    try {
+      const { data } = await api.get('/chat/push/kunci', { senyap: true })
+      if (!data.data?.aktif) return false
+      const reg = await navigator.serviceWorker.register('/sw.js')
+      await navigator.serviceWorker.ready
+      let sub = await reg.pushManager.getSubscription()
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: kunciKeBytes(data.data.kunci) })
+      const j = sub.toJSON()
+      await api.post('/chat/push/langganan', { endpoint: j.endpoint, keys: j.keys }, { senyap: true })
+      return true
+    } catch { return false }
+  }
+
+  return { pastikanPush, pushDidukung, ringkasan, terputus, ruangDilihat, totalBelum, online, mulai, berhenti, setCepat, segarkan }
 })
