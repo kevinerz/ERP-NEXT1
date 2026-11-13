@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import api from '@/services/api'
 import { alertError, confirmDialog, promptDialog, pesanGalat, toast } from '@/composables/useDialog'
 import { useAuthStore } from '@/stores/auth'
+import { exportCsv } from '@/composables/useExport'
 
 const auth = useAuthStore()
 
@@ -122,18 +123,173 @@ function klikSel(o: number) {
   else bukaForm(o)
 }
 
-// ── Daftar alokasi ───────────────────────────────────────────────────────────
+// ── Daftar alokasi (tabel gaya spreadsheet) ───────────────────────────────────
 const cari = ref('')
 const filterStatus = ref('')
+const filterPeruntukan = ref('')
+const filterTautan = ref('') // '' | 'belum' | 'sudah'
+const filterRencana = ref(false)
+
+// Rencana pasang & IP lama Erablue tersimpan di keterangan hasil impor — dibaca di sini agar bisa disortir / difilter
+const tglRencana = (a: Alokasi): Date | null => {
+  const m = a.keterangan?.match(/Rencana pasang (\d{2})\/(\d{2})\/(\d{4})/)
+  return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null
+}
+const ipLama = (a: Alokasi) => a.keterangan?.match(/IP lama: ([^·]+)/)?.[1]?.trim() ?? ''
+// Nama yang tampil bila belum tertaut ke site: nama site dari impor, atau keterangan apa adanya
+const namaCatatan = (a: Alokasi) => {
+  const k = a.keterangan?.trim()
+  if (!k) return ''
+  const m = k.match(/^Erablue · ([^·]+)·/)
+  return m ? m[1]!.trim() : k
+}
+const ipPelanggan = (a: Alokasi) => (a.akhir - a.awal === 1 ? ipOffset(a.akhir) : '')
+const gatewayTampil = (a: Alokasi) => a.gateway || (a.akhir - a.awal === 1 ? ipOffset(a.awal) : '')
+const hariKe = (d: Date) => Math.round((+d - new Date().setHours(0, 0, 0, 0)) / 86_400_000)
+
+interface KolomDef { key: string; label: string; lebar?: string; urut?: (a: Alokasi) => string | number | null; bawaan: boolean }
+const KOLOM: KolomDef[] = [
+  { key: 'prefix', label: 'Prefix', urut: (a) => a.awal, bawaan: true },
+  { key: 'status', label: 'Status', urut: (a) => a.status, bawaan: true },
+  { key: 'peruntukan', label: 'Peruntukan', urut: (a) => a.peruntukan, bawaan: true },
+  { key: 'site', label: 'Site / Pelanggan', urut: (a) => (a.site?.nama_site ?? namaCatatan(a)).toLowerCase(), bawaan: true },
+  { key: 'gateway', label: 'Gateway', urut: (a) => (gatewayTampil(a) ? ipKeAngka(gatewayTampil(a)) : null), bawaan: true },
+  { key: 'publik', label: 'IP publik pelanggan', urut: (a) => (ipPelanggan(a) ? ipKeAngka(ipPelanggan(a)) : null), bawaan: true },
+  { key: 'rencana', label: 'Rencana pasang', urut: (a) => tglRencana(a)?.getTime() ?? null, bawaan: true },
+  { key: 'iplama', label: 'IP lama', urut: (a) => ipLama(a), bawaan: false },
+  { key: 'vlan', label: 'VLAN', urut: (a) => a.vlan, bawaan: false },
+  { key: 'perangkat', label: 'Perangkat', urut: (a) => (a.perangkat ?? '').toLowerCase(), bawaan: false },
+  { key: 'sejak', label: 'Sejak', urut: (a) => +new Date(a.dialokasikan_at), bawaan: false },
+]
+const KUNCI_KOLOM = 'ipam_kolom_v1'
+const kolomAktif = ref<string[]>(KOLOM.filter((k) => k.bawaan).map((k) => k.key))
+try {
+  const tersimpan = JSON.parse(localStorage.getItem(KUNCI_KOLOM) || 'null')
+  if (Array.isArray(tersimpan)) kolomAktif.value = tersimpan.filter((k: string) => KOLOM.some((x) => x.key === k))
+} catch { /* pengaturan tersimpan rusak — pakai bawaan */ }
+watch(kolomAktif, (v) => { try { localStorage.setItem(KUNCI_KOLOM, JSON.stringify(v)) } catch { /* penyimpanan ditolak */ } }, { deep: true })
+const tampilKolom = (k: string) => kolomAktif.value.includes(k)
+const menuKolom = ref(false)
+const padat = ref(false)
+
+const urut = reactive({ kolom: 'prefix', arah: 1 as 1 | -1 })
+function urutkan(k: KolomDef) {
+  if (!k.urut) return
+  if (urut.kolom === k.key) urut.arah = urut.arah === 1 ? -1 : 1
+  else { urut.kolom = k.key; urut.arah = 1 }
+}
+const ukuranHalaman = ref(50)
+const halaman = ref(1)
+
+const jumlahBelumTaut = computed(() => alokasi.value.filter((a) => a.peruntukan === 'Pelanggan' && !a.site).length)
+const jumlahRencana7Hari = computed(() => alokasi.value.filter((a) => { const t = tglRencana(a); return t && a.status === 'Dicadangkan' && hariKe(t) <= 7 }).length)
+const jumlahPeruntukan = computed(() => {
+  const m: Record<string, number> = {}
+  for (const a of alokasi.value) m[a.peruntukan] = (m[a.peruntukan] ?? 0) + 1
+  return m
+})
+
 const daftarTampil = computed(() => {
   const q = cari.value.trim().toLowerCase()
-  return alokasi.value.filter((a) => {
+  const hasil = alokasi.value.filter((a) => {
     if (filterStatus.value && a.status !== filterStatus.value) return false
+    if (filterPeruntukan.value && a.peruntukan !== filterPeruntukan.value) return false
+    if (filterTautan.value === 'belum' && a.site) return false
+    if (filterTautan.value === 'sudah' && !a.site) return false
+    if (filterRencana.value) { const t = tglRencana(a); if (!t || a.status !== 'Dicadangkan' || hariKe(t) > 7) return false }
     if (!q) return true
-    return [a.prefix, a.site?.nama_site, a.site?.kode_site, a.site?.pelanggan?.nama_pelanggan, a.keterangan, a.perangkat, a.gateway, a.peruntukan]
+    return [a.prefix, a.site?.nama_site, a.site?.kode_site, a.site?.pelanggan?.nama_pelanggan, a.keterangan, a.perangkat, a.gateway, a.peruntukan, ipPelanggan(a), gatewayTampil(a)]
       .some((x) => x?.toLowerCase().includes(q))
   })
+  const k = KOLOM.find((x) => x.key === urut.kolom)
+  if (k?.urut) {
+    hasil.sort((a, b) => {
+      const x = k.urut!(a), y = k.urut!(b)
+      if (x === y) return a.awal - b.awal
+      if (x === null || x === undefined) return 1 // kosong selalu di bawah
+      if (y === null || y === undefined) return -1
+      return (x < y ? -1 : 1) * urut.arah
+    })
+  }
+  return hasil
 })
+const jumlahHalaman = computed(() => (ukuranHalaman.value === 0 ? 1 : Math.max(1, Math.ceil(daftarTampil.value.length / ukuranHalaman.value))))
+const barisHalaman = computed(() => {
+  if (ukuranHalaman.value === 0) return daftarTampil.value
+  const mulai = (Math.min(halaman.value, jumlahHalaman.value) - 1) * ukuranHalaman.value
+  return daftarTampil.value.slice(mulai, mulai + ukuranHalaman.value)
+})
+watch([cari, filterStatus, filterPeruntukan, filterTautan, filterRencana, ukuranHalaman, idBlok], () => { halaman.value = 1 })
+const adaFilter = computed(() => !!(cari.value.trim() || filterStatus.value || filterPeruntukan.value || filterTautan.value || filterRencana.value))
+function resetFilter() { cari.value = ''; filterStatus.value = ''; filterPeruntukan.value = ''; filterTautan.value = ''; filterRencana.value = false }
+
+// ── Pilih banyak baris & ubah massal ─────────────────────────────────────────
+const terpilih = ref<Set<number>>(new Set())
+const semuaHalamanTerpilih = computed(() => barisHalaman.value.length > 0 && barisHalaman.value.every((a) => terpilih.value.has(a.id_alokasi)))
+function pilihSemua(centang: boolean) {
+  const baru = new Set(terpilih.value)
+  for (const a of barisHalaman.value) centang ? baru.add(a.id_alokasi) : baru.delete(a.id_alokasi)
+  terpilih.value = baru
+}
+function pilihBaris(id: number, centang: boolean) {
+  const baru = new Set(terpilih.value)
+  centang ? baru.add(id) : baru.delete(id)
+  terpilih.value = baru
+}
+watch(alokasi, () => { // buang pilihan yang sudah tidak ada (mis. dilepas)
+  const ada = new Set(alokasi.value.map((a) => a.id_alokasi))
+  terpilih.value = new Set([...terpilih.value].filter((id) => ada.has(id)))
+})
+const baris_terpilih = computed(() => alokasi.value.filter((a) => terpilih.value.has(a.id_alokasi)))
+const massal = reactive({ jalan: false, selesai: 0, total: 0 })
+async function ubahMassal(data: { status?: string; peruntukan?: string }, label: string) {
+  const sasaran = baris_terpilih.value.filter((a) => !(data.status && a.status === 'Karantina') && !(data.status && a.status === data.status) && !(data.peruntukan && a.peruntukan === data.peruntukan))
+  if (!sasaran.length) { toast('Tidak ada baris yang perlu diubah', 'warning'); return }
+  if (!(await confirmDialog({ title: `${label}?`, message: `${sasaran.length} alokasi akan diubah. Setiap perubahan tercatat di riwayat.`, confirmLabel: 'Ya, ubah' }))) return
+  if (massal.jalan) return
+  Object.assign(massal, { jalan: true, selesai: 0, total: sasaran.length })
+  const gagal: string[] = []
+  for (const a of sasaran) {
+    try { await api.patch(`/ipam/alokasi/${a.id_alokasi}`, data, { senyap: true }) } catch (e) { gagal.push(`${a.prefix}: ${pesanGalat(e, 'gagal')}`) }
+    massal.selesai++
+  }
+  massal.jalan = false
+  terpilih.value = new Set()
+  await muatUlang()
+  if (gagal.length) alertError(new Error(gagal.slice(0, 8).join('\n')), `${gagal.length} dari ${sasaran.length} gagal diubah`)
+  else toast(`${sasaran.length} alokasi diubah`)
+}
+
+// ── Ekspor ke Excel (CSV) ────────────────────────────────────────────────────
+function ekspor() {
+  const sumber = baris_terpilih.value.length ? baris_terpilih.value : daftarTampil.value
+  const kolom = KOLOM.filter((k) => tampilKolom(k.key))
+  const nilai = (a: Alokasi, k: string): string | number => {
+    switch (k) {
+      case 'prefix': return a.prefix
+      case 'status': return a.status
+      case 'peruntukan': return a.peruntukan
+      case 'site': return a.site ? `${a.site.nama_site}${a.site.pelanggan ? ` (${a.site.pelanggan.nama_pelanggan})` : ''}` : namaCatatan(a)
+      case 'gateway': return gatewayTampil(a)
+      case 'publik': return ipPelanggan(a)
+      case 'rencana': return tglRencana(a)?.toLocaleDateString('id-ID') ?? ''
+      case 'iplama': return ipLama(a)
+      case 'vlan': return a.vlan ?? ''
+      case 'perangkat': return a.perangkat ?? ''
+      case 'sejak': return fmtTgl(a.dialokasikan_at)
+    }
+    return ''
+  }
+  exportCsv(`ip-publik-${blok.value?.prefix.replace(/[./]/g, '-') ?? 'blok'}.csv`, [{
+    title: `IP Publik ${blok.value?.prefix ?? ''} — ${sumber.length} alokasi`,
+    headers: kolom.map((k) => k.label),
+    rows: sumber.map((a) => kolom.map((k) => nilai(a, k.key))),
+  }])
+  toast(`${sumber.length} baris diekspor`)
+}
+async function salinCepat(teks: string) {
+  try { await navigator.clipboard.writeText(teks); toast(`${teks} disalin`) } catch { toast('Browser menolak menyalin', 'warning') }
+}
 const fmtTgl = (d: string | null) => (d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '-')
 const fmtWaktu = (d: string) => new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 const KELAS_STATUS: Record<string, string> = { Dipakai: 'badge-blue', Dicadangkan: 'badge-amber', Karantina: 'badge-red' }
@@ -423,9 +579,9 @@ async function simpanBlok() {
       <!-- Ringkasan -->
       <div class="ipam-ringkas">
         <div class="ipam-kartu"><b>{{ blok.Tersedia }}</b><span>Tersedia</span></div>
-        <div class="ipam-kartu biru"><b>{{ blok.Dipakai }}</b><span>Dipakai</span></div>
-        <div class="ipam-kartu kuning"><b>{{ blok.Dicadangkan }}</b><span>Dicadangkan</span></div>
-        <div class="ipam-kartu merah"><b>{{ blok.Karantina }}</b><span>Karantina</span></div>
+        <button type="button" class="ipam-kartu biru klik" :class="{ aktif: filterStatus === 'Dipakai' }" @click="filterStatus = filterStatus === 'Dipakai' ? '' : 'Dipakai'"><b>{{ blok.Dipakai }}</b><span>Dipakai</span></button>
+        <button type="button" class="ipam-kartu kuning klik" :class="{ aktif: filterStatus === 'Dicadangkan' }" @click="filterStatus = filterStatus === 'Dicadangkan' ? '' : 'Dicadangkan'"><b>{{ blok.Dicadangkan }}</b><span>Dicadangkan</span></button>
+        <button type="button" class="ipam-kartu merah klik" :class="{ aktif: filterStatus === 'Karantina' }" @click="filterStatus = filterStatus === 'Karantina' ? '' : 'Karantina'"><b>{{ blok.Karantina }}</b><span>Karantina</span></button>
         <div class="ipam-kartu"><b>{{ blok.jumlah_ip }}</b><span>Total IP</span></div>
       </div>
 
@@ -468,40 +624,130 @@ async function simpanBlok() {
         </div>
       </div>
 
-      <!-- Tabel alokasi -->
-      <div class="filter-bar">
-        <input v-model="cari" class="search-input" placeholder="Cari IP, site, pelanggan, perangkat…" />
-        <select v-model="filterStatus" class="filter-select">
-          <option value="">Semua status</option>
-          <option>Dipakai</option><option>Dicadangkan</option><option>Karantina</option>
+      <!-- Tabel alokasi (gaya spreadsheet) -->
+      <div class="ipam-alat">
+        <input v-model="cari" class="search-input" placeholder="Cari IP, site, pelanggan, gateway, perangkat…" />
+        <div class="ipam-chip-grup" role="group" aria-label="Filter status">
+          <button type="button" class="ipam-chip" :class="{ on: !filterStatus }" @click="filterStatus = ''">Semua <b>{{ alokasi.length }}</b></button>
+          <button v-for="st in ['Dipakai', 'Dicadangkan', 'Karantina']" :key="st" type="button" class="ipam-chip" :class="[st.toLowerCase(), { on: filterStatus === st }]" @click="filterStatus = filterStatus === st ? '' : st">
+            {{ st }} <b>{{ alokasi.filter((a) => a.status === st).length }}</b>
+          </button>
+        </div>
+        <select v-model="filterPeruntukan" class="filter-select" aria-label="Filter peruntukan">
+          <option value="">Semua peruntukan</option>
+          <option v-for="pr in PERUNTUKAN" :key="pr" :value="pr">{{ pr }} ({{ jumlahPeruntukan[pr] ?? 0 }})</option>
         </select>
+        <select v-model="filterTautan" class="filter-select" aria-label="Filter tautan site">
+          <option value="">Semua tautan site</option>
+          <option value="belum">Belum tertaut site ({{ jumlahBelumTaut }})</option>
+          <option value="sudah">Sudah tertaut site</option>
+        </select>
+        <button type="button" class="ipam-chip" :class="{ on: filterRencana }" :disabled="!jumlahRencana7Hari && !filterRencana" title="Dicadangkan yang rencana pasangnya dalam 7 hari ke depan atau sudah lewat" @click="filterRencana = !filterRencana">
+          ⏰ Pasang ≤ 7 hari <b>{{ jumlahRencana7Hari }}</b>
+        </button>
+        <button v-if="adaFilter" type="button" class="btn btn-ghost btn-sm" @click="resetFilter">✕ Reset</button>
+        <span class="ipam-spacer"></span>
+        <div class="ipam-dropdown">
+          <button type="button" class="btn btn-secondary btn-sm" :aria-expanded="menuKolom" @click="menuKolom = !menuKolom">▦ Kolom</button>
+          <div v-if="menuKolom" class="ipam-menu-kolom" @mouseleave="menuKolom = false">
+            <label v-for="k in KOLOM" :key="k.key"><input v-model="kolomAktif" type="checkbox" :value="k.key" :disabled="k.key === 'prefix'" /> {{ k.label }}</label>
+          </div>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" :title="padat ? 'Tampilan lega' : 'Tampilan padat'" @click="padat = !padat">{{ padat ? '↕ Lega' : '↔ Padat' }}</button>
+        <button type="button" class="btn btn-secondary btn-sm" :disabled="!daftarTampil.length" @click="ekspor">⬇ Ekspor Excel</button>
       </div>
-      <div class="table-card">
+
+      <!-- Aksi massal -->
+      <div v-if="baris_terpilih.length" class="ipam-massal" role="region" aria-label="Aksi massal">
+        <b>{{ baris_terpilih.length }} dipilih</b>
+        <template v-if="massal.jalan"><span>Memproses {{ massal.selesai }} / {{ massal.total }}…</span><div class="ipam-bar"><i :style="{ width: `${(massal.selesai / massal.total) * 100}%` }"></i></div></template>
+        <template v-else>
+          <button type="button" class="btn btn-sm btn-primary" @click="ubahMassal({ status: 'Dipakai' }, 'Tandai Dipakai')">✓ Tandai Dipakai</button>
+          <button type="button" class="btn btn-sm btn-secondary" @click="ubahMassal({ status: 'Dicadangkan' }, 'Tandai Dicadangkan')">Tandai Dicadangkan</button>
+          <select class="filter-select" aria-label="Ubah peruntukan massal" @change="(e) => { const v = (e.target as HTMLSelectElement).value; (e.target as HTMLSelectElement).value = ''; if (v) ubahMassal({ peruntukan: v }, `Ubah peruntukan ke ${v}`) }">
+            <option value="">Ubah peruntukan…</option>
+            <option v-for="pr in PERUNTUKAN" :key="pr" :value="pr">{{ pr }}</option>
+          </select>
+          <button type="button" class="btn btn-sm btn-ghost" @click="terpilih = new Set()">Batal pilih</button>
+        </template>
+      </div>
+
+      <div class="table-card ipam-tabel-kartu">
         <div v-if="memuat" class="loading-state">Memuat…</div>
-        <table v-else class="data-table">
-          <thead>
-            <tr><th>Prefix</th><th>Status</th><th>Peruntukan</th><th>Site / Pelanggan</th><th>Gateway</th><th>VLAN</th><th>Perangkat</th><th>Sejak</th></tr>
-          </thead>
-          <tbody>
-            <tr v-if="!daftarTampil.length"><td colspan="8" class="muted pusat">{{ cari.trim() || filterStatus ? 'Tidak ada alokasi yang cocok dengan filter.' : 'Belum ada alokasi.' }}</td></tr>
-            <tr v-baris v-for="a in daftarTampil" :key="a.id_alokasi" class="klik" @click="bukaDetail(a)">
-              <td><b class="mono">{{ a.prefix }}</b></td>
-              <td>
-                <span class="badge" :class="KELAS_STATUS[a.status]">{{ a.status }}</span>
-                <small v-if="a.status === 'Karantina'" class="muted"> s/d {{ fmtTgl(a.karantina_sampai) }}</small>
-              </td>
-              <td>{{ a.peruntukan }}</td>
-              <td>
-                <template v-if="a.site">{{ a.site.nama_site }} <small class="muted">{{ a.site.pelanggan?.nama_pelanggan }}</small></template>
-                <span v-else class="muted">{{ a.keterangan || '-' }}</span>
-              </td>
-              <td class="mono">{{ a.gateway || '-' }}</td>
-              <td>{{ a.vlan ?? '-' }}</td>
-              <td>{{ a.perangkat || '-' }}</td>
-              <td>{{ fmtTgl(a.dialokasikan_at) }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div v-else class="ipam-gulir">
+          <table class="data-table ipam-tabel" :class="{ padat }">
+            <thead>
+              <tr>
+                <th class="ipam-cek-kol"><input type="checkbox" :checked="semuaHalamanTerpilih" aria-label="Pilih semua di halaman ini" @change="pilihSemua(($event.target as HTMLInputElement).checked)" /></th>
+                <template v-for="k in KOLOM" :key="k.key">
+                  <th v-if="tampilKolom(k.key)" :class="{ urut: urut.kolom === k.key }" :aria-sort="urut.kolom === k.key ? (urut.arah === 1 ? 'ascending' : 'descending') : 'none'">
+                    <button type="button" class="ipam-th" @click="urutkan(k)">{{ k.label }}<i>{{ urut.kolom === k.key ? (urut.arah === 1 ? '▲' : '▼') : '' }}</i></button>
+                  </th>
+                </template>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!daftarTampil.length">
+                <td :colspan="kolomAktif.length + 1" class="muted pusat">
+                  {{ adaFilter ? 'Tidak ada alokasi yang cocok dengan filter.' : 'Belum ada alokasi.' }}
+                  <button v-if="adaFilter" type="button" class="btn btn-ghost btn-sm" @click="resetFilter">Reset filter</button>
+                </td>
+              </tr>
+              <tr v-baris v-for="a in barisHalaman" :key="a.id_alokasi" class="klik" :class="{ dipilih: terpilih.has(a.id_alokasi) }" @click="bukaDetail(a)">
+                <td class="ipam-cek-kol" @click.stop><input type="checkbox" :checked="terpilih.has(a.id_alokasi)" :aria-label="`Pilih ${a.prefix}`" @change="pilihBaris(a.id_alokasi, ($event.target as HTMLInputElement).checked)" /></td>
+                <td v-if="tampilKolom('prefix')"><b class="mono">{{ a.prefix }}</b></td>
+                <td v-if="tampilKolom('status')">
+                  <span class="badge" :class="KELAS_STATUS[a.status]">{{ a.status }}</span>
+                  <small v-if="a.status === 'Karantina'" class="muted"> s/d {{ fmtTgl(a.karantina_sampai) }}</small>
+                </td>
+                <td v-if="tampilKolom('peruntukan')">{{ a.peruntukan }}</td>
+                <td v-if="tampilKolom('site')">
+                  <template v-if="a.site">
+                    {{ a.site.nama_site }}
+                    <small v-if="a.site.status_site !== 'Aktif'" class="ipam-tanda merah">{{ a.site.status_site }}</small>
+                    <small class="muted block">{{ a.site.pelanggan?.nama_pelanggan }}</small>
+                  </template>
+                  <template v-else-if="namaCatatan(a)">
+                    <span class="muted">{{ namaCatatan(a) }}</span>
+                    <small v-if="a.peruntukan === 'Pelanggan'" class="ipam-tanda kuning">belum tertaut</small>
+                  </template>
+                  <span v-else class="muted">-</span>
+                </td>
+                <td v-if="tampilKolom('gateway')" class="mono" @click.stop>
+                  <button v-if="gatewayTampil(a)" type="button" class="ipam-salin" title="Klik untuk salin" @click="salinCepat(gatewayTampil(a))">{{ gatewayTampil(a) }}</button>
+                  <span v-else class="muted">-</span>
+                </td>
+                <td v-if="tampilKolom('publik')" class="mono" @click.stop>
+                  <button v-if="ipPelanggan(a)" type="button" class="ipam-salin" title="Klik untuk salin" @click="salinCepat(ipPelanggan(a))">{{ ipPelanggan(a) }}</button>
+                  <span v-else class="muted">-</span>
+                </td>
+                <td v-if="tampilKolom('rencana')">
+                  <template v-if="tglRencana(a)">
+                    {{ fmtTgl(tglRencana(a)!.toISOString()) }}
+                    <small v-if="a.status === 'Dicadangkan'" class="ipam-tanda" :class="hariKe(tglRencana(a)!) < 0 ? 'merah' : hariKe(tglRencana(a)!) <= 3 ? 'kuning' : 'abu'">
+                      {{ hariKe(tglRencana(a)!) < 0 ? `lewat ${-hariKe(tglRencana(a)!)} hr` : hariKe(tglRencana(a)!) === 0 ? 'hari ini' : `${hariKe(tglRencana(a)!)} hr lagi` }}
+                    </small>
+                  </template>
+                  <span v-else class="muted">-</span>
+                </td>
+                <td v-if="tampilKolom('iplama')" class="mono kecil">{{ ipLama(a) || '-' }}</td>
+                <td v-if="tampilKolom('vlan')">{{ a.vlan ?? '-' }}</td>
+                <td v-if="tampilKolom('perangkat')">{{ a.perangkat || '-' }}</td>
+                <td v-if="tampilKolom('sejak')">{{ fmtTgl(a.dialokasikan_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-if="!memuat && daftarTampil.length" class="ipam-kaki">
+          <span class="muted kecil">{{ daftarTampil.length }} dari {{ alokasi.length }} alokasi<template v-if="terpilih.size"> · {{ terpilih.size }} dipilih</template></span>
+          <span class="ipam-spacer"></span>
+          <label class="kecil muted">Baris <select v-model.number="ukuranHalaman" class="filter-select"><option :value="25">25</option><option :value="50">50</option><option :value="100">100</option><option :value="0">Semua</option></select></label>
+          <template v-if="jumlahHalaman > 1">
+            <button type="button" class="btn btn-ghost btn-sm" :disabled="halaman <= 1" @click="halaman--">‹</button>
+            <span class="kecil">{{ Math.min(halaman, jumlahHalaman) }} / {{ jumlahHalaman }}</span>
+            <button type="button" class="btn btn-ghost btn-sm" :disabled="halaman >= jumlahHalaman" @click="halaman++">›</button>
+          </template>
+        </div>
       </div>
     </template>
 
@@ -776,6 +1022,42 @@ async function simpanBlok() {
 </template>
 
 <style scoped>
+.ipam-kartu { text-align: left; font: inherit; }
+button.ipam-kartu.klik:hover { border-color: #94a3b8; }
+.ipam-kartu.aktif { outline: 2px solid #0f172a; outline-offset: -1px; }
+.ipam-alat { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.ipam-alat .search-input { flex: 1 1 240px; min-width: 200px; }
+.ipam-spacer { flex: 1; }
+.ipam-chip-grup { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.ipam-chip { border: 1px solid #cbd5e1; background: #fff; border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; transition: background .15s, border-color .15s; }
+.ipam-chip b { font-weight: 700; }
+.ipam-chip:hover:not(:disabled) { border-color: #64748b; }
+.ipam-chip:disabled { opacity: .5; cursor: default; }
+.ipam-chip.on { background: #0f172a; border-color: #0f172a; color: #fff; }
+.ipam-menu-kolom { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 10px 24px rgba(15, 23, 42, .14); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; min-width: 190px; font-size: 13px; }
+.ipam-menu-kolom label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.ipam-massal { position: sticky; top: 8px; z-index: 15; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #0f172a; color: #fff; border-radius: 12px; padding: 8px 14px; margin-bottom: 10px; box-shadow: 0 8px 22px rgba(15, 23, 42, .25); }
+.ipam-massal .btn-ghost { color: #cbd5e1; }
+.ipam-bar { flex: 1; min-width: 120px; height: 6px; background: #334155; border-radius: 6px; overflow: hidden; }
+.ipam-bar i { display: block; height: 100%; background: #22d3ee; transition: width .2s; }
+.ipam-tabel-kartu { padding: 0; overflow: hidden; }
+.ipam-gulir { overflow: auto; max-height: 70vh; }
+.ipam-tabel thead th { position: sticky; top: 0; z-index: 5; background: #f8fafc; box-shadow: 0 1px 0 #e2e8f0; white-space: nowrap; }
+.ipam-th { background: none; border: 0; font: inherit; font-weight: 700; color: inherit; cursor: pointer; padding: 0; display: inline-flex; gap: 4px; align-items: center; }
+.ipam-th i { font-style: normal; font-size: 9px; color: #2563eb; min-width: 9px; }
+.ipam-tabel th.urut { background: #eff6ff; }
+.ipam-tabel tbody tr:nth-child(even) { background: #fafbfd; }
+.ipam-tabel tbody tr:hover { background: #eff6ff; }
+.ipam-tabel tbody tr.dipilih { background: #dbeafe; }
+.ipam-tabel.padat td, .ipam-tabel.padat th { padding-top: 4px; padding-bottom: 4px; font-size: 12.5px; }
+.ipam-cek-kol { width: 34px; text-align: center; }
+.ipam-salin { background: none; border: 0; padding: 2px 4px; border-radius: 5px; font: inherit; cursor: copy; color: inherit; }
+.ipam-salin:hover { background: #e2e8f0; }
+.ipam-tanda { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: #e2e8f0; color: #475569; }
+.ipam-tanda.merah { background: #fee2e2; color: #b91c1c; }
+.ipam-tanda.kuning { background: #fef3c7; color: #92400e; }
+.block { display: block; }
+.ipam-kaki { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 14px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
 .ipam-aksi-atas { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ipam-ringkas { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
 .ipam-kartu { background: #fff; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; }
