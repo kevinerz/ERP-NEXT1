@@ -29,22 +29,28 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   crm: 'crm',
   'uptime-kuma': 'uptime-kuma',
   mekari: 'mekari',
-  digiflazz: 'assets', // Beli pulsa/paket via Digiflazz — bagian dari fitur SIM Topup di modul Aset
-  presales: 'sales',
+  digiflazz: 'sim-topup', // Beli pulsa/paket via Digiflazz — bagian dari fitur SIM Topup di modul Aset
+  presales: 'presales',
   instalasi: 'instalasi',
-  mikrotik: 'operations',
-  tools: 'operations',
+  mikrotik: 'mikrotik',
+  tools: 'network-tools',
   mobile: 'operations',
-  starsender: 'operations',
+  starsender: 'starsender',
   wa: 'whatsapp', // inbox WhatsApp helpdesk (webhook & stream @Public)
-  ipam: 'operations', // IP publik NEXT1
-  visit: 'operations', // Jadwal Visit teknis
-  nocaas: 'operations', // Pembanding status router NOCaaS untuk tiket gangguan
+  ipam: 'ipam', // IP publik NEXT1
+  visit: 'visit', // Jadwal Visit teknis
+  nocaas: 'nocaas', // Pembanding status router NOCaaS untuk tiket gangguan
   fileserver: 'fileserver', // File server kantor (SMB)
 };
 
 // Divisi yang terlibat alur Pasang Baru (Sales → OPS → Instalasi → NOC → Finance)
-const MODUL_PASANG_BARU = ['sales', 'operations', 'instalasi', 'finance'];
+const MODUL_PASANG_BARU = ['pasang-baru', 'sales', 'operations', 'instalasi', 'finance'];
+// Menu turunan ikut terbuka bila akun punya modul induknya (akun lama tetap aman).
+// Sama dengan `induk` di web/src/constants/modul.ts — jaga tetap sama.
+const MODUL_INDUK: Record<string, string> = {
+  presales: 'sales', visit: 'operations', nocaas: 'operations', ipam: 'operations',
+  'network-tools': 'operations', mikrotik: 'operations', starsender: 'operations', 'sim-topup': 'assets',
+};
 // admin & mailer sudah dijaga @Roles(Admin/Director) di controller-nya.
 // email tidak digating modul — koneksi self-service, tiap user cuma akses
 // inbox miliknya sendiri (bukan data organisasi yang perlu dibatasi role).
@@ -96,7 +102,7 @@ export class ModulAksesGuard implements CanActivate {
     // endpoint yang belum terdaftar di peta — default tolak, bukan default izinkan.
     if (!modul) throw new ForbiddenException('Anda tidak punya akses ke modul ini');
 
-    if (akses.includes(modul)) return true;
+    if (akses.includes(modul) || (MODUL_INDUK[modul] && akses.includes(MODUL_INDUK[modul]))) return true;
     throw new ForbiddenException(`Anda tidak punya akses ke modul ${modul}`);
   }
 }

@@ -71,8 +71,8 @@ const bagian = computed<Bagian[]>(() => {
 const aksi = computed(() => [
   { t: 'Tiket', i: '🎫', ke: '/operations', ok: auth.canAccess('operations'), w: 'oranye' },
   { t: 'Inbox WA', i: '💬', ke: '/whatsapp', ok: auth.canAccess('whatsapp'), w: 'hijau' },
-  { t: 'Jadwal Visit', i: '🗓️', ke: '/jadwal-visit', ok: auth.canAccess('operations'), w: 'ungu' },
-  { t: 'Pasang Baru', i: '🆕', ke: '/pasang-baru', ok: ['sales', 'operations', 'instalasi', 'finance'].some((m) => auth.canAccess(m)), w: 'biru' },
+  { t: 'Jadwal Visit', i: '🗓️', ke: '/jadwal-visit', ok: auth.canAccess('visit'), w: 'ungu' },
+  { t: 'Pasang Baru', i: '🆕', ke: '/pasang-baru', ok: ['pasang-baru', 'sales', 'operations', 'instalasi', 'finance'].some((m) => auth.canAccess(m)), w: 'biru' },
   { t: 'Lead', i: '💼', ke: '/sales/lead', ok: auth.canAccess('sales'), w: 'pink' },
   { t: 'Invoice', i: '💰', ke: '/finance/invoice', ok: auth.canAccess('finance'), w: 'kuning' },
   { t: 'Laporan', i: '📈', ke: '/reports', ok: auth.canAccess('reports'), w: 'toska' },

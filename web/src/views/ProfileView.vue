@@ -176,31 +176,13 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import api from '@/services/api'
 import { useAuthStore, ALL_MODULS } from '@/stores/auth'
+import { DAFTAR_MODUL } from '@/constants/modul'
 import { fmtDate as formatDate, fmtDateTime as formatDateTime } from '@/composables/useFormat'
 import { confirmDialog, pesanGalat } from '@/composables/useDialog'
 
 const auth = useAuthStore()
 
-const MODUL_LABEL: Record<string, string> = {
-  hris: 'HRIS',
-  master: 'Master Data',
-  sales: 'Sales',
-  crm: 'CRM',
-  projects: 'Proyek',
-  operations: 'Operasional',
-  assets: 'Aset',
-  contracts: 'Kontrak',
-  finance: 'Finance',
-  reports: 'Laporan',
-  notifications: 'Notifikasi',
-  'public-wo': 'Work Order',
-  prtg: 'PRTG',
-  mekari: 'Mekari Jurnal',
-  instalasi: 'Pemasangan',
-  whatsapp: 'WhatsApp',
-  fileserver: 'File Server',
-  'uptime-kuma': 'Uptime Kuma',
-}
+const MODUL_LABEL: Record<string, string> = Object.fromEntries(DAFTAR_MODUL.map((m) => [m.key, m.label]))
 
 // ─── STATE ────────────────────────────────────────────
 const profile = ref<any>(null)

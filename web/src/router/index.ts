@@ -542,31 +542,31 @@ const router = createRouter({
 
 // Map route name → modul key
 // Pasang Baru lintas divisi — sama dengan MODUL_PASANG_BARU di ModulAksesGuard backend
-const MODUL_PB = ['sales', 'operations', 'instalasi', 'finance']
+const MODUL_PB = ['pasang-baru', 'sales', 'operations', 'instalasi', 'finance']
 const ROUTE_MODUL: Record<string, string | string[]> = {
   'pasang-baru': MODUL_PB, 'pb-survey-baru': MODUL_PB, 'pb-survey-ubah': MODUL_PB, 'pb-survey': MODUL_PB,
   'pb-sph-baru': MODUL_PB, 'pb-sph-ubah': MODUL_PB, 'pb-sph': MODUL_PB, 'pb-order': MODUL_PB,
   'wa-inbox': 'whatsapp', 'wa-statistik': 'whatsapp',
-  'ipam': 'operations',
-  'jadwal-visit': 'operations', 'visit-statistik': 'operations', 'visit-maintenance': 'operations',
-  'nocaas': 'operations', 'laporan-gangguan': 'operations',
+  'ipam': 'ipam',
+  'jadwal-visit': 'visit', 'visit-statistik': 'visit', 'visit-maintenance': 'visit',
+  'nocaas': 'nocaas', 'laporan-gangguan': 'nocaas',
   'hris-list': 'hris', 'hris-detail': 'hris', 'hris-tambah': 'hris', 'hris-edit': 'hris', 'hris-undangan': 'hris',
   'master-index': 'master', 'master-layanan': 'master', 'master-vendor': 'master', 'master-kontak-teknisi': 'master', 'master-gudang': 'master',
   'master-pelanggan': 'master', 'master-site': 'master', 'master-site-detail': 'master', 'master-site-tarik': 'master', 'master-jenis-gangguan': 'master',
-  'presales-list': 'sales',
+  'presales-list': 'presales',
   'sales-dashboard': 'sales', 'sales-lead-list': 'sales', 'sales-lead-detail': 'sales',
   'sales-opp-list': 'sales', 'sales-opp-detail': 'sales',
   'sales-quotation-list': 'sales', 'sales-quotation-detail': 'sales',
   'proyek-list': 'projects', 'proyek-detail': 'projects',
   'tiket-list': 'operations', 'tiket-detail': 'operations', 'noc-board': 'operations',
-  'tools-network': 'operations', 'tools-mikrotik': 'operations',
+  'tools-network': 'network-tools', 'tools-mikrotik': 'mikrotik',
   'instalasi-list': 'instalasi', 'instalasi-detail': 'instalasi',
-  'aset-list': 'assets', 'aset-detail': 'assets', 'sim-topup': 'assets',
+  'aset-list': 'assets', 'aset-detail': 'assets', 'sim-topup': 'sim-topup',
   'stok-opname-list': 'assets', 'stok-opname-detail': 'assets',
   'pengajuan-aset-list': 'assets', 'pengajuan-aset-detail': 'assets',
   'prtg-settings': 'prtg',
   'uptime-kuma-settings': 'uptime-kuma',
-  'starsender-settings': 'operations', // backend: segment starsender → modul operations
+  'starsender-settings': 'starsender',
   'kontrak-list': 'contracts', 'kontrak-detail': 'contracts',
   'crm-pic-list': 'crm', 'crm-pic-detail': 'crm',
   'laporan': 'reports', 'laporan-sla': 'reports',

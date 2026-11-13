@@ -162,8 +162,8 @@ const menuGroups: { label: string; accent: string; items: MenuItem[] }[] = [
   {
     label: 'KOMERSIAL', accent: '#10b981',
     items: [
-      { label: 'Pasang Baru', emoji: '🆕', to: '/pasang-baru',     modul: ['sales', 'operations', 'instalasi', 'finance'] },
-      { label: 'Pre-Sales',   emoji: '🔍', to: '/presales',        modul: 'sales' },
+      { label: 'Pasang Baru', emoji: '🆕', to: '/pasang-baru',     modul: ['pasang-baru', 'sales', 'operations', 'instalasi', 'finance'] },
+      { label: 'Pre-Sales',   emoji: '🔍', to: '/presales',        modul: 'presales' },
       { label: 'Sales',       emoji: '💼', to: '/sales',           modul: 'sales' },
       { label: 'CRM',         emoji: '🤝', to: '/crm/pic',         modul: 'crm', match: ['/crm'] },
       { label: 'Proyek',      emoji: '📐', to: '/projects',        modul: 'projects' },
@@ -175,8 +175,8 @@ const menuGroups: { label: string; accent: string; items: MenuItem[] }[] = [
     items: [
       { label: 'Gangguan',    emoji: '⚡', to: '/operations',      modul: 'operations' },
       { label: 'Pemasangan',  emoji: '🛠️', to: '/instalasi',       modul: 'instalasi' },
-      { label: 'Jadwal Visit', emoji: '🗓️', to: '/jadwal-visit',   modul: 'operations' },
-      { label: 'Laporan Gangguan', emoji: '📑', to: '/nocaas/laporan', modul: 'operations' },
+      { label: 'Jadwal Visit', emoji: '🗓️', to: '/jadwal-visit',   modul: 'visit' },
+      { label: 'Laporan Gangguan', emoji: '📑', to: '/nocaas/laporan', modul: 'nocaas' },
       { label: 'Work Order',  emoji: '🗂️', to: '/public-wo',       modul: 'public-wo' },
     ],
   },
@@ -184,12 +184,12 @@ const menuGroups: { label: string; accent: string; items: MenuItem[] }[] = [
     label: 'INFRASTRUKTUR', accent: '#0ea5e9',
     items: [
       { label: 'Aset',          emoji: '🖥️', to: '/assets',          modul: 'assets' },
-      { label: 'SIM Topup',     emoji: '📱', to: '/assets/sim-topup', modul: 'assets' },
-      { label: 'Network Tools', emoji: '🔧', to: '/tools/network',    modul: 'operations' },
+      { label: 'SIM Topup',     emoji: '📱', to: '/assets/sim-topup', modul: 'sim-topup' },
+      { label: 'Network Tools', emoji: '🔧', to: '/tools/network',    modul: 'network-tools' },
       { label: 'NOC Board',     emoji: '📺', to: '/operations/noc',    modul: 'operations' },
-      { label: 'Pembanding NOCaaS', emoji: '🛰️', to: '/nocaas',         modul: 'operations' },
-      { label: 'Remote Mikrotik', emoji: '🔌', to: '/tools/mikrotik', modul: 'operations' },
-      { label: 'IP Publik',     emoji: '🌐', to: '/ipam',            modul: 'operations' },
+      { label: 'Pembanding NOCaaS', emoji: '🛰️', to: '/nocaas',         modul: 'nocaas' },
+      { label: 'Remote Mikrotik', emoji: '🔌', to: '/tools/mikrotik', modul: 'mikrotik' },
+      { label: 'IP Publik',     emoji: '🌐', to: '/ipam',            modul: 'ipam' },
     ],
   },
   {
@@ -209,7 +209,7 @@ const adminMenu: MenuItem[] = [
   { label: 'Email Log',      emoji: '📤', to: '/admin/email-log',    modul: null },
   { label: 'PRTG',           emoji: '📡', to: '/integrations/prtg',  modul: 'prtg' },
   { label: 'Uptime Kuma',    emoji: '🟢', to: '/integrations/uptime-kuma', modul: 'uptime-kuma' },
-  { label: 'StarSender WA',  emoji: '📨', to: '/integrations/starsender', modul: 'operations' },
+  { label: 'StarSender WA',  emoji: '📨', to: '/integrations/starsender', modul: 'starsender' },
   { label: 'Pengaturan',     emoji: '⚙️', to: '/settings',           modul: null },
 ]
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DAFTAR_MODUL } from '@/constants/modul'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { confirmDialog, pesanGalat } from '@/composables/useDialog'
 import { useRouter, useRoute } from 'vue-router'
@@ -164,26 +165,14 @@ async function handleEditRoles() {
 }
 
 // ─── Modul Akses ──────────────────────────────────────────────
-const ALL_MODULS = [
-  { key: 'hris',          label: 'HRIS',        icon: '👤' },
-  { key: 'master',        label: 'Master Data',  icon: '📦' },
-  { key: 'sales',         label: 'Sales',        icon: '💼' },
-  { key: 'crm',           label: 'CRM',          icon: '🤝' },
-  { key: 'projects',      label: 'Proyek',       icon: '📋' },
-  { key: 'operations',    label: 'Operasional',  icon: '🔧' },
-  { key: 'instalasi',     label: 'Pemasangan',   icon: '🛠️' },
-  { key: 'assets',        label: 'Aset',         icon: '🖥️' },
-  { key: 'contracts',     label: 'Kontrak',      icon: '📄' },
-  { key: 'finance',       label: 'Finance',      icon: '💰' },
-  { key: 'reports',       label: 'Laporan',      icon: '📈' },
-  { key: 'notifications', label: 'Notifikasi',   icon: '🔔' },
-  { key: 'public-wo',     label: 'Public WO',    icon: '🌐' },
-  { key: 'prtg',          label: 'PRTG',         icon: '📡' },
-  { key: 'mekari',        label: 'Mekari',       icon: '💳' },
-  { key: 'whatsapp',      label: 'WhatsApp',     icon: '💬' },
-  { key: 'fileserver',    label: 'File Server',  icon: '🗃️' },
-  { key: 'uptime-kuma',   label: 'Uptime Kuma',  icon: '🟢' },
-]
+const ALL_MODULS = DAFTAR_MODUL
+
+// Menu turunan (mis. IP Publik) otomatis terbuka bila modul induknya (Operasional) dipilih
+const indukDipilih = (m: { induk?: string }) => !!m.induk && editModulAkses.value.includes(m.induk)
+const modulDipilih = (m: { key: string; induk?: string }) => editModulAkses.value.includes(m.key) || indukDipilih(m)
+function toggleModul(key: string) {
+  editModulAkses.value = editModulAkses.value.includes(key) ? editModulAkses.value.filter((x) => x !== key) : [...editModulAkses.value, key]
+}
 
 const PRESETS = [
   { key: 'teknisi',   label: 'Teknisi',    icon: '🔧', moduls: ['operations', 'instalasi', 'public-wo', 'assets', 'notifications'] },
@@ -565,8 +554,8 @@ const modulLabel = (key: string) => ALL_MODULS.find((m) => m.key === key) ?? { k
               <a href="#" @click.prevent="editModulAkses = ALL_MODULS.map((m) => m.key)">Pilih semua</a> ·
               <a href="#" @click.prevent="editModulAkses = []">Kosongkan</a></small>
             <div class="pf-modul-pilih">
-              <label v-for="m in ALL_MODULS" :key="m.key" :class="{ on: editModulAkses.includes(m.key) }">
-                <input v-model="editModulAkses" type="checkbox" :value="m.key" />
+              <label v-for="m in ALL_MODULS" :key="m.key" :class="{ on: modulDipilih(m), turunan: !!m.induk }" :title="m.induk ? `Bagian dari ${modulLabel(m.induk).label} — otomatis terbuka bila modul itu dipilih` : ''">
+                <input type="checkbox" :checked="modulDipilih(m)" :disabled="indukDipilih(m)" @change="toggleModul(m.key)" />
                 <span>{{ m.icon }}</span>{{ m.label }}
               </label>
             </div>
@@ -724,6 +713,7 @@ code { font-size: 12px; background: #f3eee3; padding: 1px 6px; border-radius: 5p
 .pf-preset button.on { background: var(--hutan); color: #fff; border-color: var(--hutan); }
 .pf-modul-pilih { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
 .pf-modul-pilih label { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--garis); border-radius: 12px; background: #fff; cursor: pointer; font-size: 13px; }
+.pf-modul-pilih label.turunan { margin-left: 14px; font-size: 12.5px; }
 .pf-modul-pilih label.on { border-color: var(--hutan); background: #eef6f0; font-weight: 700; }
 
 @media (max-width: 1000px) { .pf-tata { grid-template-columns: 1fr; } .pf-kiri { position: static; } }

@@ -2,7 +2,9 @@ import { defineStore } from 'pinia'
 import api from '@/services/api'
 import { pesanGalat } from '@/composables/useDialog'
 
-export const ALL_MODULS = ['hris', 'master', 'sales', 'crm', 'projects', 'operations', 'assets', 'contracts', 'finance', 'reports', 'notifications', 'public-wo', 'prtg', 'mekari']
+import { DAFTAR_MODUL, INDUK_MODUL } from '@/constants/modul'
+
+export const ALL_MODULS = DAFTAR_MODUL.map((m) => m.key)
 
 interface User {
   id_user: number
@@ -30,7 +32,8 @@ export const useAuthStore = defineStore('auth', {
     canAccess: (state) => (modul: string) => {
       if (!state.user) return false
       if (!state.user.modul_akses || state.user.modul_akses.length === 0) return true
-      return state.user.modul_akses.includes(modul)
+      // menu turunan ikut terbuka bila akun punya modul induknya (mis. ipam ← operations)
+      return state.user.modul_akses.includes(modul) || (!!INDUK_MODUL[modul] && state.user.modul_akses.includes(INDUK_MODUL[modul]))
     },
     isSuperAdmin: (state) => {
       if (!state.user) return false
