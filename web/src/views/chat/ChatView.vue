@@ -869,17 +869,17 @@ onBeforeUnmount(() => {
 
     <!-- ═══ KUDOS ═══ -->
     <div v-if="kudosBuka" class="modal-overlay" @click.self="kudosBuka = false">
-      <div class="modal-content" style="max-width: 520px">
+      <div v-focus-trap class="modal" style="max-width: 520px">
         <div class="modal-header"><h3 class="modal-title">🌟 Kudos</h3><button type="button" class="btn-modal-close" aria-label="Tutup" @click="kudosBuka = false">×</button></div>
-        <div class="modal-body">
+        <div class="modal-body cv-baru">
           <p class="cv-redup">Apresiasi rekan yang membantu Anda. Kudos tampil di ruang "Semua Karyawan" (maks. 5 per hari).</p>
           <div v-if="kudos.untuk" class="cv-kudos-pilih"><b>{{ kudos.untuk.nama }}</b><button type="button" class="btn btn-ghost btn-sm" @click="kudos.untuk = null">Ganti</button></div>
           <template v-else>
-            <input v-model="kudos.cari" class="form-control" placeholder="Cari nama rekan…" @input="cariKudos" />
+            <input v-model="kudos.cari" class="form-input" placeholder="Cari nama rekan…" @input="cariKudos" />
             <button v-for="h in kudos.hasil" :key="h.id_karyawan" type="button" class="cv-kanal-baris" @click="kudos.untuk = h"><span class="cv-kanal-nama">{{ h.nama }}</span><small>{{ h.jabatan }}</small></button>
           </template>
           <div class="cv-kudos-kat"><button v-for="k in papan?.kategori ?? []" :key="k" type="button" class="cv-reaksi-chip" :class="{ saya: kudos.kategori === k }" @click="kudos.kategori = k">{{ k }}</button></div>
-          <textarea v-model="kudos.pesan" class="form-control" rows="3" maxlength="300" placeholder="Ceritakan apa yang bikin Anda terkesan…"></textarea>
+          <textarea v-model="kudos.pesan" class="form-textarea" rows="3" maxlength="300" placeholder="Ceritakan apa yang bikin Anda terkesan…"></textarea>
           <button type="button" class="btn btn-primary" style="margin-top: 10px" :disabled="!kudos.untuk || kudos.pesan.trim().length < 3 || kudos.kirim" @click="kirimKudos">{{ kudos.kirim ? 'Mengirim…' : 'Kirim kudos 🌟' }}</button>
           <div v-if="papan" class="cv-kudos-papan">
             <h4>Papan bulan ini</h4>
@@ -893,9 +893,9 @@ onBeforeUnmount(() => {
 
     <!-- ═══ KANAL ═══ -->
     <div v-if="kanalBuka" class="modal-overlay" @click.self="kanalBuka = false">
-      <div class="modal-content" style="max-width: 460px">
+      <div v-focus-trap class="modal" style="max-width: 460px">
         <div class="modal-header"><h3 class="modal-title"># Kanal santai</h3><button type="button" class="btn-modal-close" aria-label="Tutup" @click="kanalBuka = false">×</button></div>
-        <div class="modal-body">
+        <div class="modal-body cv-baru">
           <p v-if="kanalMuat" class="cv-redup">Memuat…</p>
           <button v-for="k in kanal" :key="k.id_ruang" type="button" class="cv-kanal-baris" @click="masukKanal(k)">
             <span class="cv-kanal-nama"># {{ k.nama }}</span>
@@ -903,7 +903,7 @@ onBeforeUnmount(() => {
             <span class="badge" :class="k.gabung ? 'badge-green' : 'badge-blue'">{{ k.gabung ? 'Buka' : 'Gabung' }}</span>
           </button>
           <div class="cv-kanal-buat">
-            <input v-model="kanalBaru" class="form-control" maxlength="40" placeholder="Buat kanal baru, mis. futsal-jumat" @keydown.enter.prevent="buatKanal" />
+            <input v-model="kanalBaru" class="form-input" maxlength="40" placeholder="Buat kanal baru, mis. futsal-jumat" @keydown.enter.prevent="buatKanal" />
             <button type="button" class="btn btn-primary btn-sm" :disabled="kanalBaru.trim().length < 2" @click="buatKanal">Buat</button>
           </div>
         </div>
