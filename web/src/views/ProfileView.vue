@@ -196,6 +196,10 @@ const MODUL_LABEL: Record<string, string> = {
   'public-wo': 'Work Order',
   prtg: 'PRTG',
   mekari: 'Mekari Jurnal',
+  instalasi: 'Pemasangan',
+  whatsapp: 'WhatsApp',
+  fileserver: 'File Server',
+  'uptime-kuma': 'Uptime Kuma',
 }
 
 // ─── STATE ────────────────────────────────────────────

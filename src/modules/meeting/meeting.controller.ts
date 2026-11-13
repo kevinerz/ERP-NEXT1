@@ -61,6 +61,9 @@ export class MeetingController {
   @Post(':id/batal')
   batal(@CurrentUser('id_karyawan') id_karyawan: number, @Param('id', ParseIntPipe) id: number) { return this.meeting.batal(id, id_karyawan); }
 
+  @Post(':id/buka-kembali')
+  bukaKembali(@CurrentUser('id_karyawan') id_karyawan: number, @Param('id', ParseIntPipe) id: number) { return this.meeting.bukaKembali(id, id_karyawan); }
+
   @Post(':id/peserta')
   tambahPeserta(@CurrentUser('id_karyawan') id_karyawan: number, @Param('id', ParseIntPipe) id: number, @Body() dto: PesertaDto) {
     return this.meeting.tambahPeserta(id, id_karyawan, dto.id_karyawan);

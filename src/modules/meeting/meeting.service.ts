@@ -481,6 +481,19 @@ export class MeetingService {
     return true;
   }
 
+  /** Buka kembali rapat yang salah tertutup (Selesai / Dibatalkan) → Terjadwal lagi, siap dipakai. */
+  async bukaKembali(id_rapat: number, id_karyawan: number) {
+    const r = await this.moderatorSaja(id_rapat, id_karyawan);
+    if (r.status !== 'Selesai' && r.status !== 'Dibatalkan') throw new BadRequestException('Rapat ini belum ditutup');
+    await this.prisma.rapat.update({
+      where: { id_rapat },
+      data: { status: 'Terjadwal', mulai_at: null, selesai_at: null, diingatkan_at: null },
+    });
+    // Catatan hadir yang menggantung (belum keluar) ditutup agar tidak terhitung hadir terus
+    await this.prisma.rapatKehadiran.updateMany({ where: { id_rapat, keluar_at: null }, data: { keluar_at: new Date() } });
+    return true;
+  }
+
   // ── Masuk rapat ──────────────────────────────────────────────────────────────
   async token(id_rapat: number, id_karyawan: number, semua = false) {
     const { r, moderator } = await this.rapatAnggota(id_rapat, id_karyawan, semua);

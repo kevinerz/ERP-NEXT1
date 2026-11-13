@@ -182,6 +182,7 @@ const ALL_MODULS = [
   { key: 'mekari',        label: 'Mekari',       icon: '💳' },
   { key: 'whatsapp',      label: 'WhatsApp',     icon: '💬' },
   { key: 'fileserver',    label: 'File Server',  icon: '🗃️' },
+  { key: 'uptime-kuma',   label: 'Uptime Kuma',  icon: '🟢' },
 ]
 
 const PRESETS = [
@@ -560,7 +561,9 @@ const modulLabel = (key: string) => ALL_MODULS.find((m) => m.key === key) ?? { k
               <small>Preset jabatan:</small>
               <button v-for="p in PRESETS" :key="p.key" type="button" :class="{ on: editModulAkses.join(',') === p.moduls.join(',') }" @click="applyPreset(p.moduls)">{{ p.icon }} {{ p.label }}</button>
             </div>
-            <small class="pf-redup">{{ editModulAkses.length }} modul dipilih</small>
+            <small class="pf-redup">{{ editModulAkses.length }} dari {{ ALL_MODULS.length }} modul dipilih ·
+              <a href="#" @click.prevent="editModulAkses = ALL_MODULS.map((m) => m.key)">Pilih semua</a> ·
+              <a href="#" @click.prevent="editModulAkses = []">Kosongkan</a></small>
             <div class="pf-modul-pilih">
               <label v-for="m in ALL_MODULS" :key="m.key" :class="{ on: editModulAkses.includes(m.key) }">
                 <input v-model="editModulAkses" type="checkbox" :value="m.key" />

@@ -157,6 +157,18 @@ async function duplikat() {
     window.location.assign(`/meeting/${data.data.id_rapat}?ubah=1`)
   } catch (e) { alertError(e, 'Gagal menyalin rapat') }
 }
+const membuka = ref(false)
+async function bukaKembali() {
+  if (membuka.value) return
+  if (!(await confirmDialog({ title: 'Buka kembali rapat?', message: 'Rapat kembali ke status Terjadwal dan bisa dimulai lagi. Atur ulang jadwalnya bila perlu.', confirmLabel: 'Buka kembali' }))) return
+  membuka.value = true
+  try {
+    await api.post(`/meeting/${id}/buka-kembali`)
+    siapkanLagi.value = false
+    await muatDetail()
+    toast('Rapat dibuka kembali')
+  } catch (e) { alertError(e, 'Gagal membuka kembali rapat') } finally { membuka.value = false }
+}
 async function batalkan() {
   if (!(await confirmDialog({ title: 'Batalkan rapat?', message: 'Semua peserta akan diberi tahu lewat notifikasi.', confirmLabel: 'Batalkan rapat', variant: 'danger' }))) return
   try {
@@ -407,6 +419,7 @@ const namaSaya = computed(() => auth.user?.nama_lengkap || 'Anda')
           </div>
           <button type="button" class="rd-kaca" title="Buat rapat baru dengan peserta yang sama" @click="duplikat">🔁 Salin</button>
           <button v-if="d.moderator && d.status === 'Terjadwal'" type="button" class="rd-kaca bahaya" @click="batalkan">✕ Batalkan</button>
+          <button v-if="d.moderator && selesaiAtauBatal" type="button" class="rd-kaca" :disabled="membuka" title="Kembalikan rapat ke status Terjadwal" @click="bukaKembali">↩️ Buka kembali</button>
         </div>
       </section>
 

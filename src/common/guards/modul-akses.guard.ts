@@ -25,6 +25,7 @@ const SEGMENT_TO_MODUL: Record<string, string> = {
   reports: 'reports',
   'public-wo': 'public-wo',
   prtg: 'prtg',
+  'prtg-rekon': 'prtg', // rekonsiliasi PRTG ↔ site
   crm: 'crm',
   'uptime-kuma': 'uptime-kuma',
   mekari: 'mekari',
