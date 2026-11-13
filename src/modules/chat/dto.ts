@@ -53,3 +53,9 @@ export class ReaksiDto {
 export class KanalDto {
   @IsString() @MinLength(2) @MaxLength(40) nama: string;
 }
+
+export class KudosDto {
+  @Type(() => Number) @IsInt() id_untuk: number;
+  @IsString() @MaxLength(30) kategori: string;
+  @IsString() @MinLength(3) @MaxLength(300) pesan: string;
+}

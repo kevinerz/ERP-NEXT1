@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { BacaDto, BisuDto, DiskusiDto, KanalDto, ReaksiDto, GrupDto, KirimDto, PribadiDto, TambahAnggotaDto, UbahGrupDto, UbahPesanDto } from './dto';
+import { BacaDto, BisuDto, DiskusiDto, KanalDto, KudosDto, ReaksiDto, GrupDto, KirimDto, PribadiDto, TambahAnggotaDto, UbahGrupDto, UbahPesanDto } from './dto';
 import { ChatService } from './chat.service';
 
 // Chat internal karyawan — semua staf (segment /api/chat, lihat ModulAksesGuard).
@@ -33,6 +33,12 @@ export class ChatController {
 
   @Post('diskusi')
   diskusi(@CurrentUser('id_karyawan') me: number, @Body() d: DiskusiDto) { return this.chat.bukaDiskusi(me, d.jenis, d.id); }
+
+  @Get('kudos')
+  papanKudos(@CurrentUser('id_karyawan') me: number) { return this.chat.papanKudos(me); }
+
+  @Post('kudos')
+  beriKudos(@CurrentUser('id_karyawan') me: number, @Body() d: KudosDto) { return this.chat.beriKudos(me, d); }
 
   @Get('kanal')
   kanal(@CurrentUser('id_karyawan') me: number) { return this.chat.daftarKanal(me); }

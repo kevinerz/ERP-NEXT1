@@ -443,6 +443,40 @@ async function beriReaksi(p: Pesan, emoji: string) {
   } catch (e) { alertError(e, 'Gagal memberi reaksi') }
 }
 
+// ── Kudos ────────────────────────────────────────────────────────────────────
+interface PapanKudos {
+  kategori: string[]; saya_bulan_ini: number
+  papan: { peringkat: number; id_karyawan: number; nama: string; jumlah: number }[]
+  terbaru: { id_kudos: number; dari: string; untuk: string; kategori: string; pesan: string; waktu: string }[]
+}
+const kudosBuka = ref(false)
+const papan = ref<PapanKudos | null>(null)
+const kudos = reactive({ cari: '', hasil: [] as { id_karyawan: number; nama: string; jabatan: string }[], untuk: null as { id_karyawan: number; nama: string } | null, kategori: '', pesan: '', kirim: false })
+let timerKudos: ReturnType<typeof setTimeout> | undefined
+async function bukaKudos() {
+  kudosBuka.value = true
+  Object.assign(kudos, { cari: '', hasil: [], untuk: null, kategori: '', pesan: '' })
+  try { papan.value = (await api.get('/chat/kudos', { senyap: true })).data.data; kudos.kategori = papan.value?.kategori[0] ?? '' } catch (e) { alertError(e, 'Gagal memuat papan kudos') }
+}
+function cariKudos() {
+  clearTimeout(timerKudos)
+  timerKudos = setTimeout(async () => {
+    if (kudos.cari.trim().length < 2) { kudos.hasil = []; return }
+    try { kudos.hasil = (await api.get('/chat/karyawan', { params: { q: kudos.cari.trim() }, senyap: true })).data.data.slice(0, 6) } catch { kudos.hasil = [] }
+  }, 250)
+}
+async function kirimKudos() {
+  if (!kudos.untuk || kudos.pesan.trim().length < 3 || kudos.kirim) return
+  kudos.kirim = true
+  try {
+    const { data } = await api.post('/chat/kudos', { id_untuk: kudos.untuk.id_karyawan, kategori: kudos.kategori, pesan: kudos.pesan.trim() }, { senyap: true })
+    toast(`🌟 Kudos terkirim ke ${kudos.untuk.nama.split(' ')[0]}! Sisa jatah hari ini: ${data.data.sisa}`)
+    kudosBuka.value = false
+    await muatDaftar(true)
+    if (data.data.id_ruang) pilihRuang(data.data.id_ruang)
+  } catch (e) { alertError(e, 'Gagal mengirim kudos') } finally { kudos.kirim = false }
+}
+
 // ── Kanal santai ─────────────────────────────────────────────────────────────
 interface Kanal { id_ruang: number; nama: string; jumlah: number; gabung: boolean; deskripsi: string }
 const kanalBuka = ref(false)
@@ -656,6 +690,7 @@ onBeforeUnmount(() => {
           <button type="button" class="cv-ikon" title="Obrolan baru" @click="bukaBaru('pribadi')">✏️</button>
           <button type="button" class="cv-ikon" title="Grup baru" @click="bukaBaru('grup')">👥</button>
           <button type="button" class="cv-ikon" title="Jelajahi kanal santai" @click="bukaKanal">#</button>
+          <button type="button" class="cv-ikon" title="Beri kudos ke rekan" @click="bukaKudos">🌟</button>
         </div>
       </div>
       <div class="cv-cari"><input v-model="cariRuang" type="search" placeholder="Cari obrolan atau pesan…" aria-label="Cari obrolan" /></div>
@@ -825,6 +860,30 @@ onBeforeUnmount(() => {
       </template>
     </section>
 
+    <!-- ═══ KUDOS ═══ -->
+    <div v-if="kudosBuka" class="modal-overlay" @click.self="kudosBuka = false">
+      <div class="modal-content" style="max-width: 520px">
+        <div class="modal-header"><h3 class="modal-title">🌟 Kudos</h3><button type="button" class="btn-modal-close" aria-label="Tutup" @click="kudosBuka = false">×</button></div>
+        <div class="modal-body">
+          <p class="cv-redup">Apresiasi rekan yang membantu Anda. Kudos tampil di ruang "Semua Karyawan" (maks. 5 per hari).</p>
+          <div v-if="kudos.untuk" class="cv-kudos-pilih"><b>{{ kudos.untuk.nama }}</b><button type="button" class="btn btn-ghost btn-sm" @click="kudos.untuk = null">Ganti</button></div>
+          <template v-else>
+            <input v-model="kudos.cari" class="form-control" placeholder="Cari nama rekan…" @input="cariKudos" />
+            <button v-for="h in kudos.hasil" :key="h.id_karyawan" type="button" class="cv-kanal-baris" @click="kudos.untuk = h"><span class="cv-kanal-nama">{{ h.nama }}</span><small>{{ h.jabatan }}</small></button>
+          </template>
+          <div class="cv-kudos-kat"><button v-for="k in papan?.kategori ?? []" :key="k" type="button" class="cv-reaksi-chip" :class="{ saya: kudos.kategori === k }" @click="kudos.kategori = k">{{ k }}</button></div>
+          <textarea v-model="kudos.pesan" class="form-control" rows="3" maxlength="300" placeholder="Ceritakan apa yang bikin Anda terkesan…"></textarea>
+          <button type="button" class="btn btn-primary" style="margin-top: 10px" :disabled="!kudos.untuk || kudos.pesan.trim().length < 3 || kudos.kirim" @click="kirimKudos">{{ kudos.kirim ? 'Mengirim…' : 'Kirim kudos 🌟' }}</button>
+          <div v-if="papan" class="cv-kudos-papan">
+            <h4>Papan bulan ini</h4>
+            <p v-if="!papan.papan.length" class="cv-redup">Belum ada kudos bulan ini — jadilah yang pertama!</p>
+            <div v-for="b in papan.papan" :key="b.id_karyawan" class="cv-kudos-baris"><span>{{ b.peringkat === 1 ? '🥇' : b.peringkat === 2 ? '🥈' : b.peringkat === 3 ? '🥉' : b.peringkat + '.' }} {{ b.nama }}</span><b>{{ b.jumlah }}</b></div>
+            <p class="cv-redup">Anda menerima {{ papan.saya_bulan_ini }} kudos bulan ini.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══ KANAL ═══ -->
     <div v-if="kanalBuka" class="modal-overlay" @click.self="kanalBuka = false">
       <div class="modal-content" style="max-width: 460px">
@@ -947,6 +1006,11 @@ onBeforeUnmount(() => {
 .cv-ruang.belum .cv-cuplikan { color: #0f172a; font-weight: 600; }
 .cv-lencana { flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--biru); color: #fff; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .cv-lencana.bisu { background: #94a3b8; }
+.cv-kudos-pilih { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border: 1px solid var(--garis); border-radius: 8px; margin-bottom: 8px; }
+.cv-kudos-kat { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.cv-kudos-papan { margin-top: 16px; border-top: 1px solid var(--garis); padding-top: 10px; }
+.cv-kudos-papan h4 { margin: 0 0 6px; font-size: 14px; }
+.cv-kudos-baris { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13.5px; }
 .cv-reaksi { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .cv-reaksi-chip { border: 1px solid rgba(0, 0, 0, 0.15); background: rgba(255, 255, 255, 0.6); border-radius: 999px; padding: 1px 8px; font-size: 12px; cursor: pointer; }
 .cv-reaksi-chip.saya { border-color: #2563eb; background: rgba(37, 99, 235, 0.12); }

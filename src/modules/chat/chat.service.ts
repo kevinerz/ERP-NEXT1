@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import { extname, join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
+import { FcmService } from '../mobile/fcm.service';
 
 /** Berkas chat disimpan di luar folder /uploads (yang publik) — hanya bisa diambil lewat endpoint ber-auth. */
 export const CHAT_DIR = process.env.CHAT_DIR || join(process.cwd(), 'storage', 'chat');
@@ -14,6 +15,7 @@ const BOLEH_EXT = new Set([...GAMBAR, 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt'
 const MIME_GAMBAR: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
 
 export const EMOJI_BOLEH = ['👍', '❤️', '😂', '🎉', '🙏', '👀', '✅', '🔥'];
+export const KATEGORI_KUDOS = ['Kerja keras', 'Bantu rekan', 'Cepat tanggap', 'Inovatif', 'Pelayanan terbaik'];
 const KANAL_BAWAAN = [
   { slug: 'santai', nama: 'santai', deskripsi: 'Ngobrol santai, meme, cerita lucu' },
   { slug: 'info-kantor', nama: 'info-kantor', deskripsi: 'Pengumuman & info kantor' },
@@ -30,7 +32,7 @@ export class ChatService {
   private ruangUmum: number | null = null;
   private readonly sudahDisiapkan = new Set<number>();
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private fcm: FcmService) {}
 
   // ── Util ─────────────────────────────────────────────────────────────────────
   private wajibKaryawan(id: number | undefined | null): number {
@@ -214,6 +216,7 @@ export class ChatService {
     await this.prisma.chatAnggota.updateMany({ where: { id_ruang, id_karyawan, terakhir_baca_id: { lt: p.id_pesan } }, data: { terakhir_baca_id: p.id_pesan } });
     await this.prisma.chatStatus.updateMany({ where: { id_karyawan }, data: { mengetik_ruang: null, mengetik_at: null } }).catch(() => null);
     if (mention.length) void this.beriTahuMention(mention, id_karyawan, a.ruang, isi, id_ruang);
+    void this.pushPesan(a.ruang, id_karyawan, isi || (lampiran ? `📎 ${lampiran.lampiran_nama}` : ''), mention);
     return (await this.bentukPesan([p], id_karyawan))[0];
   }
 
@@ -367,6 +370,71 @@ export class ChatService {
     const nama = await this.daftarNama([id_karyawan, target]);
     await this.pesanSistem(id_ruang, target === id_karyawan ? `${nama.get(target)?.nama ?? 'Anggota'} keluar dari grup` : `${nama.get(id_karyawan)?.nama ?? 'Admin'} mengeluarkan ${nama.get(target)?.nama ?? 'anggota'}`);
     return true;
+  }
+
+  // ── Push ke aplikasi mobile (FCM) ────────────────────────────────────────────
+  /**
+   * Pribadi/grup/diskusi: semua anggota; ruang besar (umum/divisi/kanal): hanya yang disebut.
+   * Dilewati bila penerima sedang online di ERP (sudah lihat lencana), atau ruang dibisukan (kecuali disebut).
+   */
+  private async pushPesan(ruang: { id_ruang: number; tipe: string; nama: string | null }, dari: number, isi: string, mention: number[]) {
+    try {
+      const besar = ['umum', 'divisi', 'kanal'].includes(ruang.tipe);
+      const anggota = await this.prisma.chatAnggota.findMany({ where: { id_ruang: ruang.id_ruang, id_karyawan: { not: dari } }, select: { id_karyawan: true, bisu: true } });
+      const sebut = new Set(mention);
+      const sasaran = anggota.filter((a) => (besar ? sebut.has(a.id_karyawan) : !a.bisu || sebut.has(a.id_karyawan))).map((a) => a.id_karyawan);
+      if (!sasaran.length) return;
+      const online = new Set(await this.idOnline());
+      const users = await this.prisma.coreUser.findMany({ where: { id_karyawan: { in: sasaran.filter((x) => !online.has(x)) }, is_aktif: true, fcm_token: { not: null } }, select: { id_karyawan: true, fcm_token: true } });
+      if (!users.length) return;
+      const nama = (await this.daftarNama([dari])).get(dari)?.nama ?? 'Seseorang';
+      const judul = ruang.tipe === 'pribadi' ? nama : `${nama} · ${ruang.nama ?? 'Grup'}`;
+      await Promise.all(users.map((u) => this.fcm.sendToToken(u.fcm_token!, judul, isi.slice(0, 140), { type: 'chat', id_ruang: String(ruang.id_ruang) })));
+    } catch (e: any) { this.logger.warn(`push chat gagal: ${e?.message}`); }
+  }
+
+  // ── Kudos ────────────────────────────────────────────────────────────────────
+  async beriKudos(id_karyawan: number, d: { id_untuk: number; kategori: string; pesan: string }) {
+    this.wajibKaryawan(id_karyawan);
+    if (d.id_untuk === id_karyawan) throw new BadRequestException('Kudos tidak bisa untuk diri sendiri');
+    if (!KATEGORI_KUDOS.includes(d.kategori)) throw new BadRequestException('Kategori kudos tidak valid');
+    const pesan = d.pesan.trim();
+    if (pesan.length < 3) throw new BadRequestException('Tulis alasan kudos (min. 3 karakter)');
+    const untuk = await this.prisma.hrisKaryawan.findUnique({ where: { id_karyawan: d.id_untuk }, select: { status_aktif: true } });
+    if (!untuk || !untuk.status_aktif) throw new NotFoundException('Karyawan tidak ditemukan / tidak aktif');
+    const awalHari = new Date(Date.now() + 7 * 3600_000); awalHari.setUTCHours(0, 0, 0, 0);
+    const hariIni = await this.prisma.chatKudos.count({ where: { id_dari: id_karyawan, created_at: { gte: new Date(awalHari.getTime() - 7 * 3600_000) } } });
+    if (hariIni >= 5) throw new BadRequestException('Batas 5 kudos per hari sudah tercapai — besok lagi ya');
+    await this.prisma.chatKudos.create({ data: { id_dari: id_karyawan, id_untuk: d.id_untuk, kategori: d.kategori, pesan } });
+    // Umumkan di ruang "Semua Karyawan" (pemberi otomatis sudah anggota), penerima di-mention
+    await this.siapkanBawaan(id_karyawan);
+    const umum = await this.prisma.chatRuang.findUnique({ where: { kunci: 'umum' } });
+    if (umum) {
+      const nama = (await this.daftarNama([d.id_untuk])).get(d.id_untuk)?.nama ?? 'rekan';
+      const p = await this.prisma.chatPesan.create({ data: { id_ruang: umum.id_ruang, id_pengirim: id_karyawan, isi: `🌟 Kudos untuk @${nama} · ${d.kategori}\n"${pesan}"`, mention: this.tulisMention([d.id_untuk]) } });
+      await this.prisma.chatRuang.update({ where: { id_ruang: umum.id_ruang }, data: { pesan_terakhir_at: p.created_at } });
+      await this.prisma.chatAnggota.updateMany({ where: { id_ruang: umum.id_ruang, id_karyawan, terakhir_baca_id: { lt: p.id_pesan } }, data: { terakhir_baca_id: p.id_pesan } });
+      void this.beriTahuMention([d.id_untuk], id_karyawan, { tipe: 'umum', nama: 'Semua Karyawan' }, `🌟 Kudos · ${d.kategori}: ${pesan}`, umum.id_ruang);
+      void this.pushPesan({ id_ruang: umum.id_ruang, tipe: 'umum', nama: 'Semua Karyawan' }, id_karyawan, `🌟 Kudos untuk Anda · ${d.kategori}: ${pesan}`, [d.id_untuk]);
+    }
+    return { sisa: 4 - hariIni, id_ruang: umum?.id_ruang ?? null };
+  }
+
+  async papanKudos(id_karyawan: number) {
+    this.wajibKaryawan(id_karyawan);
+    const awalBulan = new Date(Date.now() + 7 * 3600_000); awalBulan.setUTCDate(1); awalBulan.setUTCHours(0, 0, 0, 0);
+    const sejak = new Date(awalBulan.getTime() - 7 * 3600_000);
+    const [top, terbaru, sayaDapat] = await Promise.all([
+      this.prisma.chatKudos.groupBy({ by: ['id_untuk'], where: { created_at: { gte: sejak } }, _count: { _all: true }, orderBy: { _count: { id_untuk: 'desc' } }, take: 5 }),
+      this.prisma.chatKudos.findMany({ orderBy: { id_kudos: 'desc' }, take: 10 }),
+      this.prisma.chatKudos.count({ where: { id_untuk: id_karyawan, created_at: { gte: sejak } } }),
+    ]);
+    const nama = await this.daftarNama([...top.map((t) => t.id_untuk), ...terbaru.flatMap((k) => [k.id_dari, k.id_untuk])]);
+    return {
+      kategori: KATEGORI_KUDOS, saya_bulan_ini: sayaDapat,
+      papan: top.map((t, i) => ({ peringkat: i + 1, id_karyawan: t.id_untuk, nama: nama.get(t.id_untuk)?.nama ?? 'Karyawan', jumlah: t._count._all })),
+      terbaru: terbaru.map((k) => ({ id_kudos: k.id_kudos, dari: nama.get(k.id_dari)?.nama ?? 'Karyawan', untuk: nama.get(k.id_untuk)?.nama ?? 'Karyawan', kategori: k.kategori, pesan: k.pesan, waktu: k.created_at })),
+    };
   }
 
   // ── Reaksi emoji ─────────────────────────────────────────────────────────────

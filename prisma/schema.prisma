@@ -2205,6 +2205,19 @@ model ChatReaksi {
   @@map("chat_reaksi")
 }
 
+model ChatKudos {
+  id_kudos   Int      @id @default(autoincrement())
+  id_dari    Int
+  id_untuk   Int
+  kategori   String   @db.VarChar(30)
+  pesan      String   @db.VarChar(300)
+  created_at DateTime @default(now())
+
+  @@index([id_untuk, created_at])
+  @@index([id_dari, created_at])
+  @@map("chat_kudos")
+}
+
 // Kehadiran (online) & indikator "sedang mengetik"
 model ChatStatus {
   id_karyawan    Int       @id
