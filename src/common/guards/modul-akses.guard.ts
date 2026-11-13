@@ -85,8 +85,8 @@ export class ModulAksesGuard implements CanActivate {
     if (UNGATED.has(segment)) return true;
 
     const akses: string[] = user.modul_akses || [];
-    // Rapat internal untuk semua staf — kecuali akun 'pending' hasil daftar mandiri
-    if (segment === 'meeting') {
+    // Rapat & chat internal untuk semua staf — kecuali akun 'pending' hasil daftar mandiri
+    if (segment === 'meeting' || segment === 'chat') {
       if (akses.includes('pending')) throw new ForbiddenException('Akun Anda belum diaktifkan');
       return true;
     }

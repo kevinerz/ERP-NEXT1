@@ -2134,3 +2134,71 @@ model QcCatatan {
   @@index([status])
   @@map("qc_catatan")
 }
+
+// ============================================================
+// CHAT INTERNAL KARYAWAN
+// ============================================================
+
+// Ruang obrolan: pribadi (2 orang), grup, umum (semua karyawan), divisi (per departemen)
+model ChatRuang {
+  id_ruang          Int       @id @default(autoincrement())
+  tipe              String    @db.VarChar(10) // pribadi | grup | umum | divisi
+  nama              String?   @db.VarChar(100)
+  kunci             String?   @unique @db.VarChar(120) // pribadi: "a-b" (id kecil-besar); divisi: "div:<departemen>"; umum: "umum"
+  id_pembuat        Int?
+  pesan_terakhir_at DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  anggota ChatAnggota[]
+  pesan   ChatPesan[]
+
+  @@map("chat_ruang")
+}
+
+model ChatAnggota {
+  id_anggota       Int      @id @default(autoincrement())
+  id_ruang         Int
+  id_karyawan      Int
+  peran            String   @default("anggota") @db.VarChar(10) // admin | anggota
+  terakhir_baca_id Int      @default(0)
+  bisu             Boolean  @default(false)
+  bergabung_at     DateTime @default(now())
+
+  ruang ChatRuang @relation(fields: [id_ruang], references: [id_ruang], onDelete: Cascade)
+
+  @@unique([id_ruang, id_karyawan])
+  @@index([id_karyawan])
+  @@map("chat_anggota")
+}
+
+model ChatPesan {
+  id_pesan        Int       @id @default(autoincrement())
+  id_ruang        Int
+  id_pengirim     Int?      // kosong = pesan sistem
+  isi             String    @db.Text
+  id_balas        Int?
+  mention         String?   @db.Text // id_karyawan dibungkus koma, mis. ",12,45," (supaya bisa dicari dengan LIKE)
+  lampiran_file   String?   @db.VarChar(255) // nama berkas di storage/chat (privat, disajikan lewat endpoint ber-auth)
+  lampiran_nama   String?   @db.VarChar(255)
+  lampiran_tipe   String?   @db.VarChar(100)
+  lampiran_ukuran Int?
+  diedit_at       DateTime?
+  dihapus_at      DateTime?
+  created_at      DateTime  @default(now())
+
+  ruang ChatRuang @relation(fields: [id_ruang], references: [id_ruang], onDelete: Cascade)
+
+  @@index([id_ruang, id_pesan])
+  @@map("chat_pesan")
+}
+
+// Kehadiran (online) & indikator "sedang mengetik"
+model ChatStatus {
+  id_karyawan    Int       @id
+  terakhir_aktif DateTime
+  mengetik_ruang Int?
+  mengetik_at    DateTime?
+
+  @@map("chat_status")
+}

@@ -77,6 +77,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "stok-opname-detail":   "Aset — Detail Stok Opname",
   "pengajuan-aset-list":  "Aset — Pengajuan",
   "pengajuan-aset-detail": "Aset — Detail Pengajuan",
+  chat:                   "Obrolan",
   "meeting-list":         "Meeting",
   "meeting-room":         "Meeting — Ruang Rapat",
   ipam:                   "IP Publik",

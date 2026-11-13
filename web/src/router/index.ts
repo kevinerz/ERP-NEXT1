@@ -412,6 +412,11 @@ const router = createRouter({
           component: () => import('@/views/fileserver/FileServerView.vue'),
         },
         {
+          path: 'chat/:id?',
+          name: 'chat',
+          component: () => import('@/views/chat/ChatView.vue'),
+        },
+        {
           path: 'meeting',
           name: 'meeting-list',
           component: () => import('@/views/meeting/MeetingListView.vue'),

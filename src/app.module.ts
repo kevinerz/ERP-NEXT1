@@ -30,6 +30,7 @@ import { ContractsModule } from './modules/contracts/contracts.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { IpamModule } from './modules/ipam/ipam.module';
 import { MeetingModule } from './modules/meeting/meeting.module';
+import { ChatModule } from './modules/chat/chat.module';
 import { PasangBaruModule } from './modules/pasang-baru/pasang-baru.module';
 import { VisitModule } from './modules/visit/visit.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -99,6 +100,7 @@ import { PresalesModule } from './modules/presales/presales.module';
     WhatsappModule,
     IpamModule,
     MeetingModule,
+    ChatModule,
     PasangBaruModule,
     VisitModule,
     NotificationsModule,

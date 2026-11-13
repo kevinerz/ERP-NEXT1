@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
+import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 import api from '@/services/api'
 import { fmtRelativeTime } from '@/composables/useFormat'
@@ -71,13 +72,20 @@ watch(() => notif.toasts.length, (newLen, oldLen) => {
   if (newLen > (oldLen ?? 0)) playAlertSound()
 })
 
+const chat = useChatStore()
+// Judul tab ikut menampilkan jumlah obrolan belum dibaca
+const judulDasar = document.title
+watch(() => chat.totalBelum, (n) => { document.title = n > 0 ? `(${n > 99 ? '99+' : n}) ${judulDasar}` : judulDasar })
+
 onMounted(() => {
   notif.startPolling()
+  chat.mulai()
   document.addEventListener('click', onDocClick)
   document.addEventListener('click', unlockAudio, { once: true })
 })
 onUnmounted(() => {
   notif.stopPolling()
+  chat.berhenti()
   document.removeEventListener('click', onDocClick)
 })
 
@@ -147,6 +155,7 @@ const menuGroups: { label: string; accent: string; items: MenuItem[] }[] = [
       { label: 'Email',       emoji: '📧', to: '/email',           modul: null },
       { label: 'WhatsApp',    emoji: '💬', to: '/whatsapp',        modul: 'whatsapp' },
       { label: 'Statistik Helpdesk', emoji: '📶', to: '/whatsapp/statistik', modul: 'whatsapp' },
+      { label: 'Obrolan',     emoji: '🗨️', to: '/chat',            modul: null, match: ['/chat'] },
       { label: 'Meeting',     emoji: '📹', to: '/meeting',         modul: null },
       { label: 'File Server', emoji: '🗃️', to: '/file-server',     modul: 'fileserver' },
       { label: 'QC ERP',      emoji: '🧪', to: '/qc',              modul: null },
@@ -302,6 +311,7 @@ const initials = computed(() => {
               <Transition name="fade-text">
                 <span v-if="sidebarOpen || mobileNavOpen" class="nav-label">{{ item.label }}</span>
               </Transition>
+              <span v-if="item.to === '/chat' && chat.totalBelum" class="nav-lencana" :aria-label="`${chat.totalBelum} pesan belum dibaca`">{{ chat.totalBelum > 99 ? '99+' : chat.totalBelum }}</span>
             </RouterLink>
           </template>
         </template>
@@ -582,6 +592,8 @@ button.nav-group-label:hover { color: #64748b; }
   background: var(--group-accent, #3b82f6);
 }
 
+.nav-lencana { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; line-height: 1; box-shadow: 0 0 0 2px var(--sidebar-bg, rgba(15, 23, 42, .9)); animation: nav-lencana-masuk .25s ease; }
+@keyframes nav-lencana-masuk { from { transform: scale(.4); opacity: 0; } }
 .nav-emoji {
   font-size: 16px;
   flex-shrink: 0;
